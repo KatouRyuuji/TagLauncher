@@ -1,0 +1,22 @@
+[package]
+name = "tag-launcher"
+version = "1.0.0"
+description = "标签式文件管理器"
+authors = ["RyuuJi Soft"]
+edition = "2021"
+
+[lib]
+name = "tag_launcher_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
