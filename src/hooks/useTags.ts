@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
+import { notifyTagsChanged } from "../lib/modApi";
 
 export function useTags() {
   const { tags, setTags } = useAppStore();
@@ -19,6 +20,7 @@ export function useTags() {
     try {
       const data = await db.getTags();
       setTags(data);
+      notifyTagsChanged(data);
     } catch (e) {
       console.error("Failed to load tags:", e);
     } finally {

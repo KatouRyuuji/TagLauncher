@@ -11,7 +11,7 @@ export function MigrationDialog({ open, appliedMigrations, fromVersion, toVersio
 
   return (
     <>
-      <div className="fixed inset-0 z-[300] bg-black/60" onClick={onClose} />
+      <div className="fixed inset-0 z-[300]" style={{ backgroundColor: "var(--overlay-bg)" }} onClick={onClose} />
       <div className="fixed inset-0 z-[301] flex items-center justify-center pointer-events-none">
         <div
           className="pointer-events-auto w-[420px] max-w-[90vw] rounded-[var(--radius-xl)] border p-6"
@@ -56,7 +56,7 @@ export function MigrationDialog({ open, appliedMigrations, fromVersion, toVersio
             className="w-full py-2 rounded-[var(--radius-md)] text-sm font-medium transition-colors"
             style={{
               backgroundColor: "var(--accent-primary)",
-              color: "#fff",
+              color: "var(--text-invert)",
             }}
           >
             我知道了

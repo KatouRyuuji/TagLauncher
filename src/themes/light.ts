@@ -111,6 +111,9 @@ export const lightTheme: ThemeDefinition = {
     "color-success":      "#40a02b",                 // Latte Green
     "color-favorite":     "#df8e1d",
 
+    // 遮罩
+    "overlay-bg":            "rgba(76, 79, 105, 0.38)",
+
     // 滚动条
     "scrollbar-thumb":       "#bcc0cc",
     "scrollbar-thumb-hover": "#acb0be",

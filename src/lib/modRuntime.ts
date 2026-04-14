@@ -51,7 +51,8 @@ function executeJs(modId: string, jsContent: string) {
   removeJs(modId);
   const script = document.createElement("script");
   script.id = jsTagId(modId);
-  script.textContent = jsContent;
+  // 注入 __MOD_ID__ 常量，供 mod 调用 createScope(__MOD_ID__) 获取专属作用域
+  script.textContent = `(function(){const __MOD_ID__=${JSON.stringify(modId)};\n${jsContent}\n})();`;
   document.head.appendChild(script);
 }
 
@@ -82,11 +83,11 @@ function dispatchThemeRemoved(themeId: string) {
 }
 
 // 解析 mod 提供的主题 JSON 内容
+// 强制覆盖 id 为 mod-theme-${modId}，确保增删事件的 key 始终一致
 function parseModTheme(modId: string, jsonContent: string): ThemeDefinition | null {
   try {
     const parsed = JSON.parse(jsonContent) as ThemeDefinition;
-    // 保证 id 不与预设主题冲突
-    if (!parsed.id) parsed.id = `mod-theme-${modId}`;
+    parsed.id = `mod-theme-${modId}`;
     return parsed;
   } catch {
     console.warn(`[modRuntime] Failed to parse theme JSON for mod "${modId}"`);

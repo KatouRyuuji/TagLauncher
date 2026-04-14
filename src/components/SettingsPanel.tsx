@@ -17,7 +17,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
   return (
     <>
-      <div className="fixed inset-0 z-[200] bg-black/50" onClick={onClose} />
+      <div className="fixed inset-0 z-[200]" style={{ backgroundColor: "var(--overlay-bg)" }} onClick={onClose} />
       <div className="fixed inset-0 z-[201] flex items-center justify-center pointer-events-none">
         <div
           className="pointer-events-auto w-[480px] max-w-[90vw] max-h-[80vh] rounded-[var(--radius-xl)] border overflow-y-auto"

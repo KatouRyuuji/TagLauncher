@@ -110,6 +110,9 @@ export const darkTheme: ThemeDefinition = {
     "color-success":     "#a6e3a1",                   // Mocha Green
     "color-favorite":    "#f9e2af",
 
+    // 遮罩
+    "overlay-bg":            "rgba(0, 0, 0, 0.55)",
+
     // 滚动条
     "scrollbar-thumb":       "#45475a",
     "scrollbar-thumb-hover": "#585b70",

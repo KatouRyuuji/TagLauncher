@@ -8,6 +8,7 @@
 import { useEffect, useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
+import { notifyCabinetsChanged } from "../lib/modApi";
 
 export function useCabinets() {
   const { setCabinets } = useAppStore();
@@ -17,6 +18,7 @@ export function useCabinets() {
     try {
       const data = await db.getCabinets();
       setCabinets(data);
+      notifyCabinetsChanged(data);
     } catch (e) {
       console.error("Failed to load cabinets:", e);
     }

@@ -124,6 +124,9 @@ export const sakuraTheme: ThemeDefinition = {
     "color-success":      "#2e7d52",
     "color-favorite":     "#c87840",   // 温暖琥珀色
 
+    // 遮罩（粉色调半透明）
+    "overlay-bg":            "rgba(61, 30, 53, 0.42)",
+
     // 滚动条（粉色调）
     "scrollbar-thumb":       "rgba(194,65,111,0.22)",
     "scrollbar-thumb-hover": "rgba(194,65,111,0.45)",

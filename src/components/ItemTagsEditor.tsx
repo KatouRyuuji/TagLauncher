@@ -39,7 +39,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: Ite
   };
 
   return (
-    <div className="fixed inset-0 bg-black/68 flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: "var(--overlay-bg)" }} onClick={onClose}>
       <div
         className="w-[420px] max-w-[calc(100vw-2rem)] rounded-[var(--radius-xl)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5"
         style={{ boxShadow: 'var(--shadow-overlay)' }}

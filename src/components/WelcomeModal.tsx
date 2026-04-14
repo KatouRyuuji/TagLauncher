@@ -42,7 +42,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-5">
-      <div className="absolute inset-0 bg-black/72 backdrop-blur-[2px]" onClick={() => onClose(hideNextTime)} />
+      <div className="absolute inset-0" style={{ backgroundColor: "var(--overlay-bg)", backdropFilter: "blur(2px)" }} onClick={() => onClose(hideNextTime)} />
 
       <section
         className="relative isolate bg-[var(--bg-elevated)] border border-[var(--border-medium)] rounded-[var(--radius-xl)] overflow-hidden"

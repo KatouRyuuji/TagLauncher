@@ -19,6 +19,7 @@ import { loadSynonyms } from "./lib/synonyms";
 import { useVersionCheck } from "./hooks/useVersionCheck";
 import { initModApi } from "./lib/modApi";
 import { initModRuntime } from "./lib/modRuntime";
+import { ToastContainer } from "./components/ToastContainer";
 import * as db from "./lib/db";
 
 const WELCOME_HIDE_KEY = "taglauncher.hide_welcome_modal";
@@ -417,6 +418,7 @@ function App() {
       </main>
       <WelcomeModal open={showWelcomeModal} onClose={handleCloseWelcome} />
       <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
+      <ToastContainer />
       <MigrationDialog
         open={migration.show}
         appliedMigrations={migration.appliedMigrations}

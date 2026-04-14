@@ -49,6 +49,9 @@ pub struct ModManifest {
     pub entrypoints: ModEntrypoints,
     #[serde(default)]
     pub min_app_version: Option<String>,
+    /// 权限声明（items:read / tags:read / cabinets:read / storage / dom / theme）
+    #[serde(default)]
+    pub permissions: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

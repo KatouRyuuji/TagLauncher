@@ -46,7 +46,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
 
   return (
     // 全屏半透明遮罩，点击关闭
-    <div className="fixed inset-0 bg-black/68 flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: "var(--overlay-bg)" }} onClick={onClose}>
       {/* 弹窗主体，阻止点击事件冒泡到遮罩 */}
       <div className="bg-[var(--bg-elevated)] rounded-[var(--radius-xl)] p-5 w-80 border border-[var(--border-subtle)]" style={{ boxShadow: 'var(--shadow-overlay)' }} onClick={(e) => e.stopPropagation()}>
         <h2 className="text-base font-semibold text-[var(--text-primary)] mb-4">

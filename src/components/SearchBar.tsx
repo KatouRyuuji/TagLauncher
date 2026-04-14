@@ -13,6 +13,7 @@ import { useState } from "react";
 import { useSearch } from "../hooks/useSearch";
 import { useAppStore, type SearchMode } from "../stores/appStore";
 import { open } from "@tauri-apps/plugin-dialog";
+import { notifySearchInput } from "../lib/modApi";
 
 interface SearchBarProps {
   onAddItem: (path: string) => Promise<void>;
@@ -101,7 +102,8 @@ export function SearchBar({ onAddItem, onRefresh, onOpenAbout, onOpenSettings }:
           value={inputValue}
           onChange={(e) => {
             setInputValue(e.target.value);
-            handleSearch(e.target.value);  // 触发防抖搜索
+            handleSearch(e.target.value);
+            notifySearchInput(e.target.value);
           }}
           className="w-full bg-[var(--bg-hover)] border border-[var(--border-subtle)] rounded-[var(--radius-lg)] pl-9 pr-8 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none focus:border-[var(--accent-primary)] focus:bg-[var(--bg-hover)] transition-all"
         />

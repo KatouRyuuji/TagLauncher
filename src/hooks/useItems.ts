@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
+import { notifyItemLaunched, notifyItemsChanged } from "../lib/modApi";
 import type { ItemWithTags } from "../types";
 
 export function useItems() {
@@ -16,6 +17,7 @@ export function useItems() {
     try {
       const data = await db.getItems();
       setAllItems(data);
+      notifyItemsChanged(data);
     } catch (e) {
       console.error("Failed to load items:", e);
     } finally {
@@ -103,6 +105,8 @@ export function useItems() {
 
   const launchItem = async (id: number) => {
     await db.launchItem(id);
+    const item = allItems.find((i) => i.id === id);
+    if (item) notifyItemLaunched(id, item.name);
   };
 
   const toggleFavorite = async (id: number) => {
