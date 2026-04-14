@@ -14,6 +14,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { Item, Tag, ItemWithTags, Cabinet } from "../types";
+import type { ModInfo } from "../types/mod";
+import type { ThemeDefinition } from "../types/theme";
 
 // ---- 项目操作 ----
 
@@ -125,4 +127,58 @@ export async function removeItemFromCabinet(cabinetId: number, itemId: number): 
 /** 获取文件柜内的所有项目（含标签信息） */
 export async function getCabinetItems(cabinetId: number): Promise<ItemWithTags[]> {
   return invoke("get_cabinet_items", { cabinetId });
+}
+
+// ---- 设置 ----
+
+/** 获取应用版本 */
+export async function getAppVersion(): Promise<string> {
+  return invoke("get_app_version");
+}
+
+/** 获取当前主题 ID */
+export async function getCurrentTheme(): Promise<string> {
+  return invoke("get_current_theme");
+}
+
+/** 设置当前主题 */
+export async function setCurrentTheme(themeId: string): Promise<void> {
+  return invoke("set_current_theme", { themeId });
+}
+
+/** 获取设置值 */
+export async function getSetting(key: string): Promise<string | null> {
+  return invoke("get_setting", { key });
+}
+
+/** 写入设置值 */
+export async function setSetting(key: string, value: string): Promise<void> {
+  return invoke("set_setting", { key, value });
+}
+
+// ---- Mod 操作 ----
+
+/** 获取所有 mod 列表 */
+export async function getMods(): Promise<ModInfo[]> {
+  return invoke("get_mods");
+}
+
+/** 获取自定义 JSON 主题列表（从 &lt;AppData&gt;/themes/ 目录） */
+export async function getCustomThemes(): Promise<ThemeDefinition[]> {
+  return invoke("get_custom_themes");
+}
+
+/** 获取 mod 入口文件内容 */
+export async function getModContent(modId: string, entrypoint: string): Promise<string> {
+  return invoke("get_mod_content", { modId, entrypoint });
+}
+
+/** 启用 mod */
+export async function enableMod(modId: string): Promise<void> {
+  return invoke("enable_mod", { modId });
+}
+
+/** 禁用 mod */
+export async function disableMod(modId: string): Promise<void> {
+  return invoke("disable_mod", { modId });
 }

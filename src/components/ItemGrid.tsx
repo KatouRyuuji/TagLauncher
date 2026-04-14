@@ -13,7 +13,7 @@ export function ItemGrid({ items, tags, cabinets, loading, currentCabinetId, onL
   // 加载中状态
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-white/30 text-sm">
+      <div className="flex-1 flex items-center justify-center text-[var(--text-faint)] text-sm">
         加载中...
       </div>
     );
@@ -22,18 +22,18 @@ export function ItemGrid({ items, tags, cabinets, loading, currentCabinetId, onL
   // 空状态
   if (items.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-white/20">
+      <div className="flex-1 flex flex-col items-center justify-center text-[var(--text-ghost)]">
         <div className="text-5xl mb-4 opacity-50">📁</div>
         <p className="text-sm">暂无项目</p>
-        <p className="text-xs mt-1.5 text-white/15">拖拽文件到此处，或点击上方按钮添加</p>
+        <p className="text-xs mt-1.5 text-[var(--text-ghost)]">拖拽文件到此处，或点击上方按钮添加</p>
       </div>
     );
   }
 
   return (
     <div className="flex-1 overflow-y-auto p-3">
-      {/* 自适应网格：每列最小 180px，自动填充 */}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-2.5">
+      {/* 自适应网格：列宽由主题 --grid-col-min 控制 */}
+      <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(var(--grid-col-min), 1fr))' }}>
         {items.map((item) => (
           <ItemCard
             key={item.id}

@@ -4,7 +4,7 @@
   "description": "标签式文件管理器",
   "type": "module",
   "scripts": {
-    "dev": "kill-port 3456 2>/dev/null; vite",
+    "dev": "npx --yes kill-port 3456 & vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"

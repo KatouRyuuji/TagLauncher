@@ -7,12 +7,19 @@ import { TagFilterBar } from "./components/TagFilterBar";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemListView } from "./components/ItemListView";
 import { WelcomeModal } from "./components/WelcomeModal";
+import { ThemeProvider } from "./components/ThemeProvider";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { MigrationDialog } from "./components/MigrationDialog";
 import { useItems } from "./hooks/useItems";
 import { useTags } from "./hooks/useTags";
 import { useCabinets } from "./hooks/useCabinets";
 import { useAppStore } from "./stores/appStore";
 import { useInternalDragStore } from "./stores/internalDragStore";
 import { loadSynonyms } from "./lib/synonyms";
+import { useVersionCheck } from "./hooks/useVersionCheck";
+import { initModApi } from "./lib/modApi";
+import { initModRuntime } from "./lib/modRuntime";
+import * as db from "./lib/db";
 
 const WELCOME_HIDE_KEY = "taglauncher.hide_welcome_modal";
 
@@ -113,6 +120,8 @@ function App() {
   const [dragOver, setDragOver] = useState(false);
   const externalDragDepthRef = useRef(0);
   const recentDropRef = useRef<{ key: string; ts: number }>({ key: "", ts: 0 });
+  const [showSettings, setShowSettings] = useState(false);
+  const { migration, dismissMigration } = useVersionCheck();
   const [showWelcomeModal, setShowWelcomeModal] = useState<boolean>(() => {
     try {
       return localStorage.getItem(WELCOME_HIDE_KEY) !== "1";
@@ -123,6 +132,9 @@ function App() {
 
   useEffect(() => {
     void loadSynonyms();
+    initModApi();
+    // 初始化 mod 运行时：注入所有已启用 mod 的 CSS / JS / Theme
+    void db.getMods().then(initModRuntime);
   }, []);
 
   const addDroppedPaths = useCallback(
@@ -351,7 +363,10 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a] select-none">
+    <ThemeProvider>
+    <div className="flex h-screen select-none" style={{ backgroundColor: "var(--bg-base)", fontFamily: "var(--font-family)" }}>
+      {/* 装饰层：樱花主题渐变光晕等 */}
+      <div className="fixed inset-0 pointer-events-none z-0" style={{ background: "var(--bg-gradient)" }} />
       <Sidebar
         tags={tags}
         cabinets={cabinets}
@@ -370,14 +385,14 @@ function App() {
         onDragLeave={handleMainDragLeave}
         onDrop={handleMainDrop}
       >
-        <SearchBar onAddItem={addItem} onRefresh={refresh} onOpenAbout={handleOpenAbout} />
+        <SearchBar onAddItem={addItem} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} />
         <TagFilterBar />
         {viewMode === "grid" ? <ItemGrid {...viewProps} /> : <ItemListView {...viewProps} />}
         {dragOver && (
-          <div className="absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-500 rounded-lg z-50 flex items-center justify-center pointer-events-none">
+          <div className="absolute inset-0 bg-[var(--accent-primary-bg)] border-2 border-dashed border-[var(--accent-primary)] rounded-lg z-50 flex items-center justify-center pointer-events-none">
             <div className="text-center">
               <div className="text-5xl mb-3">📁</div>
-              <p className="text-blue-400 text-lg font-medium">释放以添加文件</p>
+              <p className="text-[var(--accent-primary)] text-lg font-medium">释放以添加文件</p>
             </div>
           </div>
         )}
@@ -386,7 +401,7 @@ function App() {
             className="fixed z-[120] pointer-events-none"
             style={{ left: activeInternalDrag.x + 14, top: activeInternalDrag.y + 14 }}
           >
-            <div className="inline-flex items-center gap-2 rounded-lg border border-white/[0.12] bg-[#121212]/95 px-3 py-1.5 text-xs text-white shadow-2xl">
+            <div className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs shadow-2xl" style={{ backgroundColor: "var(--bg-elevated)", borderWidth: 1, borderStyle: "solid", borderColor: "var(--border-default)", color: "var(--text-primary)" }}>
               {"color" in activeInternalDrag && (
                 <span
                   className="h-2.5 w-2.5 rounded-full shrink-0"
@@ -401,7 +416,16 @@ function App() {
         )}
       </main>
       <WelcomeModal open={showWelcomeModal} onClose={handleCloseWelcome} />
+      <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
+      <MigrationDialog
+        open={migration.show}
+        appliedMigrations={migration.appliedMigrations}
+        fromVersion={migration.fromVersion}
+        toVersion={migration.toVersion}
+        onClose={dismissMigration}
+      />
     </div>
+    </ThemeProvider>
   );
 }
 

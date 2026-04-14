@@ -2,9 +2,99 @@
 
 @layer base {
   :root {
-    font-family: Inter, system-ui, -apple-system, sans-serif;
-    background-color: #0a0a0a;
-    color: #e5e5e5;
+    /* ===== Typography ===== */
+    --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-family-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+    --font-size-xs: 11px;
+    --font-size-sm: 13px;
+    --font-size-base: 14px;
+    --font-size-lg: 16px;
+    --font-size-xl: 18px;
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-bold: 600;
+    --line-height-tight: 1.25;
+    --line-height-normal: 1.5;
+    --letter-spacing: 0em;
+
+    /* ===== Radius ===== */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-full: 9999px;
+
+    /* ===== Shadows ===== */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.4);
+    --shadow-overlay: 0 22px 60px rgba(0, 0, 0, 0.65);
+    --shadow-dropdown: 0 4px 24px rgba(0, 0, 0, 0.4);
+    --shadow-glow: none;
+    --shadow-card: none;
+
+    /* ===== Spacing ===== */
+    --spacing-unit: 4px;
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 24px;
+
+    /* ===== Motion ===== */
+    --transition-fast: 120ms ease;
+    --transition-normal: 200ms ease;
+    --transition-slow: 350ms ease;
+
+    /* ===== Decorative ===== */
+    --bg-gradient: none;
+    --card-backdrop-filter: none;
+    --sidebar-backdrop-filter: none;
+
+    /* ===== Layout ===== */
+    --sidebar-width: 208px;   /* 侧边栏宽度，主题可覆盖 */
+    --grid-col-min: 170px;    /* 网格视图最小列宽，主题可覆盖 */
+    --header-height: 56px;
+
+    /* ===== Colors ===== */
+    --bg-base: #0a0a0a;
+    --bg-surface: #0e0e0e;
+    --bg-elevated: #161616;
+    --bg-overlay: #1c1c1c;
+    --bg-hover: rgba(255, 255, 255, 0.04);
+    --bg-active: rgba(255, 255, 255, 0.08);
+    --bg-card: rgba(255, 255, 255, 0.02);
+    --bg-card-hover: rgba(255, 255, 255, 0.04);
+    --bg-input: #0e0e0e;
+    --text-primary: rgba(255, 255, 255, 0.9);
+    --text-secondary: rgba(255, 255, 255, 0.7);
+    --text-tertiary: rgba(255, 255, 255, 0.55);
+    --text-muted: rgba(255, 255, 255, 0.38);
+    --text-faint: rgba(255, 255, 255, 0.25);
+    --text-ghost: rgba(255, 255, 255, 0.2);
+    --text-placeholder: rgba(255, 255, 255, 0.3);
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-default: rgba(255, 255, 255, 0.1);
+    --border-medium: rgba(255, 255, 255, 0.14);
+    --border-strong: rgba(255, 255, 255, 0.2);
+    --accent-primary: #3b82f6;
+    --accent-primary-hover: #2563eb;
+    --accent-primary-bg: rgba(59, 130, 246, 0.2);
+    --accent-primary-bg-light: rgba(59, 130, 246, 0.05);
+    --color-danger: rgba(239, 68, 68, 0.7);
+    --color-danger-hover: #ef4444;
+    --color-danger-bg: rgba(239, 68, 68, 0.1);
+    --color-warning: #eab308;
+    --color-success: #22c55e;
+    --color-favorite: #facc15;
+    --scrollbar-thumb: #333;
+    --scrollbar-thumb-hover: #444;
+
+    font-family: var(--font-family);
+    font-size: var(--font-size-base);
+    letter-spacing: var(--letter-spacing);
+    background-color: var(--bg-base);
+    color: var(--text-primary);
   }
 
   body {
@@ -22,19 +112,75 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #333;
-    border-radius: 3px;
+    background: var(--scrollbar-thumb);
+    border-radius: var(--radius-sm);
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #444;
+    background: var(--scrollbar-thumb-hover);
+  }
+}
+
+@layer base {
+  /*
+   * 全局 button/a 使用主题动画变量。
+   * Tailwind 的 transition-* 工具类会覆盖这条规则，但裸 <button> 默认受益。
+   * 这让 Sakura 主题的弹性贝塞尔曲线在基础元素上也能生效。
+   */
+  button,
+  [role="button"],
+  a {
+    transition-property: color, background-color, border-color, opacity,
+      box-shadow, transform, outline-color;
+    transition-duration: 150ms;
+    transition-timing-function: ease;
   }
 }
 
 @layer utilities {
   .drag-over-highlight {
-    outline: 2px dashed #3b82f6;
+    outline: 2px dashed var(--accent-primary);
     outline-offset: -2px;
-    background-color: rgba(59, 130, 246, 0.05);
+    background-color: var(--accent-primary-bg-light);
+  }
+
+  /* 现代卡片悬停提升效果 — 替代纯色 hover */
+  .card-hover-lift {
+    box-shadow: var(--shadow-card);
+    transition:
+      box-shadow var(--transition-fast),
+      transform var(--transition-fast),
+      border-color var(--transition-fast),
+      background-color var(--transition-fast);
+    will-change: transform;
+  }
+  .card-hover-lift:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
+  .card-hover-lift:active {
+    transform: translateY(0px);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /*
+   * 发光效果工具类 — 消费 --shadow-glow 变量。
+   * 深色/亮色主题中 --shadow-glow 为 none，等同无效果。
+   * 樱花主题中会呈现粉色光晕，无需任何条件判断。
+   */
+  .glow-accent {
+    box-shadow: var(--shadow-glow);
+  }
+  .glow-accent-hover:hover {
+    box-shadow: var(--shadow-glow);
+  }
+
+  /*
+   * 下拉菜单/浮层毛玻璃 — 消费 --card-backdrop-filter。
+   * 在支持毛玻璃效果的主题中会自动激活。
+   */
+  .overlay-blur {
+    backdrop-filter: var(--card-backdrop-filter);
+    -webkit-backdrop-filter: var(--card-backdrop-filter);
   }
 }

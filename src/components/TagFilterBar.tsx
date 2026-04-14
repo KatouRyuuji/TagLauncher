@@ -16,14 +16,14 @@ export function TagFilterBar() {
   if (tags.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-1.5 px-4 py-2 border-b border-white/[0.06] overflow-x-auto shrink-0">
+    <div className="flex items-center gap-1.5 px-4 py-2 border-b border-[var(--border-subtle)] overflow-x-auto shrink-0">
       {/* "全部"按钮：清空标签选择 */}
       <button
         onClick={() => setSelectedTagIds([])}
-        className={`shrink-0 px-2.5 py-1 rounded-full text-xs transition-all ${
+        className={`shrink-0 px-2.5 py-1 rounded-[var(--radius-full)] text-xs transition-all ${
           selectedTagIds.length === 0
-            ? "bg-white/[0.12] text-white"
-            : "bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60"
+            ? "bg-[var(--bg-active)] text-[var(--text-primary)]"
+            : "bg-[var(--bg-hover)] text-[var(--text-muted)] hover:bg-[var(--bg-active)] hover:text-[var(--text-tertiary)]"
         }`}
       >
         全部
@@ -35,7 +35,7 @@ export function TagFilterBar() {
           <button
             key={tag.id}
             onClick={() => toggleTagSelection(tag.id)}
-            className={`shrink-0 px-2.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
+            className={`shrink-0 px-2.5 py-1 rounded-[var(--radius-full)] text-xs transition-all flex items-center gap-1.5 ${
               active
                 ? "ring-1 ring-white/20"
                 : "hover:brightness-125"

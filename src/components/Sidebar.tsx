@@ -105,18 +105,21 @@ export function Sidebar({
   };
 
   return (
-    <aside className="w-52 bg-[#0e0e0e] border-r border-white/[0.06] flex flex-col shrink-0">
-      <div className="px-4 py-3 border-b border-white/[0.06]">
-        <h1 className="text-base font-semibold text-white tracking-tight">TagLauncher</h1>
+    <aside
+      className="bg-[var(--bg-surface)] border-r border-[var(--border-subtle)] flex flex-col shrink-0"
+      style={{ width: 'var(--sidebar-width)', backdropFilter: 'var(--sidebar-backdrop-filter)' }}
+    >
+      <div className="px-4 py-3 border-b border-[var(--border-subtle)]">
+        <h1 className="text-base font-semibold text-[var(--text-primary)] tracking-tight">TagLauncher</h1>
       </div>
 
-      <div className="flex bg-white/[0.03] border-b border-white/[0.06]">
+      <div className="flex bg-[var(--bg-card)] border-b border-[var(--border-subtle)]">
         <button
           onClick={() => setSidebarTab("tags")}
           className={`flex-1 py-2.5 text-sm font-medium transition-all border-b-2 ${
             visibleSection === "tags"
-              ? "text-blue-400 border-blue-400 bg-blue-400/10"
-              : "text-white/50 border-transparent hover:text-white/70 hover:bg-white/[0.04]"
+              ? "text-[var(--accent-primary)] border-[var(--accent-primary)] bg-[var(--accent-primary-bg)]"
+              : "text-[var(--text-tertiary)] border-transparent hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
           }`}
         >
           标签
@@ -125,8 +128,8 @@ export function Sidebar({
           onClick={() => setSidebarTab("cabinets")}
           className={`flex-1 py-2.5 text-sm font-medium transition-all border-b-2 ${
             visibleSection === "cabinets"
-              ? "text-blue-400 border-blue-400 bg-blue-400/10"
-              : "text-white/50 border-transparent hover:text-white/70 hover:bg-white/[0.04]"
+              ? "text-[var(--accent-primary)] border-[var(--accent-primary)] bg-[var(--accent-primary-bg)]"
+              : "text-[var(--text-tertiary)] border-transparent hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
           }`}
         >
           收藏与文件柜
@@ -134,7 +137,7 @@ export function Sidebar({
       </div>
 
       {activeDrag?.kind === "item" && sidebarTab !== "cabinets" && (
-        <div className="px-3 py-2 border-b border-blue-500/20 bg-blue-500/8 text-[11px] text-blue-300">
+        <div className="px-3 py-2 border-b border-[var(--accent-primary)] bg-[var(--accent-primary-bg)] text-[11px] text-[var(--accent-primary)]">
           拖拽中：已临时显示收藏夹和文件柜目标，释放即可归档对象
         </div>
       )}
@@ -148,12 +151,12 @@ export function Sidebar({
                 setSelectedCabinetId(null);
                 setShowFavorites(false);
               }}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+              className={`w-full text-left px-3 py-2 rounded-[var(--radius-lg)] text-sm transition-all ${
                 selectedTagIds.length === 0 &&
                 selectedCabinetId === null &&
                 !showFavorites
-                  ? "bg-blue-600/20 text-blue-400 font-medium"
-                  : "text-white/50 hover:bg-white/[0.04] hover:text-white/70"
+                  ? "bg-[var(--accent-primary-bg)] text-[var(--accent-primary)] font-medium"
+                  : "text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
               }`}
             >
               全部项目
@@ -178,14 +181,14 @@ export function Sidebar({
                       event.preventDefault();
                       setEditingTag(tag);
                     }}
-                    className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center gap-2.5 transition-all text-sm cursor-grab active:cursor-grabbing ${
+                    className={`w-full text-left px-3 py-1.5 rounded-[var(--radius-lg)] flex items-center gap-2.5 transition-all text-sm cursor-grab active:cursor-grabbing ${
                       selectedTagIds.includes(tag.id)
-                        ? "bg-white/[0.08] text-white"
-                        : "text-white/50 hover:bg-white/[0.04] hover:text-white/70"
+                        ? "bg-[var(--bg-active)] text-[var(--text-primary)] glow-accent"
+                        : "text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
                     }`}
                   >
                     <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-white/10"
+                      className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-[var(--border-default)]"
                       style={{ backgroundColor: tag.color }}
                     />
                     <span className="truncate">{tag.name}</span>
@@ -194,14 +197,14 @@ export function Sidebar({
               </div>
 
               {tags.length === 0 && (
-                <p className="px-3 py-4 text-xs text-white/20 text-center">
+                <p className="px-3 py-4 text-xs text-[var(--text-ghost)] text-center">
                   点击下方按钮创建标签
                 </p>
               )}
 
               <button
                 onClick={() => setShowAddTag(true)}
-                className="w-full mt-2 px-3 py-2 rounded-lg flex items-center gap-2 text-sm text-white/30 hover:bg-white/[0.04] hover:text-white/60 transition-all border border-dashed border-white/[0.08] hover:border-white/[0.15]"
+                className="w-full mt-2 px-3 py-2 rounded-[var(--radius-lg)] flex items-center gap-2 text-sm text-[var(--text-faint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-tertiary)] transition-all border border-dashed border-[var(--border-subtle)] hover:border-[var(--border-medium)]"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -217,12 +220,12 @@ export function Sidebar({
             <button
               data-drop-item-favorite={1}
               onClick={() => setShowFavorites(!showFavorites)}
-              className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-2.5 text-sm transition-all ${
+              className={`w-full text-left px-3 py-2 rounded-[var(--radius-lg)] flex items-center gap-2.5 text-sm transition-all ${
                 hoveredFavorites
                   ? "bg-yellow-500/16 text-yellow-300 ring-1 ring-yellow-400/35"
                   : showFavorites
                   ? "bg-yellow-500/20 text-yellow-400 font-medium"
-                  : "text-white/50 hover:bg-white/[0.04] hover:text-white/70"
+                  : "text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
               }`}
             >
               <svg className="w-4 h-4 shrink-0" fill={showFavorites ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -242,16 +245,16 @@ export function Sidebar({
                       event.preventDefault();
                       setEditingCabinet(cab);
                     }}
-                    className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center gap-2.5 transition-all text-sm ${
+                    className={`w-full text-left px-3 py-1.5 rounded-[var(--radius-lg)] flex items-center gap-2.5 transition-all text-sm ${
                       hoveredCabinetId === cab.id
-                        ? "bg-blue-500/12 text-white ring-1 ring-blue-400/40"
+                        ? "bg-[var(--accent-primary-bg)] text-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]"
                         : selectedCabinetId === cab.id
-                        ? "bg-white/[0.08] text-white"
-                        : "text-white/50 hover:bg-white/[0.04] hover:text-white/70"
+                        ? "bg-[var(--bg-active)] text-[var(--text-primary)] glow-accent"
+                        : "text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
                     }`}
                   >
                     <span
-                      className="w-2.5 h-2.5 rounded shrink-0 ring-1 ring-white/10"
+                      className="w-2.5 h-2.5 rounded shrink-0 ring-1 ring-[var(--border-default)]"
                       style={{ backgroundColor: cab.color }}
                     />
                     <span className="truncate">{cab.name}</span>
@@ -260,14 +263,14 @@ export function Sidebar({
               </div>
 
               {cabinets.length === 0 && (
-                <p className="px-3 py-4 text-xs text-white/20 text-center">
+                <p className="px-3 py-4 text-xs text-[var(--text-ghost)] text-center">
                   点击下方按钮创建文件柜
                 </p>
               )}
 
               <button
                 onClick={() => setShowAddCabinet(true)}
-                className="w-full mt-2 px-3 py-2 rounded-lg flex items-center gap-2 text-sm text-white/30 hover:bg-white/[0.04] hover:text-white/60 transition-all border border-dashed border-white/[0.08] hover:border-white/[0.15]"
+                className="w-full mt-2 px-3 py-2 rounded-[var(--radius-lg)] flex items-center gap-2 text-sm text-[var(--text-faint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-tertiary)] transition-all border border-dashed border-[var(--border-subtle)] hover:border-[var(--border-medium)]"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -279,8 +282,8 @@ export function Sidebar({
         )}
       </nav>
 
-      <div className="px-3 py-2.5 border-t border-white/[0.06]">
-        <p className="text-xs text-white/28 text-center">
+      <div className="px-3 py-2.5 border-t border-[var(--border-subtle)]">
+        <p className="text-xs text-[var(--text-faint)] text-center">
           {activeDrag?.kind === "item"
             ? "释放到收藏夹或文件柜即可完成归档"
             : "拖拽标签到项目上，拖拽对象到收藏夹或文件柜"}

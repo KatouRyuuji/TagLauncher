@@ -48,8 +48,8 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
     // 全屏半透明遮罩，点击关闭
     <div className="fixed inset-0 bg-black/68 flex items-center justify-center z-50" onClick={onClose}>
       {/* 弹窗主体，阻止点击事件冒泡到遮罩 */}
-      <div className="bg-[#161616] rounded-xl p-5 w-80 border border-white/[0.08] shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-base font-semibold text-white mb-4">
+      <div className="bg-[var(--bg-elevated)] rounded-[var(--radius-xl)] p-5 w-80 border border-[var(--border-subtle)]" style={{ boxShadow: 'var(--shadow-overlay)' }} onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-base font-semibold text-[var(--text-primary)] mb-4">
           {tag ? `编辑${label}` : `新建${label}`}
         </h2>
         <form onSubmit={handleSubmit}>
@@ -60,7 +60,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
             onChange={(e) => setName(e.target.value)}
             placeholder={`${label}名称`}
             autoFocus
-            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 mb-4"
+            className="w-full bg-[var(--bg-hover)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none focus:border-[var(--accent-primary)] mb-4"
           />
           {/* 颜色选择器：8 个预设颜色圆点 */}
           <div className="flex gap-2 mb-5 flex-wrap">
@@ -70,7 +70,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
                 type="button"
                 onClick={() => setColor(c)}
                 className={`w-7 h-7 rounded-full transition-all ${
-                  color === c ? "ring-2 ring-white ring-offset-2 ring-offset-[#161616] scale-110" : "hover:scale-105"
+                  color === c ? "ring-2 ring-[var(--text-primary)] ring-offset-2 ring-offset-[var(--bg-elevated)] scale-110" : "hover:scale-105"
                 }`}
                 style={{ backgroundColor: c }}
               />
@@ -83,7 +83,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
               <button
                 type="button"
                 onClick={onDelete}
-                className="px-3 py-1.5 text-sm bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg text-red-400 transition-colors"
+                className="px-3 py-1.5 text-sm bg-[var(--color-danger-bg)] hover:bg-[var(--color-danger-bg)] border border-[var(--color-danger)] rounded-[var(--radius-md)] text-[var(--color-danger)] transition-colors"
               >
                 删除
               </button>
@@ -92,14 +92,14 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 text-sm bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg text-white/60 transition-colors"
+              className="px-3 py-1.5 text-sm bg-[var(--bg-hover)] hover:bg-[var(--bg-active)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] text-[var(--text-tertiary)] transition-colors"
             >
               取消
             </button>
             <button
               type="submit"
               disabled={!name.trim() || saving}
-              className="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-40 rounded-lg text-white transition-colors"
+              className="px-4 py-1.5 text-sm bg-[var(--accent-primary)] hover:opacity-90 disabled:opacity-40 rounded-[var(--radius-md)] text-[var(--text-invert)] transition-colors"
             >
               保存
             </button>
