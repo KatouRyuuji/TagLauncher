@@ -3,20 +3,25 @@
 // ============================================================================
 // 职责：
 //   - CSS mod  → 注入/移除 <style id="__mod-css-{id}"> 标签
-//   - JS  mod  → 执行 <script>；禁用时调用 window.__modCleanup_{id}() 钩子
+//   - JS  mod  → 执行 <script>；禁用时调用清理钩子
 //   - Theme mod → 解析 JSON，通过 DOM 事件通知 useTheme 动态增删可选主题
 //
 // 设计原则：
 //   - 与 React 解耦（纯 DOM 操作），任意时刻均可调用
 //   - 每个 mod 的 DOM 元素以 mod ID 命名，便于调试和清理
-//   - JS mod 的"卸载"依赖 mod 自身注册的 __modCleanup_{id} 函数；
-//     若不存在则仅移除 <script> 元素（已执行的代码无法撤销）
+//   - JS mod 应通过 api.onDisable() 注册清理函数；
+//     未注册时 notify 警告用户可能需要刷新
 // ============================================================================
 
 import type { ModInfo } from "../types/mod";
 import type { ThemeDefinition } from "../types/theme";
 import * as db from "./db";
 import { MOD_THEME_ADDED, MOD_THEME_REMOVED } from "../hooks/useTheme";
+import {
+  registerModPermissions,
+  registerModApiVersion,
+  callModCleanup,
+} from "./modApi";
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
 
@@ -56,23 +61,33 @@ function executeJs(modId: string, jsContent: string) {
   document.head.appendChild(script);
 }
 
-function removeJs(modId: string) {
-  // 1. 调用 mod 自身注册的清理钩子（如果有）
-  const cleanupKey = `__modCleanup_${modId.replace(/-/g, "_")}`;
-  try {
-    const w = window as unknown as Record<string, unknown>;
-    const cleanup = w[cleanupKey];
-    if (typeof cleanup === "function") {
-      (cleanup as () => void)();
-    }
-  } catch {
-    // 钩子抛出异常时静默忽略
+async function removeJs(modId: string) {
+  // 调用 api.onDisable() 注册的清理回调，支持异步 + 500ms 超时
+  const hadCleanup = await callModCleanup(modId);
+  if (!hadCleanup) {
+    // 未注册清理函数：警告用户
+    notifyNoCleanup(modId);
   }
-  // 2. 移除 script 标签
+
+  // 移除 script 标签
   document.getElementById(jsTagId(modId))?.remove();
 }
 
+function notifyNoCleanup(modId: string) {
+  window.dispatchEvent(
+    new CustomEvent("taglauncher-toast", {
+      detail: {
+        message: `Mod "${modId}" 未注册清理函数，定时器/监听器可能仍在运行。建议刷新应用。`,
+        type: "warning",
+      },
+    }),
+  );
+}
+
 // ── Theme mod ─────────────────────────────────────────────────────────────
+
+/** modId → 实际注册的 themeId（用于禁用时精确移除） */
+const modThemeIdMap = new Map<string, string>();
 
 function dispatchThemeAdded(theme: ThemeDefinition) {
   window.dispatchEvent(new CustomEvent<ThemeDefinition>(MOD_THEME_ADDED, { detail: theme }));
@@ -82,12 +97,16 @@ function dispatchThemeRemoved(themeId: string) {
   window.dispatchEvent(new CustomEvent<string>(MOD_THEME_REMOVED, { detail: themeId }));
 }
 
-// 解析 mod 提供的主题 JSON 内容
-// 强制覆盖 id 为 mod-theme-${modId}，确保增删事件的 key 始终一致
+/**
+ * 解析 mod 提供的主题 JSON。
+ * 保留 JSON 中声明的 id；若未声明则默认为 mod-theme-${modId}。
+ */
 function parseModTheme(modId: string, jsonContent: string): ThemeDefinition | null {
   try {
     const parsed = JSON.parse(jsonContent) as ThemeDefinition;
-    parsed.id = `mod-theme-${modId}`;
+    if (!parsed.id || parsed.id.trim() === "") {
+      parsed.id = `mod-theme-${modId}`;
+    }
     return parsed;
   } catch {
     console.warn(`[modRuntime] Failed to parse theme JSON for mod "${modId}"`);
@@ -97,9 +116,14 @@ function parseModTheme(modId: string, jsonContent: string): ThemeDefinition | nu
 
 // ── 主接口 ────────────────────────────────────────────────────────────────
 
-/** 启用单个 mod：读取入口文件，按类型注入 */
+/** 启用单个 mod：注册元信息，读取入口文件，按类型注入 */
 export async function enableModRuntime(mod: ModInfo): Promise<void> {
   const { id, type, entrypoints } = mod;
+
+  // 注册权限声明和 API 版本（在执行 JS 之前完成，确保 createScope 能正确检查）
+  // undefined = 旧 mod 未声明 permissions → 不限制；[] = 显式声明无权限
+  registerModPermissions(id, mod.permissions as import("../types/mod").ModPermission[] | undefined);
+  registerModApiVersion(id, mod.api_version);
 
   try {
     if (type === "css" || type === "css+js") {
@@ -120,16 +144,25 @@ export async function enableModRuntime(mod: ModInfo): Promise<void> {
       if (entrypoints.theme) {
         const json = await db.getModContent(id, entrypoints.theme);
         const theme = parseModTheme(id, json);
-        if (theme) dispatchThemeAdded(theme);
+        if (theme) {
+          modThemeIdMap.set(id, theme.id);
+          dispatchThemeAdded(theme);
+        }
       }
     }
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error(`[modRuntime] Failed to enable mod "${id}":`, err);
+    window.dispatchEvent(
+      new CustomEvent("taglauncher-toast", {
+        detail: { message: `Mod "${mod.name}" 加载失败：${msg}`, type: "error" },
+      }),
+    );
   }
 }
 
-/** 禁用单个 mod：移除注入的 CSS/JS，通知主题删除 */
-export function disableModRuntime(mod: ModInfo): void {
+/** 禁用单个 mod：移除注入的 CSS/JS（等待异步清理），通知主题删除 */
+export async function disableModRuntime(mod: ModInfo): Promise<void> {
   const { id, type, entrypoints } = mod;
 
   if (type === "css" || type === "css+js") {
@@ -137,14 +170,21 @@ export function disableModRuntime(mod: ModInfo): void {
   }
 
   if (type === "css+js") {
-    if (entrypoints.js) removeJs(id);
+    if (entrypoints.js) await removeJs(id);
   }
 
   if (type === "theme") {
-    // 通知 useTheme 从列表中移除
-    const themeId = `mod-theme-${id}`;
+    // 使用注册时记录的实际 themeId（保留了 mod JSON 中的原始 id）
+    const themeId = modThemeIdMap.get(id) ?? `mod-theme-${id}`;
+    modThemeIdMap.delete(id);
     dispatchThemeRemoved(themeId);
   }
+}
+
+/** 热重载单个 mod（等待清理完成后再重新启用） */
+export async function reloadModRuntime(mod: ModInfo): Promise<void> {
+  await disableModRuntime(mod);
+  await enableModRuntime(mod);
 }
 
 /** 应用启动时：批量注入所有已启用的 mod */

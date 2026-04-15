@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::extensions::theme_loader;
-use crate::models::ThemeDefinition;
+use crate::models::CustomThemesResult;
 use crate::services::settings_service;
 use std::path::PathBuf;
 use tauri::{Manager, State};
@@ -22,9 +22,9 @@ pub fn set_current_theme(db: State<Database>, theme_id: String) -> Result<(), St
     settings_service::set_current_theme(&conn, &theme_id)
 }
 
-/// 扫描 &lt;AppData&gt;/themes/ 目录，返回所有合法的自定义 JSON 主题
+/// 扫描 &lt;AppData&gt;/themes/ 目录，返回所有自定义 JSON 主题（含加载错误）
 #[tauri::command]
-pub fn get_custom_themes(app: tauri::AppHandle) -> Vec<ThemeDefinition> {
+pub fn get_custom_themes(app: tauri::AppHandle) -> CustomThemesResult {
     let app_dir = app
         .path()
         .app_data_dir()

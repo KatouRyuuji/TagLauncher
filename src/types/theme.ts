@@ -17,3 +17,13 @@ export interface ThemeDefinition {
   css?: string;
   isPreset?: boolean;
 }
+
+export interface ThemeLoadError {
+  file_name: string;
+  error: string;
+}
+
+export interface CustomThemesResult {
+  themes: ThemeDefinition[];
+  errors: ThemeLoadError[];
+}

@@ -32,15 +32,27 @@ export function useTheme() {
     const init = async () => {
       try {
         // 并行加载
-        const [themeId, customs] = await Promise.all([
+        const [themeId, customsResult] = await Promise.all([
           db.getCurrentTheme().catch(() => "dark"),
-          db.getCustomThemes().catch(() => [] as ThemeDefinition[]),
+          db.getCustomThemes().catch(() => ({ themes: [] as ThemeDefinition[], errors: [] })),
         ]);
 
-        setCustomThemes(customs);
+        // 有加载错误时逐条 toast 提示
+        for (const err of customsResult.errors) {
+          window.dispatchEvent(
+            new CustomEvent("taglauncher-toast", {
+              detail: {
+                message: `自定义主题 "${err.file_name}" 加载失败：${err.error}`,
+                type: "error",
+              },
+            }),
+          );
+        }
+
+        setCustomThemes(customsResult.themes);
 
         // 在预设 + 自定义中查找，找不到则用默认
-        const allThemes = [...presetThemes, ...customs];
+        const allThemes = [...presetThemes, ...customsResult.themes];
         const theme = allThemes.find((t) => t.id === themeId) ?? getDefaultTheme();
         setCurrentThemeState(theme);
         applyTheme(theme);
@@ -57,8 +69,27 @@ export function useTheme() {
   useEffect(() => {
     const handleAdded = (e: Event) => {
       const theme = (e as CustomEvent<ThemeDefinition>).detail;
+
+      // 冲突检测：mod 主题 id 与预设或自定义主题重复时拒绝（不允许覆盖）
+      const conflictsPreset = presetThemes.some((t) => t.id === theme.id);
+      const conflictsCustom = customThemes.some((t) => t.id === theme.id);
+      if (conflictsPreset || conflictsCustom) {
+        const kind = conflictsPreset ? "内置预设" : "自定义文件";
+        console.error(`[useTheme] Mod 主题 ID "${theme.id}" 与${kind}主题冲突，已拒绝加载`);
+        window.dispatchEvent(
+          new CustomEvent("taglauncher-toast", {
+            detail: {
+              message: `Mod 主题 ID "${theme.id}" 与${kind}主题冲突，已拒绝加载。请修改 mod 主题的 id 字段。`,
+              type: "error",
+            },
+          }),
+        );
+        return; // 拒绝：不将冲突主题加入可用列表
+      }
+
+      // 同一 mod 重复注册（如热重载）：更新已有条目
       setModThemes((prev) => {
-        const exists = prev.find((t) => t.id === theme.id);
+        const exists = prev.some((t) => t.id === theme.id);
         return exists ? prev.map((t) => (t.id === theme.id ? theme : t)) : [...prev, theme];
       });
     };
@@ -84,7 +115,7 @@ export function useTheme() {
       window.removeEventListener(MOD_THEME_ADDED, handleAdded);
       window.removeEventListener(MOD_THEME_REMOVED, handleRemoved);
     };
-  }, []);
+  }, [customThemes]);
 
   const setTheme = useCallback(
     async (themeId: string) => {
@@ -104,8 +135,18 @@ export function useTheme() {
   /** 重新扫描 themes/ 目录（用户安装新主题后可手动刷新） */
   const refreshCustomThemes = useCallback(async () => {
     try {
-      const customs = await db.getCustomThemes();
-      setCustomThemes(customs);
+      const result = await db.getCustomThemes();
+      for (const err of result.errors) {
+        window.dispatchEvent(
+          new CustomEvent("taglauncher-toast", {
+            detail: {
+              message: `自定义主题 "${err.file_name}" 加载失败：${err.error}`,
+              type: "error",
+            },
+          }),
+        );
+      }
+      setCustomThemes(result.themes);
     } catch {
       // 静默失败
     }

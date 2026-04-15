@@ -49,9 +49,15 @@ pub struct ModManifest {
     pub entrypoints: ModEntrypoints,
     #[serde(default)]
     pub min_app_version: Option<String>,
+    /// 最高兼容版本（exclusive）：App > 此版本时标记不兼容（如 mod 依赖已移除的 API）
+    #[serde(default)]
+    pub max_app_version: Option<String>,
     /// 权限声明（items:read / tags:read / cabinets:read / storage / dom / theme）
     #[serde(default)]
     pub permissions: Vec<String>,
+    /// Mod 所针对的 API 版本（如 "2.1.0"）
+    #[serde(default)]
+    pub api_version: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -68,6 +74,35 @@ pub struct ModInfo {
     pub manifest: ModManifest,
     pub enabled: bool,
     pub path: String,
+    /// 是否与当前 App 版本兼容（min_app_version 校验结果）
+    pub is_compatible: bool,
+    /// 不兼容原因（is_compatible 为 false 时填充）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub incompatible_reason: Option<String>,
+}
+
+/// Mod 加载错误（manifest 解析失败等）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ModLoadError {
+    /// Mod 目录名
+    pub dir_name: String,
+    /// 错误描述
+    pub error: String,
+}
+
+/// 自定义主题加载结果
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CustomThemesResult {
+    pub themes: Vec<ThemeDefinition>,
+    /// 加载失败的主题文件名及错误信息
+    pub errors: Vec<ThemeLoadError>,
+}
+
+/// 主题加载错误
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ThemeLoadError {
+    pub file_name: String,
+    pub error: String,
 }
 
 /// 迁移结果

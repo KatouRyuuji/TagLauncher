@@ -2,6 +2,32 @@ import type { ThemeDefinition } from "../types/theme";
 
 const CUSTOM_CSS_ID = "__theme-css";
 
+/**
+ * 检查 CSS 字符串中大括号是否平衡（跳过字符串字面量内容）。
+ * 返回错误描述字符串，或 null（无问题）。
+ */
+function detectCssBraceError(css: string): string | null {
+  let depth = 0;
+  let inStr = false;
+  let strChar = "";
+  for (let i = 0; i < css.length; i++) {
+    const ch = css[i];
+    if (inStr) {
+      if (ch === strChar && css[i - 1] !== "\\") inStr = false;
+    } else if (ch === '"' || ch === "'") {
+      inStr = true;
+      strChar = ch;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth < 0) return '包含多余的 "}"';
+    }
+  }
+  if (depth > 0) return `${depth} 个未闭合的 "{"`;
+  return null;
+}
+
 export function applyTheme(theme: ThemeDefinition) {
   const root = document.documentElement;
 
@@ -26,6 +52,18 @@ export function applyTheme(theme: ThemeDefinition) {
   // 4. 注入主题自定义 CSS（用于变量无法覆盖的深度定制：布局、图标、选择器级样式）
   let styleEl = document.getElementById(CUSTOM_CSS_ID) as HTMLStyleElement | null;
   if (theme.css?.trim()) {
+    // 注入前检查括号平衡，不平衡时警告（仍继续注入，浏览器会尽力解析有效部分）
+    const cssError = detectCssBraceError(theme.css);
+    if (cssError) {
+      window.dispatchEvent(
+        new CustomEvent("taglauncher-toast", {
+          detail: {
+            message: `主题 "${theme.id}" 的 CSS 存在语法问题（${cssError}），部分样式可能无效`,
+            type: "warning",
+          },
+        }),
+      );
+    }
     if (!styleEl) {
       styleEl = document.createElement("style");
       styleEl.id = CUSTOM_CSS_ID;

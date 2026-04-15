@@ -34,14 +34,65 @@ pub fn run() {
             let mods_dir = app_dir.join("mods");
             std::fs::create_dir_all(&mods_dir).ok();
 
-            let enabled_mods = {
+            let (enabled_mods, enabled_mods_err) = {
                 let conn = database.get_conn();
                 settings_service::get_enabled_mods(&conn)
             };
 
-            for (manifest, path) in mod_loader::discover_mods(&mods_dir) {
+            // enabled_mods 解析失败时记录错误，防止误禁所有 mod
+            if let Some(err) = enabled_mods_err {
+                registry.add_load_error("系统".to_string(), err);
+            }
+
+            let app_version = settings_service::get_app_version();
+            let (mods, mod_errors) = mod_loader::discover_mods(&mods_dir);
+
+            // 记录 manifest 解析失败的错误
+            for err in mod_errors {
+                registry.add_load_error(err.dir_name, err.error);
+            }
+
+            for (manifest, path) in mods {
                 let enabled = enabled_mods.contains(&manifest.id);
-                registry.register(manifest, path, enabled);
+
+                // 校验 min_app_version 和 max_app_version
+                let (is_compatible, incompatible_reason) = {
+                    // 1. 检查最低版本要求
+                    let min_ok = match manifest.min_app_version.as_deref() {
+                        None => Ok(()),
+                        Some(required) => {
+                            if mod_loader::semver_gte(app_version, required) {
+                                Ok(())
+                            } else {
+                                Err(format!(
+                                    "需要 App >= {}，当前版本为 {}",
+                                    required, app_version
+                                ))
+                            }
+                        }
+                    };
+                    // 2. 检查最高版本限制（app_version > max → 不兼容）
+                    let max_ok = match manifest.max_app_version.as_deref() {
+                        None => Ok(()),
+                        Some(max) => {
+                            if mod_loader::semver_gte(max, app_version) {
+                                Ok(())
+                            } else {
+                                Err(format!(
+                                    "此 mod 不兼容 App >= {}，当前版本为 {}",
+                                    max, app_version
+                                ))
+                            }
+                        }
+                    };
+                    match (min_ok, max_ok) {
+                        (Ok(()), Ok(())) => (true, None),
+                        (Err(e), _) => (false, Some(e)),
+                        (_, Err(e)) => (false, Some(e)),
+                    }
+                };
+
+                registry.register(manifest, path, enabled, is_compatible, incompatible_reason);
             }
 
             app.manage(database);
@@ -87,6 +138,7 @@ pub fn run() {
             get_custom_themes,
             // Mod
             get_mods,
+            get_mod_load_errors,
             get_mod_content,
             enable_mod,
             disable_mod,

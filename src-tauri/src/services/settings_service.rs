@@ -35,11 +35,25 @@ pub fn set_current_theme(conn: &Connection, theme_id: &str) -> Result<(), String
     set_setting(conn, "theme", theme_id)
 }
 
-/// 获取启用的 mod 列表
-pub fn get_enabled_mods(conn: &Connection) -> Vec<String> {
-    get_setting(conn, "enabled_mods")
-        .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
-        .unwrap_or_default()
+/// 获取启用的 mod 列表。
+/// 返回 (mod_ids, error)。
+///   - 键不存在（全新安装）→ ([], None)
+///   - 解析失败（数据损坏）→ ([], Some(错误信息))  — 返回空列表但记录错误，不静默误禁所有 mod
+pub fn get_enabled_mods(conn: &Connection) -> (Vec<String>, Option<String>) {
+    match get_setting(conn, "enabled_mods") {
+        None => (Vec::new(), None),
+        Some(s) if s.trim().is_empty() => (Vec::new(), None),
+        Some(s) => match serde_json::from_str::<Vec<String>>(&s) {
+            Ok(v) => (v, None),
+            Err(e) => (
+                Vec::new(),
+                Some(format!(
+                    "enabled_mods 字段解析失败（数据已损坏，已重置为空列表）: {}",
+                    e
+                )),
+            ),
+        },
+    }
 }
 
 /// 设置启用的 mod 列表

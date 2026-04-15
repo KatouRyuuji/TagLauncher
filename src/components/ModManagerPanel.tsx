@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMods } from "../hooks/useMods";
-import { enableModRuntime } from "../lib/modRuntime";
+import { enableModRuntime, reloadModRuntime } from "../lib/modRuntime";
 import type { ModPermission } from "../types/mod";
 
 // 权限标签的友好名称与颜色
@@ -41,12 +41,17 @@ export function ModManagerPanel() {
     }
   };
 
-  // 重载 CSS mod（不重启，仅重新注入 CSS）
-  const handleReloadCss = async (modId: string) => {
+  // 热重载 mod：CSS mod 仅重新注入 CSS；CSS+JS mod 完整禁用后重新启用（含清理回调）
+  const handleReload = async (modId: string) => {
     setReloading(modId);
     try {
       const mod = mods.find((m) => m.id === modId);
-      if (mod) await enableModRuntime(mod);
+      if (!mod) return;
+      if (mod.type === "css+js") {
+        await reloadModRuntime(mod); // 完整清理 + 重新注入
+      } else {
+        await enableModRuntime(mod); // 仅重新注入 CSS（快速）
+      }
     } finally {
       setReloading(null);
     }
@@ -79,7 +84,7 @@ export function ModManagerPanel() {
     <div className="space-y-2">
       {mods.map((mod) => {
         const perms = (mod.permissions ?? []) as ModPermission[];
-        const isCss = mod.type === "css";
+        const canReload = mod.type === "css" || mod.type === "css+js";
 
         return (
           <div
@@ -105,17 +110,17 @@ export function ModManagerPanel() {
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
-                {/* CSS mod 重载按钮 */}
-                {isCss && mod.enabled && (
+                {/* CSS / CSS+JS mod 热重载按钮 */}
+                {canReload && mod.enabled && (
                   <button
-                    onClick={() => void handleReloadCss(mod.id)}
+                    onClick={() => void handleReload(mod.id)}
                     disabled={reloading === mod.id}
                     className="px-2 py-1 rounded-[var(--radius-sm)] text-xs transition-colors"
                     style={{
                       backgroundColor: "var(--bg-hover)",
                       color: reloading === mod.id ? "var(--text-faint)" : "var(--text-muted)",
                     }}
-                    title="重载 CSS（不重启）"
+                    title={mod.type === "css+js" ? "热重载（清理后重新注入）" : "重载 CSS（不重启）"}
                   >
                     {reloading === mod.id ? "…" : "↺"}
                   </button>
