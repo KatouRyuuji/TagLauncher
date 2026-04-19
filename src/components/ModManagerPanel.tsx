@@ -176,8 +176,8 @@ export function ModManagerPanel() {
         const hasDangerPerm = perms.includes("dom");
         return (
           <>
-            <div className="fixed inset-0 z-[250]" style={{ backgroundColor: "var(--overlay-bg)" }} onClick={() => setConfirmJsMod(null)} />
-            <div className="fixed inset-0 z-[251] flex items-center justify-center pointer-events-none">
+            <div className="fixed inset-0" style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-mod-confirm-overlay)" as unknown as number }} onClick={() => setConfirmJsMod(null)} />
+            <div className="fixed inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: "var(--z-mod-confirm-panel)" as unknown as number }}>
               <div
                 className="pointer-events-auto w-[380px] rounded-[var(--radius-xl)] border p-5"
                 style={{
@@ -251,8 +251,8 @@ export function ModManagerPanel() {
 function TypeBadge({ type }: { type: string }) {
   const styles: Record<string, { label: string; color: string; bg: string }> = {
     css:      { label: "CSS",      color: "var(--accent-primary)",  bg: "var(--accent-primary-bg)" },
-    "css+js": { label: "CSS + JS", color: "var(--color-warning)",   bg: "rgba(234,179,8,0.1)" },
-    theme:    { label: "主题",      color: "var(--color-success)",   bg: "rgba(34,197,94,0.1)" },
+    "css+js": { label: "CSS + JS", color: "var(--color-warning)",   bg: "var(--status-warning-bg)" },
+    theme:    { label: "主题",      color: "var(--color-success)",   bg: "var(--status-success-bg)" },
   };
   const s = styles[type] ?? { label: type, color: "var(--text-muted)", bg: "var(--bg-hover)" };
   return (

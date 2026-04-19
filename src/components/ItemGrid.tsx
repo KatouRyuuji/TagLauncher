@@ -31,9 +31,9 @@ export function ItemGrid({ items, tags, cabinets, loading, currentCabinetId, onL
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-3">
+    <div data-region="item-grid" className="flex-1 overflow-y-auto p-3">
       {/* 自适应网格：列宽由主题 --grid-col-min 控制 */}
-      <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(var(--grid-col-min), 1fr))' }}>
+      <div data-region="item-grid-inner" className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(var(--grid-col-min), 1fr))' }}>
         {items.map((item) => (
           <ItemCard
             key={item.id}

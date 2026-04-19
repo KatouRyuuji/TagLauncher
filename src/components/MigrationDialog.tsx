@@ -11,8 +11,8 @@ export function MigrationDialog({ open, appliedMigrations, fromVersion, toVersio
 
   return (
     <>
-      <div className="fixed inset-0 z-[300]" style={{ backgroundColor: "var(--overlay-bg)" }} onClick={onClose} />
-      <div className="fixed inset-0 z-[301] flex items-center justify-center pointer-events-none">
+      <div className="fixed inset-0" style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-migration-overlay)" as unknown as number }} onClick={onClose} />
+      <div className="fixed inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: "var(--z-migration-panel)" as unknown as number }}>
         <div
           className="pointer-events-auto w-[420px] max-w-[90vw] rounded-[var(--radius-xl)] border p-6"
           style={{

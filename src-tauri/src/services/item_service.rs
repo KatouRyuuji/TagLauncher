@@ -1,6 +1,6 @@
 use crate::models::{Item, ItemWithTags};
-use crate::services::tag_service;
 use crate::services::icon_service;
+use crate::services::tag_service;
 use rusqlite::{params, Connection};
 use std::path::Path;
 use tauri::AppHandle;

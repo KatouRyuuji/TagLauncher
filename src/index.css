@@ -50,11 +50,51 @@
     --bg-gradient: none;
     --card-backdrop-filter: none;
     --sidebar-backdrop-filter: none;
+    --welcome-accent-gradient: radial-gradient(circle_at_85%_12%, rgba(56, 189, 248, 0.18), transparent 38%);
+    --media-caption-gradient: linear-gradient(to top, rgba(0, 0, 0, 0.65), transparent);
+    --status-warning-bg: rgba(234, 179, 8, 0.1);
+    --status-success-bg: rgba(34, 197, 94, 0.1);
+    --tag-preset-colors: #ef4444,#f97316,#eab308,#22c55e,#14b8a6,#3b82f6,#8b5cf6,#ec4899;
 
     /* ===== Layout ===== */
     --sidebar-width: 208px;   /* 侧边栏宽度，主题可覆盖 */
     --grid-col-min: 170px;    /* 网格视图最小列宽，主题可覆盖 */
     --header-height: 56px;
+
+    /* ===== Z-Index Layers ===== */
+    --z-bg-decoration: 0;
+    --z-context-overlay: 99;
+    --z-context-menu: 100;
+    --z-context-submenu: 110;
+    --z-drag-ghost: 120;
+    --z-welcome-modal: 120;
+    --z-floating-panel: 150;
+    --z-settings-overlay: 200;
+    --z-settings-panel: 201;
+    --z-mod-confirm-overlay: 250;
+    --z-mod-confirm-panel: 251;
+    --z-migration-overlay: 300;
+    --z-migration-panel: 301;
+    --z-toast: 500;
+
+    /* ===== Interaction Details ===== */
+    --drag-ghost-offset-x: 14px;
+    --drag-ghost-offset-y: 14px;
+    --tag-color-alpha: 20%;
+    --tag-selected-alpha: 28%;
+    --tag-muted-alpha: 12%;
+    --tag-selected-border-alpha: 66%;
+    --border-width: 1px;
+    --border-style: solid;
+
+    /* ===== Panel UI ===== */
+    --panel-floating-min-width: 280px;
+    --panel-floating-min-height: 200px;
+    --panel-floating-border-radius: var(--radius-lg);
+    --panel-titlebar-height: 36px;
+    --panel-titlebar-bg: var(--bg-surface);
+    --panel-body-bg: var(--bg-elevated);
+    --panel-border-color: var(--border-default);
 
     /* ===== Colors ===== */
     --bg-base: #0a0a0a;
@@ -73,6 +113,7 @@
     --text-faint: rgba(255, 255, 255, 0.25);
     --text-ghost: rgba(255, 255, 255, 0.2);
     --text-placeholder: rgba(255, 255, 255, 0.3);
+    --text-invert: #0a0a0a;
     --border-subtle: rgba(255, 255, 255, 0.06);
     --border-default: rgba(255, 255, 255, 0.1);
     --border-medium: rgba(255, 255, 255, 0.14);
@@ -201,5 +242,47 @@
   .overlay-blur {
     backdrop-filter: var(--card-backdrop-filter);
     -webkit-backdrop-filter: var(--card-backdrop-filter);
+  }
+
+  /* ── Mod Panel 浮动窗口基础样式 ────────────────────────────── */
+  .mod-panel-floating {
+    position: fixed;
+    min-width: var(--panel-floating-min-width);
+    min-height: var(--panel-floating-min-height);
+    border-radius: var(--panel-floating-border-radius);
+    border: var(--border-width) var(--border-style) var(--panel-border-color);
+    background-color: var(--panel-body-bg);
+    box-shadow: var(--shadow-overlay);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .mod-panel-titlebar {
+    height: var(--panel-titlebar-height);
+    background-color: var(--panel-titlebar-bg);
+    border-bottom: var(--border-width) var(--border-style) var(--panel-border-color);
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    gap: 8px;
+    cursor: move;
+    user-select: none;
+    flex-shrink: 0;
+  }
+
+  .mod-panel-body {
+    flex: 1;
+    overflow: auto;
+    padding: 8px;
+  }
+
+  .mod-panel-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 14px;
+    height: 14px;
+    cursor: se-resize;
   }
 }

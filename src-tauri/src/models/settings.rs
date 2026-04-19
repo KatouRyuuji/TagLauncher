@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// 应用设置
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -25,13 +26,19 @@ pub struct ThemeDefinition {
     pub author: String,
     #[serde(default)]
     pub version: String,
-    pub variables: std::collections::HashMap<String, String>,
+    pub variables: HashMap<String, String>,
     /// 是否为内置预设主题
-    #[serde(default)]
+    #[serde(default, alias = "isPreset")]
     pub is_preset: bool,
     /// 原始 CSS 注入字符串（用于变量无法覆盖的深度定制）
     #[serde(default)]
     pub css: Option<String>,
+    /// 主题来源：preset / custom / mod
+    #[serde(default)]
+    pub source: Option<String>,
+    /// 对应文件名（仅自定义主题有值）
+    #[serde(default, alias = "fileName")]
+    pub file_name: Option<String>,
 }
 
 /// Mod 清单
@@ -103,6 +110,36 @@ pub struct CustomThemesResult {
 pub struct ThemeLoadError {
     pub file_name: String,
     pub error: String,
+}
+
+/// 主题校验项
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ThemeValidationIssue {
+    pub level: String,
+    pub message: String,
+}
+
+/// 导入主题结果
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ThemeInstallResult {
+    pub theme: ThemeDefinition,
+    pub replaced: bool,
+    pub file_path: String,
+    pub validation_issues: Vec<ThemeValidationIssue>,
+}
+
+/// 导出主题内容
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ThemeExportPayload {
+    pub theme: ThemeDefinition,
+    pub file_name: String,
+    pub json: String,
+}
+
+/// 主题目录信息
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ThemeDirectoryInfo {
+    pub themes_dir: String,
 }
 
 /// 迁移结果

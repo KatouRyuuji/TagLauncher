@@ -6,7 +6,9 @@ use rusqlite::Connection;
 pub trait Migration {
     fn version(&self) -> u32;
     fn description(&self) -> &str;
-    fn is_breaking(&self) -> bool { false }
+    fn is_breaking(&self) -> bool {
+        false
+    }
     fn up(&self, conn: &Connection) -> Result<(), rusqlite::Error>;
 }
 
@@ -47,9 +49,7 @@ fn set_schema_version(conn: &Connection, version: u32) -> Result<(), rusqlite::E
 
 /// 运行所有待执行的迁移
 pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
-    let migrations: Vec<Box<dyn Migration>> = vec![
-        Box::new(v001_baseline::V001Baseline),
-    ];
+    let migrations: Vec<Box<dyn Migration>> = vec![Box::new(v001_baseline::V001Baseline)];
 
     let current_version = get_schema_version(conn);
 

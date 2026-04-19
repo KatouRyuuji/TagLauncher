@@ -22,6 +22,7 @@ import {
   registerModApiVersion,
   callModCleanup,
 } from "./modApi";
+import { destroyAllForMod } from "./panelRegistry";
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
 
@@ -164,6 +165,9 @@ export async function enableModRuntime(mod: ModInfo): Promise<void> {
 /** 禁用单个 mod：移除注入的 CSS/JS（等待异步清理），通知主题删除 */
 export async function disableModRuntime(mod: ModInfo): Promise<void> {
   const { id, type, entrypoints } = mod;
+
+  // 先销毁该 mod 创建的所有 Panel（避免 mod 清理函数中仍操作已销毁的容器）
+  destroyAllForMod(id);
 
   if (type === "css" || type === "css+js") {
     if (entrypoints.css) removeCss(id);

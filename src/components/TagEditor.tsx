@@ -13,12 +13,7 @@
 
 import { useState } from "react";
 import type { Tag } from "../types";
-
-/** 8 种预设颜色 */
-const PRESET_COLORS = [
-  "#ef4444", "#f97316", "#eab308", "#22c55e",
-  "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899",
-];
+import { getThemeTagPresetColors } from "../lib/tagColors";
 
 interface TagEditorProps {
   tag: Tag | null;                                    // null = 新建模式，非 null = 编辑模式
@@ -29,8 +24,9 @@ interface TagEditorProps {
 }
 
 export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: TagEditorProps) {
+  const presetColors = getThemeTagPresetColors();
   const [name, setName] = useState(tag?.name || "");
-  const [color, setColor] = useState(tag?.color || PRESET_COLORS[5]);  // 默认蓝色
+  const [color, setColor] = useState(tag?.color || presetColors[5] || presetColors[0]);  // 默认蓝色
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -64,7 +60,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
           />
           {/* 颜色选择器：8 个预设颜色圆点 */}
           <div className="flex gap-2 mb-5 flex-wrap">
-            {PRESET_COLORS.map((c) => (
+            {presetColors.map((c) => (
               <button
                 key={c}
                 type="button"

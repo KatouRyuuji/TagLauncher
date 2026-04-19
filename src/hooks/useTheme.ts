@@ -1,112 +1,205 @@
-import { useState, useEffect, useCallback } from "react";
-import type { ThemeDefinition } from "../types/theme";
-import { presetThemes, getPresetTheme, getDefaultTheme } from "../themes";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import type {
+  ThemeDefinition,
+  ThemeDirectoryInfo,
+  ThemeExportPayload,
+  ThemeInstallResult,
+} from "../types/theme";
+import {
+  presetThemes,
+  getPresetTheme,
+  getDefaultTheme,
+  toExportableTheme,
+  withDefaultThemeVariables,
+} from "../themes";
 import { applyTheme } from "../lib/theme";
 import { notifyThemeChange } from "../lib/modApi";
 import * as db from "../lib/db";
 
-// ── 自定义事件类型（modRuntime 用来通知 theme mod 的增删）─────────────
 export const MOD_THEME_ADDED = "mod-theme-added";
 export const MOD_THEME_REMOVED = "mod-theme-removed";
 
+function showToast(message: string, type: "info" | "success" | "error" | "warning" = "info") {
+  window.dispatchEvent(
+    new CustomEvent("taglauncher-toast", {
+      detail: { message, type },
+    }),
+  );
+}
+
+function normalizeTheme(theme: ThemeDefinition, source: ThemeDefinition["source"]): ThemeDefinition {
+  const normalized = withDefaultThemeVariables(theme);
+  return {
+    ...normalized,
+    isPreset: source === "preset",
+    source,
+  };
+}
+
 export function useTheme() {
-  const [currentTheme, setCurrentThemeState] = useState<ThemeDefinition>(getDefaultTheme());
+  const [currentThemeId, setCurrentThemeId] = useState(getDefaultTheme().id);
   const [customThemes, setCustomThemes] = useState<ThemeDefinition[]>([]);
   const [modThemes, setModThemes] = useState<ThemeDefinition[]>([]);
+  const [themeDirectoryInfo, setThemeDirectoryInfo] = useState<ThemeDirectoryInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const desiredThemeIdRef = useRef(getDefaultTheme().id);
+  const customThemesRef = useRef<ThemeDefinition[]>([]);
+  const loadErrorSignatureRef = useRef("");
 
-  // 合并所有来源的主题列表（预设 + 自定义文件 + mod 提供）
-  const availableThemes = [...presetThemes, ...customThemes, ...modThemes];
-
-  // 从任意来源查找主题
-  const findTheme = useCallback(
-    (id: string): ThemeDefinition | undefined =>
-      presetThemes.find((t) => t.id === id) ??
-      customThemes.find((t) => t.id === id) ??
-      modThemes.find((t) => t.id === id),
+  const availableThemes = useMemo(
+    () => [
+      ...presetThemes.map((theme) => normalizeTheme(theme, "preset")),
+      ...customThemes.map((theme) => normalizeTheme(theme, "custom")),
+      ...modThemes.map((theme) => normalizeTheme(theme, "mod")),
+    ],
     [customThemes, modThemes],
   );
 
-  // 初始化：加载持久化主题 ID + 自定义主题文件
+  const findTheme = useCallback(
+    (id: string): ThemeDefinition | undefined => availableThemes.find((theme) => theme.id === id),
+    [availableThemes],
+  );
+
+  const currentTheme = useMemo(
+    () => findTheme(currentThemeId) ?? getDefaultTheme(),
+    [currentThemeId, findTheme],
+  );
+
+  const applyAndBroadcast = useCallback((theme: ThemeDefinition) => {
+    const normalized = normalizeTheme(theme, theme.source ?? (theme.isPreset ? "preset" : "custom"));
+    applyTheme(normalized);
+    notifyThemeChange(normalized.id);
+  }, []);
+
+  const syncCurrentTheme = useCallback(
+    async (nextThemeId: string, persist = false) => {
+      desiredThemeIdRef.current = nextThemeId;
+      const theme = findTheme(nextThemeId) ?? getDefaultTheme();
+      setCurrentThemeId(theme.id);
+      applyAndBroadcast(theme);
+      if (persist) {
+        try {
+          await db.setCurrentTheme(theme.id);
+        } catch {
+          // 静默失败
+        }
+      }
+    },
+    [applyAndBroadcast, findTheme],
+  );
+
+  const refreshCustomThemes = useCallback(async () => {
+    try {
+      const [result, directoryInfo] = await Promise.all([
+        db.getCustomThemes(),
+        db.getThemeDirectoryInfo().catch(() => null),
+      ]);
+
+      for (const err of result.errors) {
+        showToast(`自定义主题 "${err.file_name}" 加载失败：${err.error}`, "error");
+      }
+      loadErrorSignatureRef.current = JSON.stringify(result.errors);
+
+      const themes = result.themes.map((theme) => normalizeTheme(theme, "custom"));
+      customThemesRef.current = themes;
+      setCustomThemes(themes);
+      if (directoryInfo) {
+        setThemeDirectoryInfo(directoryInfo);
+      }
+
+      const desired = desiredThemeIdRef.current;
+      const desiredTheme =
+        presetThemes.find((theme) => theme.id === desired) ??
+        themes.find((theme) => theme.id === desired) ??
+        modThemes.find((theme) => theme.id === desired);
+
+      if (desiredTheme) {
+        setCurrentThemeId(desiredTheme.id);
+        applyAndBroadcast(desiredTheme);
+      } else if (currentThemeId === desired) {
+        const fallback = getDefaultTheme();
+        setCurrentThemeId(fallback.id);
+        applyAndBroadcast(fallback);
+        void db.setCurrentTheme(fallback.id).catch(() => {});
+      }
+    } catch {
+      // 静默失败
+    }
+  }, [applyAndBroadcast, currentThemeId, modThemes]);
+
+  useEffect(() => {
+    customThemesRef.current = customThemes;
+  }, [customThemes]);
+
   useEffect(() => {
     const init = async () => {
       try {
-        // 并行加载
-        const [themeId, customsResult] = await Promise.all([
-          db.getCurrentTheme().catch(() => "dark"),
+        const [themeId, customResult, directoryInfo] = await Promise.all([
+          db.getCurrentTheme().catch(() => getDefaultTheme().id),
           db.getCustomThemes().catch(() => ({ themes: [] as ThemeDefinition[], errors: [] })),
+          db.getThemeDirectoryInfo().catch(() => null),
         ]);
 
-        // 有加载错误时逐条 toast 提示
-        for (const err of customsResult.errors) {
-          window.dispatchEvent(
-            new CustomEvent("taglauncher-toast", {
-              detail: {
-                message: `自定义主题 "${err.file_name}" 加载失败：${err.error}`,
-                type: "error",
-              },
-            }),
-          );
+        for (const err of customResult.errors) {
+          showToast(`自定义主题 "${err.file_name}" 加载失败：${err.error}`, "error");
+        }
+        loadErrorSignatureRef.current = JSON.stringify(customResult.errors);
+
+        const customs = customResult.themes.map((theme) => normalizeTheme(theme, "custom"));
+        customThemesRef.current = customs;
+        setCustomThemes(customs);
+        if (directoryInfo) {
+          setThemeDirectoryInfo(directoryInfo);
         }
 
-        setCustomThemes(customsResult.themes);
-
-        // 在预设 + 自定义中查找，找不到则用默认
-        const allThemes = [...presetThemes, ...customsResult.themes];
-        const theme = allThemes.find((t) => t.id === themeId) ?? getDefaultTheme();
-        setCurrentThemeState(theme);
-        applyTheme(theme);
+        desiredThemeIdRef.current = themeId;
+        const theme =
+          presetThemes.find((preset) => preset.id === themeId) ??
+          customs.find((custom) => custom.id === themeId) ??
+          getDefaultTheme();
+        setCurrentThemeId(theme.id);
+        applyAndBroadcast(theme);
       } catch {
-        applyTheme(getDefaultTheme());
+        applyAndBroadcast(getDefaultTheme());
       } finally {
         setLoading(false);
       }
     };
     void init();
-  }, []);
+  }, [applyAndBroadcast]);
 
-  // 监听 modRuntime 发出的 mod 主题增删事件
   useEffect(() => {
     const handleAdded = (e: Event) => {
-      const theme = (e as CustomEvent<ThemeDefinition>).detail;
-
-      // 冲突检测：mod 主题 id 与预设或自定义主题重复时拒绝（不允许覆盖）
-      const conflictsPreset = presetThemes.some((t) => t.id === theme.id);
-      const conflictsCustom = customThemes.some((t) => t.id === theme.id);
-      if (conflictsPreset || conflictsCustom) {
-        const kind = conflictsPreset ? "内置预设" : "自定义文件";
-        console.error(`[useTheme] Mod 主题 ID "${theme.id}" 与${kind}主题冲突，已拒绝加载`);
-        window.dispatchEvent(
-          new CustomEvent("taglauncher-toast", {
-            detail: {
-              message: `Mod 主题 ID "${theme.id}" 与${kind}主题冲突，已拒绝加载。请修改 mod 主题的 id 字段。`,
-              type: "error",
-            },
-          }),
-        );
-        return; // 拒绝：不将冲突主题加入可用列表
+      const theme = normalizeTheme((e as CustomEvent<ThemeDefinition>).detail, "mod");
+      const conflictWithPreset = presetThemes.some((t) => t.id === theme.id);
+      const conflictWithCustom = customThemesRef.current.some((t) => t.id === theme.id);
+      if (conflictWithPreset || conflictWithCustom) {
+        const kind = conflictWithPreset ? "内置预设" : "自定义文件";
+        showToast(`Mod 主题 ID "${theme.id}" 与${kind}主题冲突，已拒绝加载。`, "error");
+        return;
       }
 
-      // 同一 mod 重复注册（如热重载）：更新已有条目
       setModThemes((prev) => {
         const exists = prev.some((t) => t.id === theme.id);
-        return exists ? prev.map((t) => (t.id === theme.id ? theme : t)) : [...prev, theme];
+        const next = exists ? prev.map((t) => (t.id === theme.id ? theme : t)) : [...prev, theme];
+        if (desiredThemeIdRef.current === theme.id) {
+          setCurrentThemeId(theme.id);
+          applyAndBroadcast(theme);
+        }
+        return next;
       });
     };
 
     const handleRemoved = (e: Event) => {
       const themeId = (e as CustomEvent<string>).detail;
-      setModThemes((prev) => prev.filter((t) => t.id !== themeId));
-      // 如果当前正在使用被移除的 mod 主题，回退到默认
-      setCurrentThemeState((current) => {
-        if (current.id === themeId) {
-          const fallback = getPresetTheme("dark") ?? getDefaultTheme();
-          applyTheme(fallback);
-          void db.setCurrentTheme(fallback.id).catch(() => {});
-          return fallback;
-        }
-        return current;
-      });
+      setModThemes((prev) => prev.filter((theme) => theme.id !== themeId));
+      if (desiredThemeIdRef.current === themeId || currentThemeId === themeId) {
+        const fallback = getPresetTheme("dark") ?? getDefaultTheme();
+        desiredThemeIdRef.current = fallback.id;
+        setCurrentThemeId(fallback.id);
+        applyAndBroadcast(fallback);
+        void db.setCurrentTheme(fallback.id).catch(() => {});
+      }
     };
 
     window.addEventListener(MOD_THEME_ADDED, handleAdded);
@@ -115,41 +208,26 @@ export function useTheme() {
       window.removeEventListener(MOD_THEME_ADDED, handleAdded);
       window.removeEventListener(MOD_THEME_REMOVED, handleRemoved);
     };
-  }, [customThemes]);
+  }, [applyAndBroadcast, currentThemeId]);
 
   const setTheme = useCallback(
     async (themeId: string) => {
-      const theme = findTheme(themeId) ?? getDefaultTheme();
-      setCurrentThemeState(theme);
-      applyTheme(theme);
-      notifyThemeChange(themeId);
-      try {
-        await db.setCurrentTheme(themeId);
-      } catch {
-        // 静默失败
-      }
+      await syncCurrentTheme(themeId, true);
     },
-    [findTheme],
+    [syncCurrentTheme],
   );
 
-  /** 重新扫描 themes/ 目录（用户安装新主题后可手动刷新） */
-  const refreshCustomThemes = useCallback(async () => {
-    try {
-      const result = await db.getCustomThemes();
-      for (const err of result.errors) {
-        window.dispatchEvent(
-          new CustomEvent("taglauncher-toast", {
-            detail: {
-              message: `自定义主题 "${err.file_name}" 加载失败：${err.error}`,
-              type: "error",
-            },
-          }),
-        );
-      }
-      setCustomThemes(result.themes);
-    } catch {
-      // 静默失败
+  const importTheme = useCallback(async (sourcePath: string): Promise<ThemeInstallResult> => {
+    const result = await db.installThemeFile(sourcePath);
+    for (const issue of result.validation_issues) {
+      showToast(`主题 "${result.theme.name}"：${issue.message}`, issue.level);
     }
+    await refreshCustomThemes();
+    return result;
+  }, [refreshCustomThemes]);
+
+  const exportTheme = useCallback(async (theme: ThemeDefinition, targetPath: string): Promise<ThemeExportPayload> => {
+    return db.exportThemeFile(toExportableTheme(theme), targetPath);
   }, []);
 
   return {
@@ -158,5 +236,8 @@ export function useTheme() {
     setTheme,
     loading,
     refreshCustomThemes,
+    importTheme,
+    exportTheme,
+    themeDirectoryInfo,
   };
 }

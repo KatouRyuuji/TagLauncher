@@ -74,8 +74,12 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: Ite
                         : "border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]"
                     }`}
                     style={{
-                      backgroundColor: selected ? `${tag.color}28` : `${tag.color}12`,
-                      borderColor: selected ? `${tag.color}66` : undefined,
+                      backgroundColor: selected
+                        ? `color-mix(in srgb, ${tag.color} var(--tag-selected-alpha), transparent)`
+                        : `color-mix(in srgb, ${tag.color} var(--tag-muted-alpha), transparent)`,
+                      borderColor: selected
+                        ? `color-mix(in srgb, ${tag.color} var(--tag-selected-border-alpha), transparent)`
+                        : undefined,
                     }}
                   >
                     <span

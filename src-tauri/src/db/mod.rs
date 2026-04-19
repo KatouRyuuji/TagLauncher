@@ -1,5 +1,5 @@
 pub mod connection;
-pub mod schema;
 pub mod migrations;
+pub mod schema;
 
 pub use connection::Database;

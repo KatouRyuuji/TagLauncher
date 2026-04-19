@@ -1,5 +1,5 @@
-use rusqlite::Connection;
 use super::Migration;
+use rusqlite::Connection;
 
 /// 基线迁移：确保从旧版本升级的数据库兼容新 schema
 ///
@@ -8,8 +8,12 @@ use super::Migration;
 pub struct V001Baseline;
 
 impl Migration for V001Baseline {
-    fn version(&self) -> u32 { 1 }
-    fn description(&self) -> &str { "Baseline: ensure icon_path, is_favorite, image type" }
+    fn version(&self) -> u32 {
+        1
+    }
+    fn description(&self) -> &str {
+        "Baseline: ensure icon_path, is_favorite, image type"
+    }
 
     fn up(&self, conn: &Connection) -> Result<(), rusqlite::Error> {
         // 1. 确保 icon_path 列存在

@@ -72,7 +72,7 @@ export function SearchBar({ onAddItem, onRefresh, onOpenAbout, onOpenSettings }:
   };
 
   return (
-    <header className="px-5 py-3 border-b border-[var(--border-subtle)] flex items-center gap-3 bg-[var(--bg-base)]">
+    <header data-region="searchbar" className="px-5 py-3 border-b border-[var(--border-subtle)] flex items-center gap-3 bg-[var(--bg-base)]">
       {/* 搜索模式切换按钮组 */}
       <div className="flex bg-[var(--bg-hover)] rounded-[var(--radius-lg)] border border-[var(--border-subtle)] p-0.5">
         {MODES.map((m) => (

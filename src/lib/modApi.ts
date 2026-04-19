@@ -25,6 +25,8 @@
 import * as db from "./db";
 import type { Item, ItemWithTags, Tag, Cabinet } from "../types";
 import type { ModPermission } from "../types/mod";
+import type { PanelOptions, PanelHandle } from "../types/panel";
+import { requestPanel } from "./panelRegistry";
 
 type ToastType = "info" | "success" | "error" | "warning";
 
@@ -73,6 +75,12 @@ interface ModScope {
   notify(message: string, type?: ToastType): void;
   /** 注册 mod 被禁用时的清理回调（推荐始终注册，避免内存泄漏；支持返回 Promise） */
   onDisable(cb: () => void | Promise<void>): void;
+  /**
+   * 在应用内创建 UI 面板。需要 "dom" 权限。
+   * 返回 Promise<PanelHandle>，React 挂载容器后 resolve。
+   * handle.container 是内容 div，可直接写入 innerHTML 或 appendChild。
+   */
+  createPanel(id: string, options: PanelOptions): Promise<PanelHandle>;
 }
 
 interface TagLauncherModApi {
@@ -112,7 +120,7 @@ interface TagLauncherModApi {
 }
 
 // ── 当前 API 版本 ────────────────────────────────────────────────────────
-const API_VERSION = "2.2.0";
+const API_VERSION = "3.0.0";
 
 // ── 内部监听器集合 ────────────────────────────────────────────────────────
 
@@ -382,6 +390,11 @@ function createScope(modId: string): ModScope {
 
     // 清理回调注册
     onDisable: (cb: () => void | Promise<void>) => registerModCleanup(modId, cb),
+
+    // Panel API（需要 "dom" 权限）
+    createPanel: guarded("dom", "createPanel", (id: string, opts: PanelOptions) =>
+      requestPanel(modId, id, opts)
+    ),
   };
 }
 

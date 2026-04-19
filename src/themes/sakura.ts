@@ -76,6 +76,11 @@ export const sakuraTheme: ThemeDefinition = {
     ].join(", "),
     "card-backdrop-filter": "none",      // 浅色主题不需要毛玻璃（避免奇怪效果）
     "sidebar-backdrop-filter": "none",
+    "welcome-accent-gradient": "radial-gradient(circle at 85% 12%, rgba(194,65,111,0.16), transparent 38%)",
+    "media-caption-gradient": "linear-gradient(to top, rgba(61,30,53,0.54), transparent)",
+    "status-warning-bg": "rgba(184,121,40,0.1)",
+    "status-success-bg": "rgba(46,125,82,0.1)",
+    "tag-preset-colors": "#c4334c,#d96a4d,#b87928,#2e7d52,#2a9d8f,#4f7cff,#a05bc1,#c2416f",
 
     // ── Layout ──────────────────────────────────────────────
     "sidebar-width": "208px",
@@ -130,5 +135,40 @@ export const sakuraTheme: ThemeDefinition = {
     // 滚动条（粉色调）
     "scrollbar-thumb":       "rgba(194,65,111,0.22)",
     "scrollbar-thumb-hover": "rgba(194,65,111,0.45)",
+
+    // ── Z-Index Layers ──────────────────────────────────────────
+    "z-bg-decoration":       "0",
+    "z-context-overlay":     "99",
+    "z-context-menu":        "100",
+    "z-context-submenu":     "110",
+    "z-drag-ghost":          "120",
+    "z-welcome-modal":       "120",
+    "z-floating-panel":      "150",
+    "z-settings-overlay":    "200",
+    "z-settings-panel":      "201",
+    "z-mod-confirm-overlay": "250",
+    "z-mod-confirm-panel":   "251",
+    "z-migration-overlay":   "300",
+    "z-migration-panel":     "301",
+    "z-toast":               "500",
+
+    // ── Interaction Details ──────────────────────────────────────
+    "drag-ghost-offset-x": "14px",
+    "drag-ghost-offset-y": "14px",
+    "tag-color-alpha":     "18%",   // 樱花主题略浅，与粉底色搭配
+    "tag-selected-alpha":  "26%",
+    "tag-muted-alpha":     "10%",
+    "tag-selected-border-alpha": "60%",
+    "border-width":        "1px",
+    "border-style":        "solid",
+
+    // ── Panel UI（樱花主题更大圆角）────────────────────────────
+    "panel-floating-min-width":    "280px",
+    "panel-floating-min-height":   "200px",
+    "panel-floating-border-radius":"var(--radius-xl)",
+    "panel-titlebar-height":       "38px",
+    "panel-titlebar-bg":           "var(--bg-surface)",
+    "panel-body-bg":               "var(--bg-elevated)",
+    "panel-border-color":          "var(--border-default)",
   },
 };

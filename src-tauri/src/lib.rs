@@ -136,6 +136,9 @@ pub fn run() {
             get_setting,
             set_setting,
             get_custom_themes,
+            get_theme_directory_info,
+            install_theme_file,
+            export_theme_file,
             // Mod
             get_mods,
             get_mod_load_errors,

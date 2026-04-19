@@ -15,7 +15,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Item, Tag, ItemWithTags, Cabinet } from "../types";
 import type { ModInfo, ModLoadError } from "../types/mod";
-import type { CustomThemesResult } from "../types/theme";
+import type {
+  CustomThemesResult,
+  ThemeDefinition,
+  ThemeDirectoryInfo,
+  ThemeExportPayload,
+  ThemeInstallResult,
+} from "../types/theme";
 
 // ---- 项目操作 ----
 
@@ -166,6 +172,21 @@ export async function getMods(): Promise<ModInfo[]> {
 /** 获取自定义 JSON 主题列表（含加载错误） */
 export async function getCustomThemes(): Promise<CustomThemesResult> {
   return invoke("get_custom_themes");
+}
+
+/** 获取应用主题目录信息 */
+export async function getThemeDirectoryInfo(): Promise<ThemeDirectoryInfo> {
+  return invoke("get_theme_directory_info");
+}
+
+/** 导入主题 JSON 文件到应用主题目录 */
+export async function installThemeFile(sourcePath: string): Promise<ThemeInstallResult> {
+  return invoke("install_theme_file", { sourcePath });
+}
+
+/** 导出主题到指定路径 */
+export async function exportThemeFile(theme: ThemeDefinition, targetPath: string): Promise<ThemeExportPayload> {
+  return invoke("export_theme_file", { theme, targetPath });
 }
 
 /** 获取启动时收集的 mod 加载错误 */

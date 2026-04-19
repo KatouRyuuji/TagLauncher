@@ -31,7 +31,7 @@ export function ItemListView({ items, tags, cabinets, loading, currentCabinetId,
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div data-region="item-list" className="flex-1 overflow-y-auto">
       {/* 固定表头（sticky） */}
       <div className="flex items-center gap-3 px-4 py-2 text-[14px] font-medium text-[var(--text-faint)] uppercase tracking-wide border-b border-[var(--border-subtle)] bg-[var(--bg-card)] sticky top-0">
         <span className="w-7" />

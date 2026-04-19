@@ -108,7 +108,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
           className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full cursor-grab active:cursor-grabbing transition-all group/tag ${
             dragIdx === idx ? "opacity-40" : ""
           } ${overIdx === idx && dragIdx !== null && dragIdx !== idx ? "ring-1 ring-[var(--accent-primary)]" : ""}`}
-          style={{ backgroundColor: tag.color + "33", color: tag.color }}
+          style={{ backgroundColor: `color-mix(in srgb, ${tag.color} var(--tag-color-alpha, 20%), transparent)`, color: tag.color }}
         >
           {tag.name}
           <button

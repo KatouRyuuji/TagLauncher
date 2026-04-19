@@ -51,7 +51,7 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[500] flex flex-col gap-2 pointer-events-none">
+    <div className="fixed bottom-4 right-4 flex flex-col gap-2 pointer-events-none" style={{ zIndex: "var(--z-toast)" as unknown as number }}>
       {toasts.map((toast) => (
         <div
           key={toast.id}

@@ -16,7 +16,7 @@ export function TagFilterBar() {
   if (tags.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-1.5 px-4 py-2 border-b border-[var(--border-subtle)] overflow-x-auto shrink-0">
+    <div data-region="filterbar" className="flex items-center gap-1.5 px-4 py-2 border-b border-[var(--border-subtle)] overflow-x-auto shrink-0">
       {/* "全部"按钮：清空标签选择 */}
       <button
         onClick={() => setSelectedTagIds([])}

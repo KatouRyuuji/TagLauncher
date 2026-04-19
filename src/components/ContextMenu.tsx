@@ -44,13 +44,13 @@ export function ContextMenu({
     position: "fixed",
     left: position.x,
     top: position.y,
-    zIndex: 100,
+    zIndex: "var(--z-context-menu)" as unknown as number,
   });
   const [submenuStyle, setSubmenuStyle] = useState<React.CSSProperties>({
     position: "fixed",
     left: -9999,
     top: -9999,
-    zIndex: 110,
+    zIndex: "var(--z-context-submenu)" as unknown as number,
   });
 
   const updateMenuPosition = useCallback(() => {
@@ -73,7 +73,7 @@ export function ContextMenu({
       position: "fixed",
       left: nextLeft,
       top: nextTop,
-      zIndex: 100,
+      zIndex: "var(--z-context-menu)" as unknown as number,
     });
 
     const rightSpace = window.innerWidth - (nextLeft + rect.width);
@@ -130,7 +130,7 @@ export function ContextMenu({
       position: "fixed",
       left,
       top,
-      zIndex: 110,
+      zIndex: "var(--z-context-submenu)" as unknown as number,
     });
   }, [cabinets.length]);
 
@@ -139,7 +139,7 @@ export function ContextMenu({
       position: "fixed",
       left: position.x,
       top: position.y,
-      zIndex: 100,
+      zIndex: "var(--z-context-menu)" as unknown as number,
     });
     const id = window.requestAnimationFrame(updateMenuPosition);
     return () => window.cancelAnimationFrame(id);
@@ -195,7 +195,7 @@ export function ContextMenu({
 
   return (
     <>
-      <div className="fixed inset-0 z-[99]" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
+      <div className="fixed inset-0" style={{ zIndex: "var(--z-context-overlay)" as unknown as number }} onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
 
       <div ref={menuRef} style={{ ...style, boxShadow: 'var(--shadow-dropdown)' }} className="bg-[var(--bg-overlay)] border border-[var(--border-default)] rounded-[var(--radius-md)] py-0.5 w-[168px] max-w-[46vw] max-h-[70vh] overflow-y-auto text-[13px]">
         <button onClick={() => { onLaunch(); onClose(); }} className="w-full text-left px-2.5 py-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors">

@@ -1,15 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 import {
   shouldSuppressInternalDragClick,
   useInternalDragStore,
 } from "../stores/internalDragStore";
 import type { Tag, Cabinet } from "../types";
+import type { PanelDescriptor } from "../types/panel";
 import { TagEditor } from "./TagEditor";
 import {
   beginInternalPointerDrag,
   findClosestNumberDataAttribute,
 } from "../lib/internalPointerDrag";
+import { resolvePanel, firePanelEvent } from "../lib/panelRegistry";
 
 interface SidebarProps {
   tags: Tag[];
@@ -21,6 +23,8 @@ interface SidebarProps {
   onUpdateCabinet: (id: number, name: string, color: string) => Promise<void>;
   onRemoveCabinet: (id: number) => Promise<void>;
   onAddTagToItem: (itemId: number, tagId: number) => Promise<void>;
+  /** mod 创建的 sidebar 面板列表 */
+  modPanels?: PanelDescriptor[];
 }
 
 export function Sidebar({
@@ -33,6 +37,7 @@ export function Sidebar({
   onUpdateCabinet,
   onRemoveCabinet,
   onAddTagToItem,
+  modPanels = [],
 }: SidebarProps) {
   const {
     selectedTagIds,
@@ -106,14 +111,15 @@ export function Sidebar({
 
   return (
     <aside
+      data-region="sidebar"
       className="bg-[var(--bg-surface)] border-r border-[var(--border-subtle)] flex flex-col shrink-0"
       style={{ width: 'var(--sidebar-width)', backdropFilter: 'var(--sidebar-backdrop-filter)' }}
     >
-      <div className="px-4 py-3 border-b border-[var(--border-subtle)]">
+      <div data-region="sidebar-header" className="px-4 py-3 border-b border-[var(--border-subtle)]">
         <h1 className="text-base font-semibold text-[var(--text-primary)] tracking-tight">TagLauncher</h1>
       </div>
 
-      <div className="flex bg-[var(--bg-card)] border-b border-[var(--border-subtle)]">
+      <div data-region="sidebar-tabs" className="flex bg-[var(--bg-card)] border-b border-[var(--border-subtle)]">
         <button
           onClick={() => setSidebarTab("tags")}
           className={`flex-1 py-2.5 text-sm font-medium transition-all border-b-2 ${
@@ -142,7 +148,7 @@ export function Sidebar({
         </div>
       )}
 
-      <nav className="flex-1 overflow-y-auto px-2 py-2">
+      <nav data-region="sidebar-nav" className="flex-1 overflow-y-auto px-2 py-2">
         {visibleSection === "tags" && (
           <>
             <button
@@ -289,7 +295,18 @@ export function Sidebar({
         )}
       </nav>
 
-      <div className="px-3 py-2.5 border-t border-[var(--border-subtle)]">
+      {/* Mod Panel 扩展槽 */}
+      {modPanels.filter((p) => p.visible !== false).length > 0 && (
+        <div data-region="sidebar-panels" className="border-t border-[var(--border-subtle)]">
+          {modPanels
+            .filter((p) => p.visible !== false)
+            .map((panel) => (
+              <SidebarPanelSlot key={panel.id} panel={panel} />
+            ))}
+        </div>
+      )}
+
+      <div data-region="sidebar-footer" className="px-3 py-2.5 border-t border-[var(--border-subtle)]">
         <p className="text-xs text-[var(--text-faint)] text-center">
           {activeDrag?.kind === "item"
             ? "释放到收藏夹或文件柜即可完成归档"
@@ -344,5 +361,66 @@ export function Sidebar({
         />
       )}
     </aside>
+  );
+}
+
+// ── Sidebar Panel 槽（折叠/展开 + 内容容器）────────────────────────────
+
+function SidebarPanelSlot({ panel }: { panel: PanelDescriptor }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const resolved = useRef(false);
+
+  // 仅在首次挂载时 resolve（空依赖数组确保组件复用时不重复 resolve）
+  useEffect(() => {
+    if (!resolved.current && containerRef.current) {
+      resolved.current = true;
+      resolvePanel(panel.id, containerRef.current);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="px-2 py-1">
+      {/* 折叠/展开标题 */}
+      {panel.collapsible ? (
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          className="w-full flex items-center justify-between px-3 py-2 text-xs rounded-[var(--radius-md)] transition-colors"
+          style={{ color: "var(--text-muted)" }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-hover)")}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "")}
+        >
+          <span className="truncate">{panel.title}</span>
+          <span className="shrink-0 ml-1 opacity-60">{collapsed ? "▶" : "▼"}</span>
+        </button>
+      ) : (
+        <div
+          className="flex items-center justify-between px-3 py-2 text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <span className="truncate">{panel.title}</span>
+          <button
+            className="shrink-0 ml-1 opacity-60 hover:opacity-100 transition-opacity"
+            onClick={() => firePanelEvent(panel.id, "close")}
+            title="关闭"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* 内容容器 */}
+      {!collapsed && (
+        <div
+          ref={containerRef}
+          className="mt-0.5 mx-1"
+          style={{
+            minHeight: "40px",
+            color: "var(--text-primary)",
+            fontSize: "var(--font-size-sm)",
+          }}
+        />
+      )}
+    </div>
   );
 }

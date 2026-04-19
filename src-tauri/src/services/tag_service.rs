@@ -1,4 +1,4 @@
-use crate::models::{Item, Tag, ItemWithTags};
+use crate::models::{Item, ItemWithTags, Tag};
 use rusqlite::{params, Connection};
 
 /// 查询指定项目关联的所有标签
@@ -29,10 +29,7 @@ pub fn get_item_tags(conn: &Connection, item_id: i64) -> Result<Vec<Tag>, String
 }
 
 /// 批量为项目列表附加标签信息
-pub fn items_with_tags(
-    conn: &Connection,
-    items: Vec<Item>,
-) -> Result<Vec<ItemWithTags>, String> {
+pub fn items_with_tags(conn: &Connection, items: Vec<Item>) -> Result<Vec<ItemWithTags>, String> {
     let mut result = Vec::with_capacity(items.len());
     for item in items {
         let tags = get_item_tags(conn, item.id)?;

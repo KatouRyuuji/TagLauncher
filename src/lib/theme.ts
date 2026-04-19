@@ -1,4 +1,5 @@
 import type { ThemeDefinition } from "../types/theme";
+import { DEFAULT_THEME_VARIABLES, THEME_VARIABLE_KEYS } from "../themes";
 
 const CUSTOM_CSS_ID = "__theme-css";
 
@@ -30,6 +31,10 @@ function detectCssBraceError(css: string): string | null {
 
 export function applyTheme(theme: ThemeDefinition) {
   const root = document.documentElement;
+  const variables = {
+    ...DEFAULT_THEME_VARIABLES,
+    ...theme.variables,
+  };
 
   // 0. 记录当前主题 ID（供 modApi.getThemeId() 读取）
   root.setAttribute("data-theme-id", theme.id);
@@ -37,8 +42,11 @@ export function applyTheme(theme: ThemeDefinition) {
   // 1. 触发切换过渡动画：加 class → 变量变化时 CSS 自动过渡 → rAF 后移除 class
   root.classList.add("theme-switching");
 
-  // 2. 写入所有 CSS 变量
-  for (const [key, value] of Object.entries(theme.variables)) {
+  // 2. 清理契约内变量并写入默认值 + 当前主题值，避免切换不完整主题时继承上一个主题的残留值。
+  for (const key of THEME_VARIABLE_KEYS) {
+    root.style.removeProperty(`--${key}`);
+  }
+  for (const [key, value] of Object.entries(variables)) {
     root.style.setProperty(`--${key}`, value);
   }
 

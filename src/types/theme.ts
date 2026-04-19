@@ -16,11 +16,37 @@ export interface ThemeDefinition {
    */
   css?: string;
   isPreset?: boolean;
+  source?: ThemeSource;
+  fileName?: string;
 }
 
 export interface ThemeLoadError {
   file_name: string;
   error: string;
+}
+
+export type ThemeSource = "preset" | "custom" | "mod";
+
+export interface ThemeValidationIssue {
+  level: "warning" | "error";
+  message: string;
+}
+
+export interface ThemeInstallResult {
+  theme: ThemeDefinition;
+  replaced: boolean;
+  file_path: string;
+  validation_issues: ThemeValidationIssue[];
+}
+
+export interface ThemeExportPayload {
+  theme: ThemeDefinition;
+  file_name: string;
+  json: string;
+}
+
+export interface ThemeDirectoryInfo {
+  themes_dir: string;
 }
 
 export interface CustomThemesResult {

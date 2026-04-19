@@ -2,8 +2,8 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
-use super::schema;
 use super::migrations;
+use super::schema;
 
 /// 数据库管理结构体
 /// 通过 `app.manage(database)` 注入 Tauri 状态，命令函数通过 `State<Database>` 获取

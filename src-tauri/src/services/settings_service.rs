@@ -2,11 +2,9 @@ use rusqlite::Connection;
 
 /// 读取设置值
 pub fn get_setting(conn: &Connection, key: &str) -> Option<String> {
-    conn.query_row(
-        "SELECT value FROM app_meta WHERE key = ?1",
-        [key],
-        |r| r.get::<_, String>(0),
-    )
+    conn.query_row("SELECT value FROM app_meta WHERE key = ?1", [key], |r| {
+        r.get::<_, String>(0)
+    })
     .ok()
 }
 

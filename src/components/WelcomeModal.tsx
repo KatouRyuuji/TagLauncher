@@ -41,7 +41,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-5">
+    <div className="fixed inset-0 flex items-center justify-center p-5" style={{ zIndex: "var(--z-welcome-modal)" as unknown as number }}>
       <div className="absolute inset-0" style={{ backgroundColor: "var(--overlay-bg)", backdropFilter: "blur(2px)" }} onClick={() => onClose(hideNextTime)} />
 
       <section
@@ -51,12 +51,15 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
         aria-modal="true"
         aria-label="欢迎弹窗"
       >
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_85%_12%,rgba(56,189,248,0.18),transparent_38%)]" />
+        <div className="pointer-events-none absolute inset-0" style={{ background: "var(--welcome-accent-gradient)" }} />
 
         <div className="grid grid-cols-[43%_57%] h-full">
           <div className="relative h-full bg-[var(--bg-card)] border-r border-[var(--border-default)]">
             <img src={welcomeImage} alt="欢迎图片占位" className="w-full h-full object-cover object-center" />
-            <div className="absolute inset-x-0 bottom-0 px-4 py-3 text-[12px] text-[var(--text-secondary)] tracking-wide bg-gradient-to-t from-black/65 to-transparent">
+            <div
+              className="absolute inset-x-0 bottom-0 px-4 py-3 text-[12px] text-[var(--text-secondary)] tracking-wide"
+              style={{ background: "var(--media-caption-gradient)" }}
+            >
               RYUUJI UTILITY TOOLKIT
             </div>
           </div>

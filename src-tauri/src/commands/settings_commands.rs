@@ -1,9 +1,19 @@
 use crate::db::Database;
 use crate::extensions::theme_loader;
-use crate::models::CustomThemesResult;
+use crate::models::{
+    CustomThemesResult, ThemeDefinition, ThemeDirectoryInfo, ThemeExportPayload, ThemeInstallResult,
+};
 use crate::services::settings_service;
 use std::path::PathBuf;
 use tauri::{Manager, State};
+
+fn get_themes_dir(app: &tauri::AppHandle) -> PathBuf {
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."));
+    theme_loader::themes_dir_from_app_dir(app_dir)
+}
 
 #[tauri::command]
 pub fn get_app_version() -> String {
@@ -25,13 +35,37 @@ pub fn set_current_theme(db: State<Database>, theme_id: String) -> Result<(), St
 /// 扫描 &lt;AppData&gt;/themes/ 目录，返回所有自定义 JSON 主题（含加载错误）
 #[tauri::command]
 pub fn get_custom_themes(app: tauri::AppHandle) -> CustomThemesResult {
-    let app_dir = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let themes_dir = app_dir.join("themes");
+    let themes_dir = get_themes_dir(&app);
     std::fs::create_dir_all(&themes_dir).ok();
     theme_loader::load_custom_themes(&themes_dir)
+}
+
+#[tauri::command]
+pub fn get_theme_directory_info(app: tauri::AppHandle) -> ThemeDirectoryInfo {
+    let themes_dir = get_themes_dir(&app);
+    std::fs::create_dir_all(&themes_dir).ok();
+    ThemeDirectoryInfo {
+        themes_dir: themes_dir.to_string_lossy().to_string(),
+    }
+}
+
+#[tauri::command]
+pub fn install_theme_file(
+    app: tauri::AppHandle,
+    source_path: String,
+) -> Result<ThemeInstallResult, String> {
+    let themes_dir = get_themes_dir(&app);
+    let source = PathBuf::from(source_path);
+    theme_loader::install_theme_file(&themes_dir, &source)
+}
+
+#[tauri::command]
+pub fn export_theme_file(
+    theme: ThemeDefinition,
+    target_path: String,
+) -> Result<ThemeExportPayload, String> {
+    let target = PathBuf::from(target_path);
+    theme_loader::export_theme_file(theme, &target)
 }
 
 #[tauri::command]

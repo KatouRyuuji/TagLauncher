@@ -20,6 +20,12 @@ import { useVersionCheck } from "./hooks/useVersionCheck";
 import { initModApi } from "./lib/modApi";
 import { initModRuntime } from "./lib/modRuntime";
 import { ToastContainer } from "./components/ToastContainer";
+import { FloatingPanels } from "./components/FloatingPanels";
+import { getThemeTagPresetColors } from "./lib/tagColors";
+import {
+  PANEL_CREATE, PANEL_DESTROY, PANEL_SHOW, PANEL_HIDE, PANEL_TITLE,
+} from "./lib/panelRegistry";
+import type { PanelDescriptor } from "./types/panel";
 import * as db from "./lib/db";
 
 const WELCOME_HIDE_KEY = "taglauncher.hide_welcome_modal";
@@ -119,6 +125,7 @@ function App() {
   const hasActiveInternalDrag = activeInternalDrag !== null;
 
   const [dragOver, setDragOver] = useState(false);
+  const [sidebarPanels, setSidebarPanels] = useState<PanelDescriptor[]>([]);
   const externalDragDepthRef = useRef(0);
   const recentDropRef = useRef<{ key: string; ts: number }>({ key: "", ts: 0 });
   const [showSettings, setShowSettings] = useState(false);
@@ -136,6 +143,45 @@ function App() {
     initModApi();
     // 初始化 mod 运行时：注入所有已启用 mod 的 CSS / JS / Theme
     void db.getMods().then(initModRuntime);
+  }, []);
+
+  // ── Sidebar Panel 事件管理 ─────────────────────────────────────────────
+  useEffect(() => {
+    const onCreate = (e: Event) => {
+      const desc = (e as CustomEvent<PanelDescriptor>).detail;
+      if (desc.position !== "sidebar") return;
+      setSidebarPanels((prev) =>
+        prev.some((p) => p.id === desc.id) ? prev : [...prev, desc],
+      );
+    };
+    const onDestroy = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      setSidebarPanels((prev) => prev.filter((p) => p.id !== id));
+    };
+    const onShow = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      setSidebarPanels((prev) => prev.map((p) => p.id === id ? { ...p, visible: true } : p));
+    };
+    const onHide = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      setSidebarPanels((prev) => prev.map((p) => p.id === id ? { ...p, visible: false } : p));
+    };
+    const onTitle = (e: Event) => {
+      const { id, title } = (e as CustomEvent<{ id: string; title: string }>).detail;
+      setSidebarPanels((prev) => prev.map((p) => p.id === id ? { ...p, title } : p));
+    };
+    window.addEventListener(PANEL_CREATE, onCreate);
+    window.addEventListener(PANEL_DESTROY, onDestroy);
+    window.addEventListener(PANEL_SHOW, onShow);
+    window.addEventListener(PANEL_HIDE, onHide);
+    window.addEventListener(PANEL_TITLE, onTitle);
+    return () => {
+      window.removeEventListener(PANEL_CREATE, onCreate);
+      window.removeEventListener(PANEL_DESTROY, onDestroy);
+      window.removeEventListener(PANEL_SHOW, onShow);
+      window.removeEventListener(PANEL_HIDE, onHide);
+      window.removeEventListener(PANEL_TITLE, onTitle);
+    };
   }, []);
 
   const addDroppedPaths = useCallback(
@@ -302,16 +348,7 @@ function App() {
       if (existingTag) {
         tagId = existingTag.id;
       } else {
-        const colors = [
-          "#3b82f6",
-          "#ef4444",
-          "#22c55e",
-          "#f97316",
-          "#8b5cf6",
-          "#ec4899",
-          "#14b8a6",
-          "#eab308",
-        ];
+        const colors = getThemeTagPresetColors();
         const color = colors[Math.floor(Math.random() * colors.length)];
         const newTag = await addTag(normalizedName, color);
         tagId = newTag.id;
@@ -365,9 +402,9 @@ function App() {
 
   return (
     <ThemeProvider>
-    <div className="flex h-screen select-none" style={{ backgroundColor: "var(--bg-base)", fontFamily: "var(--font-family)" }}>
+    <div data-region="root" className="flex h-screen select-none" style={{ backgroundColor: "var(--bg-base)", fontFamily: "var(--font-family)" }}>
       {/* 装饰层：樱花主题渐变光晕等 */}
-      <div className="fixed inset-0 pointer-events-none z-0" style={{ background: "var(--bg-gradient)" }} />
+      <div data-region="bg-decoration" className="fixed inset-0 pointer-events-none" style={{ background: "var(--bg-gradient)", zIndex: "var(--z-bg-decoration)" as unknown as number }} />
       <Sidebar
         tags={tags}
         cabinets={cabinets}
@@ -378,8 +415,10 @@ function App() {
         onUpdateCabinet={updateCabinet}
         onRemoveCabinet={removeCabinet}
         onAddTagToItem={handleAddTagToItem}
+        modPanels={sidebarPanels}
       />
       <main
+        data-region="main"
         className="flex-1 flex flex-col overflow-hidden relative"
         onDragEnter={handleMainDragEnter}
         onDragOver={handleMainDragOver}
@@ -399,10 +438,14 @@ function App() {
         )}
         {activeInternalDrag && (
           <div
-            className="fixed z-[120] pointer-events-none"
-            style={{ left: activeInternalDrag.x + 14, top: activeInternalDrag.y + 14 }}
+            className="fixed pointer-events-none"
+            style={{
+              zIndex: "var(--z-drag-ghost)" as unknown as number,
+              left: `calc(${activeInternalDrag.x}px + var(--drag-ghost-offset-x))`,
+              top:  `calc(${activeInternalDrag.y}px + var(--drag-ghost-offset-y))`,
+            }}
           >
-            <div className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs shadow-2xl" style={{ backgroundColor: "var(--bg-elevated)", borderWidth: 1, borderStyle: "solid", borderColor: "var(--border-default)", color: "var(--text-primary)" }}>
+            <div className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs shadow-2xl" style={{ backgroundColor: "var(--bg-elevated)", borderWidth: "var(--border-width)" as unknown as number, borderStyle: "var(--border-style)", borderColor: "var(--border-default)", color: "var(--text-primary)" }}>
               {"color" in activeInternalDrag && (
                 <span
                   className="h-2.5 w-2.5 rounded-full shrink-0"
@@ -418,6 +461,7 @@ function App() {
       </main>
       <WelcomeModal open={showWelcomeModal} onClose={handleCloseWelcome} />
       <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
+      <FloatingPanels />
       <ToastContainer />
       <MigrationDialog
         open={migration.show}
