@@ -6,6 +6,8 @@ src-tauri/gen/
 
 .idea/
 .vscode/
+.claude/
+.codex/
 
 *.log
 *.tmp
@@ -21,5 +23,6 @@ Desktop.ini
 *.db
 *.sqlite
 *.sqlite3
+todo.txt
 
 nul
