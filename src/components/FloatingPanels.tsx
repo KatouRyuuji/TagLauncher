@@ -215,7 +215,7 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
           {panel.title}
         </span>
         <button
-          className="shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--bg-hover)] transition-colors"
+          className="shrink-0 inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] hover:bg-[var(--bg-hover)] transition-colors"
           style={{ color: "var(--text-muted)", cursor: "pointer" }}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={() => firePanelEvent(panel.id, "close")}
@@ -285,11 +285,8 @@ function ModalPanel({ panel }: ModalPanelProps) {
         style={{ zIndex: panelZ }}
       >
         <div
-          className="pointer-events-auto rounded-[var(--panel-floating-border-radius)] border overflow-hidden flex flex-col"
+          className="modal-surface pointer-events-auto overflow-hidden flex flex-col"
           style={{
-            backgroundColor: "var(--panel-body-bg)",
-            borderColor:     "var(--panel-border-color)",
-            boxShadow:       "var(--shadow-overlay)",
             width:  panel.width  || 480,
             maxWidth:  "90vw",
             maxHeight: "80vh",
@@ -307,7 +304,7 @@ function ModalPanel({ panel }: ModalPanelProps) {
               {panel.title}
             </span>
             <button
-              className="shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--bg-hover)] transition-colors"
+              className="shrink-0 inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] hover:bg-[var(--bg-hover)] transition-colors"
               style={{ color: "var(--text-muted)", cursor: "pointer" }}
               onClick={() => firePanelEvent(panel.id, "close")}
               title="关闭"
@@ -342,12 +339,7 @@ function ModalPanel({ panel }: ModalPanelProps) {
                       firePanelEvent(panel.id, "modal-button", btn.id);
                     }
                   }}
-                  className="px-3 py-1.5 rounded-[var(--radius-sm)] text-xs font-medium transition-colors"
-                  style={
-                    btn.action === "confirm"
-                      ? { backgroundColor: "var(--accent-primary)", color: "var(--text-invert)" }
-                      : { backgroundColor: "var(--bg-hover)", color: "var(--text-secondary)" }
-                  }
+                  className={btn.action === "confirm" ? "action-button action-button-primary min-h-[34px] px-3 text-xs" : "action-button min-h-[34px] px-3 text-xs"}
                 >
                   {btn.label}
                 </button>

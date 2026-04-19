@@ -10,7 +10,7 @@ export function ItemDragHandle({
       data-item-drag="true"
       onPointerDown={onPointerDown}
       onClick={(e) => e.stopPropagation()}
-      className={`inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-md)] text-[var(--text-faint)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] cursor-grab active:cursor-grabbing ${className}`}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border border-transparent text-[var(--text-faint)] hover:border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)] cursor-grab active:cursor-grabbing ${className}`}
       title="拖拽到文件柜"
       aria-label="拖拽到文件柜"
     >

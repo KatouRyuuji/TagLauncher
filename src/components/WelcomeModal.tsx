@@ -10,7 +10,7 @@ interface WelcomeModalProps {
 const BILIBILI_URL = "https://space.bilibili.com/445111";
 const INTRO_LINES = [
   "欢迎使用 RyuuJi 的实用小工具 TagLauncher，这是一个免费、轻量、直观、便捷的标签化文件管理器。",
-  "拜托拜托关注我一下，这是我的 B 站首页：",
+  "如果这个工具对你有帮助，欢迎关注我的 B 站主页：",
 ];
 const SERVICE_ITEMS = [
   "Unity 外包",
@@ -23,99 +23,112 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
   const [hideNextTime, setHideNextTime] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      setHideNextTime(false);
-    }
+    if (open) setHideNextTime(false);
   }, [open]);
 
   if (!open) return null;
 
-  const handleOpenBilibili = async (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
+  const handleOpenBilibili = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
     try {
       await shellOpen(BILIBILI_URL);
     } catch {
-      // 兜底：如果 shell 打开失败，仍尝试使用浏览器默认行为
       window.open(BILIBILI_URL, "_blank", "noopener,noreferrer");
     }
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center p-5" style={{ zIndex: "var(--z-welcome-modal)" as unknown as number }}>
-      <div className="absolute inset-0" style={{ backgroundColor: "var(--overlay-bg)", backdropFilter: "blur(2px)" }} onClick={() => onClose(hideNextTime)} />
+    <div
+      className="fixed inset-0 flex items-center justify-center p-5"
+      style={{ zIndex: "var(--z-welcome-modal)" as unknown as number }}
+    >
+      <div
+        className="absolute inset-0"
+        style={{ backgroundColor: "var(--overlay-bg)", backdropFilter: "blur(4px)" }}
+        onClick={() => onClose(hideNextTime)}
+      />
 
       <section
-        className="relative isolate bg-[var(--bg-elevated)] border border-[var(--border-medium)] rounded-[var(--radius-xl)] overflow-hidden"
-        style={{ boxShadow: 'var(--shadow-overlay)', width: "min(90vw, calc(82vh * 4 / 3), 980px)", aspectRatio: "4 / 3" }}
+        className="modal-surface relative isolate flex w-[min(980px,92vw)] max-w-[980px] overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-label="欢迎弹窗"
       >
         <div className="pointer-events-none absolute inset-0" style={{ background: "var(--welcome-accent-gradient)" }} />
 
-        <div className="grid grid-cols-[43%_57%] h-full">
-          <div className="relative h-full bg-[var(--bg-card)] border-r border-[var(--border-default)]">
-            <img src={welcomeImage} alt="欢迎图片占位" className="w-full h-full object-cover object-center" />
+        <div className="grid w-full md:grid-cols-[42%_58%]">
+          <div className="relative min-h-[280px] border-r border-[var(--border-subtle)] bg-[var(--bg-card)]">
+            <img src={welcomeImage} alt="欢迎图片" className="h-full w-full object-cover object-center" />
             <div
-              className="absolute inset-x-0 bottom-0 px-4 py-3 text-[12px] text-[var(--text-secondary)] tracking-wide"
+              className="absolute inset-x-0 bottom-0 px-5 py-4 text-xs tracking-[0.18em] text-white/90"
               style={{ background: "var(--media-caption-gradient)" }}
             >
               RYUUJI UTILITY TOOLKIT
             </div>
           </div>
-          <div className="h-full min-h-0 px-7 pt-6 pb-5 flex flex-col">
-            <div className="shrink-0">
-              <h2 className="text-[var(--text-primary)] text-[38px] font-semibold tracking-tight leading-none">欢迎使用 TagLauncher</h2>
-              <p className="mt-2 text-[var(--text-muted)] text-[13px]">免费、轻量、直观、便捷的标签化文件管理器</p>
+
+          <div className="flex min-h-[560px] flex-col px-7 py-6">
+            <div>
+              <div className="text-label">Welcome</div>
+              <h2 className="mt-2 text-[32px] font-semibold leading-tight text-[var(--text-primary)]">
+                欢迎使用 TagLauncher
+              </h2>
+              <p className="mt-2 text-sm text-[var(--text-muted)]">
+                免费、轻量、直观、便捷的标签化文件管理器
+              </p>
             </div>
 
-            <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3.5">
+            <div className="surface-card-soft mt-5 flex-1 overflow-y-auto p-5">
               {INTRO_LINES.map((line) => (
-                <p key={line} className="text-[var(--text-primary)] text-[16px] leading-8 break-words">
+                <p key={line} className="text-[15px] leading-8 text-[var(--text-primary)]">
                   {line}
                 </p>
               ))}
+
               <a
                 href={BILIBILI_URL}
                 onClick={handleOpenBilibili}
-                className="mt-2.5 inline-block text-[16px] leading-8 text-[var(--accent-primary)] hover:text-[var(--accent-primary)] underline underline-offset-4 break-all"
+                className="mt-2 inline-block break-all text-[15px] leading-7 text-[var(--accent-primary)] underline underline-offset-4"
               >
                 {BILIBILI_URL}
               </a>
 
-              <p className="mt-4 text-[var(--text-secondary)] text-[16px] leading-8">支持内容：</p>
-              <ul className="pl-5 text-[var(--text-secondary)] text-[15px] leading-7 list-disc space-y-1">
-                {SERVICE_ITEMS.map((item) => <li key={item}>{item}</li>)}
-              </ul>
+              <div className="mt-6">
+                <div className="text-label">Services</div>
+                <ul className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
+                  {SERVICE_ITEMS.map((item) => (
+                    <li key={item} className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-[var(--accent-primary)]" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
 
-            <div className="mt-4 border-t border-[var(--border-default)] pt-3.5 flex items-center justify-between gap-3 shrink-0">
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] pt-4">
               <button
                 type="button"
-                onClick={() => setHideNextTime((v) => !v)}
+                onClick={() => setHideNextTime((value) => !value)}
                 aria-pressed={hideNextTime}
-                className="inline-flex items-center gap-2.5 text-[15px] text-[var(--text-primary)] cursor-pointer select-none bg-[var(--bg-hover)] border border-[var(--border-medium)] rounded-[var(--radius-md)] px-3 py-2.5 hover:bg-[var(--bg-active)] transition-colors"
+                className="action-button"
               >
-                <span className="relative inline-flex w-5 h-5 items-center justify-center rounded border border-[var(--border-strong)] bg-transparent">
-                  <svg
-                    className={`w-3.5 h-3.5 text-[var(--accent-primary)] transition-opacity duration-150 ${hideNextTime ? "opacity-100" : "opacity-0"}`}
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M3.5 8.5l3 3 6-7" />
-                  </svg>
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded-[4px] border border-[var(--border-default)]">
+                  {hideNextTime && (
+                    <svg className="h-3 w-3 text-[var(--accent-primary)]" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="m3.5 8.5 3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
                 </span>
-                <span>下次不再显示</span>
+                下次不再显示
               </button>
+
               <button
+                type="button"
                 onClick={() => onClose(hideNextTime)}
-                className="px-3.5 py-2 rounded-[var(--radius-md)] text-[14px] bg-[var(--accent-primary-bg)] border border-[var(--accent-primary)] text-[var(--accent-primary)] hover:bg-[var(--accent-primary-bg)] hover:text-[var(--text-primary)] transition-colors"
+                className="action-button action-button-primary"
               >
-                我知道了
+                开始使用
               </button>
             </div>
           </div>

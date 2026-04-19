@@ -1,19 +1,8 @@
-// ============================================================================
-// components/SearchBar.tsx — 顶部搜索栏
-// ============================================================================
-// 功能：
-// 1. 搜索模式切换（全部/名称/标签）
-// 2. 搜索输入框（带清空按钮，150ms 防抖）
-// 3. 视图模式切换（网格/列表）
-// 4. 刷新按钮
-// 5. 添加文件/文件夹按钮（调用 Tauri 原生文件选择对话框）
-// ============================================================================
-
 import { useState } from "react";
-import { useSearch } from "../hooks/useSearch";
-import { useAppStore, type SearchMode } from "../stores/appStore";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useSearch } from "../hooks/useSearch";
 import { notifySearchInput } from "../lib/modApi";
+import { useAppStore, type SearchMode } from "../stores/appStore";
 
 interface SearchBarProps {
   onAddItem: (path: string) => Promise<void>;
@@ -22,14 +11,12 @@ interface SearchBarProps {
   onOpenSettings?: () => void;
 }
 
-/** 搜索模式选项 */
 const MODES: { value: SearchMode; label: string }[] = [
   { value: "all", label: "全部" },
   { value: "name", label: "名称" },
   { value: "tag", label: "标签" },
 ];
 
-/** 各模式的搜索框占位文字 */
 const PLACEHOLDERS: Record<SearchMode, string> = {
   all: "搜索名称、路径或标签...",
   name: "搜索名称或路径...",
@@ -39,10 +26,8 @@ const PLACEHOLDERS: Record<SearchMode, string> = {
 export function SearchBar({ onAddItem, onRefresh, onOpenAbout, onOpenSettings }: SearchBarProps) {
   const { handleSearch } = useSearch();
   const { viewMode, setViewMode, searchMode, setSearchMode } = useAppStore();
-  // inputValue 是输入框的即时值，searchQuery 是防抖后的值
   const [inputValue, setInputValue] = useState("");
 
-  /** 浏览文件：弹出原生文件选择对话框 */
   const handleBrowse = async () => {
     const selected = await open({
       multiple: true,
@@ -52,139 +37,162 @@ export function SearchBar({ onAddItem, onRefresh, onOpenAbout, onOpenSettings }:
         { name: "所有文件", extensions: ["*"] },
       ],
     });
-    if (selected) {
-      const paths = Array.isArray(selected) ? selected : [selected];
-      for (const path of paths) {
-        await onAddItem(path);
-      }
+
+    if (!selected) return;
+
+    const paths = Array.isArray(selected) ? selected : [selected];
+    for (const path of paths) {
+      await onAddItem(path);
     }
   };
 
-  /** 浏览文件夹：弹出原生目录选择对话框 */
   const handleBrowseFolder = async () => {
     const selected = await open({ directory: true, multiple: true });
-    if (selected) {
-      const paths = Array.isArray(selected) ? selected : [selected];
-      for (const path of paths) {
-        await onAddItem(path);
-      }
+    if (!selected) return;
+
+    const paths = Array.isArray(selected) ? selected : [selected];
+    for (const path of paths) {
+      await onAddItem(path);
     }
   };
 
   return (
-    <header data-region="searchbar" className="px-5 py-3 border-b border-[var(--border-subtle)] flex items-center gap-3 bg-[var(--bg-base)]">
-      {/* 搜索模式切换按钮组 */}
-      <div className="flex bg-[var(--bg-hover)] rounded-[var(--radius-lg)] border border-[var(--border-subtle)] p-0.5">
-        {MODES.map((m) => (
-          <button
-            key={m.value}
-            onClick={() => setSearchMode(m.value)}
-            className={`px-2.5 py-1 rounded-[var(--radius-md)] text-xs transition-colors ${
-              searchMode === m.value
-                ? "bg-[var(--accent-primary-bg)] text-[var(--accent-primary)] font-medium"
-                : "text-[var(--text-muted)] hover:text-[var(--text-tertiary)]"
-            }`}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
+    <header
+      data-region="searchbar"
+      className="relative border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-surface)_82%,transparent)] px-5 py-4"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="text-label">Workspace</div>
+          <h2 className="mt-1 text-[22px] font-semibold tracking-tight text-[var(--text-primary)]">
+            项目工作台
+          </h2>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
+            快速搜索、导入和整理你的启动项与素材目录
+          </p>
+        </div>
 
-      {/* 搜索输入框 */}
-      <div className="flex-1 relative">
-        {/* 搜索图标 */}
-        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-faint)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input
-          type="text"
-          placeholder={PLACEHOLDERS[searchMode]}
-          value={inputValue}
-          onChange={(e) => {
-            setInputValue(e.target.value);
-            handleSearch(e.target.value);
-            notifySearchInput(e.target.value);
-          }}
-          className="w-full bg-[var(--bg-hover)] border border-[var(--border-subtle)] rounded-[var(--radius-lg)] pl-9 pr-8 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none focus:border-[var(--accent-primary)] focus:bg-[var(--bg-hover)] transition-all"
-        />
-        {/* 清空按钮（有输入内容时显示） */}
-        {inputValue && (
-          <button
-            onClick={() => { setInputValue(""); handleSearch(""); }}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-faint)] hover:text-[var(--text-tertiary)] transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={onRefresh} className="icon-button" title="刷新">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.75m14.5 2a8 8 0 0 0-14.5-2M20 20v-5h-.75m-14.5-2a8 8 0 0 0 14.5 2" />
             </svg>
           </button>
-        )}
+
+          {onOpenSettings && (
+            <button type="button" onClick={onOpenSettings} className="icon-button" title="设置">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3.75c1.15 0 2.1.83 2.28 1.93l.08.52a1.45 1.45 0 0 0 2.12 1.04l.46-.24a2.25 2.25 0 0 1 2.97.87c.58.99.31 2.25-.61 2.93l-.43.31a1.45 1.45 0 0 0 0 2.36l.43.31c.92.68 1.19 1.94.61 2.93a2.25 2.25 0 0 1-2.97.87l-.46-.24a1.45 1.45 0 0 0-2.12 1.04l-.08.52A2.31 2.31 0 0 1 12 20.25a2.31 2.31 0 0 1-2.28-1.93l-.08-.52a1.45 1.45 0 0 0-2.12-1.04l-.46.24a2.25 2.25 0 0 1-2.97-.87 2.23 2.23 0 0 1 .61-2.93l.43-.31a1.45 1.45 0 0 0 0-2.36l-.43-.31a2.23 2.23 0 0 1-.61-2.93 2.25 2.25 0 0 1 2.97-.87l.46.24A1.45 1.45 0 0 0 9.64 6.2l.08-.52A2.31 2.31 0 0 1 12 3.75Z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.25a2.75 2.75 0 1 1 0 5.5 2.75 2.75 0 0 1 0-5.5Z" />
+              </svg>
+            </button>
+          )}
+
+          <button type="button" onClick={onOpenAbout} className="action-button">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8h.01M10.75 11.75h1.25V16h1.25M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+            关于
+          </button>
+        </div>
       </div>
 
-      {/* 视图模式切换：网格 / 列表 */}
-      <div className="flex bg-[var(--bg-hover)] rounded-[var(--radius-lg)] border border-[var(--border-subtle)] p-0.5">
-        <button
-          onClick={() => setViewMode("grid")}
-          className={`p-1.5 rounded-[var(--radius-md)] transition-colors ${viewMode === "grid" ? "bg-[var(--bg-active)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-tertiary)]"}`}
-          title="网格视图"
-        >
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M1 2.5A1.5 1.5 0 012.5 1h3A1.5 1.5 0 017 2.5v3A1.5 1.5 0 015.5 7h-3A1.5 1.5 0 011 5.5v-3zm8 0A1.5 1.5 0 0110.5 1h3A1.5 1.5 0 0115 2.5v3A1.5 1.5 0 0113.5 7h-3A1.5 1.5 0 019 5.5v-3zm-8 8A1.5 1.5 0 012.5 9h3A1.5 1.5 0 017 10.5v3A1.5 1.5 0 015.5 15h-3A1.5 1.5 0 011 13.5v-3zm8 0A1.5 1.5 0 0110.5 9h3a1.5 1.5 0 011.5 1.5v3a1.5 1.5 0 01-1.5 1.5h-3A1.5 1.5 0 019 13.5v-3z"/>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="surface-card-soft flex items-center gap-1 p-1">
+          {MODES.map((mode) => (
+            <button
+              key={mode.value}
+              type="button"
+              onClick={() => setSearchMode(mode.value)}
+              className={`control-chip min-h-[34px] px-4 text-xs font-medium ${
+                searchMode === mode.value ? "control-chip-active" : ""
+              }`}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="surface-card relative min-w-[280px] flex-1 px-4 py-3">
+          <svg
+            className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-faint)]"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1.8}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" />
           </svg>
-        </button>
-        <button
-          onClick={() => setViewMode("list")}
-          className={`p-1.5 rounded-[var(--radius-md)] transition-colors ${viewMode === "list" ? "bg-[var(--bg-active)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-tertiary)]"}`}
-          title="列表视图"
-        >
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
-            <path fillRule="evenodd" d="M2.5 12a.5.5 0 01.5-.5h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0-4a.5.5 0 01.5-.5h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0-4a.5.5 0 01.5-.5h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5z"/>
-          </svg>
-        </button>
-      </div>
 
-      {/* 刷新按钮 */}
-      <button onClick={onRefresh} className="p-2 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors" title="刷新">
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-      </button>
+          <input
+            type="text"
+            placeholder={PLACEHOLDERS[searchMode]}
+            value={inputValue}
+            onChange={(event) => {
+              const value = event.target.value;
+              setInputValue(value);
+              handleSearch(value);
+              notifySearchInput(value);
+            }}
+            className="w-full border-0 bg-transparent pl-7 pr-10 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none"
+          />
 
-      {/* 设置按钮 */}
-      {onOpenSettings && (
-        <button
-          onClick={onOpenSettings}
-          className="p-2 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-          title="设置"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </button>
-      )}
+          {inputValue && (
+            <button
+              type="button"
+              onClick={() => {
+                setInputValue("");
+                handleSearch("");
+                notifySearchInput("");
+              }}
+              className="absolute right-3 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius-full)] text-[var(--text-faint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+              title="清空搜索"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          )}
+        </div>
 
-      {/* 关于我按钮 */}
-      <button
-        onClick={onOpenAbout}
-        className="px-3 py-2 bg-[var(--bg-hover)] border border-[var(--border-subtle)] rounded-[var(--radius-lg)] text-sm text-[var(--text-tertiary)] hover:bg-[var(--bg-active)] hover:text-[var(--text-primary)] transition-all"
-      >
-        关于我
-      </button>
+        <div className="surface-card-soft flex items-center gap-1 p-1">
+          <button
+            type="button"
+            onClick={() => setViewMode("grid")}
+            className={`control-chip min-h-[34px] px-3 ${viewMode === "grid" ? "control-chip-active" : ""}`}
+            title="网格视图"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M1 2.25A1.25 1.25 0 0 1 2.25 1h4.5A1.25 1.25 0 0 1 8 2.25v4.5A1.25 1.25 0 0 1 6.75 8h-4.5A1.25 1.25 0 0 1 1 6.75v-4.5Zm7 0A1.25 1.25 0 0 1 9.25 1h4.5A1.25 1.25 0 0 1 15 2.25v4.5A1.25 1.25 0 0 1 13.75 8h-4.5A1.25 1.25 0 0 1 8 6.75v-4.5Zm-7 7A1.25 1.25 0 0 1 2.25 8h4.5A1.25 1.25 0 0 1 8 9.25v4.5A1.25 1.25 0 0 1 6.75 15h-4.5A1.25 1.25 0 0 1 1 13.75v-4.5Zm7 0A1.25 1.25 0 0 1 9.25 8h4.5A1.25 1.25 0 0 1 15 9.25v4.5A1.25 1.25 0 0 1 13.75 15h-4.5A1.25 1.25 0 0 1 8 13.75v-4.5Z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("list")}
+            className={`control-chip min-h-[34px] px-3 ${viewMode === "list" ? "control-chip-active" : ""}`}
+            title="列表视图"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M2 3.25A1.25 1.25 0 0 1 3.25 2h9.5a1.25 1.25 0 1 1 0 2.5h-9.5A1.25 1.25 0 0 1 2 3.25Zm0 4.75A1.25 1.25 0 0 1 3.25 6.75h9.5a1.25 1.25 0 1 1 0 2.5h-9.5A1.25 1.25 0 0 1 2 8Zm0 4.75a1.25 1.25 0 0 1 1.25-1.25h9.5a1.25 1.25 0 1 1 0 2.5h-9.5A1.25 1.25 0 0 1 2 12.75Z" />
+            </svg>
+          </button>
+        </div>
 
-      {/* 添加文件/文件夹按钮 */}
-      <div className="flex gap-1.5">
-        <button
-          onClick={handleBrowse}
-          className="px-3 py-2 bg-[var(--bg-hover)] border border-[var(--border-subtle)] rounded-[var(--radius-lg)] text-sm text-[var(--text-tertiary)] hover:bg-[var(--bg-active)] hover:text-[var(--text-primary)] transition-all"
-        >
-          + 文件
-        </button>
-        <button
-          onClick={handleBrowseFolder}
-          className="px-3 py-2 bg-[var(--bg-hover)] border border-[var(--border-subtle)] rounded-[var(--radius-lg)] text-sm text-[var(--text-tertiary)] hover:bg-[var(--bg-active)] hover:text-[var(--text-primary)] transition-all"
-        >
-          + 文件夹
-        </button>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button type="button" onClick={handleBrowse} className="action-button">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
+            </svg>
+            添加文件
+          </button>
+
+          <button type="button" onClick={handleBrowseFolder} className="action-button action-button-primary">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 7.5A2.25 2.25 0 0 1 6 5.25h3.19a1.5 1.5 0 0 1 1.06.44l1.62 1.62c.28.28.66.44 1.06.44H18A2.25 2.25 0 0 1 20.25 10v6A2.25 2.25 0 0 1 18 18.25H6A2.25 2.25 0 0 1 3.75 16V7.5Z" />
+            </svg>
+            添加文件夹
+          </button>
+        </div>
       </div>
     </header>
   );

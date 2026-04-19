@@ -96,7 +96,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
   return (
     <div
       data-tag-drag="true"
-      className={`flex flex-wrap gap-1 ${compact ? "" : ""}`}
+      className={`flex flex-wrap gap-1.5 ${compact ? "" : ""}`}
     >
       {item.tags.map((tag, idx) => (
         <span
@@ -105,16 +105,20 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
           data-reorder-tag-item-id={item.id}
           data-reorder-tag-idx={idx}
           onPointerDown={(event) => handleTagPointerDown(event, idx)}
-          className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full cursor-grab active:cursor-grabbing transition-all group/tag ${
+          className={`inline-flex items-center gap-1.5 rounded-[var(--radius-full)] border px-2.5 py-1 text-[11px] font-medium cursor-grab active:cursor-grabbing transition-all group/tag ${
             dragIdx === idx ? "opacity-40" : ""
           } ${overIdx === idx && dragIdx !== null && dragIdx !== idx ? "ring-1 ring-[var(--accent-primary)]" : ""}`}
-          style={{ backgroundColor: `color-mix(in srgb, ${tag.color} var(--tag-color-alpha, 20%), transparent)`, color: tag.color }}
+          style={{
+            backgroundColor: `color-mix(in srgb, ${tag.color} var(--tag-color-alpha, 20%), white)`,
+            color: tag.color,
+            borderColor: `color-mix(in srgb, ${tag.color} 28%, transparent)`,
+          }}
         >
           {tag.name}
           <button
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); void onRemoveTag(item.id, tag.id); }}
-            className="ml-0.5 opacity-0 pointer-events-none group-hover/tag:opacity-100 group-hover/tag:pointer-events-auto hover:text-[var(--text-primary)] transition-opacity"
+            className="opacity-0 pointer-events-none group-hover/tag:opacity-100 group-hover/tag:pointer-events-auto hover:text-[var(--text-primary)] transition-opacity"
           >
             ×
           </button>
@@ -123,7 +127,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
       {dragIdx !== null && (
         <span
           data-reorder-remove-item-id={item.id}
-          className={`inline-flex items-center text-[11px] px-2 py-0.5 rounded-full border border-dashed transition-all ${
+          className={`inline-flex items-center rounded-[var(--radius-full)] border border-dashed px-2.5 py-1 text-[11px] font-medium transition-all ${
             removeZoneActive
               ? "border-[var(--color-danger)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]"
               : "border-[var(--border-medium)] text-[var(--text-faint)]"

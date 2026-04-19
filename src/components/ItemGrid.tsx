@@ -1,39 +1,61 @@
-// ============================================================================
-// components/ItemGrid.tsx — 网格视图容器
-// ============================================================================
-// 使用 CSS Grid 自适应布局展示项目卡片。
-// 每个卡片最小宽度 180px，自动填充可用空间。
-// 处理加载状态和空状态的显示。
-// ============================================================================
-
 import type { ItemViewProps } from "../types";
 import { ItemCard } from "./ItemCard";
 
-export function ItemGrid({ items, tags, cabinets, loading, currentCabinetId, onLaunch, onRemove, onSetTags, onAddTagToItem, onRemoveTagFromItem, onAddNewTagToItem, onToggleFavorite, onAddItemToCabinet, onRemoveItemFromCabinet, onUpdateThumbnail }: ItemViewProps) {
-  // 加载中状态
+export function ItemGrid({
+  items,
+  tags,
+  cabinets,
+  loading,
+  currentCabinetId,
+  onLaunch,
+  onRemove,
+  onSetTags,
+  onAddTagToItem,
+  onRemoveTagFromItem,
+  onAddNewTagToItem,
+  onToggleFavorite,
+  onAddItemToCabinet,
+  onRemoveItemFromCabinet,
+  onUpdateThumbnail,
+}: ItemViewProps) {
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-[var(--text-faint)] text-sm">
-        加载中...
+      <div className="flex flex-1 items-center justify-center px-6 py-10">
+        <div className="surface-card flex items-center gap-3 px-5 py-4 text-sm text-[var(--text-muted)]">
+          <span className="inline-flex h-3 w-3 animate-pulse rounded-full bg-[var(--accent-primary)]" />
+          正在加载项目数据...
+        </div>
       </div>
     );
   }
 
-  // 空状态
   if (items.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-[var(--text-ghost)]">
-        <div className="text-5xl mb-4 opacity-50">📁</div>
-        <p className="text-sm">暂无项目</p>
-        <p className="text-xs mt-1.5 text-[var(--text-ghost)]">拖拽文件到此处，或点击上方按钮添加</p>
+      <div className="flex-1 overflow-auto">
+        <div className="empty-state-panel">
+          <div className="flex h-16 w-16 items-center justify-center rounded-[calc(var(--radius-xl)+4px)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+            <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7.75A2.75 2.75 0 0 1 6.75 5h3.4a1.5 1.5 0 0 1 1.06.44l1.35 1.35c.28.28.66.44 1.06.44h3.63A2.75 2.75 0 0 1 20 10v6.25A2.75 2.75 0 0 1 17.25 19H6.75A2.75 2.75 0 0 1 4 16.25V7.75Z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-lg font-semibold text-[var(--text-primary)]">暂无项目</p>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
+              将文件或文件夹拖拽到主区域，或使用顶部按钮开始导入。
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div data-region="item-grid" className="flex-1 overflow-y-auto p-3">
-      {/* 自适应网格：列宽由主题 --grid-col-min 控制 */}
-      <div data-region="item-grid-inner" className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(var(--grid-col-min), 1fr))' }}>
+    <div data-region="item-grid" className="flex-1 overflow-y-auto px-5 py-5">
+      <div
+        data-region="item-grid-inner"
+        className="grid gap-4"
+        style={{ gridTemplateColumns: "repeat(auto-fill, minmax(var(--grid-col-min), 1fr))" }}
+      >
         {items.map((item) => (
           <ItemCard
             key={item.id}

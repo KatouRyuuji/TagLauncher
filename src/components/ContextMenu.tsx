@@ -1,7 +1,7 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { ItemWithTags, Cabinet } from "../types";
 import * as db from "../lib/db";
+import type { Cabinet, ItemWithTags } from "../types";
 
 interface ContextMenuProps {
   item: ItemWithTags;
@@ -58,7 +58,7 @@ export function ContextMenu({
     if (!menuEl) return;
 
     const gap = 8;
-    const subMenuWidth = 160;
+    const subMenuWidth = 196;
     const rect = menuEl.getBoundingClientRect();
     const nextLeft = Math.min(
       Math.max(gap, position.x),
@@ -105,9 +105,9 @@ export function ContextMenu({
     if (!triggerEl) return;
 
     const viewportGap = 8;
-    const gap = 6;
-    const fallbackWidth = 180;
-    const fallbackHeight = Math.min(280, cabinets.length * 30 + 16);
+    const gap = 8;
+    const fallbackWidth = 196;
+    const fallbackHeight = Math.min(320, cabinets.length * 40 + 20);
     const rect = triggerEl.getBoundingClientRect();
     const panelWidth = submenuRef.current?.offsetWidth ?? fallbackWidth;
     const panelHeight = submenuRef.current?.offsetHeight ?? fallbackHeight;
@@ -121,7 +121,7 @@ export function ContextMenu({
       : Math.min(window.innerWidth - panelWidth - viewportGap, rect.right + gap);
 
     const top = Math.min(
-      Math.max(viewportGap, rect.top - 4),
+      Math.max(viewportGap, rect.top - 6),
       Math.max(viewportGap, window.innerHeight - panelHeight - viewportGap),
     );
 
@@ -146,7 +146,9 @@ export function ContextMenu({
   }, [position.x, position.y, updateMenuPosition, showCabinetSub, cabinets.length]);
 
   useEffect(() => {
-    const handleResize = () => { updateMenuPosition(); };
+    const handleResize = () => {
+      updateMenuPosition();
+    };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [updateMenuPosition]);
@@ -154,7 +156,9 @@ export function ContextMenu({
   useEffect(() => {
     if (!showCabinetSub) return;
 
-    const handleViewportChange = () => { updateSubmenuPosition(); };
+    const handleViewportChange = () => {
+      updateSubmenuPosition();
+    };
     const frameId = window.requestAnimationFrame(updateSubmenuPosition);
     window.addEventListener("resize", handleViewportChange);
     window.addEventListener("scroll", handleViewportChange, true);
@@ -195,98 +199,144 @@ export function ContextMenu({
 
   return (
     <>
-      <div className="fixed inset-0" style={{ zIndex: "var(--z-context-overlay)" as unknown as number }} onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
+      <div
+        className="fixed inset-0"
+        style={{ zIndex: "var(--z-context-overlay)" as unknown as number }}
+        onClick={onClose}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onClose();
+        }}
+      />
 
-      <div ref={menuRef} style={{ ...style, boxShadow: 'var(--shadow-dropdown)' }} className="bg-[var(--bg-overlay)] border border-[var(--border-default)] rounded-[var(--radius-md)] py-0.5 w-[168px] max-w-[46vw] max-h-[70vh] overflow-y-auto text-[13px]">
-        <button onClick={() => { onLaunch(); onClose(); }} className="w-full text-left px-2.5 py-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors">
-          打开
-        </button>
-        <button onClick={handleOpenFolder} className="w-full text-left px-2.5 py-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors">
-          打开所在文件夹
-        </button>
-        <button onClick={handleChangeThumbnail} className="w-full text-left px-2.5 py-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors">
-          {item.icon_path ? "更换缩略图" : "设置缩略图"}
-        </button>
-        {item.icon_path && (
-          <button onClick={handleClearThumbnail} className="w-full text-left px-2.5 py-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors">
-            清除缩略图
-          </button>
-        )}
-        <div className="h-px bg-[var(--border-subtle)] my-0.5" />
+      <div
+        ref={menuRef}
+        style={{ ...style, boxShadow: "var(--shadow-dropdown)" }}
+        className="modal-surface w-[196px] max-h-[72vh] max-w-[46vw] overflow-y-auto p-2"
+      >
+        <MenuItem label="打开" onClick={() => { onLaunch(); onClose(); }} />
+        <MenuItem label="打开所在文件夹" onClick={() => void handleOpenFolder()} />
+        <MenuItem label={item.icon_path ? "更换缩略图" : "设置缩略图"} onClick={() => void handleChangeThumbnail()} />
+        {item.icon_path && <MenuItem label="清除缩略图" onClick={() => void handleClearThumbnail()} />}
+        <MenuDivider />
 
-        <button onClick={() => { onToggleFavorite(); onClose(); }} className="w-full text-left px-2.5 py-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5">
-          {item.is_favorite ? (
-            <>
-              <svg className="w-3.5 h-3.5" style={{ color: "var(--color-favorite)" }} fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-              取消收藏
-            </>
-          ) : (
-            <>
-              <svg className="w-3.5 h-3.5 text-[var(--text-faint)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-              收藏
-            </>
-          )}
-        </button>
-
-        <button onClick={() => { onEditTags(); onClose(); }} className="w-full text-left px-2.5 py-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors">
-          管理标签
-        </button>
+        <MenuItem
+          label={item.is_favorite ? "取消收藏" : "加入收藏"}
+          onClick={() => { onToggleFavorite(); onClose(); }}
+          accent={item.is_favorite ? "favorite" : undefined}
+        />
+        <MenuItem label="管理标签" onClick={() => { onEditTags(); onClose(); }} />
 
         {cabinets.length > 0 && (
           <div onMouseEnter={openCabinetSubmenu} onMouseLeave={scheduleCloseCabinetSubmenu}>
             <button
               ref={cabinetTriggerRef}
-              className="w-full text-left px-2.5 py-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-between"
+              type="button"
+              className="flex w-full items-center justify-between rounded-[var(--radius-md)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
               添加到文件柜
-              <svg className={`w-3 h-3 text-[var(--text-faint)] transition-transform ${submenuToLeft ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              <svg
+                className={`h-4 w-4 text-[var(--text-faint)] transition-transform ${submenuToLeft ? "rotate-180" : ""}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.8}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
               </svg>
             </button>
           </div>
         )}
 
         {currentCabinetId !== null && (
-          <button
+          <MenuItem
+            label={currentCabinetName ? `移出文件柜 · ${currentCabinetName}` : "移出当前文件柜"}
             onClick={async () => {
               await onRemoveItemFromCabinet(currentCabinetId, item.id);
               onClose();
             }}
-            className="w-full text-left px-2.5 py-1 text-[var(--color-warning)] hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-warning)] transition-colors"
-          >
-            {currentCabinetName ? `从当前文件柜移除: ${currentCabinetName}` : "从当前文件柜移除"}
-          </button>
+            accent="warning"
+          />
         )}
 
-        <div className="h-px bg-[var(--border-subtle)] my-0.5" />
-        <button onClick={() => { onRemove(); onClose(); }} className="w-full text-left px-2.5 py-1 text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger-hover)] transition-colors">
-          删除
-        </button>
+        <MenuDivider />
+        <MenuItem label="删除" onClick={() => { onRemove(); onClose(); }} accent="danger" />
       </div>
 
       {showCabinetSub && (
         <div
           ref={submenuRef}
-          style={{ ...submenuStyle, boxShadow: 'var(--shadow-dropdown)' }}
+          style={{ ...submenuStyle, boxShadow: "var(--shadow-dropdown)" }}
           onMouseEnter={openCabinetSubmenu}
           onMouseLeave={scheduleCloseCabinetSubmenu}
-          className="bg-[var(--bg-overlay)] border border-[var(--border-default)] rounded-[var(--radius-md)] py-0.5 w-[180px] max-w-[42vw] max-h-[60vh] overflow-y-auto"
+          className="modal-surface w-[196px] max-h-[60vh] max-w-[42vw] overflow-y-auto p-2"
         >
-          {cabinets.map((cab) => (
+          {cabinets.map((cabinet) => (
             <button
-              key={cab.id}
+              key={cabinet.id}
+              type="button"
               onClick={async () => {
-                await onAddItemToCabinet(cab.id, item.id);
+                await onAddItemToCabinet(cabinet.id, item.id);
                 onClose();
               }}
-              className="w-full text-left px-2.5 py-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5"
+              className="flex w-full items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cab.color }} />
-              <span className="truncate">{cab.name}</span>
+              <span className="h-3 w-3 shrink-0 rounded-[4px]" style={{ backgroundColor: cabinet.color }} />
+              <span className="truncate">{cabinet.name}</span>
             </button>
           ))}
         </div>
       )}
     </>
   );
+}
+
+function MenuItem({
+  label,
+  onClick,
+  accent,
+}: {
+  label: string;
+  onClick: () => void | Promise<void>;
+  accent?: "danger" | "warning" | "favorite";
+}) {
+  const accentMap = {
+    danger: {
+      color: "var(--color-danger)",
+      hoverBg: "var(--color-danger-bg)",
+    },
+    warning: {
+      color: "var(--color-warning)",
+      hoverBg: "var(--status-warning-bg)",
+    },
+    favorite: {
+      color: "var(--color-favorite)",
+      hoverBg: "color-mix(in srgb, var(--color-favorite) 14%, transparent)",
+    },
+  } as const;
+
+  const accentStyle = accent ? accentMap[accent] : null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => void onClick()}
+      className="w-full rounded-[var(--radius-md)] px-3 py-2 text-left text-sm hover:text-[var(--text-primary)]"
+      style={{
+        color: accentStyle?.color ?? "var(--text-secondary)",
+      }}
+      onMouseEnter={(event) => {
+        event.currentTarget.style.backgroundColor = accentStyle?.hoverBg ?? "var(--bg-hover)";
+      }}
+      onMouseLeave={(event) => {
+        event.currentTarget.style.backgroundColor = "";
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function MenuDivider() {
+  return <div className="my-1 h-px bg-[var(--border-subtle)]" />;
 }

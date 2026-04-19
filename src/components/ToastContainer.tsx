@@ -55,9 +55,9 @@ export function ToastContainer() {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border text-sm max-w-xs animate-in"
+          className="toast-enter pointer-events-auto flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3 text-sm max-w-sm"
           style={{
-            backgroundColor: "var(--bg-elevated)",
+            backgroundColor: "color-mix(in srgb, var(--bg-elevated) 96%, white)",
             borderColor: toastBorderColor(toast.type),
             boxShadow: "var(--shadow-overlay)",
             color: "var(--text-primary)",
@@ -69,7 +69,7 @@ export function ToastContainer() {
           <span className="flex-1 truncate">{toast.message}</span>
           <button
             onClick={() => dismiss(toast.id)}
-            className="shrink-0 opacity-50 hover:opacity-100 transition-opacity"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-full)] opacity-50 transition-opacity hover:bg-[var(--bg-hover)] hover:opacity-100"
             style={{ color: "var(--text-muted)" }}
           >
             ✕

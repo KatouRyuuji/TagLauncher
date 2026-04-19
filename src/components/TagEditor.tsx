@@ -1,36 +1,23 @@
-// ============================================================================
-// components/TagEditor.tsx — 标签/文件柜编辑弹窗
-// ============================================================================
-// 通用编辑弹窗，同时服务于标签和文件柜的新建/编辑/删除。
-// 通过 `label` prop 区分显示文字（"标签"或"文件柜"）。
-// 通过 `tag` prop 是否为 null 区分新建和编辑模式。
-//
-// 功能：
-// - 名称输入
-// - 8 种预设颜色选择（选中时显示白色圆环）
-// - 保存/取消/删除按钮
-// ============================================================================
-
 import { useState } from "react";
-import type { Tag } from "../types";
 import { getThemeTagPresetColors } from "../lib/tagColors";
+import type { Tag } from "../types";
 
 interface TagEditorProps {
-  tag: Tag | null;                                    // null = 新建模式，非 null = 编辑模式
-  label?: string;                                     // 显示文字，默认"标签"
+  tag: Tag | null;
+  label?: string;
   onSave: (name: string, color: string) => Promise<void>;
-  onDelete?: () => void;                              // 编辑模式才有删除按钮
+  onDelete?: () => void;
   onClose: () => void;
 }
 
 export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: TagEditorProps) {
   const presetColors = getThemeTagPresetColors();
   const [name, setName] = useState(tag?.name || "");
-  const [color, setColor] = useState(tag?.color || presetColors[5] || presetColors[0]);  // 默认蓝色
+  const [color, setColor] = useState(tag?.color || presetColors[5] || presetColors[0]);
   const [saving, setSaving] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (!name.trim()) return;
     setSaving(true);
     try {
@@ -41,61 +28,92 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
   };
 
   return (
-    // 全屏半透明遮罩，点击关闭
-    <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: "var(--overlay-bg)" }} onClick={onClose}>
-      {/* 弹窗主体，阻止点击事件冒泡到遮罩 */}
-      <div className="bg-[var(--bg-elevated)] rounded-[var(--radius-xl)] p-5 w-80 border border-[var(--border-subtle)]" style={{ boxShadow: 'var(--shadow-overlay)' }} onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-base font-semibold text-[var(--text-primary)] mb-4">
-          {tag ? `编辑${label}` : `新建${label}`}
-        </h2>
-        <form onSubmit={handleSubmit}>
-          {/* 名称输入框 */}
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={`${label}名称`}
-            autoFocus
-            className="w-full bg-[var(--bg-hover)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none focus:border-[var(--accent-primary)] mb-4"
-          />
-          {/* 颜色选择器：8 个预设颜色圆点 */}
-          <div className="flex gap-2 mb-5 flex-wrap">
-            {presetColors.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setColor(c)}
-                className={`w-7 h-7 rounded-full transition-all ${
-                  color === c ? "ring-2 ring-[var(--text-primary)] ring-offset-2 ring-offset-[var(--bg-elevated)] scale-110" : "hover:scale-105"
-                }`}
-                style={{ backgroundColor: c }}
-              />
-            ))}
+    <div
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-panel)" as unknown as number }}
+      onClick={onClose}
+    >
+      <div className="modal-surface w-[420px] max-w-[calc(100vw-2rem)] p-6" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-label">{label}</div>
+            <h2 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">
+              {tag ? `编辑${label}` : `新建${label}`}
+            </h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              统一色彩与命名可以让分类结构更清晰。
+            </p>
           </div>
-          {/* 操作按钮 */}
-          <div className="flex gap-2">
-            {/* 删除按钮（仅编辑模式显示） */}
+          <button type="button" onClick={onClose} className="icon-button">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-5">
+          <label className="block">
+            <span className="text-label">Name</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={`${label}名称`}
+              autoFocus
+              className="mt-2 w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-3 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:border-[var(--accent-primary)] focus:outline-none"
+            />
+          </label>
+
+          <div className="mt-5">
+            <div className="text-label">Palette</div>
+            <div className="mt-3 grid grid-cols-4 gap-3">
+              {presetColors.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setColor(preset)}
+                  className="flex items-center gap-3 rounded-[var(--radius-md)] border px-3 py-3 text-left"
+                  style={{
+                    borderColor: color === preset ? preset : "var(--border-subtle)",
+                    backgroundColor: color === preset
+                      ? `color-mix(in srgb, ${preset} 14%, white)`
+                      : "color-mix(in srgb, var(--bg-card) 78%, transparent)",
+                  }}
+                >
+                  <span className="h-4 w-4 rounded-full" style={{ backgroundColor: preset }} />
+                  <span className="text-xs font-medium text-[var(--text-secondary)]">
+                    {color === preset ? "已选" : "选择"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 flex items-center gap-2">
             {onDelete && (
               <button
                 type="button"
                 onClick={onDelete}
-                className="px-3 py-1.5 text-sm bg-[var(--color-danger-bg)] hover:bg-[var(--color-danger-bg)] border border-[var(--color-danger)] rounded-[var(--radius-md)] text-[var(--color-danger)] transition-colors"
+                className="action-button"
+                style={{
+                  color: "var(--color-danger)",
+                  borderColor: "color-mix(in srgb, var(--color-danger) 26%, transparent)",
+                  backgroundColor: "var(--color-danger-bg)",
+                }}
               >
                 删除
               </button>
             )}
+
             <div className="flex-1" />
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-1.5 text-sm bg-[var(--bg-hover)] hover:bg-[var(--bg-active)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] text-[var(--text-tertiary)] transition-colors"
-            >
+
+            <button type="button" onClick={onClose} className="action-button">
               取消
             </button>
             <button
               type="submit"
               disabled={!name.trim() || saving}
-              className="px-4 py-1.5 text-sm bg-[var(--accent-primary)] hover:opacity-90 disabled:opacity-40 rounded-[var(--radius-md)] text-[var(--text-invert)] transition-colors"
+              className="action-button action-button-primary disabled:opacity-40"
             >
               保存
             </button>

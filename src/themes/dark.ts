@@ -1,160 +1,139 @@
-/**
- * 深色主题 — Catppuccin Mocha
- * 灵感来源: https://catppuccin.com/palette/
- * 特色: 暖紫灰底色（#1e1e2e），告别冷灰/纯黑；
- *       月光蓝强调色（#89b4fa）；紧凑圆角；无装饰效果。
- */
 import type { ThemeDefinition } from "../types/theme";
 
 export const darkTheme: ThemeDefinition = {
   id: "dark",
-  name: "深色",
-  author: "Catppuccin",
-  version: "3.0.0",
+  name: "雾夜",
+  author: "TagLauncher",
+  version: "4.0.0",
   isPreset: true,
   variables: {
-    // ── Typography ──────────────────────────────────────────
-    "font-family": "'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif",
-    "font-family-mono": "'JetBrains Mono', 'Cascadia Code', monospace",
+    "font-family": "\"Segoe UI Variable Text\", \"PingFang SC\", \"HarmonyOS Sans SC\", \"Microsoft YaHei UI\", sans-serif",
+    "font-family-mono": "\"JetBrains Mono\", \"Cascadia Mono\", monospace",
     "font-size-xs": "11px",
     "font-size-sm": "13px",
     "font-size-base": "14px",
     "font-size-lg": "16px",
-    "font-size-xl": "18px",
+    "font-size-xl": "20px",
     "font-weight-normal": "400",
     "font-weight-medium": "500",
     "font-weight-bold": "600",
-    "line-height-tight": "1.25",
-    "line-height-normal": "1.5",
-    "letter-spacing": "0em",
+    "line-height-tight": "1.3",
+    "line-height-normal": "1.56",
+    "letter-spacing": "0.01em",
 
-    // ── Radius — 中等，现代精准 ─────────────────────────────
-    "radius-sm": "4px",
-    "radius-md": "8px",
-    "radius-lg": "12px",
-    "radius-xl": "16px",
+    "radius-sm": "8px",
+    "radius-md": "12px",
+    "radius-lg": "18px",
+    "radius-xl": "28px",
     "radius-full": "9999px",
 
-    // ── Shadows — 深紫色调，强调层次感 ─────────────────────
-    "shadow-sm": "0 1px 2px rgba(0,0,0,0.45)",
-    "shadow-md": "0 4px 12px rgba(0,0,0,0.55)",
-    "shadow-lg": "0 12px 40px rgba(0,0,0,0.65)",
-    "shadow-overlay": "0 24px 64px rgba(0,0,0,0.78), 0 4px 16px rgba(0,0,0,0.4)",
-    "shadow-dropdown": "0 8px 24px rgba(0,0,0,0.6), 0 2px 6px rgba(0,0,0,0.3)",
-    "shadow-card": "none",
-    "shadow-glow": "none",
+    "shadow-sm": "0 14px 30px rgba(2, 6, 23, 0.2)",
+    "shadow-md": "0 22px 54px rgba(2, 6, 23, 0.28)",
+    "shadow-lg": "0 30px 80px rgba(2, 6, 23, 0.34)",
+    "shadow-overlay": "0 36px 100px rgba(2, 6, 23, 0.46)",
+    "shadow-dropdown": "0 22px 60px rgba(2, 6, 23, 0.32)",
+    "shadow-card": "0 18px 42px rgba(2, 6, 23, 0.22)",
+    "shadow-glow": "0 0 0 1px rgba(96, 165, 250, 0.1)",
 
-    // ── Spacing ─────────────────────────────────────────────
     "spacing-unit": "4px",
     "spacing-xs": "4px",
     "spacing-sm": "8px",
     "spacing-md": "12px",
-    "spacing-lg": "16px",
+    "spacing-lg": "18px",
     "spacing-xl": "24px",
 
-    // ── Motion — 快速响应 ────────────────────────────────────
-    "transition-fast": "120ms ease",
-    "transition-normal": "200ms ease",
-    "transition-slow": "350ms ease",
+    "transition-fast": "140ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+    "transition-normal": "220ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+    "transition-slow": "360ms cubic-bezier(0.2, 0.8, 0.2, 1)",
 
-    // ── Decorative — 极subtle蓝色光晕提升质感 ─────────────
-    // 右上角极淡月光蓝，不影响深色整体感但增加层次
-    "bg-gradient": "radial-gradient(ellipse 65% 45% at 100% 0%, rgba(137,180,250,0.05) 0%, transparent 55%)",
+    "bg-gradient": [
+      "radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.18), transparent 34%)",
+      "radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.12), transparent 30%)",
+      "linear-gradient(180deg, rgba(8, 15, 31, 0.18) 0%, transparent 28%)",
+    ].join(", "),
     "card-backdrop-filter": "none",
     "sidebar-backdrop-filter": "none",
-    "welcome-accent-gradient": "radial-gradient(circle at 85% 12%, rgba(137,180,250,0.18), transparent 38%)",
-    "media-caption-gradient": "linear-gradient(to top, rgba(0,0,0,0.68), transparent)",
-    "status-warning-bg": "rgba(249,226,175,0.1)",
-    "status-success-bg": "rgba(166,227,161,0.1)",
-    "tag-preset-colors": "#f38ba8,#fab387,#f9e2af,#a6e3a1,#94e2d5,#89b4fa,#cba6f7,#f5c2e7",
+    "welcome-accent-gradient": "radial-gradient(circle at 82% 10%, rgba(96, 165, 250, 0.22), transparent 38%)",
+    "media-caption-gradient": "linear-gradient(to top, rgba(2, 6, 23, 0.82), transparent)",
+    "status-warning-bg": "rgba(245, 158, 11, 0.12)",
+    "status-success-bg": "rgba(34, 197, 94, 0.14)",
+    "tag-preset-colors": "#fb7185,#f59e0b,#facc15,#4ade80,#2dd4bf,#60a5fa,#818cf8,#f472b6",
 
-    // ── Layout ──────────────────────────────────────────────
-    "sidebar-width": "208px",
-    "grid-col-min": "170px",
-    "header-height": "56px",
+    "sidebar-width": "258px",
+    "grid-col-min": "238px",
+    "header-height": "84px",
 
-    // ── Colors — Catppuccin Mocha ────────────────────────────
-    // 背景层次（从深到浅）
-    "bg-base":     "#1e1e2e",  // Mocha Base — 主背景，暖紫灰
-    "bg-surface":  "#181825",  // Mocha Mantle — 侧边栏/顶栏，更深
-    "bg-card":     "#252535",  // 卡片，略高于 Base
-    "bg-hover":    "#313244",  // Mocha Surface0 — 悬停高亮
-    "bg-active":   "#45475a",  // Mocha Surface1 — 激活/选中
-    "bg-overlay":  "#313244",  // 下拉菜单背景
-    "bg-elevated": "#2a2a40",  // 对话框/设置面板
-    "bg-card-hover": "#313244",
-    "bg-input":    "#181825",
+    "bg-base": "#07111f",
+    "bg-surface": "rgba(10, 21, 38, 0.84)",
+    "bg-elevated": "#102038",
+    "bg-overlay": "#102038",
+    "bg-hover": "rgba(148, 163, 184, 0.12)",
+    "bg-active": "rgba(96, 165, 250, 0.16)",
+    "bg-card": "rgba(16, 32, 56, 0.9)",
+    "bg-card-hover": "#152947",
+    "bg-input": "rgba(10, 21, 38, 0.92)",
+    "text-primary": "#eff6ff",
+    "text-secondary": "#dbeafe",
+    "text-tertiary": "#bfd1ea",
+    "text-muted": "#93abc8",
+    "text-faint": "#6f89a9",
+    "text-ghost": "#4c607a",
+    "text-placeholder": "#7590ae",
+    "text-invert": "#06101d",
+    "border-subtle": "rgba(148, 163, 184, 0.12)",
+    "border-default": "rgba(148, 163, 184, 0.2)",
+    "border-medium": "rgba(148, 163, 184, 0.3)",
+    "border-strong": "rgba(191, 209, 234, 0.38)",
+    "accent-primary": "#7dd3fc",
+    "accent-primary-hover": "#38bdf8",
+    "accent-primary-bg": "rgba(125, 211, 252, 0.14)",
+    "accent-primary-bg-light": "rgba(125, 211, 252, 0.08)",
+    "color-danger": "#f87171",
+    "color-danger-hover": "#ef4444",
+    "color-danger-bg": "rgba(248, 113, 113, 0.12)",
+    "color-warning": "#fbbf24",
+    "color-success": "#4ade80",
+    "color-favorite": "#facc15",
+    "overlay-bg": "rgba(2, 6, 23, 0.56)",
+    "scrollbar-thumb": "rgba(147, 171, 200, 0.26)",
+    "scrollbar-thumb-hover": "rgba(191, 209, 234, 0.34)",
 
-    // 文本层次
-    "text-primary":     "#cdd6f4",  // Mocha Text
-    "text-secondary":   "#bac2de",  // Mocha Subtext1
-    "text-tertiary":    "#a6adc8",  // Mocha Subtext0
-    "text-muted":       "#7f849c",  // Mocha Overlay1
-    "text-faint":       "#6c7086",  // Mocha Overlay0
-    "text-ghost":       "#585b70",  // Mocha Surface2
-    "text-placeholder": "#6c7086",
-    "text-invert":      "#1e1e2e",
-
-    // 边框
-    "border-subtle":  "#313244",  // Mocha Surface0
-    "border-default": "#45475a",  // Mocha Surface1
-    "border-medium":  "#585b70",  // Mocha Surface2
-    "border-strong":  "#7f849c",  // Mocha Overlay1
-
-    // 强调色 — Mocha Blue（月光蓝，柔和不刺眼）
-    "accent-primary":          "#89b4fa",
-    "accent-primary-hover":    "#74c7ec",
-    "accent-primary-bg":       "rgba(137,180,250,0.15)",
-    "accent-primary-bg-light": "rgba(137,180,250,0.08)",
-
-    // 状态色
-    "color-danger":      "#f38ba8",                   // Mocha Red
-    "color-danger-hover": "#eba0ac",                  // Mocha Maroon
-    "color-danger-bg":   "rgba(243,139,168,0.12)",
-    "color-warning":     "#f9e2af",                   // Mocha Yellow
-    "color-success":     "#a6e3a1",                   // Mocha Green
-    "color-favorite":    "#f9e2af",
-
-    // 遮罩
-    "overlay-bg":            "rgba(0, 0, 0, 0.55)",
-
-    // 滚动条
-    "scrollbar-thumb":       "#45475a",
-    "scrollbar-thumb-hover": "#585b70",
-
-    // ── Z-Index Layers ──────────────────────────────────────────
-    "z-bg-decoration":       "0",
-    "z-context-overlay":     "99",
-    "z-context-menu":        "100",
-    "z-context-submenu":     "110",
-    "z-drag-ghost":          "120",
-    "z-welcome-modal":       "120",
-    "z-floating-panel":      "150",
-    "z-settings-overlay":    "200",
-    "z-settings-panel":      "201",
+    "z-bg-decoration": "0",
+    "z-context-overlay": "99",
+    "z-context-menu": "100",
+    "z-context-submenu": "110",
+    "z-drag-ghost": "120",
+    "z-welcome-modal": "120",
+    "z-floating-panel": "150",
+    "z-settings-overlay": "200",
+    "z-settings-panel": "201",
     "z-mod-confirm-overlay": "250",
-    "z-mod-confirm-panel":   "251",
-    "z-migration-overlay":   "300",
-    "z-migration-panel":     "301",
-    "z-toast":               "500",
+    "z-mod-confirm-panel": "251",
+    "z-migration-overlay": "300",
+    "z-migration-panel": "301",
+    "z-toast": "500",
 
-    // ── Interaction Details ──────────────────────────────────────
     "drag-ghost-offset-x": "14px",
     "drag-ghost-offset-y": "14px",
-    "tag-color-alpha":     "20%",
-    "tag-selected-alpha":  "28%",
-    "tag-muted-alpha":     "12%",
-    "tag-selected-border-alpha": "66%",
-    "border-width":        "1px",
-    "border-style":        "solid",
+    "tag-color-alpha": "18%",
+    "tag-selected-alpha": "28%",
+    "tag-muted-alpha": "10%",
+    "tag-selected-border-alpha": "62%",
+    "border-width": "1px",
+    "border-style": "solid",
 
-    // ── Panel UI ────────────────────────────────────────────────
-    "panel-floating-min-width":    "280px",
-    "panel-floating-min-height":   "200px",
-    "panel-floating-border-radius":"var(--radius-lg)",
-    "panel-titlebar-height":       "36px",
-    "panel-titlebar-bg":           "var(--bg-surface)",
-    "panel-body-bg":               "var(--bg-elevated)",
-    "panel-border-color":          "var(--border-default)",
+    "panel-floating-min-width": "320px",
+    "panel-floating-min-height": "220px",
+    "panel-floating-border-radius": "var(--radius-lg)",
+    "panel-titlebar-height": "40px",
+    "panel-titlebar-bg": "rgba(10, 21, 38, 0.92)",
+    "panel-body-bg": "#102038",
+    "panel-border-color": "var(--border-default)",
   },
+  css: [
+    "html { color-scheme: dark; }",
+    ".app-frame {",
+    "  background: linear-gradient(180deg, rgba(10, 21, 38, 0.86) 0%, rgba(7, 17, 31, 0.94) 100%);",
+    "}",
+  ].join("\n"),
 };

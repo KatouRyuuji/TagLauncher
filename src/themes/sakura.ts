@@ -1,174 +1,145 @@
-/**
- * 樱花主题 — 花（Hana）白粉色浅色系
- *
- * 设计参考：
- *   - 樱花经典粉 #FFB7C5  https://www.color-hex.com/color-palette/18061
- *   - Rosé Pine Dawn 底色 #faf4ed  https://rosepinetheme.com/palette/
- *   - 日系 App UI 2024 趋势：白色/浅粉底色 + 圆形字体 + 粉色调
- *   - Glassmorphism 现代设计趋势
- *
- * 特色：
- *   近白粉底色（#fdf4f7），如春日晴空下的樱花林；
- *   深樱桃粉强调色（#c2416f）对比度充足；
- *   暖粉色调阴影替代冷灰色；
- *   超大圆角 + 日系圆润字体；
- *   淡粉色角落光晕营造春日氛围。
- */
 import type { ThemeDefinition } from "../types/theme";
 
 export const sakuraTheme: ThemeDefinition = {
   id: "sakura",
-  name: "樱花",
-  author: "Hana",
-  version: "3.0.0",
+  name: "樱诗",
+  author: "TagLauncher",
+  version: "4.0.0",
   isPreset: true,
   variables: {
-    // ── Typography — 日系圆润字体 ──────────────────────────
-    "font-family": "'Zen Maru Gothic', 'LXGW WenKai', 'Hiragino Maru Gothic ProN', 'PingFang SC', system-ui, sans-serif",
-    "font-family-mono": "'JetBrains Mono', 'Cascadia Code', monospace",
+    "font-family": "\"Segoe UI Variable Text\", \"PingFang SC\", \"LXGW WenKai\", \"Microsoft YaHei UI\", sans-serif",
+    "font-family-mono": "\"JetBrains Mono\", \"Cascadia Mono\", monospace",
     "font-size-xs": "11px",
     "font-size-sm": "13px",
     "font-size-base": "14px",
     "font-size-lg": "16px",
-    "font-size-xl": "18px",
+    "font-size-xl": "20px",
     "font-weight-normal": "400",
     "font-weight-medium": "500",
-    "font-weight-bold": "700",
-    "line-height-tight": "1.4",
-    "line-height-normal": "1.65",
-    "letter-spacing": "0.02em",
+    "font-weight-bold": "600",
+    "line-height-tight": "1.32",
+    "line-height-normal": "1.6",
+    "letter-spacing": "0.015em",
 
-    // ── Radius — 超大圆角，花瓣般柔软 ─────────────────────
-    "radius-sm": "6px",
-    "radius-md": "12px",
-    "radius-lg": "18px",
-    "radius-xl": "24px",
+    "radius-sm": "10px",
+    "radius-md": "14px",
+    "radius-lg": "20px",
+    "radius-xl": "30px",
     "radius-full": "9999px",
 
-    // ── Shadows — 粉暖色调阴影，替代冷灰 ──────────────────
-    "shadow-sm":      "0 1px 3px rgba(180,80,120,0.08), 0 1px 2px rgba(180,80,120,0.05)",
-    "shadow-md":      "0 4px 12px rgba(180,80,120,0.12), 0 2px 4px rgba(180,80,120,0.06)",
-    "shadow-lg":      "0 12px 32px rgba(180,80,120,0.15), 0 4px 8px rgba(180,80,120,0.08)",
-    "shadow-overlay": "0 24px 64px rgba(180,80,120,0.18), 0 4px 16px rgba(100,20,50,0.08)",
-    "shadow-dropdown":"0 8px 24px rgba(180,80,120,0.12), 0 2px 6px rgba(180,80,120,0.07)",
-    "shadow-card":    "0 1px 4px rgba(180,80,120,0.1), 0 0 0 1px rgba(180,80,120,0.07)",
-    "shadow-glow":    "0 0 20px rgba(194,65,111,0.2), 0 0 40px rgba(194,65,111,0.08)",
+    "shadow-sm": "0 12px 28px rgba(179, 107, 131, 0.08)",
+    "shadow-md": "0 20px 50px rgba(179, 107, 131, 0.13)",
+    "shadow-lg": "0 30px 78px rgba(179, 107, 131, 0.17)",
+    "shadow-overlay": "0 36px 96px rgba(124, 72, 91, 0.22)",
+    "shadow-dropdown": "0 20px 56px rgba(179, 107, 131, 0.16)",
+    "shadow-card": "0 14px 34px rgba(179, 107, 131, 0.09)",
+    "shadow-glow": "0 0 0 1px rgba(255, 112, 150, 0.08)",
 
-    // ── Spacing ─────────────────────────────────────────────
     "spacing-unit": "4px",
     "spacing-xs": "4px",
     "spacing-sm": "8px",
     "spacing-md": "12px",
-    "spacing-lg": "16px",
+    "spacing-lg": "18px",
     "spacing-xl": "24px",
 
-    // ── Motion — 轻盈自然，如花瓣落下 ──────────────────────
-    "transition-fast":   "160ms cubic-bezier(0.34, 1.56, 0.64, 1)",  // 带轻微弹性
-    "transition-normal": "280ms cubic-bezier(0.4, 0, 0.2, 1)",
-    "transition-slow":   "450ms cubic-bezier(0.4, 0, 0.2, 1)",
+    "transition-fast": "150ms cubic-bezier(0.22, 0.8, 0.24, 1)",
+    "transition-normal": "240ms cubic-bezier(0.22, 0.8, 0.24, 1)",
+    "transition-slow": "380ms cubic-bezier(0.22, 0.8, 0.24, 1)",
 
-    // ── Decorative — 春日角落光晕 ───────────────────────────
-    // 左上角樱花粉光源（如阳光透过花枝），右下角淡玫瑰光晕
     "bg-gradient": [
-      "radial-gradient(ellipse 70% 50% at 2% 5%, rgba(255,182,200,0.35) 0%, transparent 55%)",
-      "radial-gradient(ellipse 55% 40% at 98% 96%, rgba(255,160,185,0.28) 0%, transparent 50%)",
-      "radial-gradient(ellipse 35% 28% at 50% 100%, rgba(255,200,215,0.15) 0%, transparent 55%)",
+      "radial-gradient(circle at 0% 0%, rgba(255, 183, 205, 0.38), transparent 34%)",
+      "radial-gradient(circle at 100% 100%, rgba(255, 214, 226, 0.4), transparent 30%)",
+      "radial-gradient(circle at 58% 100%, rgba(255, 112, 150, 0.09), transparent 26%)",
     ].join(", "),
-    "card-backdrop-filter": "none",      // 浅色主题不需要毛玻璃（避免奇怪效果）
+    "card-backdrop-filter": "none",
     "sidebar-backdrop-filter": "none",
-    "welcome-accent-gradient": "radial-gradient(circle at 85% 12%, rgba(194,65,111,0.16), transparent 38%)",
-    "media-caption-gradient": "linear-gradient(to top, rgba(61,30,53,0.54), transparent)",
-    "status-warning-bg": "rgba(184,121,40,0.1)",
-    "status-success-bg": "rgba(46,125,82,0.1)",
-    "tag-preset-colors": "#c4334c,#d96a4d,#b87928,#2e7d52,#2a9d8f,#4f7cff,#a05bc1,#c2416f",
+    "welcome-accent-gradient": "radial-gradient(circle at 82% 10%, rgba(255, 112, 150, 0.18), transparent 40%)",
+    "media-caption-gradient": "linear-gradient(to top, rgba(94, 58, 68, 0.74), transparent)",
+    "status-warning-bg": "rgba(214, 141, 93, 0.12)",
+    "status-success-bg": "rgba(107, 157, 127, 0.12)",
+    "tag-preset-colors": "#ff7096,#ff8fab,#e48aa3,#f3a683,#d8a35d,#7a9be8,#9b7bd1,#d96f95",
 
-    // ── Layout ──────────────────────────────────────────────
-    "sidebar-width": "208px",
-    "grid-col-min": "170px",
-    "header-height": "56px",
+    "sidebar-width": "258px",
+    "grid-col-min": "238px",
+    "header-height": "84px",
 
-    // ── Colors — 白粉色浅色系 ────────────────────────────────
-    // 背景（从近白到淡粉，层次感）
-    "bg-base":     "#fdf4f7",  // 近白，带极淡粉色，主背景
-    "bg-surface":  "#f7e8f0",  // 淡粉，侧边栏/顶栏
-    "bg-card":     "#ffffff",  // 纯白卡片，与背景形成对比
-    "bg-hover":    "#fce4ee",  // 悬停：浅樱花粉
-    "bg-active":   "#f8d0e4",  // 激活：稍深粉
-    "bg-overlay":  "#ffffff",  // 下拉菜单
-    "bg-elevated": "#ffffff",  // 对话框
-    "bg-card-hover": "#fff5f9",
-    "bg-input":    "#ffffff",
+    "bg-base": "#fff0f5",
+    "bg-surface": "rgba(255, 248, 250, 0.84)",
+    "bg-elevated": "#fffafc",
+    "bg-overlay": "#fffafc",
+    "bg-hover": "rgba(255, 183, 205, 0.22)",
+    "bg-active": "rgba(255, 112, 150, 0.14)",
+    "bg-card": "rgba(255, 255, 255, 0.94)",
+    "bg-card-hover": "#fffdfd",
+    "bg-input": "rgba(255, 255, 255, 0.98)",
+    "text-primary": "#5e3a44",
+    "text-secondary": "#7a4c59",
+    "text-tertiary": "#996472",
+    "text-muted": "#ba8b97",
+    "text-faint": "#d8b8c1",
+    "text-ghost": "#f0dbe2",
+    "text-placeholder": "#cfa2af",
+    "text-invert": "#ffffff",
+    "border-subtle": "rgba(255, 183, 205, 0.22)",
+    "border-default": "rgba(255, 183, 205, 0.38)",
+    "border-medium": "rgba(221, 156, 178, 0.52)",
+    "border-strong": "rgba(168, 114, 136, 0.48)",
+    "accent-primary": "#ff7096",
+    "accent-primary-hover": "#ff5f88",
+    "accent-primary-bg": "rgba(255, 112, 150, 0.12)",
+    "accent-primary-bg-light": "rgba(255, 112, 150, 0.07)",
+    "color-danger": "#e56b89",
+    "color-danger-hover": "#d85778",
+    "color-danger-bg": "rgba(229, 107, 137, 0.1)",
+    "color-warning": "#d68d5d",
+    "color-success": "#6b9d7f",
+    "color-favorite": "#f2a65a",
+    "overlay-bg": "rgba(94, 58, 68, 0.34)",
+    "scrollbar-thumb": "rgba(255, 112, 150, 0.2)",
+    "scrollbar-thumb-hover": "rgba(255, 112, 150, 0.34)",
 
-    // 文本（深暖玫瑰褐色，白底上对比度充足）
-    "text-primary":     "#3d1e35",  // 深暖玫瑰褐，主文字
-    "text-secondary":   "#6b3d5c",  // 中等玫瑰
-    "text-tertiary":    "#8d5f78",  // 浅玫瑰灰
-    "text-muted":       "#b08a9e",  // 静音色
-    "text-faint":       "#c8aab8",  // 淡色
-    "text-ghost":       "#e0d0d8",  // 占位符级
-    "text-placeholder": "#c0a0b0",
-    "text-invert":      "#fdf4f7",  // 用于强调按钮上的文字
-
-    // 边框（粉色调，而非冷灰）
-    "border-subtle":  "#f0dce7",  // 几乎不可见
-    "border-default": "#e8c8d8",  // 标准边框
-    "border-medium":  "#d8b0c5",  // 较显著边框
-    "border-strong":  "#c090a8",  // 强边框
-
-    // 强调色 — 深樱桃粉（白底上 4.5:1 对比度，符合 WCAG AA）
-    "accent-primary":          "#c2416f",
-    "accent-primary-hover":    "#a83060",
-    "accent-primary-bg":       "rgba(194,65,111,0.1)",
-    "accent-primary-bg-light": "rgba(194,65,111,0.06)",
-
-    // 状态色（保持温暖粉色调系统）
-    "color-danger":       "#c4334c",
-    "color-danger-hover": "#a82040",
-    "color-danger-bg":    "rgba(196,51,76,0.09)",
-    "color-warning":      "#b87928",
-    "color-success":      "#2e7d52",
-    "color-favorite":     "#c87840",   // 温暖琥珀色
-
-    // 遮罩（粉色调半透明）
-    "overlay-bg":            "rgba(61, 30, 53, 0.42)",
-
-    // 滚动条（粉色调）
-    "scrollbar-thumb":       "rgba(194,65,111,0.22)",
-    "scrollbar-thumb-hover": "rgba(194,65,111,0.45)",
-
-    // ── Z-Index Layers ──────────────────────────────────────────
-    "z-bg-decoration":       "0",
-    "z-context-overlay":     "99",
-    "z-context-menu":        "100",
-    "z-context-submenu":     "110",
-    "z-drag-ghost":          "120",
-    "z-welcome-modal":       "120",
-    "z-floating-panel":      "150",
-    "z-settings-overlay":    "200",
-    "z-settings-panel":      "201",
+    "z-bg-decoration": "0",
+    "z-context-overlay": "99",
+    "z-context-menu": "100",
+    "z-context-submenu": "110",
+    "z-drag-ghost": "120",
+    "z-welcome-modal": "120",
+    "z-floating-panel": "150",
+    "z-settings-overlay": "200",
+    "z-settings-panel": "201",
     "z-mod-confirm-overlay": "250",
-    "z-mod-confirm-panel":   "251",
-    "z-migration-overlay":   "300",
-    "z-migration-panel":     "301",
-    "z-toast":               "500",
+    "z-mod-confirm-panel": "251",
+    "z-migration-overlay": "300",
+    "z-migration-panel": "301",
+    "z-toast": "500",
 
-    // ── Interaction Details ──────────────────────────────────────
     "drag-ghost-offset-x": "14px",
     "drag-ghost-offset-y": "14px",
-    "tag-color-alpha":     "18%",   // 樱花主题略浅，与粉底色搭配
-    "tag-selected-alpha":  "26%",
-    "tag-muted-alpha":     "10%",
-    "tag-selected-border-alpha": "60%",
-    "border-width":        "1px",
-    "border-style":        "solid",
+    "tag-color-alpha": "18%",
+    "tag-selected-alpha": "28%",
+    "tag-muted-alpha": "10%",
+    "tag-selected-border-alpha": "62%",
+    "border-width": "1px",
+    "border-style": "solid",
 
-    // ── Panel UI（樱花主题更大圆角）────────────────────────────
-    "panel-floating-min-width":    "280px",
-    "panel-floating-min-height":   "200px",
-    "panel-floating-border-radius":"var(--radius-xl)",
-    "panel-titlebar-height":       "38px",
-    "panel-titlebar-bg":           "var(--bg-surface)",
-    "panel-body-bg":               "var(--bg-elevated)",
-    "panel-border-color":          "var(--border-default)",
+    "panel-floating-min-width": "320px",
+    "panel-floating-min-height": "220px",
+    "panel-floating-border-radius": "var(--radius-xl)",
+    "panel-titlebar-height": "40px",
+    "panel-titlebar-bg": "rgba(255, 245, 248, 0.96)",
+    "panel-body-bg": "#fffafc",
+    "panel-border-color": "var(--border-default)",
   },
+  css: [
+    "html { color-scheme: light; }",
+    ".app-frame {",
+    "  background: linear-gradient(180deg, rgba(255, 251, 252, 0.9) 0%, rgba(255, 240, 245, 0.96) 100%);",
+    "}",
+    ".surface-card, .modal-surface, .mod-panel-floating {",
+    "  box-shadow: 0 20px 48px rgba(179, 107, 131, 0.12);",
+    "}",
+    ".text-label {",
+    "  color: #c18a98;",
+    "}",
+  ].join("\n"),
 };
