@@ -65,6 +65,23 @@ pub struct ModManifest {
     /// Mod 所针对的 API 版本（如 "2.1.0"）
     #[serde(default)]
     pub api_version: Option<String>,
+    /// Mod 间通信事件约定
+    #[serde(default)]
+    pub events: Option<ModEvents>,
+    /// 依赖声明：modId → 版本要求（如 "^1.0.0"、">=2.0.0"）
+    #[serde(default)]
+    pub dependencies: HashMap<String, String>,
+    /// 加载顺序控制：确保在这些 mod 之后加载
+    #[serde(default, rename = "load_after")]
+    pub load_after: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ModEvents {
+    #[serde(default)]
+    pub exports: Vec<String>,
+    #[serde(default)]
+    pub imports: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

@@ -10,6 +10,12 @@ pub fn add_item(db: State<Database>, path: String) -> Result<Item, String> {
 }
 
 #[tauri::command]
+pub fn add_items(db: State<Database>, paths: Vec<String>) -> item_service::AddItemsResult {
+    let conn = db.get_conn();
+    item_service::add_items(&conn, paths)
+}
+
+#[tauri::command]
 pub fn remove_item(db: State<Database>, id: i64) -> Result<(), String> {
     let conn = db.get_conn();
     item_service::remove_item(&conn, id)

@@ -38,6 +38,27 @@ fn query_all_items(conn: &Connection) -> Result<Vec<Item>, String> {
 }
 
 fn query_items_by_text(conn: &Connection, query: &str) -> Result<Vec<Item>, String> {
+    let search_query = format_fts_query(query);
+    if search_query.is_empty() {
+        return query_items_by_text_like(conn, query);
+    }
+
+    let sql = "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite
+         FROM items i
+         INNER JOIN items_fts ON i.id = items_fts.rowid
+         WHERE items_fts MATCH ?1
+         ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name";
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let items = match stmt
+        .query_map([search_query], item_from_row)
+    {
+        Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+        Err(_) => return query_items_by_text_like(conn, query),
+    };
+    Ok(items)
+}
+
+fn query_items_by_text_like(conn: &Connection, query: &str) -> Result<Vec<Item>, String> {
     let search_query = format!("%{}%", query);
     let sql = format!(
         "SELECT {} FROM items WHERE name LIKE ?1 OR path LIKE ?1 ORDER BY {}",
@@ -81,6 +102,42 @@ fn query_items_by_text_and_tags(
     query: &str,
     tag_ids: &[i64],
 ) -> Result<Vec<Item>, String> {
+    let search_query = format_fts_query(query);
+    if search_query.is_empty() {
+        return query_items_by_text_and_tags_like(conn, query, tag_ids);
+    }
+
+    let placeholders: Vec<String> = tag_ids.iter().map(|_| "?".to_string()).collect();
+    let sql = format!(
+        "SELECT DISTINCT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite
+         FROM items i
+         INNER JOIN items_fts ON i.id = items_fts.rowid
+         INNER JOIN item_tags it ON i.id = it.item_id
+         WHERE items_fts MATCH ?1
+         AND it.tag_id IN ({})
+         ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
+        placeholders.join(",")
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+
+    let mut params_values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(search_query)];
+    for id in tag_ids {
+        params_values.push(Box::new(*id));
+    }
+    let params: Vec<&dyn rusqlite::ToSql> = params_values.iter().map(|p| p.as_ref()).collect();
+
+    let items = match stmt.query_map(params.as_slice(), item_from_row) {
+        Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+        Err(_) => return query_items_by_text_and_tags_like(conn, query, tag_ids),
+    };
+    Ok(items)
+}
+
+fn query_items_by_text_and_tags_like(
+    conn: &Connection,
+    query: &str,
+    tag_ids: &[i64],
+) -> Result<Vec<Item>, String> {
     let search_query = format!("%{}%", query);
     let placeholders: Vec<String> = tag_ids.iter().map(|_| "?".to_string()).collect();
     let sql = format!(
@@ -106,4 +163,15 @@ fn query_items_by_text_and_tags(
         .filter_map(|r| r.ok())
         .collect();
     Ok(items)
+}
+
+fn format_fts_query(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|part| {
+            let escaped = part.replace('"', "\"\"");
+            format!("\"{}\"*", escaped)
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }

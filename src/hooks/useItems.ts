@@ -79,9 +79,7 @@ export function useItems() {
   };
 
   const addItems = async (paths: string[]) => {
-    for (const path of paths) {
-      await db.addItem(path);
-    }
+    await db.addItems(paths);
     await loadAll();
   };
 

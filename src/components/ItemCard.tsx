@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { ContextMenu } from "./ContextMenu";
 import { DraggableTagList } from "./DraggableTagList";
 import { FavoriteStar } from "./FavoriteStar";
@@ -11,7 +11,9 @@ import {
 } from "../lib/internalPointerDrag";
 import { getFileSuffix, getTypeLabel } from "../lib/itemUtils";
 import { useInternalDragStore } from "../stores/internalDragStore";
+import { useModItemSlots } from "../hooks/useModItemSlots";
 import type { Cabinet, ItemWithTags, Tag } from "../types";
+import type { ItemSlotDescriptor } from "../lib/modItemSlotRegistry";
 
 export interface ItemCardProps {
   item: ItemWithTags;
@@ -73,6 +75,25 @@ function useItemDrag(
   };
 }
 
+/** 将 Mod 插槽的 HTMLElement 挂载到 ref 指向的容器 */
+function useSlotContainer(slots: ItemSlotDescriptor[], item: ItemWithTags) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ref.current || slots.length === 0) return;
+    ref.current.innerHTML = "";
+    for (const slot of slots) {
+      try {
+        const el = slot.render(item);
+        el.setAttribute("data-mod-slot", slot.modId);
+        ref.current.appendChild(el);
+      } catch (err) {
+        console.warn(`[ItemCard] Slot render error from mod "${slot.modId}":`, err);
+      }
+    }
+  }, [slots, item]);
+  return ref;
+}
+
 export function ItemCard({
   item,
   tags,
@@ -101,6 +122,12 @@ export function ItemCard({
 
   const handleItemHandlePointerDown = useItemDrag(item, onToggleFavorite, onAddItemToCabinet);
   const fileSuffix = getFileSuffix(item);
+
+  // Mod ItemCard 插槽
+  const modSlots = useModItemSlots();
+  const headerSlotRef = useSlotContainer(modSlots.header, item);
+  const actionsSlotRef = useSlotContainer(modSlots.actions, item);
+  const footerSlotRef = useSlotContainer(modSlots.footer, item);
 
   return (
     <>
@@ -147,6 +174,10 @@ export function ItemCard({
             <span className="inline-flex h-7 w-7 items-center justify-center">
               <FavoriteStar active={item.is_favorite} />
             </span>
+            {/* Mod 插槽：header */}
+            {modSlots.header.length > 0 && (
+              <div ref={headerSlotRef} className="flex items-center gap-1" />
+            )}
           </div>
         </div>
 
@@ -163,31 +194,42 @@ export function ItemCard({
               {fileSuffix}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onLaunch();
-            }}
-            onDoubleClick={(event) => {
-              event.stopPropagation();
-            }}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
+          <div className="flex items-center gap-2">
+            {/* Mod 插槽：actions */}
+            {modSlots.actions.length > 0 && (
+              <div ref={actionsSlotRef} className="flex items-center gap-1" />
+            )}
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
                 onLaunch();
-              }
-            }}
-            className="rounded-[var(--radius-full)] border border-[color-mix(in_srgb,var(--accent-primary)_22%,transparent)] bg-[var(--accent-primary-bg)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-[var(--text-invert)]"
-          >
-            启动
-          </button>
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+              }}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onLaunch();
+                }
+              }}
+              className="rounded-[var(--radius-full)] border border-[color-mix(in_srgb,var(--accent-primary)_22%,transparent)] bg-[var(--accent-primary-bg)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-[var(--text-invert)]"
+            >
+              启动
+            </button>
+          </div>
         </div>
 
         <div className="mt-2.5 min-h-[24px]">
           <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} />
         </div>
+
+        {/* Mod 插槽：footer */}
+        {modSlots.footer.length > 0 && (
+          <div ref={footerSlotRef} className="mt-2" />
+        )}
       </article>
 
       {menuPos && (

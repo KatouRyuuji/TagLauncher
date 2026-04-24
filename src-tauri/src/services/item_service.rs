@@ -2,6 +2,7 @@ use crate::models::{Item, ItemWithTags};
 use crate::services::icon_service;
 use crate::services::tag_service;
 use rusqlite::{params, Connection};
+use serde::Serialize;
 use std::path::Path;
 use tauri::AppHandle;
 
@@ -76,6 +77,33 @@ pub fn add_item(conn: &Connection, path: &str) -> Result<Item, String> {
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     stmt.query_row([path], item_from_row)
         .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+pub struct AddItemsResult {
+    pub items: Vec<Item>,
+    pub failed: Vec<AddItemFailure>,
+}
+
+#[derive(Serialize)]
+pub struct AddItemFailure {
+    pub path: String,
+    pub error: String,
+}
+
+/// 批量添加项目（逐条隔离失败，避免单条异常影响整批导入）
+pub fn add_items(conn: &Connection, paths: Vec<String>) -> AddItemsResult {
+    let mut items = Vec::new();
+    let mut failed = Vec::new();
+
+    for path in paths {
+        match add_item(conn, &path) {
+            Ok(item) => items.push(item),
+            Err(error) => failed.push(AddItemFailure { path, error }),
+        }
+    }
+
+    AddItemsResult { items, failed }
 }
 
 /// 删除项目

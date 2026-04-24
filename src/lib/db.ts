@@ -35,6 +35,16 @@ export async function addItem(path: string): Promise<Item> {
   return invoke("add_item", { path });
 }
 
+export interface AddItemsResult {
+  items: Item[];
+  failed: Array<{ path: string; error: string }>;
+}
+
+/** 批量添加项目，单条失败不会阻断整批导入 */
+export async function addItems(paths: string[]): Promise<AddItemsResult> {
+  return invoke("add_items", { paths });
+}
+
 /** 删除项目（关联的标签记录会级联删除） */
 export async function removeItem(id: number): Promise<void> {
   return invoke("remove_item", { id });
@@ -207,4 +217,55 @@ export async function enableMod(modId: string): Promise<void> {
 /** 禁用 mod */
 export async function disableMod(modId: string): Promise<void> {
   return invoke("disable_mod", { modId });
+}
+
+/** 卸载 mod：从注册表和文件系统中彻底删除 */
+export async function deleteMod(modId: string): Promise<void> {
+  return invoke("delete_mod", { modId });
+}
+
+/** 获取 mod 安装状态：new / updated:<oldVersion> / unchanged */
+export async function getModInstallState(modId: string): Promise<string> {
+  return invoke("get_mod_install_state", { modId });
+}
+
+/** 标记 mod 版本已记录（install/update 生命周期触发后调用） */
+export async function markModVersion(modId: string, version: string): Promise<void> {
+  return invoke("mark_mod_version", { modId, version });
+}
+
+// ---- Mod 文件系统 ----
+
+export async function readModFile(modId: string, relativePath: string): Promise<string> {
+  return invoke("read_mod_file", { modId, relativePath });
+}
+
+export async function readModFileBytes(modId: string, relativePath: string): Promise<number[]> {
+  return invoke("read_mod_file_bytes", { modId, relativePath });
+}
+
+export async function writeModFile(modId: string, relativePath: string, content: string): Promise<void> {
+  return invoke("write_mod_file", { modId, relativePath, content });
+}
+
+export async function writeModFileBytes(modId: string, relativePath: string, bytes: number[]): Promise<void> {
+  return invoke("write_mod_file_bytes", { modId, relativePath, bytes });
+}
+
+export async function listModFiles(modId: string, relativePath: string): Promise<Array<{ name: string; is_file: boolean; is_dir: boolean }>> {
+  return invoke("list_mod_files", { modId, relativePath });
+}
+
+export async function removeModFile(modId: string, relativePath: string): Promise<void> {
+  return invoke("remove_mod_file", { modId, relativePath });
+}
+
+// ---- Mod 导入导出 ----
+
+export async function importMod(sourcePath: string): Promise<ModInfo> {
+  return invoke("import_mod", { sourcePath });
+}
+
+export async function exportMod(modId: string, targetDir: string): Promise<string> {
+  return invoke("export_mod", { modId, targetDir });
 }

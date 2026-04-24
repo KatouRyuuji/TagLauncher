@@ -104,4 +104,25 @@ impl ModRegistry {
             false
         }
     }
+
+    /// 获取指定 mod 的 manifest（用于依赖检查）
+    pub fn get_mod_manifest(&self, mod_id: &str) -> Option<ModManifest> {
+        let mods = self.mods.lock().unwrap();
+        mods.get(mod_id).map(|e| e.manifest.clone())
+    }
+
+    /// 标记 mod 为不兼容（用于依赖检查失败时）
+    pub fn mark_incompatible(&self, mod_id: &str, reason: String) {
+        let mut mods = self.mods.lock().unwrap();
+        if let Some(entry) = mods.get_mut(mod_id) {
+            entry.is_compatible = false;
+            entry.incompatible_reason = Some(reason);
+        }
+    }
+
+    /// 从注册表中注销 mod（卸载时使用）
+    pub fn unregister(&self, mod_id: &str) {
+        let mut mods = self.mods.lock().unwrap();
+        mods.remove(mod_id);
+    }
 }

@@ -23,7 +23,8 @@ impl Database {
     }
 
     fn init(&self) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         schema::create_tables(&conn)?;
         migrations::run_pending(&conn)?;
         Ok(())
@@ -31,6 +32,6 @@ impl Database {
 
     /// 获取数据库连接（自动加锁）
     pub fn get_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap()
+        self.conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }

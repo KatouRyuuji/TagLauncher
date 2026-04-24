@@ -27,7 +27,12 @@ pub fn run() {
 
             // 初始化数据库
             let db_path = app_dir.join("taglauncher.db");
-            let database = Database::new(&db_path).expect("Failed to initialize database");
+            let database = Database::new(&db_path).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to initialize database: {}", e),
+                )
+            })?;
 
             // 初始化 Mod 注册表
             let registry = ModRegistry::new();
@@ -95,6 +100,67 @@ pub fn run() {
                 registry.register(manifest, path, enabled, is_compatible, incompatible_reason);
             }
 
+            // ── 依赖兼容性检查 ─────────────────────────────────────────────
+            // 所有 mod 注册完成后，检查每个 mod 的 dependencies 和 load_after
+            // 是否指向已存在且版本满足的 mod
+            {
+                let all_mods = registry.list_mods();
+                let mod_map: std::collections::HashMap<String, crate::models::ModInfo> =
+                    all_mods.iter().map(|m| (m.manifest.id.clone(), m.clone())).collect();
+
+                for mod_info in &all_mods {
+                    if !mod_info.is_compatible {
+                        continue; // 已标记不兼容的跳过
+                    }
+
+                    let mut reasons: Vec<String> = Vec::new();
+
+                    // 检查 dependencies
+                    for (dep_id, required_ver) in &mod_info.manifest.dependencies {
+                        match mod_map.get(dep_id) {
+                            None => {
+                                reasons.push(format!(
+                                    "依赖 mod '{}' 不存在",
+                                    dep_id
+                                ));
+                            }
+                            Some(dep) if !dep.enabled => {
+                                reasons.push(format!(
+                                    "依赖 mod '{}' 未启用",
+                                    dep_id
+                                ));
+                            }
+                            Some(dep) if !mod_loader::semver_satisfies(&dep.manifest.version,
+                                required_ver
+                            ) => {
+                                reasons.push(format!(
+                                    "依赖 mod '{}' 版本不满足（需要 {}，实际 {}）",
+                                    dep_id, required_ver, dep.manifest.version
+                                ));
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // 检查 load_after
+                    for after_id in &mod_info.manifest.load_after {
+                        if !mod_map.contains_key(after_id) {
+                            reasons.push(format!(
+                                "前置 mod '{}' 不存在",
+                                after_id
+                            ));
+                        }
+                    }
+
+                    if !reasons.is_empty() {
+                        registry.mark_incompatible(
+                            &mod_info.manifest.id,
+                            format!("依赖未满足：{}", reasons.join("；")),
+                        );
+                    }
+                }
+            }
+
             app.manage(database);
             app.manage(registry);
 
@@ -103,6 +169,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // 项目 CRUD
             add_item,
+            add_items,
             remove_item,
             update_item_icon,
             get_items,
@@ -145,6 +212,19 @@ pub fn run() {
             get_mod_content,
             enable_mod,
             disable_mod,
+            delete_mod,
+            get_mod_install_state,
+            mark_mod_version,
+            // Mod FS
+            read_mod_file,
+            read_mod_file_bytes,
+            write_mod_file,
+            write_mod_file_bytes,
+            list_mod_files,
+            remove_mod_file,
+            // Mod Import/Export
+            import_mod,
+            export_mod,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

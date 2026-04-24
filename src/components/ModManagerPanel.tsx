@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { useMods } from "../hooks/useMods";
 import { enableModRuntime, reloadModRuntime } from "../lib/modRuntime";
+import { importMod, exportMod } from "../lib/db";
 import type { ModPermission } from "../types/mod";
 
 const PERMISSION_META: Record<ModPermission, { label: string; color: string }> = {
@@ -14,10 +16,15 @@ const PERMISSION_META: Record<ModPermission, { label: string; color: string }> =
   storage: { label: "本地存储", color: "var(--color-success)" },
   dom: { label: "DOM 访问", color: "var(--color-danger)" },
   theme: { label: "主题读写", color: "var(--color-success)" },
+  "fs:read": { label: "文件读取", color: "var(--accent-primary)" },
+  "fs:write": { label: "文件写入", color: "var(--color-warning)" },
+  net: { label: "网络访问", color: "var(--color-danger)" },
+  "events:emit": { label: "事件发送", color: "var(--accent-primary)" },
+  "events:receive": { label: "事件接收", color: "var(--accent-primary)" },
 };
 
 export function ModManagerPanel() {
-  const { mods, enableMod, disableMod } = useMods();
+  const { mods, enableMod, disableMod, refresh } = useMods();
   const [confirmJsMod, setConfirmJsMod] = useState<string | null>(null);
   const [reloading, setReloading] = useState<string | null>(null);
 
@@ -55,19 +62,84 @@ export function ModManagerPanel() {
     }
   };
 
+  const handleImport = async () => {
+    try {
+      const selected = await dialogOpen({
+        title: "选择要导入的 Mod 文件夹",
+        directory: true,
+        multiple: false,
+      });
+      if (typeof selected !== "string") return;
+      await importMod(selected);
+      await refresh();
+      window.dispatchEvent(
+        new CustomEvent("taglauncher-toast", {
+          detail: { message: "Mod 导入成功", type: "success" },
+        }),
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      window.dispatchEvent(
+        new CustomEvent("taglauncher-toast", {
+          detail: { message: `Mod 导入失败：${msg}`, type: "error" },
+        }),
+      );
+    }
+  };
+
+  const handleExport = async (modId: string) => {
+    try {
+      const selected = await dialogOpen({
+        title: "选择导出目标文件夹",
+        directory: true,
+        multiple: false,
+      });
+      if (typeof selected !== "string") return;
+      const targetPath = await exportMod(modId, selected);
+      window.dispatchEvent(
+        new CustomEvent("taglauncher-toast", {
+          detail: { message: `Mod 已导出到 ${targetPath}`, type: "success" },
+        }),
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      window.dispatchEvent(
+        new CustomEvent("taglauncher-toast", {
+          detail: { message: `Mod 导出失败：${msg}`, type: "error" },
+        }),
+      );
+    }
+  };
+
   if (mods.length === 0) {
     return (
-      <div className="surface-card-soft p-5 text-center">
+      <div className="surface-card-soft p-5 text-center space-y-3">
         <p className="text-sm text-[var(--text-muted)]">暂无已安装的扩展</p>
-        <p className="mt-2 text-xs leading-6 text-[var(--text-faint)]">
+        <p className="text-xs leading-6 text-[var(--text-faint)]">
           将 mod 文件夹放入应用数据目录中的 <code className="rounded bg-[var(--bg-hover)] px-1.5 py-0.5">mods/</code> 即可加载。
         </p>
+        <button
+          type="button"
+          onClick={() => void handleImport()}
+          className="action-button action-button-primary min-h-[36px] px-4 text-xs"
+        >
+          导入 Mod
+        </button>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => void handleImport()}
+          className="action-button action-button-primary min-h-[36px] px-4 text-xs"
+        >
+          导入 Mod
+        </button>
+      </div>
       {mods.map((mod) => {
         const permissions = (mod.permissions ?? []) as ModPermission[];
         const canReload = mod.type === "css" || mod.type === "css+js";
@@ -110,6 +182,13 @@ export function ModManagerPanel() {
                     {reloading === mod.id ? "重载中..." : "热重载"}
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => void handleExport(mod.id)}
+                  className="action-button min-h-[36px] px-3 text-xs"
+                >
+                  导出
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleToggle(mod.id, mod.type, mod.enabled)}

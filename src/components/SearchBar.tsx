@@ -1,11 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSearch } from "../hooks/useSearch";
 import { notifySearchInput } from "../lib/modApi";
 import { useAppStore, type SearchMode } from "../stores/appStore";
+import {
+  getToolbarButtons,
+  subscribeToolbarButtons,
+  type ToolbarButtonDescriptor,
+} from "../lib/modToolbarRegistry";
 
 interface SearchBarProps {
-  onAddItem: (path: string) => Promise<void>;
+  onAddItems: (paths: string[]) => Promise<void>;
   onRefresh: () => Promise<void>;
   onOpenAbout: () => void;
   onOpenSettings?: () => void;
@@ -23,10 +28,17 @@ const PLACEHOLDERS: Record<SearchMode, string> = {
   tag: "搜索标签...",
 };
 
-export function SearchBar({ onAddItem, onRefresh, onOpenAbout, onOpenSettings }: SearchBarProps) {
+export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }: SearchBarProps) {
   const { handleSearch } = useSearch();
   const { viewMode, setViewMode, searchMode, setSearchMode } = useAppStore();
   const [inputValue, setInputValue] = useState("");
+  const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
+
+  useEffect(() => {
+    const update = () => setModButtons(getToolbarButtons());
+    update();
+    return subscribeToolbarButtons(update);
+  }, []);
 
   const handleBrowse = async () => {
     const selected = await open({
@@ -41,9 +53,7 @@ export function SearchBar({ onAddItem, onRefresh, onOpenAbout, onOpenSettings }:
     if (!selected) return;
 
     const paths = Array.isArray(selected) ? selected : [selected];
-    for (const path of paths) {
-      await onAddItem(path);
-    }
+    await onAddItems(paths);
   };
 
   const handleBrowseFolder = async () => {
@@ -51,9 +61,7 @@ export function SearchBar({ onAddItem, onRefresh, onOpenAbout, onOpenSettings }:
     if (!selected) return;
 
     const paths = Array.isArray(selected) ? selected : [selected];
-    for (const path of paths) {
-      await onAddItem(path);
-    }
+    await onAddItems(paths);
   };
 
   return (
@@ -94,6 +102,26 @@ export function SearchBar({ onAddItem, onRefresh, onOpenAbout, onOpenSettings }:
             </svg>
             关于
           </button>
+
+          {/* Mod Toolbar 按钮 */}
+          {modButtons.map((btn) => (
+            <button
+              key={`${btn.modId}::${btn.id}`}
+              type="button"
+              data-mod-toolbar={btn.modId}
+              onClick={btn.onClick}
+              className="action-button"
+              title={btn.text}
+            >
+              {btn.icon ? (
+                <span
+                  className="h-4 w-4"
+                  dangerouslySetInnerHTML={{ __html: btn.icon }}
+                />
+              ) : null}
+              {btn.text}
+            </button>
+          ))}
         </div>
       </div>
 

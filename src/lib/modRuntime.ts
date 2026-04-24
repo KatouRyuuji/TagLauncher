@@ -20,9 +20,10 @@ import { MOD_THEME_ADDED, MOD_THEME_REMOVED } from "../hooks/useTheme";
 import {
   registerModPermissions,
   registerModApiVersion,
-  callModCleanup,
+  callModLifecycle,
+  trackModStart,
+  purgeModResources,
 } from "./modApi";
-import { destroyAllForMod } from "./panelRegistry";
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
 
@@ -41,9 +42,12 @@ function injectCss(modId: string, cssContent: string) {
   if (!el) {
     el = document.createElement("style");
     el.id = cssTagId(modId);
+    el.setAttribute("data-mod-css", modId);
     document.head.appendChild(el);
   }
-  el.textContent = cssContent;
+  // 自动包裹 @layer，降低 mod CSS 优先级，避免意外覆盖应用核心样式
+  const safeId = modId.replace(/[^a-zA-Z0-9_-]/g, "-");
+  el.textContent = `@layer mod-${safeId} {\n${cssContent}\n}`;
 }
 
 function removeCss(modId: string) {
@@ -62,27 +66,9 @@ function executeJs(modId: string, jsContent: string) {
   document.head.appendChild(script);
 }
 
-async function removeJs(modId: string) {
-  // 调用 api.onDisable() 注册的清理回调，支持异步 + 500ms 超时
-  const hadCleanup = await callModCleanup(modId);
-  if (!hadCleanup) {
-    // 未注册清理函数：警告用户
-    notifyNoCleanup(modId);
-  }
-
-  // 移除 script 标签
+function removeJs(modId: string) {
+  // 移除 script 标签（清理回调和状态追踪由 purgeModResources 统一处理）
   document.getElementById(jsTagId(modId))?.remove();
-}
-
-function notifyNoCleanup(modId: string) {
-  window.dispatchEvent(
-    new CustomEvent("taglauncher-toast", {
-      detail: {
-        message: `Mod "${modId}" 未注册清理函数，定时器/监听器可能仍在运行。建议刷新应用。`,
-        type: "warning",
-      },
-    }),
-  );
 }
 
 // ── Theme mod ─────────────────────────────────────────────────────────────
@@ -126,6 +112,9 @@ export async function enableModRuntime(mod: ModInfo): Promise<void> {
   registerModPermissions(id, mod.permissions as import("../types/mod").ModPermission[] | undefined);
   registerModApiVersion(id, mod.api_version);
 
+  // 初始化该 mod 的状态追踪（用于后续强制清理）
+  trackModStart(id);
+
   try {
     if (type === "css" || type === "css+js") {
       if (entrypoints.css) {
@@ -151,6 +140,12 @@ export async function enableModRuntime(mod: ModInfo): Promise<void> {
         }
       }
     }
+
+    // 触发 onEnable 生命周期回调
+    await callModLifecycle(id, "enable");
+
+    // 检查安装状态，触发 install / update 生命周期
+    await handleInstallLifecycle(mod);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[modRuntime] Failed to enable mod "${id}":`, err);
@@ -162,23 +157,46 @@ export async function enableModRuntime(mod: ModInfo): Promise<void> {
   }
 }
 
-/** 禁用单个 mod：移除注入的 CSS/JS（等待异步清理），通知主题删除 */
-export async function disableModRuntime(mod: ModInfo): Promise<void> {
+/**
+ * 根据 mod 安装状态触发 install 或 update 生命周期回调。
+ * 触发完成后立即标记版本，确保下次不再重复触发。
+ */
+async function handleInstallLifecycle(mod: ModInfo): Promise<void> {
+  try {
+    const state = await db.getModInstallState(mod.id);
+    if (state === "new") {
+      await callModLifecycle(mod.id, "install");
+      await db.markModVersion(mod.id, mod.version);
+    } else if (state.startsWith("updated:")) {
+      await callModLifecycle(mod.id, "update");
+      await db.markModVersion(mod.id, mod.version);
+    }
+    // "unchanged" 无需处理
+  } catch (err) {
+    console.warn(`[modRuntime] Failed to handle install lifecycle for "${mod.id}":`, err);
+  }
+}
+
+/**
+ * 禁用单个 mod：强制清理所有资源（CSS/JS/Panel/监听器/生命周期回调）。
+ * @param skipClearLifecycle 为 true 时保留生命周期注册表（用于 uninstall 流程）
+ */
+export async function disableModRuntime(mod: ModInfo, skipClearLifecycle?: boolean): Promise<void> {
   const { id, type, entrypoints } = mod;
 
-  // 先销毁该 mod 创建的所有 Panel（避免 mod 清理函数中仍操作已销毁的容器）
-  destroyAllForMod(id);
+  // 1. 执行完整的资源清理（生命周期回调、监听器、Panel、权限注册表）
+  await purgeModResources(id, skipClearLifecycle);
 
+  // 2. 移除 DOM 注入
   if (type === "css" || type === "css+js") {
     if (entrypoints.css) removeCss(id);
   }
-
   if (type === "css+js") {
-    if (entrypoints.js) await removeJs(id);
+    if (entrypoints.js) removeJs(id);
   }
 
+  // 3. 主题清理
   if (type === "theme") {
-    // 使用注册时记录的实际 themeId（保留了 mod JSON 中的原始 id）
     const themeId = modThemeIdMap.get(id) ?? `mod-theme-${id}`;
     modThemeIdMap.delete(id);
     dispatchThemeRemoved(themeId);
@@ -191,8 +209,176 @@ export async function reloadModRuntime(mod: ModInfo): Promise<void> {
   await enableModRuntime(mod);
 }
 
-/** 应用启动时：批量注入所有已启用的 mod */
+// ── 依赖管理与拓扑排序 ────────────────────────────────────────────────────
+
+/**
+ * 简单的语义版本匹配。
+ * 支持的格式：
+ *   "^1.0.0"  — 主版本相同，且不低于 1.0.0
+ *   ">=1.0.0" — 不低于 1.0.0
+ *   "1.0.0"   — 精确匹配
+ */
+export function semverSatisfies(version: string, range: string): boolean {
+  const parse = (s: string): number[] => s.split(".").map((p) => parseInt(p.split("-")[0], 10) || 0);
+  const v = parse(version);
+  const r = range.replace(/^\^|^>=/, "");
+  const rv = parse(r);
+
+  if (range.startsWith("^")) {
+    if (v[0] !== rv[0]) return false;
+    for (let i = 0; i < 3; i++) {
+      if ((v[i] || 0) > (rv[i] || 0)) return true;
+      if ((v[i] || 0) < (rv[i] || 0)) return false;
+    }
+    return true;
+  }
+  if (range.startsWith(">=")) {
+    for (let i = 0; i < 3; i++) {
+      if ((v[i] || 0) > (rv[i] || 0)) return true;
+      if ((v[i] || 0) < (rv[i] || 0)) return false;
+    }
+    return true;
+  }
+  return version === range;
+}
+
+/**
+ * 检查单个 mod 的依赖是否满足。
+ * 返回 { satisfied: true } 或 { satisfied: false, missing: [...], unsatisfied: [...] }
+ */
+export function checkDependencySatisfied(
+  mod: ModInfo,
+  allMods: ModInfo[],
+): {
+  satisfied: boolean;
+  missing: string[];
+  unsatisfied: Array<{ id: string; required: string; actual: string }>;
+} {
+  const modMap = new Map(allMods.map((m) => [m.id, m]));
+  const missing: string[] = [];
+  const unsatisfied: Array<{ id: string; required: string; actual: string }> = [];
+
+  for (const [depId, requiredVersion] of Object.entries(mod.dependencies || {})) {
+    const dep = modMap.get(depId);
+    if (!dep || !dep.enabled) {
+      missing.push(depId);
+      continue;
+    }
+    if (!semverSatisfies(dep.version, requiredVersion)) {
+      unsatisfied.push({ id: depId, required: requiredVersion, actual: dep.version });
+    }
+  }
+
+  return { satisfied: missing.length === 0 && unsatisfied.length === 0, missing, unsatisfied };
+}
+
+/**
+ * 对启用的 mod 进行拓扑排序（Kahn 算法）。
+ * 同时考虑 dependencies 和 load_after 声明。
+ * 循环依赖时，将剩余 mod 按原始顺序追加并返回循环警告列表。
+ */
+function topologicalSort(mods: ModInfo[]): { sorted: ModInfo[]; cycles: string[] } {
+  const modMap = new Map(mods.map((m) => [m.id, m]));
+  const inDegree = new Map<string, number>();
+  const adj = new Map<string, string[]>(); // modId -> 依赖于它的 mods
+
+  for (const mod of mods) {
+    inDegree.set(mod.id, 0);
+  }
+
+  for (const mod of mods) {
+    const deps = [
+      ...Object.keys(mod.dependencies || {}),
+      ...(mod.load_after || []),
+    ];
+    for (const depId of deps) {
+      if (!modMap.has(depId)) continue; // 缺失的依赖跳过（由 checkDependencySatisfied 处理）
+      inDegree.set(mod.id, (inDegree.get(mod.id) || 0) + 1);
+      if (!adj.has(depId)) adj.set(depId, []);
+      adj.get(depId)!.push(mod.id);
+    }
+  }
+
+  const queue: string[] = [];
+  for (const [id, deg] of inDegree) {
+    if (deg === 0) queue.push(id);
+  }
+
+  const sorted: ModInfo[] = [];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    const mod = modMap.get(id);
+    if (mod) sorted.push(mod);
+
+    for (const dependent of adj.get(id) || []) {
+      const newDeg = (inDegree.get(dependent) || 0) - 1;
+      inDegree.set(dependent, newDeg);
+      if (newDeg === 0) queue.push(dependent);
+    }
+  }
+
+  const cycles: string[] = [];
+  if (sorted.length !== mods.length) {
+    const seen = new Set(sorted.map((m) => m.id));
+    for (const mod of mods) {
+      if (!seen.has(mod.id)) {
+        sorted.push(mod);
+        cycles.push(mod.id);
+      }
+    }
+  }
+
+  return { sorted, cycles };
+}
+
+/** 应用启动时：按依赖拓扑顺序批量注入所有已启用的 mod */
 export async function initModRuntime(mods: ModInfo[]): Promise<void> {
   const enabled = mods.filter((m) => m.enabled);
-  await Promise.allSettled(enabled.map(enableModRuntime));
+
+  // 先进行依赖检查，将依赖不满足的 mod 禁用
+  const validMods: ModInfo[] = [];
+  for (const mod of enabled) {
+    const check = checkDependencySatisfied(mod, enabled);
+    if (check.satisfied) {
+      validMods.push(mod);
+    } else {
+      const reasons: string[] = [];
+      if (check.missing.length) reasons.push(`缺少依赖：${check.missing.join(", ")}`);
+      for (const u of check.unsatisfied) {
+        reasons.push(`依赖 "${u.id}" 版本不满足（需要 ${u.required}，实际 ${u.actual}）`);
+      }
+      console.warn(`[modRuntime] Mod "${mod.id}" 依赖未满足，跳过加载：${reasons.join("；")}`);
+      window.dispatchEvent(
+        new CustomEvent("taglauncher-toast", {
+          detail: {
+            message: `Mod "${mod.name}" 依赖未满足，已跳过加载：${reasons.join("；")}`,
+            type: "warning",
+          },
+        }),
+      );
+    }
+  }
+
+  const { sorted, cycles } = topologicalSort(validMods);
+
+  if (cycles.length > 0) {
+    console.warn(`[modRuntime] 检测到循环依赖，受影响 mod：${cycles.join(", ")}`);
+    window.dispatchEvent(
+      new CustomEvent("taglauncher-toast", {
+        detail: {
+          message: `检测到 Mod 循环依赖：${cycles.join(", ")}，加载顺序可能不正确`,
+          type: "warning",
+        },
+      }),
+    );
+  }
+
+  // 按拓扑顺序串行加载（保证依赖先初始化完毕）
+  for (const mod of sorted) {
+    try {
+      await enableModRuntime(mod);
+    } catch (err) {
+      console.error(`[modRuntime] Failed to enable mod "${mod.id}" during init:`, err);
+    }
+  }
 }

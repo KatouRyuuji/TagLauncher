@@ -13,7 +13,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 ```
 ┌─────────────────────────────────────────────┐
 │                  用户界面                      │
-│         React 18 + TypeScript + Tailwind CSS  │
+│         React 19 + TypeScript + Tailwind CSS  │
 │                                               │
 │  ┌──────────┐ ┌──────────┐ ┌──────────────┐  │
 │  │ Sidebar  │ │SearchBar │ │ ItemGrid/List│  │
@@ -187,7 +187,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `update_tag` | id, name, color | () | 更新标签 |
 | `remove_tag` | id: i64 | () | 删除标签 |
 | `set_item_tags` | item_id, tag_ids | () | 设置项目的标签列表 |
-| `search_items` | query, tag_ids | Vec\<ItemWithTags\> | 后端搜索（当前未使用） |
+| `search_items` | query, tag_ids | Vec\<ItemWithTags\> | 后端搜索（FTS5 + LIKE 回退，前端主搜索仍使用 Fuse） |
 | `launch_item` | id: i64 | () | 启动项目（cmd /C start） |
 | `open_in_explorer` | path: String | () | 在资源管理器中打开 |
 | `read_synonyms` | - | Vec\<Vec\<String\>\> | 读取同义词字典 |

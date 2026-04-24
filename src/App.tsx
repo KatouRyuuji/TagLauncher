@@ -106,7 +106,6 @@ function App() {
   const {
     items,
     loading,
-    addItem,
     addItems,
     removeItem,
     updateItemIcon,
@@ -428,7 +427,7 @@ function App() {
         onDragLeave={handleMainDragLeave}
         onDrop={handleMainDrop}
       >
-        <SearchBar onAddItem={addItem} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} />
+        <SearchBar onAddItems={addItems} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} />
         <TagFilterBar />
         {viewMode === "grid" ? <ItemGrid {...viewProps} /> : <ItemListView {...viewProps} />}
         {dragOver && (

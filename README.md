@@ -68,7 +68,7 @@ cd src-tauri && cargo test
 - `npm run tauri dev`：启动桌面开发模式
 - `npm run build`：执行 TypeScript 检查并构建前端
 - `npm run tauri build`：构建桌面 Release
-- `cargo test`：运行 Rust 测试
+- `cargo test`：运行 Rust 测试命令（当前项目暂未补充测试用例）
 
 ## 打包说明
 

@@ -75,6 +75,54 @@ pub fn semver_gte(current: &str, required: &str) -> bool {
     parse(current) >= parse(required)
 }
 
+/// 语义版本范围匹配（支持 ^x.y.z、>=x.y.z 和精确匹配）
+pub fn semver_satisfies(version: &str, range: &str) -> bool {
+    let parse = |s: &str| -> Vec<u32> {
+        s.split('.')
+            .take(3)
+            .map(|p| p.split('-').next().unwrap_or("0").parse().unwrap_or(0))
+            .collect()
+    };
+    let v = parse(version);
+    let range_trimmed = range.trim();
+
+    if range_trimmed.starts_with('^') {
+        let r = parse(&range_trimmed[1..]);
+        if v.first().copied().unwrap_or(0) != r.first().copied().unwrap_or(0) {
+            return false;
+        }
+        for i in 0..3 {
+            let vi = v.get(i).copied().unwrap_or(0);
+            let ri = r.get(i).copied().unwrap_or(0);
+            if vi > ri {
+                return true;
+            }
+            if vi < ri {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    if range_trimmed.starts_with(">=") {
+        let r = parse(&range_trimmed[2..]);
+        for i in 0..3 {
+            let vi = v.get(i).copied().unwrap_or(0);
+            let ri = r.get(i).copied().unwrap_or(0);
+            if vi > ri {
+                return true;
+            }
+            if vi < ri {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // 精确匹配
+    version == range
+}
+
 /// 读取 mod 的入口文件内容
 pub fn read_mod_entrypoint(mod_dir: &Path, filename: &str) -> Result<String, String> {
     let file_path = mod_dir.join(filename);

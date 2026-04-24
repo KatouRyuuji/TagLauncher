@@ -23,7 +23,12 @@ export type ModPermission =
   | "launch"
   | "storage"
   | "dom"
-  | "theme";
+  | "theme"
+  | "fs:read"
+  | "fs:write"
+  | "net"
+  | "events:emit"
+  | "events:receive";
 
 export interface ModManifest {
   id: string;
@@ -42,6 +47,23 @@ export interface ModManifest {
   api_version?: string;
   /** 权限声明列表；声明后运行时强制执行，不声明则不受限 */
   permissions?: ModPermission[];
+  /** Mod 间通信的事件约定 */
+  events?: {
+    /** 本 mod 会发出的事件名列表 */
+    exports?: string[];
+    /** 本 mod 会监听的事件名列表 */
+    imports?: string[];
+  };
+  /**
+   * 依赖声明：modId → 版本要求（语义版本表达式，如 "^1.0.0"、">=2.0.0"）。
+   * 加载时会检查已启用的 mod 是否满足版本要求；不满足则标记为不兼容。
+   */
+  dependencies?: Record<string, string>;
+  /**
+   * 加载顺序控制：确保本 mod 在这些 mod 之后加载。
+   * 用于无直接依赖但需等待其他 mod 初始化完毕的场景。
+   */
+  load_after?: string[];
 }
 
 export interface ModInfo extends ModManifest {

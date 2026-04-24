@@ -26,9 +26,22 @@ import * as db from "./db";
 import type { Item, ItemWithTags, Tag, Cabinet } from "../types";
 import type { ModPermission } from "../types/mod";
 import type { PanelOptions, PanelHandle } from "../types/panel";
-import { requestPanel } from "./panelRegistry";
+import { requestPanel, destroyAllForMod } from "./panelRegistry";
+import { createModUiKit, type ModUiKit } from "./modUiKit";
+import {
+  registerToolbarButton,
+  unregisterToolbarButton,
+  unregisterAllToolbarButtons,
+} from "./modToolbarRegistry";
+import {
+  registerItemSlot,
+  unregisterItemSlot,
+  unregisterAllItemSlots,
+  type ItemSlotPosition,
+} from "./modItemSlotRegistry";
 
 type ToastType = "info" | "success" | "error" | "warning";
+type LifecycleType = "enable" | "disable" | "uninstall" | "install" | "update";
 
 // ── 类型定义 ─────────────────────────────────────────────────────────────
 
@@ -71,16 +84,54 @@ interface ModScope {
   onItemsChanged(cb: (items: ItemWithTags[]) => void): () => void;
   onTagsChanged(cb: (tags: Tag[]) => void): () => void;
   onCabinetsChanged(cb: (cabinets: Cabinet[]) => void): () => void;
+  // 文件系统
+  fs: {
+    readText(path: string): Promise<string>;
+    readBytes(path: string): Promise<number[]>;
+    writeText(path: string, content: string): Promise<void>;
+    writeBytes(path: string, bytes: number[]): Promise<void>;
+    list(path: string): Promise<Array<{ name: string; isFile: boolean; isDir: boolean }>>;
+    remove(path: string): Promise<void>;
+  };
+  // 网络（占位）
+  net: {
+    fetch(url: string, options?: RequestInit): Promise<Response>;
+  };
+  // 事件通信
+  events: {
+    emit(eventName: string, data?: unknown): void;
+    on(eventName: string, cb: (data: unknown, sourceModId: string) => void): () => void;
+  };
   // UI
   notify(message: string, type?: ToastType): void;
-  /** 注册 mod 被禁用时的清理回调（推荐始终注册，避免内存泄漏；支持返回 Promise） */
-  onDisable(cb: () => void | Promise<void>): void;
+  /** 注册 mod 生命周期回调（enable / disable / uninstall） */
+  onLifecycle(type: LifecycleType, cb: () => void | Promise<void>): void;
   /**
    * 在应用内创建 UI 面板。需要 "dom" 权限。
    * 返回 Promise<PanelHandle>，React 挂载容器后 resolve。
    * handle.container 是内容 div，可直接写入 innerHTML 或 appendChild。
    */
   createPanel(id: string, options: PanelOptions): Promise<PanelHandle>;
+  /** 标准化 UI 组件库（不需要额外权限） */
+  ui: ModUiKit;
+  // Toolbar 扩展
+  /**
+   * 在应用顶部工具栏注册一个快捷按钮。需要 "dom" 权限。
+   * @param buttonId 按钮唯一标识（在 mod 作用域内唯一）
+   * @param opts 按钮配置
+   */
+  createToolbarButton(buttonId: string, opts: { text: string; icon?: string; onClick: () => void }): void;
+  /** 注销工具栏按钮 */
+  removeToolbarButton(buttonId: string): void;
+  // ItemCard 插槽扩展
+  /**
+   * 在 ItemCard 中注册自定义渲染插槽。需要 "dom" 权限。
+   * @param position 插槽位置："header"（标题旁）/ "footer"（卡片底部）/ "actions"（操作区）
+   * @param render 渲染函数，接收 item 数据返回 HTMLElement
+   */
+  registerItemSlot(position: ItemSlotPosition, render: (item: ItemWithTags) => HTMLElement): void;
+  /** 注销 ItemCard 插槽 */
+  unregisterItemSlot(slotId: string): void;
 }
 
 interface TagLauncherModApi {
@@ -227,22 +278,30 @@ function checkApiVersionCompatibility(modId: string): string | null {
   return null;
 }
 
-// ── 清理回调注册表 ─────────────────────────────────────────────────────────
+// ── 生命周期回调注册表 ─────────────────────────────────────────────────────
 
-const modCleanupRegistry = new Map<string, () => void | Promise<void>>();
+const modLifecycleRegistry = new Map<string, Map<LifecycleType, () => void | Promise<void>>>();
 
-/** 注册 mod 禁用时的清理回调（由 mod 自身通过 api.onDisable 调用） */
-export function registerModCleanup(modId: string, cb: () => void | Promise<void>): void {
-  modCleanupRegistry.set(modId, cb);
+/** 注册 mod 生命周期回调（enable / disable / uninstall） */
+export function registerModLifecycle(
+  modId: string,
+  type: LifecycleType,
+  cb: () => void | Promise<void>,
+): void {
+  if (!modLifecycleRegistry.has(modId)) {
+    modLifecycleRegistry.set(modId, new Map());
+  }
+  modLifecycleRegistry.get(modId)!.set(type, cb);
 }
 
 /**
- * 执行并移除 mod 的清理回调。返回是否存在清理函数。
- * 支持异步清理回调，超过 500ms 则强制继续并打印警告。
+ * 执行 mod 生命周期回调。返回是否存在回调。
+ * 支持异步回调，超过 500ms 则强制继续并打印警告。
  */
-export async function callModCleanup(modId: string): Promise<boolean> {
-  const cb = modCleanupRegistry.get(modId);
-  if (cb) {
+export async function callModLifecycle(modId: string, type: LifecycleType): Promise<boolean> {
+  const map = modLifecycleRegistry.get(modId);
+  const cb = map?.get(type);
+  if (cb && map) {
     const timeout = new Promise<void>((_, reject) =>
       setTimeout(() => reject(new Error("timeout")), 500),
     );
@@ -250,14 +309,86 @@ export async function callModCleanup(modId: string): Promise<boolean> {
       await Promise.race([Promise.resolve(cb()), timeout]);
     } catch (e) {
       if (e instanceof Error && e.message === "timeout") {
-        console.warn(`[modApi] Mod "${modId}" 的清理回调超过 500ms，已强制继续`);
+        console.warn(`[modApi] Mod "${modId}" 的 ${type} 回调超过 500ms，已强制继续`);
       }
       // 其他异常静默忽略
     }
-    modCleanupRegistry.delete(modId);
+    map.delete(type);
     return true;
   }
   return false;
+}
+
+/** 移除 mod 的所有生命周期回调 */
+export function clearModLifecycle(modId: string): void {
+  modLifecycleRegistry.delete(modId);
+}
+
+// ── Mod 状态追踪 ──────────────────────────────────────────────────────────
+
+interface ModTrackedState {
+  /** 所有通过 scope 注册的取消监听函数 */
+  unsubscribers: Array<() => void>;
+}
+
+const modTrackedStateMap = new Map<string, ModTrackedState>();
+
+function trackUnsubscriber(modId: string, unsub: () => void): void {
+  const state = modTrackedStateMap.get(modId);
+  if (state) {
+    state.unsubscribers.push(unsub);
+  }
+}
+
+/** 注册一个新的 mod 追踪状态（在 enable 时调用） */
+export function trackModStart(modId: string): void {
+  modTrackedStateMap.set(modId, { unsubscribers: [] });
+}
+
+/** 取消该 mod 通过 scope 注册的所有监听器 */
+function cancelModTrackedListeners(modId: string): void {
+  const state = modTrackedStateMap.get(modId);
+  if (state) {
+    for (const unsub of state.unsubscribers) {
+      try { unsub(); } catch { /* 静默忽略 */ }
+    }
+    modTrackedStateMap.delete(modId);
+  }
+}
+
+/**
+ * 强制清理 mod 的所有残留资源。
+ * 在 disable / uninstall 时调用，确保即使 mod 未注册清理回调也能正确释放。
+ *
+ * @param skipClearLifecycle 为 true 时保留生命周期注册表（用于 uninstall 流程中
+ *   先 disable 再执行 uninstall 回调的场景）
+ */
+export async function purgeModResources(modId: string, skipClearLifecycle?: boolean): Promise<void> {
+  // 1. 调用 disable 生命周期回调
+  await callModLifecycle(modId, "disable");
+
+  // 2. 取消所有通过 scope 注册的内部监听器
+  cancelModTrackedListeners(modId);
+
+  // 3. 事件总线中的回调会在 listener 被清理时自动移除
+
+  // 4. 销毁所有 Panel
+  destroyAllForMod(modId);
+
+  // 5. 注销所有 Toolbar 按钮
+  unregisterAllToolbarButtons(modId);
+
+  // 6. 注销所有 ItemCard 插槽
+  unregisterAllItemSlots(modId);
+
+  // 7. 清理生命周期注册表（可选跳过）
+  if (!skipClearLifecycle) {
+    clearModLifecycle(modId);
+  }
+
+  // 8. 移除权限和 API 版本注册
+  modPermissionsMap.delete(modId);
+  modApiVersionMap.delete(modId);
 }
 
 // ── Storage 工厂 ─────────────────────────────────────────────────────────
@@ -324,6 +455,39 @@ function notify(msg: string, type: ToastType = "info") {
   window.dispatchEvent(new CustomEvent("taglauncher-toast", { detail: { message: msg, type } }));
 }
 
+// ── 文件系统 ───────────────────────────────────────────────────────────────
+
+function readModFile(modId: string, path: string): Promise<string>     { return db.readModFile(modId, path); }
+function readModFileBytes(modId: string, path: string): Promise<number[]> { return db.readModFileBytes(modId, path); }
+function writeModFile(modId: string, path: string, content: string): Promise<void> { return db.writeModFile(modId, path, content); }
+function writeModFileBytes(modId: string, path: string, bytes: number[]): Promise<void> { return db.writeModFileBytes(modId, path, bytes); }
+function listModFiles(modId: string, path: string): Promise<Array<{ name: string; isFile: boolean; isDir: boolean }>> { return db.listModFiles(modId, path).then((list) => list.map((e) => ({ name: e.name, isFile: e.is_file, isDir: e.is_dir }))); }
+function removeModFile(modId: string, path: string): Promise<void>     { return db.removeModFile(modId, path); }
+
+// ── 网络（占位）────────────────────────────────────────────────────────────
+
+function netFetchPlaceholder(): Promise<Response> {
+  throw new Error("网络 API 尚未实现（net API is not yet implemented）");
+}
+
+// ── 事件通信 ───────────────────────────────────────────────────────────────
+
+const eventBus = new Map<string, Set<(data: unknown, sourceModId: string) => void>>();
+
+function emitEvent(modId: string, eventName: string, data: unknown): void {
+  const listeners = eventBus.get(eventName);
+  if (!listeners) return;
+  for (const cb of listeners) {
+    try { cb(data, modId); } catch { /* 静默忽略 */ }
+  }
+}
+
+function onEvent(_modId: string, eventName: string, cb: (data: unknown, sourceModId: string) => void): () => void {
+  if (!eventBus.has(eventName)) eventBus.set(eventName, new Set());
+  eventBus.get(eventName)!.add(cb);
+  return () => { eventBus.get(eventName)?.delete(cb); };
+}
+
 // ── createScope ────────────────────────────────────────────────────────────
 
 function createScope(modId: string): ModScope {
@@ -348,6 +512,43 @@ function createScope(modId: string): ModScope {
 
   const storage = createStorage(modId);
 
+  // 包装所有 listener 注册函数，使它们能被自动追踪和清理
+  function scopedOnThemeChange(cb: (id: string) => void) {
+    const unsub = onThemeChange(cb);
+    trackUnsubscriber(modId, unsub);
+    return unsub;
+  }
+  function scopedOnSearchInput(cb: (q: string) => void) {
+    const unsub = onSearchInput(cb);
+    trackUnsubscriber(modId, unsub);
+    return unsub;
+  }
+  function scopedOnItemLaunched(cb: (id: number, name: string) => void) {
+    const unsub = onItemLaunched(cb);
+    trackUnsubscriber(modId, unsub);
+    return unsub;
+  }
+  function scopedOnItemsChanged(cb: (i: ItemWithTags[]) => void) {
+    const unsub = onItemsChanged(cb);
+    trackUnsubscriber(modId, unsub);
+    return unsub;
+  }
+  function scopedOnTagsChanged(cb: (t: Tag[]) => void) {
+    const unsub = onTagsChanged(cb);
+    trackUnsubscriber(modId, unsub);
+    return unsub;
+  }
+  function scopedOnCabinetsChanged(cb: (c: Cabinet[]) => void) {
+    const unsub = onCabinetsChanged(cb);
+    trackUnsubscriber(modId, unsub);
+    return unsub;
+  }
+  function scopedOnEvent(eventName: string, cb: (data: unknown, sourceModId: string) => void) {
+    const unsub = onEvent(modId, eventName, cb);
+    trackUnsubscriber(modId, unsub);
+    return unsub;
+  }
+
   return {
     id: modId,
     storage,
@@ -356,7 +557,7 @@ function createScope(modId: string): ModScope {
     getThemeVariable,
     setThemeVariable: guarded("theme", "setThemeVariable", setThemeVariable),
     getThemeId,
-    onThemeChange,
+    onThemeChange: scopedOnThemeChange,
 
     // 数据读取
     getItems:    guarded("items:read",    "getItems",    getItems),
@@ -379,21 +580,62 @@ function createScope(modId: string): ModScope {
     removeItemFromCabinet: guarded("cabinets:write", "removeItemFromCabinet", removeItemFromCabinet),
 
     // 事件（读取权限）
-    onSearchInput,
-    onItemLaunched,
-    onItemsChanged:    guarded("items:read",    "onItemsChanged",    onItemsChanged),
-    onTagsChanged:     guarded("tags:read",     "onTagsChanged",     onTagsChanged),
-    onCabinetsChanged: guarded("cabinets:read", "onCabinetsChanged", onCabinetsChanged),
+    onSearchInput:     scopedOnSearchInput,
+    onItemLaunched:    scopedOnItemLaunched,
+    onItemsChanged:    guarded("items:read",    "onItemsChanged",    scopedOnItemsChanged),
+    onTagsChanged:     guarded("tags:read",     "onTagsChanged",     scopedOnTagsChanged),
+    onCabinetsChanged: guarded("cabinets:read", "onCabinetsChanged", scopedOnCabinetsChanged),
+
+    // 文件系统
+    fs: {
+      readText:  guarded("fs:read",  "fs.readText",  (path: string) => readModFile(modId, path)),
+      readBytes: guarded("fs:read",  "fs.readBytes", (path: string) => readModFileBytes(modId, path)),
+      writeText: guarded("fs:write", "fs.writeText", (path: string, content: string) => writeModFile(modId, path, content)),
+      writeBytes: guarded("fs:write", "fs.writeBytes", (path: string, bytes: number[]) => writeModFileBytes(modId, path, bytes)),
+      list:      guarded("fs:read",  "fs.list",      (path: string) => listModFiles(modId, path)),
+      remove:    guarded("fs:write", "fs.remove",    (path: string) => removeModFile(modId, path)),
+    },
+
+    // 网络（占位）
+    net: {
+      fetch: guarded("net", "net.fetch", netFetchPlaceholder),
+    },
+
+    // 事件通信
+    events: {
+      emit: guarded("events:emit",    "events.emit", (eventName: string, data?: unknown) => emitEvent(modId, eventName, data)),
+      on:   guarded("events:receive", "events.on",   scopedOnEvent),
+    },
 
     // UI
     notify,
 
-    // 清理回调注册
-    onDisable: (cb: () => void | Promise<void>) => registerModCleanup(modId, cb),
+    // 生命周期回调注册
+    onLifecycle: (type: LifecycleType, cb: () => void | Promise<void>) =>
+      registerModLifecycle(modId, type, cb),
 
     // Panel API（需要 "dom" 权限）
     createPanel: guarded("dom", "createPanel", (id: string, opts: PanelOptions) =>
       requestPanel(modId, id, opts)
+    ),
+
+    // 标准化 UI 组件库
+    ui: createModUiKit(),
+
+    // Toolbar 按钮注入（需要 "dom" 权限）
+    createToolbarButton: guarded("dom", "createToolbarButton", (buttonId: string, opts: { text: string; icon?: string; onClick: () => void }) =>
+      registerToolbarButton(modId, buttonId, opts)
+    ),
+    removeToolbarButton: guarded("dom", "removeToolbarButton", (buttonId: string) =>
+      unregisterToolbarButton(modId, buttonId)
+    ),
+
+    // ItemCard 插槽注入（需要 "dom" 权限）
+    registerItemSlot: guarded("dom", "registerItemSlot", (position: ItemSlotPosition, render: (item: ItemWithTags) => HTMLElement) =>
+      registerItemSlot(modId, `${modId}::slot`, position, render)
+    ),
+    unregisterItemSlot: guarded("dom", "unregisterItemSlot", (slotId: string) =>
+      unregisterItemSlot(modId, slotId)
     ),
   };
 }

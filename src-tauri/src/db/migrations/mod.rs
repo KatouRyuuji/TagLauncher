@@ -47,6 +47,19 @@ fn set_schema_version(conn: &Connection, version: u32) -> Result<(), rusqlite::E
     Ok(())
 }
 
+fn record_migration(conn: &Connection, migration: &dyn Migration) -> Result<(), rusqlite::Error> {
+    let prefix = format!("migration::{}", migration.version());
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta (key, value) VALUES (?1, ?2)",
+        [format!("{}::description", prefix), migration.description().to_string()],
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta (key, value) VALUES (?1, ?2)",
+        [format!("{}::is_breaking", prefix), migration.is_breaking().to_string()],
+    )?;
+    Ok(())
+}
+
 /// 运行所有待执行的迁移
 pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
     let migrations: Vec<Box<dyn Migration>> = vec![Box::new(v001_baseline::V001Baseline)];
@@ -59,6 +72,7 @@ pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
         }
 
         migration.up(conn)?;
+        record_migration(conn, migration.as_ref())?;
         set_schema_version(conn, migration.version())?;
     }
 
