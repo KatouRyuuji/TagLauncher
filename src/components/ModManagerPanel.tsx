@@ -14,6 +14,7 @@ const PERMISSION_META: Record<ModPermission, { label: string; color: string }> =
   "cabinets:write": { label: "修改文件柜", color: "var(--color-warning)" },
   launch: { label: "启动项目", color: "var(--color-warning)" },
   storage: { label: "本地存储", color: "var(--color-success)" },
+  data: { label: "数据存储", color: "var(--color-success)" },
   dom: { label: "DOM 访问", color: "var(--color-danger)" },
   theme: { label: "主题读写", color: "var(--color-success)" },
   "fs:read": { label: "文件读取", color: "var(--accent-primary)" },

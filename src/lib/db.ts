@@ -234,6 +234,32 @@ export async function markModVersion(modId: string, version: string): Promise<vo
   return invoke("mark_mod_version", { modId, version });
 }
 
+// ---- Mod 数据存储 ----
+
+export async function modKvGet(modId: string, key: string): Promise<string | null> {
+  return invoke("mod_kv_get", { modId, key });
+}
+
+export async function modKvSet(modId: string, key: string, value: string): Promise<void> {
+  return invoke("mod_kv_set", { modId, key, value });
+}
+
+export async function modKvRemove(modId: string, key: string): Promise<void> {
+  return invoke("mod_kv_remove", { modId, key });
+}
+
+export async function modRecordsList(modId: string, collection: string): Promise<string[]> {
+  return invoke("mod_records_list", { modId, collection });
+}
+
+export async function modRecordPut(modId: string, collection: string, id: string, value: string): Promise<void> {
+  return invoke("mod_record_put", { modId, collection, id, value });
+}
+
+export async function modRecordRemove(modId: string, collection: string, id: string): Promise<void> {
+  return invoke("mod_record_remove", { modId, collection, id });
+}
+
 // ---- Mod 文件系统 ----
 
 export async function readModFile(modId: string, relativePath: string): Promise<string> {

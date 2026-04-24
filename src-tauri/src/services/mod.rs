@@ -2,6 +2,7 @@ pub mod cabinet_service;
 pub mod icon_service;
 pub mod item_service;
 pub mod launch_service;
+pub mod path_service;
 pub mod search_service;
 pub mod settings_service;
 pub mod synonym_service;

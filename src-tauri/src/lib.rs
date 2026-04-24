@@ -9,6 +9,7 @@ pub use db::Database;
 
 use extensions::mod_loader;
 use extensions::mod_registry::ModRegistry;
+use services::path_service;
 use services::settings_service;
 use std::path::PathBuf;
 use tauri::Manager;
@@ -24,9 +25,23 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
             std::fs::create_dir_all(&app_dir).ok();
+            let app_paths = path_service::resolve_app_paths(app.handle());
+            app_paths.ensure_dirs().map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::Other, e)
+            })?;
 
-            // 初始化数据库
-            let db_path = app_dir.join("taglauncher.db");
+            // 初始化数据库：新架构使用 Save/ 存放应用原生数据。
+            // 若用户来自旧版本且 AppData 中已有数据库，首次启动自动复制一份到 Save/。
+            let db_path = app_paths.save_dir.join("taglauncher.db");
+            let legacy_db_path = app_dir.join("taglauncher.db");
+            if !db_path.exists() && legacy_db_path.exists() {
+                std::fs::copy(&legacy_db_path, &db_path).map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to migrate database into Save directory: {}", e),
+                    )
+                })?;
+            }
             let database = Database::new(&db_path).map_err(|e| {
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
@@ -36,8 +51,7 @@ pub fn run() {
 
             // 初始化 Mod 注册表
             let registry = ModRegistry::new();
-            let mods_dir = app_dir.join("mods");
-            std::fs::create_dir_all(&mods_dir).ok();
+            let mods_dir = app_paths.mods_dir.clone();
 
             let (enabled_mods, enabled_mods_err) = {
                 let conn = database.get_conn();
@@ -215,6 +229,12 @@ pub fn run() {
             delete_mod,
             get_mod_install_state,
             mark_mod_version,
+            mod_kv_get,
+            mod_kv_set,
+            mod_kv_remove,
+            mod_records_list,
+            mod_record_put,
+            mod_record_remove,
             // Mod FS
             read_mod_file,
             read_mod_file_bytes,

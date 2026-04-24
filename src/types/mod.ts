@@ -28,7 +28,8 @@ export type ModPermission =
   | "fs:write"
   | "net"
   | "events:emit"
-  | "events:receive";
+  | "events:receive"
+  | "data";
 
 export interface ModManifest {
   id: string;
@@ -59,11 +60,24 @@ export interface ModManifest {
    * 加载时会检查已启用的 mod 是否满足版本要求；不满足则标记为不兼容。
    */
   dependencies?: Record<string, string>;
+  /** 宿主 UI 贡献点声明：菜单、路由、状态栏、设置页、快捷键、后台任务等 */
+  contributes?: ModContributes;
   /**
    * 加载顺序控制：确保本 mod 在这些 mod 之后加载。
    * 用于无直接依赖但需等待其他 mod 初始化完毕的场景。
    */
   load_after?: string[];
+}
+
+export interface ModContributes {
+  routes?: Array<{ id: string; title: string; path: string; icon?: string }>;
+  menuItems?: Array<{ id: string; title: string; command: string; location?: string; icon?: string }>;
+  commands?: Array<{ id: string; title: string; description?: string }>;
+  statusItems?: Array<{ id: string; title: string; align?: "left" | "right" }>;
+  settingsPages?: Array<{ id: string; title: string; icon?: string }>;
+  shortcuts?: Array<{ command: string; keys: string }>;
+  backgroundTasks?: Array<{ id: string; intervalMs?: number }>;
+  notifications?: Array<{ id: string; title: string }>;
 }
 
 export interface ModInfo extends ModManifest {

@@ -2,10 +2,11 @@ use crate::db::Database;
 use crate::extensions::mod_loader;
 use crate::extensions::mod_registry::ModRegistry;
 use crate::models::{ModInfo, ModLoadError, ModManifest};
+use crate::services::path_service;
 use crate::services::settings_service;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use tauri::{Manager, State};
+use tauri::State;
 
 #[tauri::command]
 pub fn get_mods(registry: State<ModRegistry>) -> Vec<ModInfo> {
@@ -124,6 +125,78 @@ pub fn mark_mod_version(
     let conn = db.get_conn();
     let key = format!("mod_version::{}", mod_id);
     settings_service::set_setting(&conn, &key, &version)
+}
+
+// ============================================================================
+// Mod 数据 API
+// ============================================================================
+
+#[tauri::command]
+pub fn mod_kv_get(db: State<Database>, mod_id: String, key: String) -> Result<Option<String>, String> {
+    let conn = db.get_conn();
+    conn.query_row(
+        "SELECT value FROM mod_kv WHERE mod_id = ?1 AND key = ?2",
+        [&mod_id, &key],
+        |r| r.get::<_, String>(0),
+    )
+    .map(Some)
+    .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        _ => Err(e.to_string()),
+    })
+}
+
+#[tauri::command]
+pub fn mod_kv_set(db: State<Database>, mod_id: String, key: String, value: String) -> Result<(), String> {
+    let conn = db.get_conn();
+    conn.execute(
+        "INSERT OR REPLACE INTO mod_kv (mod_id, key, value, updated_at) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)",
+        [&mod_id, &key, &value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn mod_kv_remove(db: State<Database>, mod_id: String, key: String) -> Result<(), String> {
+    let conn = db.get_conn();
+    conn.execute("DELETE FROM mod_kv WHERE mod_id = ?1 AND key = ?2", [&mod_id, &key])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn mod_records_list(db: State<Database>, mod_id: String, collection: String) -> Result<Vec<String>, String> {
+    let conn = db.get_conn();
+    let mut stmt = conn
+        .prepare("SELECT value FROM mod_records WHERE mod_id = ?1 AND collection = ?2 ORDER BY updated_at DESC")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([&mod_id, &collection], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn mod_record_put(db: State<Database>, mod_id: String, collection: String, id: String, value: String) -> Result<(), String> {
+    let conn = db.get_conn();
+    conn.execute(
+        "INSERT OR REPLACE INTO mod_records (mod_id, collection, id, value, updated_at) VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP)",
+        [&mod_id, &collection, &id, &value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn mod_record_remove(db: State<Database>, mod_id: String, collection: String, id: String) -> Result<(), String> {
+    let conn = db.get_conn();
+    conn.execute(
+        "DELETE FROM mod_records WHERE mod_id = ?1 AND collection = ?2 AND id = ?3",
+        [&mod_id, &collection, &id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 // ============================================================================
@@ -313,11 +386,7 @@ pub fn import_mod(
         return Err("manifest.json 中缺少 id".to_string());
     }
 
-    let app_dir = app_handle
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let mods_dir = app_dir.join("mods");
+    let mods_dir = path_service::resolve_app_paths(&app_handle).mods_dir;
     let target = mods_dir.join(&manifest.id);
 
     if target.exists() {

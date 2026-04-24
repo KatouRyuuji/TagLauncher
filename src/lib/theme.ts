@@ -2,6 +2,8 @@ import type { ThemeDefinition } from "../types/theme";
 import { DEFAULT_THEME_VARIABLES, THEME_VARIABLE_KEYS } from "../themes";
 
 const CUSTOM_CSS_ID = "__theme-css";
+const THEME_FONT_CSS_ID = "__theme-font-css";
+const dynamicThemeVariableKeys = new Set<string>();
 
 /**
  * 检查 CSS 字符串中大括号是否平衡（跳过字符串字面量内容）。
@@ -33,6 +35,12 @@ export function applyTheme(theme: ThemeDefinition) {
   const root = document.documentElement;
   const variables = {
     ...DEFAULT_THEME_VARIABLES,
+    ...theme.tokens?.primitive,
+    ...theme.tokens?.semantic,
+    ...flattenComponentTokens(theme.tokens?.component),
+    ...theme.tokens?.motion,
+    ...theme.tokens?.layout,
+    ...flattenComponentTokens(theme.components),
     ...theme.variables,
   };
 
@@ -46,9 +54,23 @@ export function applyTheme(theme: ThemeDefinition) {
   for (const key of THEME_VARIABLE_KEYS) {
     root.style.removeProperty(`--${key}`);
   }
+  for (const key of dynamicThemeVariableKeys) {
+    root.style.removeProperty(`--${key}`);
+  }
+  dynamicThemeVariableKeys.clear();
   for (const [key, value] of Object.entries(variables)) {
     root.style.setProperty(`--${key}`, value);
+    if (!THEME_VARIABLE_KEYS.includes(key)) {
+      dynamicThemeVariableKeys.add(key);
+    }
   }
+  for (const [key, value] of Object.entries(theme.assets ?? {})) {
+    const variableKey = `asset-${key}`;
+    root.style.setProperty(`--${variableKey}`, cssUrl(value));
+    dynamicThemeVariableKeys.add(variableKey);
+  }
+
+  applyThemeFonts(theme);
 
   // 3. 移除过渡 class（需等本帧绘制完成后再移除，否则过渡不触发）
   requestAnimationFrame(() => {
@@ -81,4 +103,47 @@ export function applyTheme(theme: ThemeDefinition) {
   } else if (styleEl) {
     styleEl.textContent = "";
   }
+}
+
+function flattenComponentTokens(
+  components?: Record<string, Record<string, string>>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [component, tokens] of Object.entries(components ?? {})) {
+    const componentKey = toKebabCase(component);
+    for (const [slot, value] of Object.entries(tokens)) {
+      result[`component-${componentKey}-${toKebabCase(slot)}`] = value;
+    }
+  }
+  return result;
+}
+
+function toKebabCase(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+}
+
+function cssUrl(value: string) {
+  if (/^(url\(|data:|https?:|asset:|file:)/i.test(value)) return value;
+  return `url(${JSON.stringify(value)})`;
+}
+
+function applyThemeFonts(theme: ThemeDefinition) {
+  let styleEl = document.getElementById(THEME_FONT_CSS_ID) as HTMLStyleElement | null;
+  const fonts = theme.fonts ?? {};
+  if (Object.keys(fonts).length === 0) {
+    if (styleEl) styleEl.textContent = "";
+    return;
+  }
+  if (!styleEl) {
+    styleEl = document.createElement("style");
+    styleEl.id = THEME_FONT_CSS_ID;
+    document.head.appendChild(styleEl);
+  }
+  styleEl.textContent = Object.entries(fonts)
+    .map(([family, source]) => `@font-face{font-family:${JSON.stringify(family)};src:url(${JSON.stringify(source)});font-display:swap;}`)
+    .join("\n");
 }

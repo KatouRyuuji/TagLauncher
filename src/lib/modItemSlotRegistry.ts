@@ -5,7 +5,7 @@
 //
 // 使用方式（在 mod JS 中）：
 //   const api = window.__tagLauncherModApi.createScope(__MOD_ID__);
-//   api.registerItemSlot("footer", (item) => {
+//   api.registerItemSlot("my-footer", "footer", (item) => {
 //     const el = document.createElement("div");
 //     el.textContent = `自定义: ${item.name}`;
 //     return el;

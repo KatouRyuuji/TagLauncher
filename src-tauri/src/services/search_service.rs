@@ -175,3 +175,80 @@ fn format_fts_query(query: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::schema;
+    use rusqlite::{params, Connection};
+
+    fn setup_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch("PRAGMA foreign_keys = ON;").expect("enable foreign keys");
+        schema::create_tables(&conn).expect("create tables");
+        conn
+    }
+
+    fn insert_item(conn: &Connection, name: &str, path: &str) -> i64 {
+        conn.execute(
+            "INSERT INTO items (name, path, type) VALUES (?1, ?2, 'exe')",
+            params![name, path],
+        )
+        .expect("insert item");
+        conn.last_insert_rowid()
+    }
+
+    #[test]
+    fn fts_search_handles_windows_path_symbols() {
+        let conn = setup_conn();
+        insert_item(&conn, "foo-bar.exe", r#"D:\Game Lib\foo-bar.exe"#);
+
+        let items = query_items_by_text(&conn, r#"D:\Game Lib\foo-bar.exe"#)
+            .expect("search should not fail on path symbols");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "foo-bar.exe");
+    }
+
+    #[test]
+    fn fts_search_handles_chinese_text() {
+        let conn = setup_conn();
+        insert_item(&conn, "测试工具", r#"D:\工具\测试工具.exe"#);
+
+        let items = query_items_by_text(&conn, "测试").expect("search chinese text");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "测试工具");
+    }
+
+    #[test]
+    fn empty_query_returns_all_items() {
+        let conn = setup_conn();
+        insert_item(&conn, "Alpha", r#"D:\Alpha.exe"#);
+        insert_item(&conn, "Beta", r#"D:\Beta.exe"#);
+
+        let items = query_all_items(&conn).expect("query all items");
+
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn text_and_tags_falls_back_for_special_symbols() {
+        let conn = setup_conn();
+        let item_id = insert_item(&conn, "foo(bar).exe", r#"D:\foo(bar).exe"#);
+        conn.execute("INSERT INTO tags (name, color) VALUES ('工具', '#fff')", [])
+            .expect("insert tag");
+        let tag_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO item_tags (item_id, tag_id) VALUES (?1, ?2)",
+            params![item_id, tag_id],
+        )
+        .expect("link tag");
+
+        let items = query_items_by_text_and_tags(&conn, "foo(bar)", &[tag_id])
+            .expect("search text and tags");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "foo(bar).exe");
+    }
+}

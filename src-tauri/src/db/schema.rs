@@ -69,6 +69,28 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        -- ========== Mod 专属数据表 ==========
+        CREATE TABLE IF NOT EXISTS mod_kv (
+            mod_id TEXT NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (mod_id, key)
+        );
+
+        CREATE TABLE IF NOT EXISTS mod_records (
+            mod_id TEXT NOT NULL,
+            collection TEXT NOT NULL,
+            id TEXT NOT NULL,
+            value TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (mod_id, collection, id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mod_records_collection
+            ON mod_records(mod_id, collection);
         "#,
     )
 }

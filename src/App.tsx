@@ -122,11 +122,13 @@ function App() {
   const { viewMode, cabinets, selectedCabinetId } = useAppStore();
   const activeInternalDrag = useInternalDragStore((state) => state.drag);
   const hasActiveInternalDrag = activeInternalDrag !== null;
+  const hasActiveInternalDragRef = useRef(false);
 
   const [dragOver, setDragOver] = useState(false);
   const [sidebarPanels, setSidebarPanels] = useState<PanelDescriptor[]>([]);
   const externalDragDepthRef = useRef(0);
   const recentDropRef = useRef<{ key: string; ts: number }>({ key: "", ts: 0 });
+  const addDroppedPathsRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
   const [showSettings, setShowSettings] = useState(false);
   const { migration, dismissMigration } = useVersionCheck();
   const [showWelcomeModal, setShowWelcomeModal] = useState<boolean>(() => {
@@ -136,6 +138,14 @@ function App() {
       return true;
     }
   });
+
+  useEffect(() => {
+    hasActiveInternalDragRef.current = hasActiveInternalDrag;
+    if (hasActiveInternalDrag) {
+      externalDragDepthRef.current = 0;
+      setDragOver(false);
+    }
+  }, [hasActiveInternalDrag]);
 
   useEffect(() => {
     void loadSynonyms();
@@ -203,13 +213,17 @@ function App() {
   );
 
   useEffect(() => {
+    addDroppedPathsRef.current = addDroppedPaths;
+  }, [addDroppedPaths]);
+
+  useEffect(() => {
     let disposed = false;
     const unlisteners: Array<() => void> = [];
 
     const handleNativeDragDropEvent = (event: { payload: DragDropEvent }) => {
       const eventType = event.payload.type;
 
-      if (hasActiveInternalDrag) {
+      if (hasActiveInternalDragRef.current) {
         if (eventType === "leave" || eventType === "drop") {
           setDragOver(false);
         }
@@ -234,7 +248,7 @@ function App() {
           return;
         }
 
-        void addDroppedPaths(paths);
+        void addDroppedPathsRef.current(paths);
       }
     };
 
@@ -269,7 +283,7 @@ function App() {
         unlisten();
       }
     };
-  }, [addDroppedPaths, hasActiveInternalDrag]);
+  }, []);
 
   const handleMainDragEnter = useCallback((e: React.DragEvent<HTMLElement>) => {
     if (hasActiveInternalDrag) return;

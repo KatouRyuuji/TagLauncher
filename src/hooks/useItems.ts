@@ -5,6 +5,16 @@ import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/sea
 import { notifyItemLaunched, notifyItemsChanged } from "../lib/modApi";
 import type { ItemWithTags } from "../types";
 
+function showToast(message: string, type: "info" | "success" | "error" | "warning" = "info") {
+  window.dispatchEvent(
+    new CustomEvent("taglauncher-toast", { detail: { message, type } }),
+  );
+}
+
+function getPathDisplayName(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
 export function useItems() {
   const { setItems, searchQuery, searchMode, selectedTagIds, selectedCabinetId, showFavorites } = useAppStore();
 
@@ -79,7 +89,11 @@ export function useItems() {
   };
 
   const addItems = async (paths: string[]) => {
-    await db.addItems(paths);
+    const result = await db.addItems(paths);
+    if (result.failed.length > 0) {
+      const first = result.failed[0];
+      showToast(`导入失败 ${result.failed.length} 项：${getPathDisplayName(first.path)}（${first.error}）`, "warning");
+    }
     await loadAll();
   };
 

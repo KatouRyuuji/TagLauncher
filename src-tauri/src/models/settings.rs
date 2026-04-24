@@ -27,6 +27,21 @@ pub struct ThemeDefinition {
     #[serde(default)]
     pub version: String,
     pub variables: HashMap<String, String>,
+    /// 分层 token：primitive / semantic / component / motion / layout
+    #[serde(default)]
+    pub tokens: ThemeTokenLayers,
+    /// 主题资源替换表：logo / icon / background / sound 等逻辑名到资源路径
+    #[serde(default)]
+    pub assets: HashMap<String, String>,
+    /// 可选字体资源声明：font-family 到资源路径
+    #[serde(default)]
+    pub fonts: HashMap<String, String>,
+    /// 组件级稳定契约：组件名 -> slot/token 键值
+    #[serde(default)]
+    pub components: HashMap<String, HashMap<String, String>>,
+    /// 主题变体：如 compact / high-contrast / acrylic
+    #[serde(default)]
+    pub variants: HashMap<String, ThemeVariant>,
     /// 是否为内置预设主题
     #[serde(default, alias = "isPreset")]
     pub is_preset: bool,
@@ -39,6 +54,32 @@ pub struct ThemeDefinition {
     /// 对应文件名（仅自定义主题有值）
     #[serde(default, alias = "fileName")]
     pub file_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ThemeTokenLayers {
+    #[serde(default)]
+    pub primitive: HashMap<String, String>,
+    #[serde(default)]
+    pub semantic: HashMap<String, String>,
+    #[serde(default)]
+    pub component: HashMap<String, HashMap<String, String>>,
+    #[serde(default)]
+    pub motion: HashMap<String, String>,
+    #[serde(default)]
+    pub layout: HashMap<String, String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ThemeVariant {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub variables: HashMap<String, String>,
+    #[serde(default)]
+    pub tokens: ThemeTokenLayers,
+    #[serde(default)]
+    pub css: Option<String>,
 }
 
 /// Mod 清单
@@ -60,8 +101,8 @@ pub struct ModManifest {
     #[serde(default)]
     pub max_app_version: Option<String>,
     /// 权限声明（items:read / tags:read / cabinets:read / storage / dom / theme）
-    #[serde(default)]
-    pub permissions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<Vec<String>>,
     /// Mod 所针对的 API 版本（如 "2.1.0"）
     #[serde(default)]
     pub api_version: Option<String>,
@@ -74,7 +115,47 @@ pub struct ModManifest {
     /// 加载顺序控制：确保在这些 mod 之后加载
     #[serde(default, rename = "load_after")]
     pub load_after: Vec<String>,
+    /// 宿主 UI 贡献点声明
+    #[serde(default)]
+    pub contributes: ModContributes,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ModContributes {
+    #[serde(default)]
+    pub routes: Vec<ModRouteContribution>,
+    #[serde(default, rename = "menuItems")]
+    pub menu_items: Vec<ModMenuItemContribution>,
+    #[serde(default)]
+    pub commands: Vec<ModCommandContribution>,
+    #[serde(default, rename = "statusItems")]
+    pub status_items: Vec<ModStatusItemContribution>,
+    #[serde(default, rename = "settingsPages")]
+    pub settings_pages: Vec<ModSettingsPageContribution>,
+    #[serde(default)]
+    pub shortcuts: Vec<ModShortcutContribution>,
+    #[serde(default, rename = "backgroundTasks")]
+    pub background_tasks: Vec<ModBackgroundTaskContribution>,
+    #[serde(default)]
+    pub notifications: Vec<ModNotificationContribution>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ModRouteContribution { pub id: String, pub title: String, pub path: String, #[serde(default)] pub icon: Option<String> }
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ModMenuItemContribution { pub id: String, pub title: String, pub command: String, #[serde(default)] pub location: Option<String>, #[serde(default)] pub icon: Option<String> }
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ModCommandContribution { pub id: String, pub title: String, #[serde(default)] pub description: Option<String> }
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ModStatusItemContribution { pub id: String, pub title: String, #[serde(default)] pub align: Option<String> }
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ModSettingsPageContribution { pub id: String, pub title: String, #[serde(default)] pub icon: Option<String> }
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ModShortcutContribution { pub command: String, pub keys: String }
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ModBackgroundTaskContribution { pub id: String, #[serde(default, rename = "intervalMs")] pub interval_ms: Option<u64> }
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ModNotificationContribution { pub id: String, pub title: String }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ModEvents {
@@ -157,6 +238,14 @@ pub struct ThemeExportPayload {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ThemeDirectoryInfo {
     pub themes_dir: String,
+    #[serde(default)]
+    pub root_dir: String,
+    #[serde(default)]
+    pub builtin_dir: String,
+    #[serde(default)]
+    pub mods_dir: String,
+    #[serde(default)]
+    pub save_dir: String,
 }
 
 /// 迁移结果

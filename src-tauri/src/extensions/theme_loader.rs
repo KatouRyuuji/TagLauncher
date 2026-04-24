@@ -3,7 +3,7 @@ use crate::models::{
     ThemeValidationIssue,
 };
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const REQUIRED_VARIABLES: &[&str] = &[
     "font-family",
@@ -140,16 +140,20 @@ pub fn load_custom_themes(themes_dir: &Path) -> CustomThemesResult {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+        let manifest_path = if path.is_dir() {
+            path.join("theme.json")
+        } else if path.extension().and_then(|e| e.to_str()) == Some("json") {
+            path.clone()
+        } else {
             continue;
-        }
+        };
 
-        let file_name = path
+        let file_name = manifest_path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "unknown.json".to_string());
+            .unwrap_or_else(|| "theme.json".to_string());
 
-        let content = match std::fs::read_to_string(&path) {
+        let content = match std::fs::read_to_string(&manifest_path) {
             Ok(c) => c,
             Err(e) => {
                 errors.push(ThemeLoadError {
@@ -195,9 +199,9 @@ pub fn load_custom_themes(themes_dir: &Path) -> CustomThemesResult {
         theme.is_preset = false;
         theme.source = Some("custom".to_string());
         theme.file_name = Some(
-            path.file_name()
+            manifest_path.file_name()
                 .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "unknown.json".to_string()),
+                .unwrap_or_else(|| "theme.json".to_string()),
         );
         themes.push(theme);
     }
@@ -205,19 +209,23 @@ pub fn load_custom_themes(themes_dir: &Path) -> CustomThemesResult {
     CustomThemesResult { themes, errors }
 }
 
-/// 从任意路径安装主题 JSON 到 AppData/themes，并返回标准化主题。
+/// 从任意路径安装主题 JSON 或主题包目录到 Plugins_Theme，并返回标准化主题。
 pub fn install_theme_file(
     themes_dir: &Path,
     source_path: &Path,
 ) -> Result<ThemeInstallResult, String> {
     std::fs::create_dir_all(themes_dir).map_err(|e| format!("无法创建主题目录: {}", e))?;
 
-    if source_path.extension().and_then(|e| e.to_str()) != Some("json") {
-        return Err("请选择 .json 主题文件".to_string());
-    }
+    let manifest_path = if source_path.is_dir() {
+        source_path.join("theme.json")
+    } else if source_path.extension().and_then(|e| e.to_str()) == Some("json") {
+        source_path.to_path_buf()
+    } else {
+        return Err("请选择 .json 主题文件或包含 theme.json 的主题包目录".to_string());
+    };
 
-    let content =
-        std::fs::read_to_string(source_path).map_err(|e| format!("无法读取主题文件: {}", e))?;
+    let content = std::fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("无法读取主题文件: {}", e))?;
     let mut theme = parse_theme_json(&content)?;
     validate_theme_for_loading(&theme)?;
 
@@ -229,16 +237,35 @@ pub fn install_theme_file(
     }
 
     let validation_issues = validate_theme_contract(&theme);
-    let file_name = format!("{}.json", sanitize_theme_file_stem(&theme.id));
-    let target_path = themes_dir.join(&file_name);
+    let file_stem = sanitize_theme_file_stem(&theme.id);
+    let file_name = if source_path.is_dir() {
+        "theme.json".to_string()
+    } else {
+        format!("{}.json", file_stem)
+    };
+    let target_path = if source_path.is_dir() {
+        themes_dir.join(&file_stem)
+    } else {
+        themes_dir.join(&file_name)
+    };
     let replaced = target_path.exists();
 
     theme.is_preset = false;
     theme.source = Some("custom".to_string());
     theme.file_name = Some(file_name);
 
-    let payload = theme_to_pretty_json(&theme)?;
-    std::fs::write(&target_path, payload).map_err(|e| format!("无法写入主题文件: {}", e))?;
+    if source_path.is_dir() {
+        if replaced {
+            std::fs::remove_dir_all(&target_path).map_err(|e| format!("无法替换主题包: {}", e))?;
+        }
+        copy_dir_all(source_path, &target_path)?;
+        let payload = theme_to_pretty_json(&theme)?;
+        std::fs::write(target_path.join("theme.json"), payload)
+            .map_err(|e| format!("无法写入主题文件: {}", e))?;
+    } else {
+        let payload = theme_to_pretty_json(&theme)?;
+        std::fs::write(&target_path, payload).map_err(|e| format!("无法写入主题文件: {}", e))?;
+    }
 
     Ok(ThemeInstallResult {
         theme,
@@ -246,6 +273,21 @@ pub fn install_theme_file(
         file_path: target_path.to_string_lossy().to_string(),
         validation_issues,
     })
+}
+
+fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(src).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_all(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 /// 写出主题 JSON 到用户选择的位置。
@@ -336,8 +378,4 @@ fn theme_to_pretty_json(theme: &ThemeDefinition) -> Result<String, String> {
     export_theme.source = None;
     export_theme.file_name = None;
     serde_json::to_string_pretty(&export_theme).map_err(|e| format!("无法序列化主题: {}", e))
-}
-
-pub fn themes_dir_from_app_dir(app_dir: PathBuf) -> PathBuf {
-    app_dir.join("themes")
 }

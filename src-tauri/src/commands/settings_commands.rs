@@ -3,16 +3,13 @@ use crate::extensions::theme_loader;
 use crate::models::{
     CustomThemesResult, ThemeDefinition, ThemeDirectoryInfo, ThemeExportPayload, ThemeInstallResult,
 };
+use crate::services::path_service;
 use crate::services::settings_service;
 use std::path::PathBuf;
-use tauri::{Manager, State};
+use tauri::State;
 
 fn get_themes_dir(app: &tauri::AppHandle) -> PathBuf {
-    let app_dir = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."));
-    theme_loader::themes_dir_from_app_dir(app_dir)
+    path_service::resolve_app_paths(app).themes_dir
 }
 
 #[tauri::command]
@@ -32,7 +29,7 @@ pub fn set_current_theme(db: State<Database>, theme_id: String) -> Result<(), St
     settings_service::set_current_theme(&conn, &theme_id)
 }
 
-/// 扫描 &lt;AppData&gt;/themes/ 目录，返回所有自定义 JSON 主题（含加载错误）
+/// 扫描 Plugins_Theme 目录，返回所有自定义主题（含加载错误）
 #[tauri::command]
 pub fn get_custom_themes(app: tauri::AppHandle) -> CustomThemesResult {
     let themes_dir = get_themes_dir(&app);
@@ -42,10 +39,15 @@ pub fn get_custom_themes(app: tauri::AppHandle) -> CustomThemesResult {
 
 #[tauri::command]
 pub fn get_theme_directory_info(app: tauri::AppHandle) -> ThemeDirectoryInfo {
-    let themes_dir = get_themes_dir(&app);
+    let paths = path_service::resolve_app_paths(&app);
+    let themes_dir = paths.themes_dir.clone();
     std::fs::create_dir_all(&themes_dir).ok();
     ThemeDirectoryInfo {
         themes_dir: themes_dir.to_string_lossy().to_string(),
+        root_dir: paths.root_dir.to_string_lossy().to_string(),
+        builtin_dir: paths.builtin_dir.to_string_lossy().to_string(),
+        mods_dir: paths.mods_dir.to_string_lossy().to_string(),
+        save_dir: paths.save_dir.to_string_lossy().to_string(),
     }
 }
 

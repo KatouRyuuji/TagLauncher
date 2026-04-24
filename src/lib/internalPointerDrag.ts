@@ -25,6 +25,7 @@ export function beginInternalPointerDrag({
   }
 
   const pointerId = event.pointerId;
+  const sourceElement = event.currentTarget;
   const startX = event.clientX;
   const startY = event.clientY;
   const previousUserSelect = document.body.style.userSelect;
@@ -36,6 +37,9 @@ export function beginInternalPointerDrag({
     window.removeEventListener("pointerup", handlePointerUp, true);
     window.removeEventListener("pointercancel", handlePointerCancel, true);
     window.removeEventListener("blur", handleWindowBlur);
+    if (sourceElement.hasPointerCapture?.(pointerId)) {
+      sourceElement.releasePointerCapture?.(pointerId);
+    }
     document.body.style.userSelect = previousUserSelect;
   };
 
@@ -110,6 +114,9 @@ export function beginInternalPointerDrag({
   window.addEventListener("pointerup", handlePointerUp, true);
   window.addEventListener("pointercancel", handlePointerCancel, true);
   window.addEventListener("blur", handleWindowBlur);
+  sourceElement.setPointerCapture?.(pointerId);
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 export function findClosestNumberDataAttribute(

@@ -55,6 +55,14 @@ interface ModStorage {
 interface ModScope {
   id: string;
   storage: ModStorage;
+  data: {
+    get(key: string): Promise<unknown>;
+    set(key: string, value: unknown): Promise<void>;
+    remove(key: string): Promise<void>;
+    list(collection: string): Promise<unknown[]>;
+    put(collection: string, id: string, value: unknown): Promise<void>;
+    delete(collection: string, id: string): Promise<void>;
+  };
   // 主题（读取不需要权限，setThemeVariable 需要 theme 权限）
   getThemeVariable(name: string): string;
   setThemeVariable(name: string, value: string): void;
@@ -126,10 +134,11 @@ interface ModScope {
   // ItemCard 插槽扩展
   /**
    * 在 ItemCard 中注册自定义渲染插槽。需要 "dom" 权限。
+   * @param slotId 插槽唯一标识（在 mod 作用域内唯一）
    * @param position 插槽位置："header"（标题旁）/ "footer"（卡片底部）/ "actions"（操作区）
    * @param render 渲染函数，接收 item 数据返回 HTMLElement
    */
-  registerItemSlot(position: ItemSlotPosition, render: (item: ItemWithTags) => HTMLElement): void;
+  registerItemSlot(slotId: string, position: ItemSlotPosition, render: (item: ItemWithTags) => HTMLElement): void;
   /** 注销 ItemCard 插槽 */
   unregisterItemSlot(slotId: string): void;
 }
@@ -406,6 +415,15 @@ function createStorage(modId: string): ModStorage {
   };
 }
 
+function parseJsonOrNull(value: string | null): unknown {
+  if (value == null) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
 // ── 核心方法实现 ──────────────────────────────────────────────────────────
 
 // 主题
@@ -511,6 +529,14 @@ function createScope(modId: string): ModScope {
   }
 
   const storage = createStorage(modId);
+  const data = {
+    get: async (key: string) => parseJsonOrNull(await db.modKvGet(modId, key)),
+    set: async (key: string, value: unknown) => db.modKvSet(modId, key, JSON.stringify(value)),
+    remove: async (key: string) => db.modKvRemove(modId, key),
+    list: async (collection: string) => (await db.modRecordsList(modId, collection)).map(parseJsonOrNull),
+    put: async (collection: string, id: string, value: unknown) => db.modRecordPut(modId, collection, id, JSON.stringify(value)),
+    delete: async (collection: string, id: string) => db.modRecordRemove(modId, collection, id),
+  };
 
   // 包装所有 listener 注册函数，使它们能被自动追踪和清理
   function scopedOnThemeChange(cb: (id: string) => void) {
@@ -552,6 +578,14 @@ function createScope(modId: string): ModScope {
   return {
     id: modId,
     storage,
+    data: {
+      get: guarded("data", "data.get", data.get),
+      set: guarded("data", "data.set", data.set),
+      remove: guarded("data", "data.remove", data.remove),
+      list: guarded("data", "data.list", data.list),
+      put: guarded("data", "data.put", data.put),
+      delete: guarded("data", "data.delete", data.delete),
+    },
 
     // 主题（读取无权限要求，写入需要 theme 权限）
     getThemeVariable,
@@ -631,8 +665,8 @@ function createScope(modId: string): ModScope {
     ),
 
     // ItemCard 插槽注入（需要 "dom" 权限）
-    registerItemSlot: guarded("dom", "registerItemSlot", (position: ItemSlotPosition, render: (item: ItemWithTags) => HTMLElement) =>
-      registerItemSlot(modId, `${modId}::slot`, position, render)
+    registerItemSlot: guarded("dom", "registerItemSlot", (slotId: string, position: ItemSlotPosition, render: (item: ItemWithTags) => HTMLElement) =>
+      registerItemSlot(modId, slotId, position, render)
     ),
     unregisterItemSlot: guarded("dom", "unregisterItemSlot", (slotId: string) =>
       unregisterItemSlot(modId, slotId)

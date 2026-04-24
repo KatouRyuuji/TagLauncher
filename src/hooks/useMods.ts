@@ -60,21 +60,27 @@ export function useMods() {
         return;
       }
 
-      await db.enableMod(modId);
-      const updatedList = await db.getMods();
-      setMods(updatedList);
-      const updatedMod = updatedList.find((m) => m.id === modId);
-      if (updatedMod) {
-        if (!updatedMod.is_compatible) {
-          showToast(
-            `Mod "${updatedMod.name}" 不兼容当前版本：${updatedMod.incompatible_reason ?? "版本不满足"}`,
-            "warning",
-          );
-        }
-        await enableModRuntime(updatedMod);
+      if (!mod.is_compatible) {
+        showToast(
+          `Mod "${mod.name}" 不兼容当前版本：${mod.incompatible_reason ?? "版本不满足"}`,
+          "warning",
+        );
       }
+
+      try {
+        await enableModRuntime(mod);
+        await db.enableMod(modId);
+      } catch (error) {
+        await db.disableMod(modId).catch(() => {/* ignore rollback failure */});
+        await disableModRuntime(mod).catch(() => {/* ignore cleanup failure */});
+        showToast(`Mod "${mod.name}" 启用失败：${error instanceof Error ? error.message : String(error)}`, "error");
+        await loadMods();
+        return;
+      }
+
+      await loadMods();
     },
-    [],
+    [loadMods],
   );
 
   const disableMod = useCallback(
