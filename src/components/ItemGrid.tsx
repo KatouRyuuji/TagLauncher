@@ -1,13 +1,27 @@
 import type { ItemViewProps } from "../types";
 import { ItemCard } from "./ItemCard";
+import { SelectionCanvas } from "./SelectionCanvas";
 import { memo, useCallback, useMemo } from "react";
+
+type ItemCardViewProps = Omit<
+  ItemViewProps,
+  | "items"
+  | "loading"
+  | "onSetManyTags"
+  | "onAddItemsToCabinet"
+  | "onRemoveItemsFromCabinet"
+  | "selectedItemIds"
+  | "onSelectItems"
+>;
 
 const ItemGridCard = memo(function ItemGridCard({
   item,
   viewProps,
+  selected,
 }: {
   item: ItemViewProps["items"][number];
-  viewProps: Omit<ItemViewProps, "items" | "loading">;
+  viewProps: ItemCardViewProps;
+  selected: boolean;
 }) {
   const {
     tags,
@@ -48,6 +62,7 @@ const ItemGridCard = memo(function ItemGridCard({
       onClearCurrentFilter={onClearCurrentFilter}
       onRequestRemoveFromApp={onRequestRemoveFromApp}
       onUpdateThumbnail={onUpdateThumbnail}
+      selected={selected}
     />
   );
 });
@@ -70,6 +85,8 @@ export function ItemGrid({
   onClearCurrentFilter,
   onRequestRemoveFromApp,
   onUpdateThumbnail,
+  selectedItemIds,
+  onSelectItems,
 }: ItemViewProps) {
   const viewProps = useMemo(() => ({
     tags,
@@ -105,6 +122,9 @@ export function ItemGrid({
     onUpdateThumbnail,
   ]);
 
+  const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
+  const itemIds = useMemo(() => items.map((item) => item.id), [items]);
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center px-6 py-10">
@@ -137,7 +157,13 @@ export function ItemGrid({
   }
 
   return (
-    <div data-region="item-grid" className="flex-1 overflow-y-auto px-5 py-5">
+    <SelectionCanvas
+      dataRegion="item-grid"
+      className="flex-1 overflow-y-auto px-5 py-5"
+      itemIds={itemIds}
+      selectedItemIds={selectedItemIds}
+      onSelectItems={onSelectItems}
+    >
       <div
         data-region="item-grid-inner"
         className="grid gap-4"
@@ -148,9 +174,10 @@ export function ItemGrid({
             key={item.id}
             item={item}
             viewProps={viewProps}
+            selected={selectedItemIdSet.has(item.id)}
           />
         ))}
       </div>
-    </div>
+    </SelectionCanvas>
   );
 }

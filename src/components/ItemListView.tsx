@@ -1,13 +1,27 @@
 import { memo, useCallback, useMemo } from "react";
 import type { ItemViewProps } from "../types";
 import { ItemRow } from "./ItemRow";
+import { SelectionCanvas } from "./SelectionCanvas";
+
+type ItemRowViewProps = Omit<
+  ItemViewProps,
+  | "items"
+  | "loading"
+  | "onSetManyTags"
+  | "onAddItemsToCabinet"
+  | "onRemoveItemsFromCabinet"
+  | "selectedItemIds"
+  | "onSelectItems"
+>;
 
 const ItemListRow = memo(function ItemListRow({
   item,
   viewProps,
+  selected,
 }: {
   item: ItemViewProps["items"][number];
-  viewProps: Omit<ItemViewProps, "items" | "loading">;
+  viewProps: ItemRowViewProps;
+  selected: boolean;
 }) {
   const {
     tags,
@@ -48,6 +62,7 @@ const ItemListRow = memo(function ItemListRow({
       onClearCurrentFilter={onClearCurrentFilter}
       onRequestRemoveFromApp={onRequestRemoveFromApp}
       onUpdateThumbnail={onUpdateThumbnail}
+      selected={selected}
     />
   );
 });
@@ -70,6 +85,8 @@ export function ItemListView({
   onClearCurrentFilter,
   onRequestRemoveFromApp,
   onUpdateThumbnail,
+  selectedItemIds,
+  onSelectItems,
 }: ItemViewProps) {
   const viewProps = useMemo(() => ({
     tags,
@@ -105,6 +122,9 @@ export function ItemListView({
     onUpdateThumbnail,
   ]);
 
+  const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
+  const itemIds = useMemo(() => items.map((item) => item.id), [items]);
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center px-6 py-10">
@@ -137,7 +157,13 @@ export function ItemListView({
   }
 
   return (
-    <div data-region="item-list" className="flex-1 overflow-y-auto px-5 py-5">
+    <SelectionCanvas
+      dataRegion="item-list"
+      className="flex-1 overflow-y-auto px-5 py-5"
+      itemIds={itemIds}
+      selectedItemIds={selectedItemIds}
+      onSelectItems={onSelectItems}
+    >
       <div className="surface-card overflow-hidden">
         <div className="sticky top-0 z-10 grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_96%,transparent)] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
           <span />
@@ -151,9 +177,10 @@ export function ItemListView({
             key={item.id}
             item={item}
             viewProps={viewProps}
+            selected={selectedItemIdSet.has(item.id)}
           />
         ))}
       </div>
-    </div>
+    </SelectionCanvas>
   );
 }

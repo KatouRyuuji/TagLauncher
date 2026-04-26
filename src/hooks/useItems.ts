@@ -173,6 +173,18 @@ export function useItems() {
     removeLocalItem(id);
   }, [removeLocalItem]);
 
+  const removeItems = useCallback(async (ids: number[]) => {
+    if (ids.length === 0) return;
+
+    for (const id of ids) {
+      await db.removeItem(id);
+    }
+
+    const idSet = new Set(ids);
+    setAllItems((current) => current.filter((item) => !idSet.has(item.id)));
+    setCabinetItems((current) => current.filter((item) => !idSet.has(item.id)));
+  }, []);
+
   const updateItemIcon = useCallback(async (itemId: number, iconPath: string | null) => {
     await db.updateItemIcon(itemId, iconPath);
     await refreshItemById(itemId);
@@ -182,6 +194,24 @@ export function useItems() {
     await db.setItemTags(itemId, tagIds);
     await refreshItemById(itemId);
   }, [refreshItemById]);
+
+  const setManyItemTags = useCallback(async (changes: Array<{ itemId: number; tagIds: number[] }>) => {
+    if (changes.length === 0) return;
+
+    for (const change of changes) {
+      await db.setItemTags(change.itemId, change.tagIds);
+    }
+
+    const changedItems = await db.getItemsByIds(changes.map((change) => change.itemId));
+    setAllItems((current) => upsertItems(current, changedItems));
+    setCabinetItems((current) => {
+      const currentIds = new Set(current.map((item) => item.id));
+      return upsertItems(
+        current,
+        changedItems.filter((item) => currentIds.has(item.id)),
+      );
+    });
+  }, []);
 
   const launchItem = useCallback(async (id: number) => {
     await db.launchItem(id);
@@ -202,10 +232,36 @@ export function useItems() {
     }
   }, [selectedCabinetId]);
 
+  const addItemsToCabinet = useCallback(async (cabinetId: number, itemIds: number[]) => {
+    if (itemIds.length === 0) return;
+
+    for (const itemId of itemIds) {
+      await db.addItemToCabinet(cabinetId, itemId);
+    }
+
+    if (selectedCabinetId === cabinetId) {
+      const changedItems = await db.getItemsByIds(itemIds);
+      setCabinetItems((current) => upsertItems(current, changedItems));
+    }
+  }, [selectedCabinetId]);
+
   const removeItemFromCabinet = useCallback(async (cabinetId: number, itemId: number) => {
     await db.removeItemFromCabinet(cabinetId, itemId);
     if (selectedCabinetId === cabinetId) {
       setCabinetItems((current) => removeItemFromList(current, itemId));
+    }
+  }, [selectedCabinetId]);
+
+  const removeItemsFromCabinet = useCallback(async (cabinetId: number, itemIds: number[]) => {
+    if (itemIds.length === 0) return;
+
+    for (const itemId of itemIds) {
+      await db.removeItemFromCabinet(cabinetId, itemId);
+    }
+
+    if (selectedCabinetId === cabinetId) {
+      const idSet = new Set(itemIds);
+      setCabinetItems((current) => current.filter((item) => !idSet.has(item.id)));
     }
   }, [selectedCabinetId]);
 
@@ -223,12 +279,16 @@ export function useItems() {
     addItem,
     addItems,
     removeItem,
+    removeItems,
     updateItemIcon,
     setItemTags,
+    setManyItemTags,
     launchItem,
     toggleFavorite,
     addItemToCabinet,
+    addItemsToCabinet,
     removeItemFromCabinet,
+    removeItemsFromCabinet,
     findItemById,
   };
 }

@@ -1,4 +1,4 @@
-﻿import { useState, useCallback, useEffect, useRef } from "react";
+﻿import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import { Sidebar } from "./components/Sidebar";
@@ -109,12 +109,16 @@ function App() {
     loading,
     addItems,
     removeItem,
+    removeItems,
     updateItemIcon,
     setItemTags,
+    setManyItemTags,
     launchItem,
     toggleFavorite,
     addItemToCabinet,
+    addItemsToCabinet,
     removeItemFromCabinet,
+    removeItemsFromCabinet,
     findItemById,
     refresh,
   } = useItems();
@@ -131,7 +135,9 @@ function App() {
   const [dragOver, setDragOver] = useState(false);
   const [sidebarPanels, setSidebarPanels] = useState<PanelDescriptor[]>([]);
   const [pendingRemoveItemId, setPendingRemoveItemId] = useState<number | null>(null);
+  const [pendingBatchRemoveItemIds, setPendingBatchRemoveItemIds] = useState<number[] | null>(null);
   const [skipRemoveItemConfirm, setSkipRemoveItemConfirm] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const externalDragDepthRef = useRef(0);
   const recentDropRef = useRef<{ key: string; ts: number }>({ key: "", ts: 0 });
   const addDroppedPathsRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
@@ -436,9 +442,32 @@ function App() {
     [removeItem],
   );
 
+  const handleRequestBatchRemoveFromApp = useCallback(
+    async () => {
+      if (selectedItemIds.length === 0) return;
+
+      let skipConfirm = false;
+      try {
+        skipConfirm = localStorage.getItem(SKIP_REMOVE_ITEM_CONFIRM_KEY) === "1";
+      } catch {
+        skipConfirm = false;
+      }
+
+      if (skipConfirm) {
+        await removeItems(selectedItemIds);
+        setSelectedItemIds([]);
+        return;
+      }
+
+      setSkipRemoveItemConfirm(false);
+      setPendingBatchRemoveItemIds(selectedItemIds);
+    },
+    [removeItems, selectedItemIds],
+  );
+
   const handleConfirmRemoveFromApp = useCallback(async () => {
-    const itemId = pendingRemoveItemId;
-    if (itemId === null) return;
+    const itemIds = pendingBatchRemoveItemIds ?? (pendingRemoveItemId === null ? [] : [pendingRemoveItemId]);
+    if (itemIds.length === 0) return;
 
     try {
       if (skipRemoveItemConfirm) {
@@ -449,14 +478,61 @@ function App() {
     }
 
     setPendingRemoveItemId(null);
+    setPendingBatchRemoveItemIds(null);
     setSkipRemoveItemConfirm(false);
-    await removeItem(itemId);
-  }, [pendingRemoveItemId, removeItem, skipRemoveItemConfirm]);
+    await removeItems(itemIds);
+    setSelectedItemIds((current) => current.filter((itemId) => !itemIds.includes(itemId)));
+  }, [pendingBatchRemoveItemIds, pendingRemoveItemId, removeItems, skipRemoveItemConfirm]);
 
   const handleCancelRemoveFromApp = useCallback(() => {
     setPendingRemoveItemId(null);
+    setPendingBatchRemoveItemIds(null);
     setSkipRemoveItemConfirm(false);
   }, []);
+
+  const handleSelectItems = useCallback((itemIds: number[]) => {
+    setSelectedItemIds(itemIds);
+  }, []);
+
+  const selectedItems = useMemo(() => {
+    if (selectedItemIds.length === 0) return [];
+
+    const selected = new Set(selectedItemIds);
+    return items.filter((item) => selected.has(item.id));
+  }, [items, selectedItemIds]);
+
+  const handleBatchAddTag = useCallback(async (tagId: number) => {
+    await setManyItemTags(
+      selectedItems.flatMap((item) => {
+        const currentTagIds = item.tags.map((tag) => tag.id);
+        return currentTagIds.includes(tagId)
+          ? []
+          : [{ itemId: item.id, tagIds: [...currentTagIds, tagId] }];
+      }),
+    );
+  }, [selectedItems, setManyItemTags]);
+
+  const handleBatchRemoveTag = useCallback(async (tagId: number) => {
+    await setManyItemTags(
+      selectedItems.flatMap((item) => {
+        const currentTagIds = item.tags.map((tag) => tag.id);
+        return currentTagIds.includes(tagId)
+          ? [{ itemId: item.id, tagIds: currentTagIds.filter((currentTagId) => currentTagId !== tagId) }]
+          : [];
+      }),
+    );
+  }, [selectedItems, setManyItemTags]);
+
+  const handleBatchAddToCabinet = useCallback(async (cabinetId: number) => {
+    await addItemsToCabinet(cabinetId, selectedItemIds);
+  }, [addItemsToCabinet, selectedItemIds]);
+
+  const handleBatchRemoveFromCabinet = useCallback(async () => {
+    if (selectedCabinetId === null) return;
+
+    await removeItemsFromCabinet(selectedCabinetId, selectedItemIds);
+    setSelectedItemIds([]);
+  }, [removeItemsFromCabinet, selectedCabinetId, selectedItemIds]);
 
   const handleCloseWelcome = useCallback((hideNextTime: boolean) => {
     setShowWelcomeModal(false);
@@ -484,15 +560,20 @@ function App() {
     onLaunch: launchItem,
     onRemove: removeItem,
     onSetTags: setItemTags,
+    onSetManyTags: setManyItemTags,
     onAddTagToItem: handleAddTagToItem,
     onRemoveTagFromItem: handleRemoveTagFromItem,
     onAddNewTagToItem: handleAddNewTagToItem,
     onToggleFavorite: toggleFavorite,
     onAddItemToCabinet: addItemToCabinet,
+    onAddItemsToCabinet: addItemsToCabinet,
     onRemoveItemFromCabinet: removeItemFromCabinet,
+    onRemoveItemsFromCabinet: removeItemsFromCabinet,
     onClearCurrentFilter: handleClearCurrentFilter,
     onRequestRemoveFromApp: handleRequestRemoveFromApp,
     onUpdateThumbnail: updateItemIcon,
+    selectedItemIds,
+    onSelectItems: handleSelectItems,
   };
 
   return (
@@ -526,6 +607,18 @@ function App() {
         <SearchBar onAddItems={addItems} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} />
         <TagFilterBar />
         {viewMode === "grid" ? <ItemGrid {...viewProps} /> : <ItemListView {...viewProps} />}
+        <BatchSelectionToolbar
+          selectedCount={isDraggingItem ? 0 : selectedItemIds.length}
+          tags={tags}
+          cabinets={cabinets}
+          canRemoveFromCabinet={selectedCabinetId !== null}
+          onAddTag={handleBatchAddTag}
+          onRemoveTag={handleBatchRemoveTag}
+          onAddToCabinet={handleBatchAddToCabinet}
+          onRemoveFromCabinet={handleBatchRemoveFromCabinet}
+          onRemoveFromApp={handleRequestBatchRemoveFromApp}
+          onClearSelection={() => setSelectedItemIds([])}
+        />
         <ItemDropActions
           visible={isDraggingItem}
           mode={selectedTagIds.length > 0 ? "tags" : "cabinet"}
@@ -548,7 +641,8 @@ function App() {
       </main>
       <WelcomeModal open={showWelcomeModal} onClose={handleCloseWelcome} />
       <RemoveFromAppConfirmDialog
-        open={pendingRemoveItemId !== null}
+        open={pendingRemoveItemId !== null || pendingBatchRemoveItemIds !== null}
+        itemCount={pendingBatchRemoveItemIds?.length ?? 1}
         skipNextTime={skipRemoveItemConfirm}
         onSkipNextTimeChange={setSkipRemoveItemConfirm}
         onConfirm={handleConfirmRemoveFromApp}
@@ -667,14 +761,184 @@ function ItemDropActions({
   );
 }
 
+function BatchSelectionToolbar({
+  selectedCount,
+  tags,
+  cabinets,
+  canRemoveFromCabinet,
+  onAddTag,
+  onRemoveTag,
+  onAddToCabinet,
+  onRemoveFromCabinet,
+  onRemoveFromApp,
+  onClearSelection,
+}: {
+  selectedCount: number;
+  tags: Array<{ id: number; name: string; color: string }>;
+  cabinets: Array<{ id: number; name: string; color: string }>;
+  canRemoveFromCabinet: boolean;
+  onAddTag: (tagId: number) => Promise<void>;
+  onRemoveTag: (tagId: number) => Promise<void>;
+  onAddToCabinet: (cabinetId: number) => Promise<void>;
+  onRemoveFromCabinet: () => Promise<void>;
+  onRemoveFromApp: () => Promise<void>;
+  onClearSelection: () => void;
+}) {
+  const [openMenu, setOpenMenu] = useState<"add-tag" | "remove-tag" | "cabinet" | null>(null);
+
+  useEffect(() => {
+    if (!openMenu) return;
+
+    const close = () => setOpenMenu(null);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [openMenu]);
+
+  if (selectedCount === 0) return null;
+
+  const runAction = (action: () => Promise<void>) => {
+    setOpenMenu(null);
+    void action();
+  };
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-5 bottom-8 z-50 flex justify-center"
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <div className="surface-card pointer-events-auto flex max-w-[calc(100vw-var(--sidebar-width)-40px)] items-center gap-2 px-3 py-2 shadow-[var(--shadow-dropdown)]">
+        <div className="flex items-center gap-2 border-r border-[var(--border-subtle)] pr-3 text-sm font-semibold text-[var(--text-primary)]">
+          <span className="flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-full)] bg-[var(--accent-primary)] px-2 text-xs text-[var(--text-invert)]">
+            {selectedCount}
+          </span>
+          已选中
+        </div>
+
+        <ToolbarMenuButton
+          label="加入标签"
+          open={openMenu === "add-tag"}
+          onClick={() => setOpenMenu(openMenu === "add-tag" ? null : "add-tag")}
+        >
+          {tags.length === 0 ? (
+            <MenuEmptyText>暂无标签</MenuEmptyText>
+          ) : (
+            tags.map((tag) => (
+              <MenuOption key={tag.id} color={tag.color} label={tag.name} onClick={() => runAction(() => onAddTag(tag.id))} />
+            ))
+          )}
+        </ToolbarMenuButton>
+
+        <ToolbarMenuButton
+          label="移除标签"
+          open={openMenu === "remove-tag"}
+          onClick={() => setOpenMenu(openMenu === "remove-tag" ? null : "remove-tag")}
+        >
+          {tags.length === 0 ? (
+            <MenuEmptyText>暂无标签</MenuEmptyText>
+          ) : (
+            tags.map((tag) => (
+              <MenuOption key={tag.id} color={tag.color} label={tag.name} onClick={() => runAction(() => onRemoveTag(tag.id))} />
+            ))
+          )}
+        </ToolbarMenuButton>
+
+        <ToolbarMenuButton
+          label="文件夹"
+          open={openMenu === "cabinet"}
+          onClick={() => setOpenMenu(openMenu === "cabinet" ? null : "cabinet")}
+        >
+          {cabinets.length === 0 ? (
+            <MenuEmptyText>暂无文件夹</MenuEmptyText>
+          ) : (
+            cabinets.map((cabinet) => (
+              <MenuOption key={cabinet.id} color={cabinet.color} label={`加入 ${cabinet.name}`} onClick={() => runAction(() => onAddToCabinet(cabinet.id))} />
+            ))
+          )}
+          <button
+            type="button"
+            disabled={!canRemoveFromCabinet}
+            onClick={() => runAction(onRemoveFromCabinet)}
+            className="mt-1 flex w-full items-center justify-between rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:text-[var(--text-faint)] disabled:hover:bg-transparent"
+          >
+            从当前文件夹移出
+          </button>
+        </ToolbarMenuButton>
+
+        <button
+          type="button"
+          onClick={() => void onRemoveFromApp()}
+          className="action-button text-[var(--color-danger)] hover:text-[var(--color-danger-hover)]"
+        >
+          批量删除
+        </button>
+        <button type="button" onClick={onClearSelection} className="action-button">
+          取消选择
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ToolbarMenuButton({
+  label,
+  open,
+  onClick,
+  children,
+}: {
+  label: string;
+  open: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative">
+      <button type="button" onClick={onClick} className={`action-button ${open ? "border-[var(--accent-primary)] text-[var(--accent-primary)]" : ""}`}>
+        {label}
+      </button>
+      {open && (
+        <div className="absolute bottom-[calc(100%+8px)] left-0 max-h-[260px] min-w-[190px] overflow-auto rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1 shadow-[var(--shadow-dropdown)]">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuOption({
+  color,
+  label,
+  onClick,
+}: {
+  color: string;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+    >
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </button>
+  );
+}
+
+function MenuEmptyText({ children }: { children: React.ReactNode }) {
+  return <div className="px-3 py-2 text-sm text-[var(--text-faint)]">{children}</div>;
+}
+
 function RemoveFromAppConfirmDialog({
   open,
+  itemCount,
   skipNextTime,
   onSkipNextTimeChange,
   onConfirm,
   onCancel,
 }: {
   open: boolean;
+  itemCount: number;
   skipNextTime: boolean;
   onSkipNextTimeChange: (value: boolean) => void;
   onConfirm: () => Promise<void>;
@@ -703,7 +967,7 @@ function RemoveFromAppConfirmDialog({
             <div className="min-w-0 flex-1">
               <div className="text-label">Confirm</div>
               <p className="mt-2 text-sm leading-7 text-[var(--text-secondary)]">
-                这会使得对象在应用内被移除（不删除本地文件），是否确认？
+                这会使得{itemCount > 1 ? `${itemCount} 个对象` : "对象"}在应用内被移除（不删除本地文件），是否确认？
               </p>
             </div>
           </div>

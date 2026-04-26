@@ -29,6 +29,7 @@ function ItemRowComponent({
   onClearCurrentFilter,
   onRequestRemoveFromApp,
   onUpdateThumbnail,
+  selected,
 }: ItemCardProps) {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [showTagEditor, setShowTagEditor] = useState(false);
@@ -101,8 +102,13 @@ function ItemRowComponent({
     <>
       <div
         data-drop-tag-item-id={item.id}
+        data-selectable-item-id={item.id}
         className={`item-row-render-scope grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] px-4 py-3 ${
-          tagDragOver ? "bg-[var(--accent-primary-bg-light)]" : "hover:bg-[var(--bg-hover)]"
+          tagDragOver
+            ? "bg-[var(--accent-primary-bg-light)]"
+            : selected
+            ? "bg-[var(--accent-primary-bg)] shadow-[inset_3px_0_0_var(--accent-primary)]"
+            : "hover:bg-[var(--bg-hover)]"
         }`}
         onDoubleClick={onLaunch}
         onContextMenu={(event) => {

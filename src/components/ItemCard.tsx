@@ -32,6 +32,7 @@ export interface ItemCardProps {
   onClearCurrentFilter: (itemId: number) => Promise<void>;
   onRequestRemoveFromApp: (itemId: number) => Promise<void>;
   onUpdateThumbnail: (itemId: number, iconPath: string | null) => Promise<void>;
+  selected: boolean;
 }
 
 function useItemDrag(
@@ -138,6 +139,7 @@ function ItemCardComponent({
   onClearCurrentFilter,
   onRequestRemoveFromApp,
   onUpdateThumbnail,
+  selected,
 }: ItemCardProps) {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [showTagEditor, setShowTagEditor] = useState(false);
@@ -168,9 +170,12 @@ function ItemCardComponent({
     <>
       <article
         data-drop-tag-item-id={item.id}
+        data-selectable-item-id={item.id}
         className={`card-hover-lift item-card-render-scope group relative flex min-h-[156px] cursor-pointer flex-col overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--bg-card)] p-3 ${
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
+            : selected
+            ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary)_22%,transparent)]"
             : "border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:bg-[var(--bg-card-hover)]"
         }`}
         style={{ backdropFilter: "var(--card-backdrop-filter)" }}
@@ -183,6 +188,13 @@ function ItemCardComponent({
         tabIndex={0}
       >
         <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,var(--accent-primary),transparent)] opacity-60" />
+        {selected && (
+          <div className="absolute right-3 top-3 z-10 flex h-6 w-6 items-center justify-center rounded-[var(--radius-full)] bg-[var(--accent-primary)] text-[var(--text-invert)] shadow-[var(--shadow-sm)]">
+            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2}>
+              <path d="m3.5 8.3 3 3.1 6-6.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+        )}
 
         <div className="flex items-start justify-between gap-2.5">
           <div className="flex min-w-0 items-center gap-2.5">
