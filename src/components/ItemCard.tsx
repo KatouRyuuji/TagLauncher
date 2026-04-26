@@ -29,6 +29,8 @@ export interface ItemCardProps {
   onToggleFavorite: () => void;
   onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onRemoveItemFromCabinet: (cabinetId: number, itemId: number) => Promise<void>;
+  onClearCurrentFilter: (itemId: number) => Promise<void>;
+  onRequestRemoveFromApp: (itemId: number) => Promise<void>;
   onUpdateThumbnail: (itemId: number, iconPath: string | null) => Promise<void>;
 }
 
@@ -36,6 +38,8 @@ function useItemDrag(
   item: ItemWithTags,
   onToggleFavorite: () => void,
   onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>,
+  onClearCurrentFilter: (itemId: number) => Promise<void>,
+  onRequestRemoveFromApp: (itemId: number) => Promise<void>,
 ) {
   return (event: React.PointerEvent<HTMLSpanElement>) => {
     beginInternalPointerDrag({
@@ -60,7 +64,23 @@ function useItemDrag(
           "[data-drop-item-cabinet-id]",
           "dropItemCabinetId",
         );
-        return cabinetId === null ? null : { kind: "item-cabinet", cabinetId };
+        if (cabinetId !== null) return { kind: "item-cabinet", cabinetId };
+
+        const clearCurrentFilter = findClosestNumberDataAttribute(
+          pointerEvent.clientX,
+          pointerEvent.clientY,
+          "[data-drop-item-clear-current-filter]",
+          "dropItemClearCurrentFilter",
+        );
+        if (clearCurrentFilter === 1) return { kind: "item-clear-current-filter" };
+
+        const removeFromApp = findClosestNumberDataAttribute(
+          pointerEvent.clientX,
+          pointerEvent.clientY,
+          "[data-drop-item-remove-from-app]",
+          "dropItemRemoveFromApp",
+        );
+        return removeFromApp === 1 ? { kind: "item-remove-from-app" } : null;
       },
       onDrop: async (target) => {
         if (target?.kind === "item-favorites") {
@@ -69,6 +89,14 @@ function useItemDrag(
         }
         if (target?.kind === "item-cabinet") {
           await onAddItemToCabinet(target.cabinetId, item.id);
+          return;
+        }
+        if (target?.kind === "item-clear-current-filter") {
+          await onClearCurrentFilter(item.id);
+          return;
+        }
+        if (target?.kind === "item-remove-from-app") {
+          await onRequestRemoveFromApp(item.id);
         }
       },
     });
@@ -107,6 +135,8 @@ function ItemCardComponent({
   onToggleFavorite,
   onAddItemToCabinet,
   onRemoveItemFromCabinet,
+  onClearCurrentFilter,
+  onRequestRemoveFromApp,
   onUpdateThumbnail,
 }: ItemCardProps) {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -119,7 +149,13 @@ function ItemCardComponent({
   const currentCabinetName =
     currentCabinetId === null ? null : cabinets.find((cabinet) => cabinet.id === currentCabinetId)?.name ?? null;
 
-  const handleItemHandlePointerDown = useItemDrag(item, onToggleFavorite, onAddItemToCabinet);
+  const handleItemHandlePointerDown = useItemDrag(
+    item,
+    onToggleFavorite,
+    onAddItemToCabinet,
+    onClearCurrentFilter,
+    onRequestRemoveFromApp,
+  );
   const fileSuffix = getFileSuffix(item);
 
   // Mod ItemCard 插槽

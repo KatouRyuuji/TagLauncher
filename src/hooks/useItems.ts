@@ -66,11 +66,16 @@ export function useItems() {
   const [cabinetItems, setCabinetItems] = useState<ItemWithTags[]>([]);
   const [loading, setLoading] = useState(true);
   const allItemsRef = useRef<ItemWithTags[]>([]);
+  const cabinetItemsRef = useRef<ItemWithTags[]>([]);
 
   useEffect(() => {
     allItemsRef.current = allItems;
     notifyItemsChanged(allItems);
   }, [allItems]);
+
+  useEffect(() => {
+    cabinetItemsRef.current = cabinetItems;
+  }, [cabinetItems]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -205,8 +210,10 @@ export function useItems() {
   }, [selectedCabinetId]);
 
   const findItemById = useCallback(
-    (itemId: number) => allItems.find((item) => item.id === itemId) ?? cabinetItems.find((item) => item.id === itemId),
-    [allItems, cabinetItems],
+    (itemId: number) =>
+      allItemsRef.current.find((item) => item.id === itemId) ??
+      cabinetItemsRef.current.find((item) => item.id === itemId),
+    [],
   );
 
   return {

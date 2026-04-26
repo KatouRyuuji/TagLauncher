@@ -41,5 +41,7 @@ export interface ItemViewProps {
   onToggleFavorite: (id: number) => Promise<void>;
   onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onRemoveItemFromCabinet: (cabinetId: number, itemId: number) => Promise<void>;
+  onClearCurrentFilter: (itemId: number) => Promise<void>;
+  onRequestRemoveFromApp: (itemId: number) => Promise<void>;
   onUpdateThumbnail: (itemId: number, iconPath: string | null) => Promise<void>;
 }

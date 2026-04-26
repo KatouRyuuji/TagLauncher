@@ -151,6 +151,10 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  html[data-app-preparing="true"] body {
+    background: #07111f;
+  }
+
   * {
     box-sizing: border-box;
   }

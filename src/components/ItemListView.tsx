@@ -22,6 +22,8 @@ const ItemListRow = memo(function ItemListRow({
     onToggleFavorite,
     onAddItemToCabinet,
     onRemoveItemFromCabinet,
+    onClearCurrentFilter,
+    onRequestRemoveFromApp,
     onUpdateThumbnail,
   } = viewProps;
   const handleLaunch = useCallback(() => onLaunch(item.id), [item.id, onLaunch]);
@@ -43,6 +45,8 @@ const ItemListRow = memo(function ItemListRow({
       onToggleFavorite={handleToggleFavorite}
       onAddItemToCabinet={onAddItemToCabinet}
       onRemoveItemFromCabinet={onRemoveItemFromCabinet}
+      onClearCurrentFilter={onClearCurrentFilter}
+      onRequestRemoveFromApp={onRequestRemoveFromApp}
       onUpdateThumbnail={onUpdateThumbnail}
     />
   );
@@ -63,6 +67,8 @@ export function ItemListView({
   onToggleFavorite,
   onAddItemToCabinet,
   onRemoveItemFromCabinet,
+  onClearCurrentFilter,
+  onRequestRemoveFromApp,
   onUpdateThumbnail,
 }: ItemViewProps) {
   const viewProps = useMemo(() => ({
@@ -78,6 +84,8 @@ export function ItemListView({
     onToggleFavorite,
     onAddItemToCabinet,
     onRemoveItemFromCabinet,
+    onClearCurrentFilter,
+    onRequestRemoveFromApp,
     onUpdateThumbnail,
   }), [
     tags,
@@ -92,6 +100,8 @@ export function ItemListView({
     onToggleFavorite,
     onAddItemToCabinet,
     onRemoveItemFromCabinet,
+    onClearCurrentFilter,
+    onRequestRemoveFromApp,
     onUpdateThumbnail,
   ]);
 

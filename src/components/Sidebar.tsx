@@ -107,17 +107,13 @@ export function Sidebar({
     >
       <div className="border-b border-[var(--border-subtle)] px-5 pb-4 pt-5">
         <div className="text-label">Launcher</div>
-        <div className="mt-2 flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-[24px] font-semibold tracking-tight text-[var(--text-primary)]">
-              TagLauncher
-            </h1>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              轻量管理你的常用项目与资源入口
-            </p>
-          </div>
-          <div className="rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] px-2.5 py-1 text-xs text-[var(--text-muted)]">
-            {tags.length} 标签
+        <div className="mt-2">
+          <h1 className="truncate text-[24px] font-semibold tracking-tight text-[var(--text-primary)]">
+            TagLauncher
+          </h1>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <CountBadge value={tags.length} label="标签" />
+            <CountBadge value={cabinets.length} label="文件夹" />
           </div>
         </div>
       </div>
@@ -160,17 +156,34 @@ export function Sidebar({
             <section>
               <div className="mb-2 flex items-center justify-between px-1">
                 <span className="text-label">标签集合</span>
-                <span className="text-xs text-[var(--text-faint)]">{tags.length}</span>
+                <div className="flex items-center gap-1.5">
+                  <ClearFilterButton
+                    disabled={selectedTagIds.length === 0}
+                    label="清空"
+                    title="清空已选标签"
+                    onClick={() => setSelectedTagIds([])}
+                  />
+                  <span className="text-xs text-[var(--text-faint)]">{tags.length}</span>
+                </div>
               </div>
 
               <div className="space-y-2">
                 {tags.map((tag) => {
                   const active = selectedTagIds.includes(tag.id);
+                  const activeTagStyle = active
+                    ? {
+                        borderColor: `color-mix(in srgb, ${tag.color} var(--tag-selected-border-alpha), transparent)`,
+                        backgroundColor: `color-mix(in srgb, ${tag.color} var(--tag-selected-alpha), var(--bg-card))`,
+                        color: tag.color,
+                        boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${tag.color} 18%, transparent)`,
+                      }
+                    : undefined;
                   return (
                     <div
                       key={tag.id}
                       role="button"
                       tabIndex={0}
+                      style={activeTagStyle}
                       onPointerDown={(event) => handleTagPointerDown(event, tag)}
                       onClick={() => handleTagClick(tag.id)}
                       onKeyDown={(event) => {
@@ -185,7 +198,7 @@ export function Sidebar({
                       }}
                       className={`group/card flex w-full cursor-grab items-center gap-3 rounded-[var(--radius-md)] border px-3 py-2.5 text-left active:cursor-grabbing ${
                         active
-                          ? "border-[color-mix(in_srgb,var(--accent-primary)_26%,transparent)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]"
+                          ? "font-semibold"
                           : "border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_82%,transparent)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:bg-[var(--bg-hover)]"
                       }`}
                     >
@@ -195,7 +208,14 @@ export function Sidebar({
                       />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">{tag.name}</span>
                       {active && (
-                        <span className="rounded-[var(--radius-full)] bg-white/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--accent-primary)]">
+                        <span
+                          className="rounded-[var(--radius-full)] border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                          style={{
+                            borderColor: `color-mix(in srgb, ${tag.color} 44%, transparent)`,
+                            backgroundColor: `color-mix(in srgb, ${tag.color} 24%, var(--bg-elevated))`,
+                            color: tag.color,
+                          }}
+                        >
                           Active
                         </span>
                       )}
@@ -238,7 +258,15 @@ export function Sidebar({
             <section>
               <div className="mb-2 flex items-center justify-between px-1">
                 <span className="text-label">文件柜</span>
-                <span className="text-xs text-[var(--text-faint)]">{cabinets.length}</span>
+                <div className="flex items-center gap-1.5">
+                  <ClearFilterButton
+                    disabled={selectedCabinetId === null}
+                    label="取消"
+                    title="取消当前文件夹筛选"
+                    onClick={() => setSelectedCabinetId(null)}
+                  />
+                  <span className="text-xs text-[var(--text-faint)]">{cabinets.length}</span>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -362,6 +390,43 @@ export function Sidebar({
         />
       )}
     </aside>
+  );
+}
+
+function CountBadge({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] px-2.5 py-1 text-xs text-[var(--text-muted)]">
+      <span className="font-semibold text-[var(--text-secondary)]">{value}</span>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function ClearFilterButton({
+  disabled,
+  label,
+  title,
+  onClick,
+}: {
+  disabled: boolean;
+  label: string;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className="inline-flex h-7 items-center gap-1 rounded-[var(--radius-full)] border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_72%,transparent)] px-2 text-[11px] font-medium text-[var(--text-muted)] hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-bg-light)] hover:text-[var(--accent-primary)] disabled:opacity-35 disabled:hover:border-[var(--border-subtle)] disabled:hover:bg-[color-mix(in_srgb,var(--bg-card)_72%,transparent)] disabled:hover:text-[var(--text-muted)]"
+    >
+      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6M20 20v-6h-6M5 19A8.5 8.5 0 0 0 19 8.5M19 5A8.5 8.5 0 0 0 5 15.5" />
+      </svg>
+      <span>{label}</span>
+    </button>
   );
 }
 

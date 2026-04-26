@@ -46,11 +46,13 @@ src-tauri/src/
 - 组合 Sidebar / SearchBar / ItemView / WelcomeModal。
 - 初始化同义词加载。
 - 监听系统拖拽事件并转为对象添加。
+- 承接对象拖拽到底部操作区后的移除标签、移出文件柜和移除管理记录流程。
 
 关键点：
 
 - 启动时通过 `void loadSynonyms()` 异步加载同义词。
 - 欢迎弹窗“下次不再显示”用 `localStorage` 键 `taglauncher.hide_welcome_modal`。
+- 拖拽移除对象确认框的“下次不再确认”用 `localStorage` 键 `taglauncher.skip_remove_item_confirm`。
 
 ## 3.2 状态层 `stores/appStore.ts`
 
@@ -65,8 +67,19 @@ src-tauri/src/
 - 选择标签时会清空文件柜和收藏筛选。
 - 选择文件柜时会清空标签和收藏筛选。
 - 打开收藏时会清空标签和文件柜筛选。
+- 侧栏分类标题右侧的清空按钮只清空当前模式筛选：标签页清空 active 标签，文件柜页取消 active 文件柜。
 
-## 3.3 搜索层 `lib/search.ts` + `hooks/useItems.ts`
+## 3.3 内部拖拽层 `stores/internalDragStore.ts` + `lib/internalPointerDrag.ts`
+
+内部拖拽使用 Pointer 事件和应用内状态，不使用 HTML5 `dataTransfer`。当前主要目标：
+
+- 侧栏标签拖到对象：追加标签。
+- 对象拖到收藏夹或文件柜：收藏或归档。
+- 对象拖到底部左侧操作区：移除当前 active 标签，或移出当前文件柜。
+- 对象拖到底部右侧操作区：从应用管理中移除对象，不删除本地文件。
+- 对象内标签拖拽：重排或移除标签。
+
+## 3.4 搜索层 `lib/search.ts` + `hooks/useItems.ts`
 
 当前搜索流程是三段式：
 
@@ -74,7 +87,7 @@ src-tauri/src/
 2. `buildSearchIndex`：对过滤结果构建拼音增强字段与 Fuse 索引。
 3. `searchWithIndex`：对 query（含同义词扩展）执行检索。
 4. 
-## 3.4 同义词层 `lib/synonyms.ts`
+## 3.5 同义词层 `lib/synonyms.ts`
 
 - `loadSynonyms` 调后端 `read_synonyms`。
 - 加载失败时不会中断主流程，降级为空映射并输出日志。
@@ -213,6 +226,7 @@ npm run tauri build
 常用命令：
 
 ```bash
+npm run test:design
 npm run build
 cd src-tauri && cargo test
 npm run tauri build
@@ -222,7 +236,7 @@ npm run tauri build
 
 - 对象新增/删除/启动
 - 标签与文件柜 CRUD
-- 拖拽流程（打标、归档）
+- 拖拽流程（打标、归档、移出当前筛选、从应用移除）
 - 搜索（中文/拼音/同义词）
 - 缩略图设置与回退
 - 欢迎弹窗“下次不再显示”与“关于我”复弹

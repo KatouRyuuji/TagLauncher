@@ -239,12 +239,15 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ## 七、拖拽交互系统
 
-应用中有 4 种拖拽交互：
+应用中有以下拖拽交互：
 
 | 拖拽源 | 放置目标 | 实现方式 | 效果 |
 |--------|----------|----------|------|
 | 侧边栏标签 | 项目卡片/行 | `internalDragStore` + `beginInternalPointerDrag()` | 给项目添加标签 |
+| 项目卡片/行的拖拽手柄 | 侧边栏收藏夹 | `internalDragStore` + `beginInternalPointerDrag()` | 将项目加入收藏 |
 | 项目卡片/行的拖拽手柄 | 侧边栏文件柜 | `internalDragStore` + `beginInternalPointerDrag()` | 添加项目到文件柜 |
+| 项目卡片/行的拖拽手柄 | 主视图底部左侧操作区 | `internalDragStore` + `beginInternalPointerDrag()` | 移除当前 active 标签，或移出当前文件柜 |
+| 项目卡片/行的拖拽手柄 | 主视图底部右侧操作区 | `internalDragStore` + `beginInternalPointerDrag()` | 从应用管理中移除项目，不删除本地文件 |
 | 项目内标签 | 同项目其他标签位置 | `internalDragStore` + `beginInternalPointerDrag()` | 标签排序 |
 | 项目内标签 | "拖拽到此移除"区域 | `internalDragStore` + `beginInternalPointerDrag()` | 移除标签 |
 | 外部文件 | 应用窗口 | DOM `DragEvent` + Tauri `onDragDropEvent()` | 添加新项目 |
@@ -254,6 +257,8 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 - 内部拖拽不再依赖 HTML5 `dataTransfer`，避免在 WebView2 / Tauri 下与外部文件拖拽互相干扰。
 - `src/stores/internalDragStore.ts` 负责保存当前拖拽态与 hover 目标。
 - `src/lib/internalPointerDrag.ts` 负责统一处理拖拽阈值、全局指针监听、落点判定与清理逻辑。
+- 主视图底部右侧移除项会弹出确认框，文案为“这会使得对象在应用内被移除（不删除本地文件），是否确认？”，按钮为 `yes/no`。
+- 确认框中的“下次不再确认”使用 `localStorage` 键 `taglauncher.skip_remove_item_confirm`。
 
 ---
 
@@ -267,6 +272,11 @@ toggleTagSelection(id)    → 清空 selectedCabinetId 和 showFavorites
 setSelectedCabinetId(id)  → 清空 selectedTagIds 和 showFavorites
 setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 ```
+
+侧栏分类标题处提供清空当前筛选入口：
+
+- 标签页：清空当前 active 标签。
+- 文件柜页：取消当前 active 文件柜。
 
 数据流向：
 1. Hooks 从 Rust 后端加载数据 → 写入 Store

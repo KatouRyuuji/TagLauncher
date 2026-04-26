@@ -1,4 +1,5 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, type ReactNode } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type {
   ThemeDefinition,
   ThemeDirectoryInfo,
@@ -15,6 +16,7 @@ interface ThemeContextValue {
   importTheme: (sourcePath: string) => Promise<ThemeInstallResult>;
   exportTheme: (theme: ThemeDefinition, targetPath: string) => Promise<ThemeExportPayload>;
   themeDirectoryInfo: ThemeDirectoryInfo | null;
+  loading: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -28,7 +30,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     importTheme,
     exportTheme,
     themeDirectoryInfo,
+    loading,
   } = useTheme();
+
+  useLayoutEffect(() => {
+    if (!loading) {
+      document.documentElement.removeAttribute("data-app-preparing");
+      requestAnimationFrame(() => {
+        void getCurrentWindow().show().catch(() => {});
+      });
+    }
+  }, [loading]);
+
+  if (loading) {
+    return null;
+  }
 
   return (
     <ThemeContext.Provider
@@ -40,6 +56,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         importTheme,
         exportTheme,
         themeDirectoryInfo,
+        loading,
       }}
     >
       {children}

@@ -4,6 +4,8 @@ export type InternalDragHoverTarget =
   | { kind: "tag-item"; itemId: number }
   | { kind: "item-cabinet"; cabinetId: number }
   | { kind: "item-favorites" }
+  | { kind: "item-clear-current-filter" }
+  | { kind: "item-remove-from-app" }
   | { kind: "reorder-tag"; itemId: number; targetIdx: number }
   | { kind: "reorder-remove"; itemId: number }
   | null;
@@ -32,6 +34,26 @@ export interface InternalDragState {
   suppressClicks: () => void;
 }
 
+function sameHoverTarget(a: InternalDragHoverTarget, b: InternalDragHoverTarget): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || a.kind !== b.kind) return false;
+
+  switch (a.kind) {
+    case "tag-item":
+      return b.kind === "tag-item" && a.itemId === b.itemId;
+    case "item-cabinet":
+      return b.kind === "item-cabinet" && a.cabinetId === b.cabinetId;
+    case "item-favorites":
+    case "item-clear-current-filter":
+    case "item-remove-from-app":
+      return true;
+    case "reorder-tag":
+      return b.kind === "reorder-tag" && a.itemId === b.itemId && a.targetIdx === b.targetIdx;
+    case "reorder-remove":
+      return b.kind === "reorder-remove" && a.itemId === b.itemId;
+  }
+}
+
 export const useInternalDragStore = create<InternalDragState>((set) => ({
   drag: null,
   hoverTarget: null,
@@ -39,7 +61,8 @@ export const useInternalDragStore = create<InternalDragState>((set) => ({
   startDrag: (payload, x, y) => set({ drag: { ...payload, x, y }, hoverTarget: null }),
   updateDrag: (x, y) =>
     set((state) => (state.drag ? { drag: { ...state.drag, x, y } } : state)),
-  setHoverTarget: (target) => set({ hoverTarget: target }),
+  setHoverTarget: (target) =>
+    set((state) => (sameHoverTarget(state.hoverTarget, target) ? state : { hoverTarget: target })),
   finishDrag: () => set({ drag: null, hoverTarget: null }),
   suppressClicks: () => set({ suppressClickUntil: Date.now() + 250 }),
 }));

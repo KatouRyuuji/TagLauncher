@@ -193,8 +193,9 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
             className={`control-chip min-h-[34px] px-3 ${viewMode === "grid" ? "control-chip-active" : ""}`}
             title="网格视图"
           >
-            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M1 2.25A1.25 1.25 0 0 1 2.25 1h4.5A1.25 1.25 0 0 1 8 2.25v4.5A1.25 1.25 0 0 1 6.75 8h-4.5A1.25 1.25 0 0 1 1 6.75v-4.5Zm7 0A1.25 1.25 0 0 1 9.25 1h4.5A1.25 1.25 0 0 1 15 2.25v4.5A1.25 1.25 0 0 1 13.75 8h-4.5A1.25 1.25 0 0 1 8 6.75v-4.5Zm-7 7A1.25 1.25 0 0 1 2.25 8h4.5A1.25 1.25 0 0 1 8 9.25v4.5A1.25 1.25 0 0 1 6.75 15h-4.5A1.25 1.25 0 0 1 1 13.75v-4.5Zm7 0A1.25 1.25 0 0 1 9.25 8h4.5A1.25 1.25 0 0 1 15 9.25v4.5A1.25 1.25 0 0 1 13.75 15h-4.5A1.25 1.25 0 0 1 8 13.75v-4.5Z" />
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 5.75A2.75 2.75 0 0 1 7.75 3h8.5A2.75 2.75 0 0 1 19 5.75v12.5A2.75 2.75 0 0 1 16.25 21h-8.5A2.75 2.75 0 0 1 5 18.25V5.75Z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7.5h8M8 10.5h5M8 14.25h8M8 17.25h6" />
             </svg>
           </button>
           <button
