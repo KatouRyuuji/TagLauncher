@@ -80,8 +80,11 @@ fn query_items_by_tags(conn: &Connection, tag_ids: &[i64]) -> Result<Vec<Item>, 
          FROM items i
          INNER JOIN item_tags it ON i.id = it.item_id
          WHERE it.tag_id IN ({})
+         GROUP BY i.id
+         HAVING COUNT(DISTINCT it.tag_id) = {}
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
-        placeholders.join(",")
+        placeholders.join(","),
+        tag_ids.len()
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let params: Vec<&dyn rusqlite::ToSql> = tag_ids
@@ -115,8 +118,11 @@ fn query_items_by_text_and_tags(
          INNER JOIN item_tags it ON i.id = it.item_id
          WHERE items_fts MATCH ?1
          AND it.tag_id IN ({})
+         GROUP BY i.id
+         HAVING COUNT(DISTINCT it.tag_id) = {}
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
-        placeholders.join(",")
+        placeholders.join(","),
+        tag_ids.len()
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
@@ -146,8 +152,11 @@ fn query_items_by_text_and_tags_like(
          INNER JOIN item_tags it ON i.id = it.item_id
          WHERE (i.name LIKE ?1 OR i.path LIKE ?1)
          AND it.tag_id IN ({})
+         GROUP BY i.id
+         HAVING COUNT(DISTINCT it.tag_id) = {}
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
-        placeholders.join(",")
+        placeholders.join(","),
+        tag_ids.len()
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
@@ -250,5 +259,37 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "foo(bar).exe");
+    }
+
+    #[test]
+    fn tag_filters_use_and_semantics() {
+        let conn = setup_conn();
+        let alpha_id = insert_item(&conn, "Alpha", r#"D:\Alpha.exe"#);
+        let beta_id = insert_item(&conn, "Beta", r#"D:\Beta.exe"#);
+
+        conn.execute("INSERT INTO tags (name, color) VALUES ('工具', '#fff')", [])
+            .expect("insert tag");
+        let tool_tag_id = conn.last_insert_rowid();
+        conn.execute("INSERT INTO tags (name, color) VALUES ('游戏', '#fff')", [])
+            .expect("insert tag");
+        let game_tag_id = conn.last_insert_rowid();
+
+        for (item_id, tag_id) in [
+            (alpha_id, tool_tag_id),
+            (alpha_id, game_tag_id),
+            (beta_id, tool_tag_id),
+        ] {
+            conn.execute(
+                "INSERT INTO item_tags (item_id, tag_id) VALUES (?1, ?2)",
+                params![item_id, tag_id],
+            )
+            .expect("link tag");
+        }
+
+        let items = query_items_by_tags(&conn, &[tool_tag_id, game_tag_id])
+            .expect("query items by tags");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "Alpha");
     }
 }

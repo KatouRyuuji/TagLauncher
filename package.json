@@ -7,14 +7,14 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:design": "esbuild src/lib/search.design.test.ts --bundle --platform=node --format=esm --outfile=.tmp-test/search.design.test.mjs && node .tmp-test/search.design.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-sql": "^2.3.2",
-    "fuse.js": "^7.1.0",
     "pinyin-pro": "^3.28.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

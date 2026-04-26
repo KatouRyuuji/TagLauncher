@@ -7,7 +7,8 @@ pub fn get_item_tags(conn: &Connection, item_id: i64) -> Result<Vec<Tag>, String
         .prepare(
             "SELECT t.id, t.name, t.color FROM tags t
              INNER JOIN item_tags it ON t.id = it.tag_id
-             WHERE it.item_id = ?1",
+             WHERE it.item_id = ?1
+             ORDER BY it.position, t.name",
         )
         .map_err(|e| e.to_string())?;
 
@@ -97,12 +98,56 @@ pub fn set_item_tags(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result
     conn.execute("DELETE FROM item_tags WHERE item_id = ?1", [item_id])
         .map_err(|e| e.to_string())?;
 
-    for tag_id in tag_ids {
+    for (position, tag_id) in tag_ids.iter().enumerate() {
         conn.execute(
-            "INSERT INTO item_tags (item_id, tag_id) VALUES (?1, ?2)",
-            params![item_id, *tag_id],
+            "INSERT INTO item_tags (item_id, tag_id, position) VALUES (?1, ?2, ?3)",
+            params![item_id, *tag_id, position as i64],
         )
         .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::schema;
+    use rusqlite::{params, Connection};
+
+    fn setup_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch("PRAGMA foreign_keys = ON;").expect("enable foreign keys");
+        schema::create_tables(&conn).expect("create tables");
+        conn
+    }
+
+    #[test]
+    fn item_tags_keep_saved_order() {
+        let conn = setup_conn();
+        conn.execute(
+            "INSERT INTO items (name, path, type) VALUES ('Item', 'D:\\Item.exe', 'exe')",
+            [],
+        )
+        .expect("insert item");
+        let item_id = conn.last_insert_rowid();
+
+        for name in ["Alpha", "Beta", "Gamma"] {
+            conn.execute(
+                "INSERT INTO tags (name, color) VALUES (?1, '#fff')",
+                params![name],
+            )
+            .expect("insert tag");
+        }
+
+        let tags = get_tags(&conn).expect("get tags");
+        let alpha_id = tags.iter().find(|tag| tag.name == "Alpha").expect("alpha").id;
+        let beta_id = tags.iter().find(|tag| tag.name == "Beta").expect("beta").id;
+        let gamma_id = tags.iter().find(|tag| tag.name == "Gamma").expect("gamma").id;
+
+        set_item_tags(&conn, item_id, &[gamma_id, alpha_id, beta_id]).expect("set tags");
+        let item_tags = get_item_tags(&conn, item_id).expect("get item tags");
+        let names: Vec<&str> = item_tags.iter().map(|tag| tag.name.as_str()).collect();
+
+        assert_eq!(names, vec!["Gamma", "Alpha", "Beta"]);
+    }
 }

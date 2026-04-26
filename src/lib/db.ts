@@ -84,7 +84,7 @@ export async function setItemTags(itemId: number, tagIds: number[]): Promise<voi
 
 // ---- 搜索 ----
 
-/** 后端搜索（当前未使用，前端使用 Fuse.js 客户端搜索） */
+/** 后端搜索（当前未使用，主界面使用前端内存搜索） */
 export async function searchItems(query: string, tagIds: number[]): Promise<ItemWithTags[]> {
   return invoke("search_items", { query, tagIds });
 }

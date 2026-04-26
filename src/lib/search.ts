@@ -1,4 +1,3 @@
-import Fuse, { type FuseOptionKey, type FuseResult } from "fuse.js";
 import { pinyin } from "pinyin-pro";
 import type { ItemWithTags } from "../types";
 import type { SearchMode } from "../stores/appStore";
@@ -7,48 +6,53 @@ import { expandQuery } from "./synonyms";
 interface SearchableItem extends ItemWithTags {
   pinyinName: string;
   pinyinInitials: string;
-  tagNames: string;
-  tagPinyin: string;
-  tagInitials: string;
+  tagEntries: SearchableTag[];
+}
+
+interface SearchableTag {
+  name: string;
+  pinyinName: string;
+  pinyinInitials: string;
 }
 
 export interface SearchIndex {
-  items: ItemWithTags[];
-  fuse: Fuse<SearchableItem> | null;
+  items: SearchableItem[];
+  mode: SearchMode;
+}
+
+type Token =
+  | { type: "term"; value: string; strict: boolean }
+  | { type: "and" | "or" | "not" | "lparen" | "rparen" };
+
+type Expr =
+  | { type: "term"; value: string; strict: boolean }
+  | { type: "and" | "or" | "exclude"; left: Expr; right: Expr };
+
+function toPinyinText(value: string): string {
+  return pinyin(value, { toneType: "none", type: "array" }).join("");
+}
+
+function toPinyinInitials(value: string): string {
+  return pinyin(value, { pattern: "first", toneType: "none", type: "array" }).join("");
+}
+
+function normalize(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 function enrichItem(item: ItemWithTags): SearchableItem {
-  const pinyinName = pinyin(item.name, { toneType: "none", type: "array" }).join("");
-  const pinyinInitials = pinyin(item.name, { pattern: "first", toneType: "none", type: "array" }).join("");
-  const tagNames = item.tags.map((t) => t.name).join(" ");
-  const tagPinyin = item.tags
-    .map((t) => pinyin(t.name, { toneType: "none", type: "array" }).join(""))
-    .join(" ");
-  const tagInitials = item.tags
-    .map((t) => pinyin(t.name, { pattern: "first", toneType: "none", type: "array" }).join(""))
-    .join(" ");
-  return { ...item, pinyinName, pinyinInitials, tagNames, tagPinyin, tagInitials };
-}
+  const tagEntries = item.tags.map((tag) => ({
+    name: tag.name,
+    pinyinName: toPinyinText(tag.name),
+    pinyinInitials: toPinyinInitials(tag.name),
+  }));
 
-const NAME_KEYS: FuseOptionKey<SearchableItem>[] = [
-  { name: "name", weight: 3 },
-  { name: "pinyinName", weight: 2 },
-  { name: "pinyinInitials", weight: 1.5 },
-  { name: "path", weight: 0.5 },
-];
-
-const TAG_KEYS: FuseOptionKey<SearchableItem>[] = [
-  { name: "tagNames", weight: 3 },
-  { name: "tagPinyin", weight: 2 },
-  { name: "tagInitials", weight: 1.5 },
-];
-
-const ALL_KEYS: FuseOptionKey<SearchableItem>[] = [...NAME_KEYS, ...TAG_KEYS];
-
-function getKeys(mode: SearchMode): FuseOptionKey<SearchableItem>[] {
-  if (mode === "name") return NAME_KEYS;
-  if (mode === "tag") return TAG_KEYS;
-  return ALL_KEYS;
+  return {
+    ...item,
+    pinyinName: toPinyinText(item.name),
+    pinyinInitials: toPinyinInitials(item.name),
+    tagEntries,
+  };
 }
 
 export function filterItemsByTags(items: ItemWithTags[], selectedTagIds: number[]): ItemWithTags[] {
@@ -59,53 +63,276 @@ export function filterItemsByTags(items: ItemWithTags[], selectedTagIds: number[
 }
 
 export function buildSearchIndex(items: ItemWithTags[], mode: SearchMode): SearchIndex {
-  if (items.length === 0) {
-    return { items, fuse: null };
+  return {
+    items: items.map(enrichItem),
+    mode,
+  };
+}
+
+function pushTerm(tokens: Token[], raw: string): void {
+  const value = raw.trim();
+  if (!value) return;
+
+  if (value.startsWith("@")) {
+    const strictValue = value.slice(1).trim();
+    if (strictValue) {
+      tokens.push({ type: "term", value: strictValue, strict: true });
+    }
+    return;
   }
 
-  const enriched = items.map(enrichItem);
-  const fuse = new Fuse(enriched, {
-    keys: getKeys(mode),
-    threshold: 0.4,
-    ignoreLocation: true,
-    includeScore: true,
-  });
+  tokens.push({ type: "term", value, strict: false });
+}
 
-  return { items, fuse };
+function tokenize(query: string): Token[] {
+  const tokens: Token[] = [];
+  let buffer = "";
+
+  for (let i = 0; i < query.length; i += 1) {
+    const rest = query.slice(i);
+
+    if (rest.startsWith("&&")) {
+      pushTerm(tokens, buffer);
+      buffer = "";
+      tokens.push({ type: "and" });
+      i += 1;
+      continue;
+    }
+
+    if (rest.startsWith("||")) {
+      pushTerm(tokens, buffer);
+      buffer = "";
+      tokens.push({ type: "or" });
+      i += 1;
+      continue;
+    }
+
+    if (rest.startsWith("!!")) {
+      pushTerm(tokens, buffer);
+      buffer = "";
+      tokens.push({ type: "not" });
+      i += 1;
+      continue;
+    }
+
+    const char = query[i];
+    if (char === "(" || char === ")") {
+      pushTerm(tokens, buffer);
+      buffer = "";
+      tokens.push({ type: char === "(" ? "lparen" : "rparen" });
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      pushTerm(tokens, buffer);
+      buffer = "";
+      if (tokens.length > 0 && tokens[tokens.length - 1].type !== "or") {
+        tokens.push({ type: "or" });
+      }
+      continue;
+    }
+
+    buffer += char;
+  }
+
+  pushTerm(tokens, buffer);
+  return tokens.filter((token, index, all) => {
+    if (token.type !== "or") return true;
+    const prev = all[index - 1]?.type;
+    const next = all[index + 1]?.type;
+    return prev === "term" || prev === "rparen"
+      ? next === "term" || next === "lparen" || next === "not"
+      : false;
+  });
+}
+
+class Parser {
+  private index = 0;
+
+  constructor(private readonly tokens: Token[]) {}
+
+  parse(): Expr | null {
+    const expr = this.parseExclude();
+    return expr;
+  }
+
+  private current(): Token | undefined {
+    return this.tokens[this.index];
+  }
+
+  private consume(type: Token["type"]): boolean {
+    if (this.current()?.type !== type) return false;
+    this.index += 1;
+    return true;
+  }
+
+  private parseExclude(): Expr | null {
+    let expr: Expr | null = null;
+
+    if (this.consume("not")) {
+      const right = this.parseExclude();
+      return right ? { type: "exclude", left: { type: "term", value: "", strict: false }, right } : null;
+    }
+
+    expr = this.parseOr();
+    while (this.consume("not")) {
+      const right = this.parseExclude();
+      if (!expr || !right) return expr;
+      expr = { type: "exclude", left: expr, right };
+    }
+
+    return expr;
+  }
+
+  private parseOr(): Expr | null {
+    let expr = this.parseAnd();
+    while (this.consume("or")) {
+      const right = this.parseAnd();
+      if (!expr || !right) return expr ?? right;
+      expr = { type: "or", left: expr, right };
+    }
+    return expr;
+  }
+
+  private parseAnd(): Expr | null {
+    let expr = this.parsePrimary();
+    while (this.consume("and")) {
+      const right = this.parsePrimary();
+      if (!expr || !right) return expr ?? right;
+      expr = { type: "and", left: expr, right };
+    }
+    return expr;
+  }
+
+  private parsePrimary(): Expr | null {
+    const token = this.current();
+    if (!token) return null;
+
+    if (token.type === "term") {
+      this.index += 1;
+      return { type: "term", value: token.value, strict: token.strict };
+    }
+
+    if (this.consume("lparen")) {
+      const expr = this.parseExclude();
+      this.consume("rparen");
+      return expr;
+    }
+
+    return null;
+  }
+}
+
+function parseQuery(query: string): Expr | null {
+  const tokens = tokenize(query);
+  if (tokens.length === 0) return null;
+  return new Parser(tokens).parse();
+}
+
+function isEnglishTypoMatch(source: string, query: string): boolean {
+  if (query.length < 3) return false;
+  if (!/^[a-z0-9_.-]+$/.test(source) || !/^[a-z0-9_.-]+$/.test(query)) {
+    return false;
+  }
+
+  const sourcePrefix = source.slice(0, Math.max(query.length, 1));
+  if (Math.abs(sourcePrefix.length - query.length) > 1) return false;
+
+  let prev = Array.from({ length: query.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= sourcePrefix.length; i += 1) {
+    const next = [i];
+    for (let j = 1; j <= query.length; j += 1) {
+      const cost = sourcePrefix[i - 1] === query[j - 1] ? 0 : 1;
+      next[j] = Math.min(
+        next[j - 1] + 1,
+        prev[j] + 1,
+        prev[j - 1] + cost,
+      );
+    }
+    prev = next;
+  }
+
+  return prev[query.length] <= 1;
+}
+
+function prefixMatches(value: string, query: string): boolean {
+  const normalizedValue = normalize(value);
+  const normalizedQuery = normalize(query);
+  if (!normalizedQuery) return true;
+  if (normalizedValue.startsWith(normalizedQuery)) return true;
+  return isEnglishTypoMatch(normalizedValue, normalizedQuery);
+}
+
+function strictMatches(value: string, query: string): boolean {
+  return normalize(value) === normalize(query);
+}
+
+function matchesText(value: string, pinyinValue: string, initialsValue: string, query: string, strict: boolean): boolean {
+  if (strict) return strictMatches(value, query);
+
+  return prefixMatches(value, query) ||
+    prefixMatches(pinyinValue, query) ||
+    prefixMatches(initialsValue, query);
+}
+
+function matchesName(item: SearchableItem, query: string, strict: boolean): boolean {
+  if (matchesText(item.name, item.pinyinName, item.pinyinInitials, query, strict)) {
+    return true;
+  }
+
+  return !strict && prefixMatches(item.path, query);
+}
+
+function matchesTag(item: SearchableItem, query: string, strict: boolean): boolean {
+  return item.tagEntries.some((tag) => matchesText(tag.name, tag.pinyinName, tag.pinyinInitials, query, strict));
+}
+
+function matchesTerm(item: SearchableItem, query: string, mode: SearchMode, strict: boolean): boolean {
+  if (!query.trim()) return true;
+
+  const queries = strict ? [query] : expandQuery(query);
+
+  return queries.some((term) => {
+    if (mode === "name") return matchesName(item, term, strict);
+    if (mode === "tag") return matchesTag(item, term, strict);
+    return matchesName(item, term, strict) || matchesTag(item, term, strict);
+  });
+}
+
+function evaluateExpr(item: SearchableItem, expr: Expr, mode: SearchMode): boolean {
+  if (expr.type === "term") {
+    return matchesTerm(item, expr.value, mode, expr.strict);
+  }
+
+  if (expr.type === "and") {
+    return evaluateExpr(item, expr.left, mode) && evaluateExpr(item, expr.right, mode);
+  }
+
+  if (expr.type === "or") {
+    return evaluateExpr(item, expr.left, mode) || evaluateExpr(item, expr.right, mode);
+  }
+
+  return evaluateExpr(item, expr.left, mode) && !evaluateExpr(item, expr.right, mode);
+}
+
+function stripSearchFields(item: SearchableItem): ItemWithTags {
+  const { pinyinName, pinyinInitials, tagEntries, ...original } = item;
+  void pinyinName;
+  void pinyinInitials;
+  void tagEntries;
+  return original;
 }
 
 export function searchWithIndex(index: SearchIndex, query: string): ItemWithTags[] {
   const normalized = query.trim();
-  if (!normalized) return index.items;
-  if (!index.fuse) return [];
+  if (!normalized) return index.items.map(stripSearchFields);
 
-  const queries = expandQuery(query);
-  const bestScoreMap = new Map<number, FuseResult<SearchableItem>>();
+  const expr = parseQuery(normalized);
+  if (!expr) return index.items.map(stripSearchFields);
 
-  for (const q of queries) {
-    const subQuery = q.trim();
-    if (!subQuery) continue;
-
-    for (const r of index.fuse.search(subQuery)) {
-      const id = r.item.id;
-      const existing = bestScoreMap.get(id);
-      if (!existing || (r.score ?? 1) < (existing.score ?? 1)) {
-        bestScoreMap.set(id, r);
-      }
-    }
-  }
-
-  return Array.from(bestScoreMap.values())
-    .sort((a, b) => (a.score ?? 1) - (b.score ?? 1))
-    .map((r) => {
-      const { pinyinName, pinyinInitials, tagNames, tagPinyin, tagInitials, ...original } = r.item;
-      return original as ItemWithTags;
-    })
-    .sort((a, b) => {
-      if (a.is_favorite && !b.is_favorite) return -1;
-      if (!a.is_favorite && b.is_favorite) return 1;
-      return 0;
-    });
+  return index.items
+    .filter((item) => evaluateExpr(item, expr, index.mode))
+    .map(stripSearchFields);
 }
 
 export function fuzzySearch(

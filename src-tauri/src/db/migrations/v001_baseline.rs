@@ -31,6 +31,11 @@ impl Migration for V001Baseline {
             migrate_items_table_with_image_type(conn)?;
         }
 
+        // 4. 确保项目标签顺序字段存在
+        if !has_column(conn, "item_tags", "position") {
+            conn.execute_batch("ALTER TABLE item_tags ADD COLUMN position INTEGER NOT NULL DEFAULT 0")?;
+        }
+
         Ok(())
     }
 }

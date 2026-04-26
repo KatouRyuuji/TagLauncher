@@ -27,6 +27,7 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE TABLE IF NOT EXISTS item_tags (
             item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
             tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE,
+            position INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (item_id, tag_id)
         );
 

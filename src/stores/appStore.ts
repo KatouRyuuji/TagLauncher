@@ -62,7 +62,7 @@ export const useAppStore = create<AppState>((set) => ({
   setItems: (items) => set({ items }),
   setTags: (tags) => set({ tags }),
   setCabinets: (cabinets) => set({ cabinets }),
-  setSelectedTagIds: (ids) => set({ selectedTagIds: ids }),
+  setSelectedTagIds: (ids) => set({ selectedTagIds: ids, selectedCabinetId: null, showFavorites: false }),
 
   // 切换标签选中状态（支持多选）
   // 关键：切换标签时自动清空文件柜和收藏夹，保证三种筛选模式互斥
@@ -78,7 +78,12 @@ export const useAppStore = create<AppState>((set) => ({
   // 选择文件柜（互斥：清空标签和收藏夹）
   setSelectedCabinetId: (id) => set({ selectedCabinetId: id, selectedTagIds: [], showFavorites: false }),
 
-  setSidebarTab: (tab) => set({ sidebarTab: tab }),
+  setSidebarTab: (tab) =>
+    set(
+      tab === "tags"
+        ? { sidebarTab: tab, selectedCabinetId: null, showFavorites: false }
+        : { sidebarTab: tab, selectedTagIds: [] },
+    ),
 
   // 切换收藏夹（互斥：清空文件柜和标签）
   setShowFavorites: (v) => set({ showFavorites: v, selectedCabinetId: null, selectedTagIds: [] }),

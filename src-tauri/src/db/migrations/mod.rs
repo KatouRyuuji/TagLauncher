@@ -1,4 +1,5 @@
 mod v001_baseline;
+mod v002_item_tag_position;
 
 use rusqlite::Connection;
 
@@ -62,7 +63,10 @@ fn record_migration(conn: &Connection, migration: &dyn Migration) -> Result<(), 
 
 /// 运行所有待执行的迁移
 pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
-    let migrations: Vec<Box<dyn Migration>> = vec![Box::new(v001_baseline::V001Baseline)];
+    let migrations: Vec<Box<dyn Migration>> = vec![
+        Box::new(v001_baseline::V001Baseline),
+        Box::new(v002_item_tag_position::V002ItemTagPosition),
+    ];
 
     let current_version = get_schema_version(conn);
 
