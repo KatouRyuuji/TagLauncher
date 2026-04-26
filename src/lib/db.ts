@@ -30,6 +30,16 @@ export async function getItems(): Promise<ItemWithTags[]> {
   return invoke("get_items");
 }
 
+/** 获取单个项目（含标签信息和自动图标） */
+export async function getItem(id: number): Promise<ItemWithTags> {
+  return invoke("get_item", { id });
+}
+
+/** 批量获取指定项目（含标签信息和自动图标） */
+export async function getItemsByIds(ids: number[]): Promise<ItemWithTags[]> {
+  return invoke("get_items_by_ids", { ids });
+}
+
 /** 添加项目，传入文件/文件夹的完整路径，后端自动检测类型 */
 export async function addItem(path: string): Promise<Item> {
   return invoke("add_item", { path });

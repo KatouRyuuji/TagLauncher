@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { memo, useState, useRef, useEffect } from "react";
 import { ContextMenu } from "./ContextMenu";
 import { DraggableTagList } from "./DraggableTagList";
 import { FavoriteStar } from "./FavoriteStar";
@@ -94,7 +94,7 @@ function useSlotContainer(slots: ItemSlotDescriptor[], item: ItemWithTags) {
   return ref;
 }
 
-export function ItemCard({
+function ItemCardComponent({
   item,
   tags,
   cabinets,
@@ -265,3 +265,5 @@ export function ItemCard({
     </>
   );
 }
+
+export const ItemCard = memo(ItemCardComponent);

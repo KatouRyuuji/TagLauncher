@@ -1,5 +1,52 @@
+import { memo, useCallback, useMemo } from "react";
 import type { ItemViewProps } from "../types";
 import { ItemRow } from "./ItemRow";
+
+const ItemListRow = memo(function ItemListRow({
+  item,
+  viewProps,
+}: {
+  item: ItemViewProps["items"][number];
+  viewProps: Omit<ItemViewProps, "items" | "loading">;
+}) {
+  const {
+    tags,
+    cabinets,
+    currentCabinetId,
+    onLaunch,
+    onRemove,
+    onSetTags,
+    onAddTagToItem,
+    onRemoveTagFromItem,
+    onAddNewTagToItem,
+    onToggleFavorite,
+    onAddItemToCabinet,
+    onRemoveItemFromCabinet,
+    onUpdateThumbnail,
+  } = viewProps;
+  const handleLaunch = useCallback(() => onLaunch(item.id), [item.id, onLaunch]);
+  const handleRemove = useCallback(() => onRemove(item.id), [item.id, onRemove]);
+  const handleToggleFavorite = useCallback(() => onToggleFavorite(item.id), [item.id, onToggleFavorite]);
+
+  return (
+    <ItemRow
+      item={item}
+      tags={tags}
+      cabinets={cabinets}
+      currentCabinetId={currentCabinetId}
+      onLaunch={handleLaunch}
+      onRemove={handleRemove}
+      onSetTags={onSetTags}
+      onAddTagToItem={onAddTagToItem}
+      onRemoveTagFromItem={onRemoveTagFromItem}
+      onAddNewTagToItem={onAddNewTagToItem}
+      onToggleFavorite={handleToggleFavorite}
+      onAddItemToCabinet={onAddItemToCabinet}
+      onRemoveItemFromCabinet={onRemoveItemFromCabinet}
+      onUpdateThumbnail={onUpdateThumbnail}
+    />
+  );
+});
 
 export function ItemListView({
   items,
@@ -18,6 +65,36 @@ export function ItemListView({
   onRemoveItemFromCabinet,
   onUpdateThumbnail,
 }: ItemViewProps) {
+  const viewProps = useMemo(() => ({
+    tags,
+    cabinets,
+    currentCabinetId,
+    onLaunch,
+    onRemove,
+    onSetTags,
+    onAddTagToItem,
+    onRemoveTagFromItem,
+    onAddNewTagToItem,
+    onToggleFavorite,
+    onAddItemToCabinet,
+    onRemoveItemFromCabinet,
+    onUpdateThumbnail,
+  }), [
+    tags,
+    cabinets,
+    currentCabinetId,
+    onLaunch,
+    onRemove,
+    onSetTags,
+    onAddTagToItem,
+    onRemoveTagFromItem,
+    onAddNewTagToItem,
+    onToggleFavorite,
+    onAddItemToCabinet,
+    onRemoveItemFromCabinet,
+    onUpdateThumbnail,
+  ]);
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center px-6 py-10">
@@ -60,22 +137,10 @@ export function ItemListView({
         </div>
 
         {items.map((item) => (
-          <ItemRow
+          <ItemListRow
             key={item.id}
             item={item}
-            tags={tags}
-            cabinets={cabinets}
-            currentCabinetId={currentCabinetId}
-            onLaunch={() => onLaunch(item.id)}
-            onRemove={() => onRemove(item.id)}
-            onSetTags={onSetTags}
-            onAddTagToItem={onAddTagToItem}
-            onRemoveTagFromItem={onRemoveTagFromItem}
-            onAddNewTagToItem={onAddNewTagToItem}
-            onToggleFavorite={() => onToggleFavorite(item.id)}
-            onAddItemToCabinet={onAddItemToCabinet}
-            onRemoveItemFromCabinet={onRemoveItemFromCabinet}
-            onUpdateThumbnail={onUpdateThumbnail}
+            viewProps={viewProps}
           />
         ))}
       </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ContextMenu } from "./ContextMenu";
 import { DraggableTagList } from "./DraggableTagList";
 import { FavoriteStar } from "./FavoriteStar";
@@ -13,7 +13,7 @@ import { getFileSuffix, getTypeLabel } from "../lib/itemUtils";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import type { ItemCardProps } from "./ItemCard";
 
-export function ItemRow({
+function ItemRowComponent({
   item,
   tags,
   cabinets,
@@ -159,3 +159,5 @@ export function ItemRow({
     </>
   );
 }
+
+export const ItemRow = memo(ItemRowComponent);

@@ -187,6 +187,8 @@ pub fn run() {
             remove_item,
             update_item_icon,
             get_items,
+            get_item,
+            get_items_by_ids,
             // 标签管理
             get_tags,
             add_tag,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
@@ -15,19 +15,51 @@ function getPathDisplayName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
+function sortItems(items: ItemWithTags[]): ItemWithTags[] {
+  return [...items].sort((a, b) => {
+    if (a.is_favorite !== b.is_favorite) return a.is_favorite ? -1 : 1;
+
+    const aUsed = a.last_used_at ?? "";
+    const bUsed = b.last_used_at ?? "";
+    if (aUsed !== bUsed) return bUsed.localeCompare(aUsed);
+
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function upsertItem(items: ItemWithTags[], item: ItemWithTags): ItemWithTags[] {
+  const index = items.findIndex((current) => current.id === item.id);
+  if (index === -1) {
+    return sortItems([...items, item]);
+  }
+
+  const next = [...items];
+  next[index] = item;
+  return sortItems(next);
+}
+
+function removeItemFromList(items: ItemWithTags[], id: number): ItemWithTags[] {
+  return items.filter((item) => item.id !== id);
+}
+
 export function useItems() {
   const { setItems, searchQuery, searchMode, selectedTagIds, selectedCabinetId, showFavorites } = useAppStore();
 
   const [allItems, setAllItems] = useState<ItemWithTags[]>([]);
   const [cabinetItems, setCabinetItems] = useState<ItemWithTags[]>([]);
   const [loading, setLoading] = useState(true);
+  const allItemsRef = useRef<ItemWithTags[]>([]);
+
+  useEffect(() => {
+    allItemsRef.current = allItems;
+    notifyItemsChanged(allItems);
+  }, [allItems]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
       const data = await db.getItems();
       setAllItems(data);
-      notifyItemsChanged(data);
     } catch (e) {
       console.error("Failed to load items:", e);
     } finally {
@@ -45,14 +77,21 @@ export function useItems() {
     loadAll();
   }, [loadAll]);
 
-  const refreshSelectedCabinetItems = useCallback(async () => {
-    if (selectedCabinetId === null) {
-      return;
-    }
+  const refreshItemById = useCallback(async (itemId: number) => {
+    const item = await db.getItem(itemId);
+    setAllItems((current) => upsertItem(current, item));
+    setCabinetItems((current) =>
+      current.some((cabinetItem) => cabinetItem.id === itemId)
+        ? upsertItem(current, item)
+        : current,
+    );
+    return item;
+  }, []);
 
-    const updated = await db.getCabinetItems(selectedCabinetId);
-    setCabinetItems(updated);
-  }, [selectedCabinetId]);
+  const removeLocalItem = useCallback((itemId: number) => {
+    setAllItems((current) => removeItemFromList(current, itemId));
+    setCabinetItems((current) => removeItemFromList(current, itemId));
+  }, []);
 
   const source = useMemo(() => {
     if (showFavorites) {
@@ -83,63 +122,78 @@ export function useItems() {
     setItems(filtered);
   }, [filtered, setItems]);
 
-  const addItem = async (path: string) => {
-    await db.addItem(path);
-    await loadAll();
-  };
+  const addItem = useCallback(async (path: string) => {
+    const item = await db.addItem(path);
+    await refreshItemById(item.id);
+  }, [refreshItemById]);
 
-  const addItems = async (paths: string[]) => {
+  const addItems = useCallback(async (paths: string[]) => {
     const result = await db.addItems(paths);
     if (result.failed.length > 0) {
       const first = result.failed[0];
       showToast(`导入失败 ${result.failed.length} 项：${getPathDisplayName(first.path)}（${first.error}）`, "warning");
     }
-    await loadAll();
-  };
+    if (result.items.length === 0) return;
 
-  const removeItem = async (id: number) => {
+    const changedItems = await db.getItemsByIds(result.items.map((item) => item.id));
+    setAllItems((current) => {
+      let next = current;
+      for (const item of changedItems) {
+        next = upsertItem(next, item);
+      }
+      return next;
+    });
+    setCabinetItems((current) => {
+      let next = current;
+      for (const item of changedItems) {
+        if (next.some((cabinetItem) => cabinetItem.id === item.id)) {
+          next = upsertItem(next, item);
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const removeItem = useCallback(async (id: number) => {
     await db.removeItem(id);
-    await loadAll();
-    await refreshSelectedCabinetItems();
-  };
+    removeLocalItem(id);
+  }, [removeLocalItem]);
 
-  const updateItemIcon = async (itemId: number, iconPath: string | null) => {
+  const updateItemIcon = useCallback(async (itemId: number, iconPath: string | null) => {
     await db.updateItemIcon(itemId, iconPath);
-    await loadAll();
-    await refreshSelectedCabinetItems();
-  };
+    await refreshItemById(itemId);
+  }, [refreshItemById]);
 
-  const setItemTags = async (itemId: number, tagIds: number[]) => {
+  const setItemTags = useCallback(async (itemId: number, tagIds: number[]) => {
     await db.setItemTags(itemId, tagIds);
-    await loadAll();
-    await refreshSelectedCabinetItems();
-  };
+    await refreshItemById(itemId);
+  }, [refreshItemById]);
 
-  const launchItem = async (id: number) => {
+  const launchItem = useCallback(async (id: number) => {
     await db.launchItem(id);
-    const item = allItems.find((i) => i.id === id);
+    const item = allItemsRef.current.find((i) => i.id === id);
     if (item) notifyItemLaunched(id, item.name);
-  };
+  }, []);
 
-  const toggleFavorite = async (id: number) => {
+  const toggleFavorite = useCallback(async (id: number) => {
     await db.toggleFavorite(id);
-    await loadAll();
-    await refreshSelectedCabinetItems();
-  };
+    await refreshItemById(id);
+  }, [refreshItemById]);
 
-  const addItemToCabinet = async (cabinetId: number, itemId: number) => {
+  const addItemToCabinet = useCallback(async (cabinetId: number, itemId: number) => {
     await db.addItemToCabinet(cabinetId, itemId);
     if (selectedCabinetId === cabinetId) {
-      await refreshSelectedCabinetItems();
+      const item = allItemsRef.current.find((current) => current.id === itemId) ?? await db.getItem(itemId);
+      setCabinetItems((current) => upsertItem(current, item));
     }
-  };
+  }, [selectedCabinetId]);
 
-  const removeItemFromCabinet = async (cabinetId: number, itemId: number) => {
+  const removeItemFromCabinet = useCallback(async (cabinetId: number, itemId: number) => {
     await db.removeItemFromCabinet(cabinetId, itemId);
     if (selectedCabinetId === cabinetId) {
-      await refreshSelectedCabinetItems();
+      setCabinetItems((current) => removeItemFromList(current, itemId));
     }
-  };
+  }, [selectedCabinetId]);
 
   const findItemById = useCallback(
     (itemId: number) => allItems.find((item) => item.id === itemId) ?? cabinetItems.find((item) => item.id === itemId),

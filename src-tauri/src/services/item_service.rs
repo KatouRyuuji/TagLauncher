@@ -156,6 +156,57 @@ pub fn get_items(app: &AppHandle, conn: &Connection) -> Result<Vec<ItemWithTags>
     tag_service::items_with_tags(conn, items)
 }
 
+/// 获取单个项目（含标签和自动图标）
+pub fn get_item(app: &AppHandle, conn: &Connection, id: i64) -> Result<ItemWithTags, String> {
+    let sql = format!("SELECT {} FROM items WHERE id = ?1", ITEM_COLS);
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let mut items = vec![
+        stmt.query_row([id], item_from_row)
+            .map_err(|e| e.to_string())?,
+    ];
+
+    icon_service::fill_auto_visual_paths(app, &mut items);
+    tag_service::items_with_tags(conn, items)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("Item {} not found", id))
+}
+
+/// 批量获取指定项目（含标签和自动图标）
+pub fn get_items_by_ids(
+    app: &AppHandle,
+    conn: &Connection,
+    ids: &[i64],
+) -> Result<Vec<ItemWithTags>, String> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut unique_ids = ids.to_vec();
+    unique_ids.sort_unstable();
+    unique_ids.dedup();
+
+    let placeholders = unique_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT {} FROM items WHERE id IN ({}) ORDER BY {}",
+        ITEM_COLS, placeholders, ITEM_ORDER,
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let params = unique_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::ToSql)
+        .collect::<Vec<_>>();
+
+    let mut items: Vec<Item> = stmt
+        .query_map(params.as_slice(), item_from_row)
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    icon_service::fill_auto_visual_paths(app, &mut items);
+    tag_service::items_with_tags(conn, items)
+}
+
 /// 切换收藏状态
 pub fn toggle_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
     conn.execute(

@@ -38,6 +38,26 @@ pub fn get_items(app: AppHandle, db: State<Database>) -> Result<Vec<ItemWithTags
 }
 
 #[tauri::command]
+pub fn get_item(
+    app: AppHandle,
+    db: State<Database>,
+    id: i64,
+) -> Result<ItemWithTags, String> {
+    let conn = db.get_conn();
+    item_service::get_item(&app, &conn, id)
+}
+
+#[tauri::command]
+pub fn get_items_by_ids(
+    app: AppHandle,
+    db: State<Database>,
+    ids: Vec<i64>,
+) -> Result<Vec<ItemWithTags>, String> {
+    let conn = db.get_conn();
+    item_service::get_items_by_ids(&app, &conn, &ids)
+}
+
+#[tauri::command]
 pub fn toggle_favorite(db: State<Database>, id: i64) -> Result<bool, String> {
     let conn = db.get_conn();
     item_service::toggle_favorite(&conn, id)

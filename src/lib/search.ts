@@ -3,7 +3,12 @@ import type { ItemWithTags } from "../types";
 import type { SearchMode } from "../stores/appStore";
 import { expandQuery } from "./synonyms";
 
-interface SearchableItem extends ItemWithTags {
+interface SearchIndexEntry {
+  item: ItemWithTags;
+  fields: SearchableFields;
+}
+
+interface SearchableFields {
   pinyinName: string;
   pinyinInitials: string;
   tagEntries: SearchableTag[];
@@ -16,7 +21,7 @@ interface SearchableTag {
 }
 
 export interface SearchIndex {
-  items: SearchableItem[];
+  entries: SearchIndexEntry[];
   mode: SearchMode;
 }
 
@@ -40,7 +45,7 @@ function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function enrichItem(item: ItemWithTags): SearchableItem {
+function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
   const tagEntries = item.tags.map((tag) => ({
     name: tag.name,
     pinyinName: toPinyinText(tag.name),
@@ -48,10 +53,12 @@ function enrichItem(item: ItemWithTags): SearchableItem {
   }));
 
   return {
-    ...item,
-    pinyinName: toPinyinText(item.name),
-    pinyinInitials: toPinyinInitials(item.name),
-    tagEntries,
+    item,
+    fields: {
+      pinyinName: toPinyinText(item.name),
+      pinyinInitials: toPinyinInitials(item.name),
+      tagEntries,
+    },
   };
 }
 
@@ -64,7 +71,7 @@ export function filterItemsByTags(items: ItemWithTags[], selectedTagIds: number[
 
 export function buildSearchIndex(items: ItemWithTags[], mode: SearchMode): SearchIndex {
   return {
-    items: items.map(enrichItem),
+    entries: items.map(createSearchEntry),
     mode,
   };
 }
@@ -275,64 +282,56 @@ function matchesText(value: string, pinyinValue: string, initialsValue: string, 
     prefixMatches(initialsValue, query);
 }
 
-function matchesName(item: SearchableItem, query: string, strict: boolean): boolean {
-  if (matchesText(item.name, item.pinyinName, item.pinyinInitials, query, strict)) {
+function matchesName(entry: SearchIndexEntry, query: string, strict: boolean): boolean {
+  if (matchesText(entry.item.name, entry.fields.pinyinName, entry.fields.pinyinInitials, query, strict)) {
     return true;
   }
 
-  return !strict && prefixMatches(item.path, query);
+  return !strict && prefixMatches(entry.item.path, query);
 }
 
-function matchesTag(item: SearchableItem, query: string, strict: boolean): boolean {
-  return item.tagEntries.some((tag) => matchesText(tag.name, tag.pinyinName, tag.pinyinInitials, query, strict));
+function matchesTag(entry: SearchIndexEntry, query: string, strict: boolean): boolean {
+  return entry.fields.tagEntries.some((tag) => matchesText(tag.name, tag.pinyinName, tag.pinyinInitials, query, strict));
 }
 
-function matchesTerm(item: SearchableItem, query: string, mode: SearchMode, strict: boolean): boolean {
+function matchesTerm(entry: SearchIndexEntry, query: string, mode: SearchMode, strict: boolean): boolean {
   if (!query.trim()) return true;
 
   const queries = strict ? [query] : expandQuery(query);
 
   return queries.some((term) => {
-    if (mode === "name") return matchesName(item, term, strict);
-    if (mode === "tag") return matchesTag(item, term, strict);
-    return matchesName(item, term, strict) || matchesTag(item, term, strict);
+    if (mode === "name") return matchesName(entry, term, strict);
+    if (mode === "tag") return matchesTag(entry, term, strict);
+    return matchesName(entry, term, strict) || matchesTag(entry, term, strict);
   });
 }
 
-function evaluateExpr(item: SearchableItem, expr: Expr, mode: SearchMode): boolean {
+function evaluateExpr(entry: SearchIndexEntry, expr: Expr, mode: SearchMode): boolean {
   if (expr.type === "term") {
-    return matchesTerm(item, expr.value, mode, expr.strict);
+    return matchesTerm(entry, expr.value, mode, expr.strict);
   }
 
   if (expr.type === "and") {
-    return evaluateExpr(item, expr.left, mode) && evaluateExpr(item, expr.right, mode);
+    return evaluateExpr(entry, expr.left, mode) && evaluateExpr(entry, expr.right, mode);
   }
 
   if (expr.type === "or") {
-    return evaluateExpr(item, expr.left, mode) || evaluateExpr(item, expr.right, mode);
+    return evaluateExpr(entry, expr.left, mode) || evaluateExpr(entry, expr.right, mode);
   }
 
-  return evaluateExpr(item, expr.left, mode) && !evaluateExpr(item, expr.right, mode);
-}
-
-function stripSearchFields(item: SearchableItem): ItemWithTags {
-  const { pinyinName, pinyinInitials, tagEntries, ...original } = item;
-  void pinyinName;
-  void pinyinInitials;
-  void tagEntries;
-  return original;
+  return evaluateExpr(entry, expr.left, mode) && !evaluateExpr(entry, expr.right, mode);
 }
 
 export function searchWithIndex(index: SearchIndex, query: string): ItemWithTags[] {
   const normalized = query.trim();
-  if (!normalized) return index.items.map(stripSearchFields);
+  if (!normalized) return index.entries.map((entry) => entry.item);
 
   const expr = parseQuery(normalized);
-  if (!expr) return index.items.map(stripSearchFields);
+  if (!expr) return index.entries.map((entry) => entry.item);
 
-  return index.items
-    .filter((item) => evaluateExpr(item, expr, index.mode))
-    .map(stripSearchFields);
+  return index.entries
+    .filter((entry) => evaluateExpr(entry, expr, index.mode))
+    .map((entry) => entry.item);
 }
 
 export function fuzzySearch(

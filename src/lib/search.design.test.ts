@@ -27,7 +27,9 @@ setSynonymGroups([
 ]);
 
 const allIndex = buildSearchIndex(items, "all");
+assert.equal(searchWithIndex(allIndex, "")[0], items[0]);
 assert.deepEqual(searchWithIndex(allIndex, "ta").map((i) => i.id), [1]);
+assert.equal(searchWithIndex(allIndex, "ta")[0], items[0]);
 assert.deepEqual(searchWithIndex(allIndex, "ag").map((i) => i.id), []);
 assert.deepEqual(searchWithIndex(allIndex, "renzheshengui").map((i) => i.id), [2]);
 assert.deepEqual(searchWithIndex(allIndex, "zhe").map((i) => i.id), []);
@@ -45,6 +47,8 @@ assert.deepEqual(searchWithIndex(allIndex, "(tag||忍者)!!忍者").map((i) => i
 assert.deepEqual(searchWithIndex(allIndex, "@忍者神龟").map((i) => i.id), [2]);
 assert.deepEqual(searchWithIndex(allIndex, "@忍者").map((i) => i.id), []);
 
-assert.deepEqual(filterItemsByTags(items, [1, 3]).map((i) => i.id), [3]);
+const tagFiltered = filterItemsByTags(items, [1, 3]);
+assert.deepEqual(tagFiltered.map((i) => i.id), [3]);
+assert.equal(tagFiltered[0], items[2]);
 
 console.log("search design tests passed");
