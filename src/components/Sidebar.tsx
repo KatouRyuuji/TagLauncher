@@ -38,32 +38,30 @@ export function Sidebar({
   onAddTagToItem,
   modPanels = [],
 }: SidebarProps) {
-  const {
-    selectedTagIds,
-    toggleTagSelection,
-    setSelectedTagIds,
-    selectedCabinetId,
-    setSelectedCabinetId,
-    sidebarTab,
-    setSidebarTab,
-    showFavorites,
-    setShowFavorites,
-  } = useAppStore();
-  const activeDrag = useInternalDragStore((state) => state.drag);
-  const hoverTarget = useInternalDragStore((state) => state.hoverTarget);
+  const selectedTagIds = useAppStore((state) => state.selectedTagIds);
+  const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
+  const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
+  const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
+  const setSelectedCabinetId = useAppStore((state) => state.setSelectedCabinetId);
+  const sidebarTab = useAppStore((state) => state.sidebarTab);
+  const setSidebarTab = useAppStore((state) => state.setSidebarTab);
+  const showFavorites = useAppStore((state) => state.showFavorites);
+  const setShowFavorites = useAppStore((state) => state.setShowFavorites);
+  const activeDragKind = useInternalDragStore((state) => state.drag?.kind ?? null);
+  const hoveredCabinetId = useInternalDragStore((state) =>
+    state.drag?.kind === "item" && state.hoverTarget?.kind === "item-cabinet"
+      ? state.hoverTarget.cabinetId
+      : null,
+  );
+  const hoveredFavorites = useInternalDragStore((state) =>
+    state.drag?.kind === "item" && state.hoverTarget?.kind === "item-favorites",
+  );
 
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [showAddTag, setShowAddTag] = useState(false);
   const [editingCabinet, setEditingCabinet] = useState<Cabinet | null>(null);
   const [showAddCabinet, setShowAddCabinet] = useState(false);
-  const visibleSection = activeDrag?.kind === "item" ? "cabinets" : sidebarTab;
-
-  const hoveredCabinetId =
-    activeDrag?.kind === "item" && hoverTarget?.kind === "item-cabinet"
-      ? hoverTarget.cabinetId
-      : null;
-  const hoveredFavorites =
-    activeDrag?.kind === "item" && hoverTarget?.kind === "item-favorites";
+  const visibleSection = activeDragKind === "item" ? "cabinets" : sidebarTab;
 
   const handleTagPointerDown = (event: React.PointerEvent<HTMLElement>, tag: Tag) => {
     beginInternalPointerDrag({
@@ -139,7 +137,7 @@ export function Sidebar({
         </div>
       </div>
 
-      {activeDrag?.kind === "item" && sidebarTab !== "cabinets" && (
+      {activeDragKind === "item" && sidebarTab !== "cabinets" && (
         <div className="mx-4 mt-4 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--accent-primary)_28%,transparent)] bg-[var(--accent-primary-bg)] px-3 py-2 text-xs text-[var(--accent-primary)]">
           正在拖拽项目，已自动切换到归档目标区域。
         </div>
@@ -311,7 +309,7 @@ export function Sidebar({
 
       <div className="border-t border-[var(--border-subtle)] px-5 py-4">
         <div className="surface-card-soft px-4 py-3 text-xs leading-6 text-[var(--text-muted)]">
-          {activeDrag?.kind === "item"
+          {activeDragKind === "item"
             ? "释放到收藏夹或文件柜，即可完成项目归档。"
             : "拖拽标签到项目卡片上可快速追加分类，拖拽项目可加入收藏或文件柜。"}
         </div>

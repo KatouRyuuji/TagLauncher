@@ -31,6 +31,12 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             PRIMARY KEY (item_id, tag_id)
         );
 
+        CREATE INDEX IF NOT EXISTS idx_item_tags_tag_item
+            ON item_tags(tag_id, item_id);
+
+        CREATE INDEX IF NOT EXISTS idx_item_tags_item_position
+            ON item_tags(item_id, position);
+
         -- ========== FTS5 全文搜索虚拟表 ==========
         CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
             name, path, content=items, content_rowid=id
@@ -64,6 +70,9 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
             PRIMARY KEY (cabinet_id, item_id)
         );
+
+        CREATE INDEX IF NOT EXISTS idx_cabinet_items_item
+            ON cabinet_items(item_id);
 
         -- ========== 应用元数据表 ==========
         CREATE TABLE IF NOT EXISTS app_meta (

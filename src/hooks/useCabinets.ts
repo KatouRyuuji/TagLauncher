@@ -11,7 +11,7 @@ import * as db from "../lib/db";
 import { notifyCabinetsChanged } from "../lib/modApi";
 
 export function useCabinets() {
-  const { setCabinets } = useAppStore();
+  const setCabinets = useAppStore((state) => state.setCabinets);
 
   /** 从后端加载所有文件柜并写入 Store */
   const loadCabinets = useCallback(async () => {

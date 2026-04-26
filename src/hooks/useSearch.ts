@@ -10,7 +10,8 @@ import { useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 
 export function useSearch() {
-  const { searchQuery, setSearchQuery } = useAppStore();
+  const searchQuery = useAppStore((state) => state.searchQuery);
+  const setSearchQuery = useAppStore((state) => state.setSearchQuery);
   // 使用 ref 存储定时器 ID，避免组件重渲染时丢失
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 

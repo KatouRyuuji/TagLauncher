@@ -119,9 +119,10 @@ function App() {
   } = useItems();
   const { tags, addTag, updateTag, removeTag } = useTags();
   const { addCabinet, updateCabinet, removeCabinet } = useCabinets();
-  const { viewMode, cabinets, selectedCabinetId } = useAppStore();
-  const activeInternalDrag = useInternalDragStore((state) => state.drag);
-  const hasActiveInternalDrag = activeInternalDrag !== null;
+  const viewMode = useAppStore((state) => state.viewMode);
+  const cabinets = useAppStore((state) => state.cabinets);
+  const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
+  const hasActiveInternalDrag = useInternalDragStore((state) => state.drag !== null);
   const hasActiveInternalDragRef = useRef(false);
 
   const [dragOver, setDragOver] = useState(false);
@@ -457,28 +458,7 @@ function App() {
             </div>
           </div>
         )}
-        {activeInternalDrag && (
-          <div
-            className="fixed pointer-events-none"
-            style={{
-              zIndex: "var(--z-drag-ghost)" as unknown as number,
-              left: `calc(${activeInternalDrag.x}px + var(--drag-ghost-offset-x))`,
-              top:  `calc(${activeInternalDrag.y}px + var(--drag-ghost-offset-y))`,
-            }}
-          >
-            <div className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs shadow-2xl" style={{ backgroundColor: "var(--bg-elevated)", borderWidth: "var(--border-width)" as unknown as number, borderStyle: "var(--border-style)", borderColor: "var(--border-default)", color: "var(--text-primary)" }}>
-              {"color" in activeInternalDrag && (
-                <span
-                  className="h-2.5 w-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: activeInternalDrag.color }}
-                />
-              )}
-              <span className="max-w-[220px] truncate">
-                {activeInternalDrag.kind === "item" ? `添加对象: ${activeInternalDrag.label}` : activeInternalDrag.label}
-              </span>
-            </div>
-          </div>
-        )}
+        <InternalDragGhost />
       </main>
       <WelcomeModal open={showWelcomeModal} onClose={handleCloseWelcome} />
       <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
@@ -493,6 +473,34 @@ function App() {
       />
     </div>
     </ThemeProvider>
+  );
+}
+
+function InternalDragGhost() {
+  const activeInternalDrag = useInternalDragStore((state) => state.drag);
+  if (!activeInternalDrag) return null;
+
+  return (
+    <div
+      className="fixed pointer-events-none"
+      style={{
+        zIndex: "var(--z-drag-ghost)" as unknown as number,
+        left: `calc(${activeInternalDrag.x}px + var(--drag-ghost-offset-x))`,
+        top:  `calc(${activeInternalDrag.y}px + var(--drag-ghost-offset-y))`,
+      }}
+    >
+      <div className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs shadow-2xl" style={{ backgroundColor: "var(--bg-elevated)", borderWidth: "var(--border-width)" as unknown as number, borderStyle: "var(--border-style)", borderColor: "var(--border-default)", color: "var(--text-primary)" }}>
+        {"color" in activeInternalDrag && (
+          <span
+            className="h-2.5 w-2.5 rounded-full shrink-0"
+            style={{ backgroundColor: activeInternalDrag.color }}
+          />
+        )}
+        <span className="max-w-[220px] truncate">
+          {activeInternalDrag.kind === "item" ? `添加对象: ${activeInternalDrag.label}` : activeInternalDrag.label}
+        </span>
+      </div>
+    </div>
   );
 }
 

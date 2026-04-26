@@ -8,6 +8,31 @@
 import { create } from "zustand";
 import type { Tag, ItemWithTags, Cabinet } from "../types";
 
+function sameItemRefs(a: ItemWithTags[], b: ItemWithTags[]): boolean {
+  return a.length === b.length && a.every((item, index) => item === b[index]);
+}
+
+function sameTags(a: Tag[], b: Tag[]): boolean {
+  return a.length === b.length && a.every((tag, index) =>
+    tag.id === b[index].id &&
+    tag.name === b[index].name &&
+    tag.color === b[index].color,
+  );
+}
+
+function sameCabinets(a: Cabinet[], b: Cabinet[]): boolean {
+  return a.length === b.length && a.every((cabinet, index) =>
+    cabinet.id === b[index].id &&
+    cabinet.name === b[index].name &&
+    cabinet.color === b[index].color &&
+    cabinet.created_at === b[index].created_at,
+  );
+}
+
+function sameNumberArray(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 /** 搜索模式：全部 / 仅名称路径 / 仅标签 */
 export type SearchMode = "all" | "name" | "tag";
 
@@ -59,10 +84,16 @@ export const useAppStore = create<AppState>((set) => ({
   viewMode: "grid",
 
   // 简单 setter
-  setItems: (items) => set({ items }),
-  setTags: (tags) => set({ tags }),
-  setCabinets: (cabinets) => set({ cabinets }),
-  setSelectedTagIds: (ids) => set({ selectedTagIds: ids, selectedCabinetId: null, showFavorites: false }),
+  setItems: (items) => set((state) => sameItemRefs(state.items, items) ? state : { items }),
+  setTags: (tags) => set((state) => sameTags(state.tags, tags) ? state : { tags }),
+  setCabinets: (cabinets) => set((state) => sameCabinets(state.cabinets, cabinets) ? state : { cabinets }),
+  setSelectedTagIds: (ids) => set((state) =>
+    sameNumberArray(state.selectedTagIds, ids) &&
+    state.selectedCabinetId === null &&
+    !state.showFavorites
+      ? state
+      : { selectedTagIds: ids, selectedCabinetId: null, showFavorites: false },
+  ),
 
   // 切换标签选中状态（支持多选）
   // 关键：切换标签时自动清空文件柜和收藏夹，保证三种筛选模式互斥
@@ -76,19 +107,35 @@ export const useAppStore = create<AppState>((set) => ({
     })),
 
   // 选择文件柜（互斥：清空标签和收藏夹）
-  setSelectedCabinetId: (id) => set({ selectedCabinetId: id, selectedTagIds: [], showFavorites: false }),
+  setSelectedCabinetId: (id) => set((state) =>
+    state.selectedCabinetId === id &&
+    state.selectedTagIds.length === 0 &&
+    !state.showFavorites
+      ? state
+      : { selectedCabinetId: id, selectedTagIds: [], showFavorites: false },
+  ),
 
   setSidebarTab: (tab) =>
-    set(
+    set((state) =>
       tab === "tags"
-        ? { sidebarTab: tab, selectedCabinetId: null, showFavorites: false }
-        : { sidebarTab: tab, selectedTagIds: [] },
+        ? state.sidebarTab === tab && state.selectedCabinetId === null && !state.showFavorites
+          ? state
+          : { sidebarTab: tab, selectedCabinetId: null, showFavorites: false }
+        : state.sidebarTab === tab && state.selectedTagIds.length === 0
+          ? state
+          : { sidebarTab: tab, selectedTagIds: [] },
     ),
 
   // 切换收藏夹（互斥：清空文件柜和标签）
-  setShowFavorites: (v) => set({ showFavorites: v, selectedCabinetId: null, selectedTagIds: [] }),
+  setShowFavorites: (v) => set((state) =>
+    state.showFavorites === v &&
+    state.selectedCabinetId === null &&
+    state.selectedTagIds.length === 0
+      ? state
+      : { showFavorites: v, selectedCabinetId: null, selectedTagIds: [] },
+  ),
 
-  setSearchQuery: (query) => set({ searchQuery: query }),
-  setSearchMode: (mode) => set({ searchMode: mode }),
-  setViewMode: (mode) => set({ viewMode: mode }),
+  setSearchQuery: (query) => set((state) => state.searchQuery === query ? state : { searchQuery: query }),
+  setSearchMode: (mode) => set((state) => state.searchMode === mode ? state : { searchMode: mode }),
+  setViewMode: (mode) => set((state) => state.viewMode === mode ? state : { viewMode: mode }),
 }));

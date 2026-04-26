@@ -1,7 +1,10 @@
 import { useAppStore } from "../stores/appStore";
 
 export function TagFilterBar() {
-  const { tags, selectedTagIds, toggleTagSelection, setSelectedTagIds } = useAppStore();
+  const tags = useAppStore((state) => state.tags);
+  const selectedTagIds = useAppStore((state) => state.selectedTagIds);
+  const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
+  const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
 
   if (tags.length === 0) return null;
 

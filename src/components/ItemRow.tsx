@@ -30,14 +30,13 @@ function ItemRowComponent({
 }: ItemCardProps) {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [showTagEditor, setShowTagEditor] = useState(false);
-  const activeDrag = useInternalDragStore((state) => state.drag);
-  const hoverTarget = useInternalDragStore((state) => state.hoverTarget);
+  const tagDragOver = useInternalDragStore((state) =>
+    state.drag?.kind === "tag" &&
+    state.hoverTarget?.kind === "tag-item" &&
+    state.hoverTarget.itemId === item.id,
+  );
   const currentCabinetName =
     currentCabinetId === null ? null : cabinets.find((cabinet) => cabinet.id === currentCabinetId)?.name ?? null;
-  const tagDragOver =
-    activeDrag?.kind === "tag" &&
-    hoverTarget?.kind === "tag-item" &&
-    hoverTarget.itemId === item.id;
 
   const handleItemHandlePointerDown = (event: React.PointerEvent<HTMLSpanElement>) => {
     beginInternalPointerDrag({
@@ -76,7 +75,7 @@ function ItemRowComponent({
     <>
       <div
         data-drop-tag-item-id={item.id}
-        className={`grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] px-4 py-3 ${
+        className={`item-row-render-scope grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] px-4 py-3 ${
           tagDragOver ? "bg-[var(--accent-primary-bg-light)]" : "hover:bg-[var(--bg-hover)]"
         }`}
         onDoubleClick={onLaunch}

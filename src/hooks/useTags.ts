@@ -11,7 +11,8 @@ import * as db from "../lib/db";
 import { notifyTagsChanged } from "../lib/modApi";
 
 export function useTags() {
-  const { tags, setTags } = useAppStore();
+  const tags = useAppStore((state) => state.tags);
+  const setTags = useAppStore((state) => state.setTags);
   const [loading, setLoading] = useState(true);
 
   /** 从后端加载所有标签并写入 Store */

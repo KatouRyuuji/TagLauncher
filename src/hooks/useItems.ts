@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
@@ -38,12 +38,29 @@ function upsertItem(items: ItemWithTags[], item: ItemWithTags): ItemWithTags[] {
   return sortItems(next);
 }
 
+function upsertItems(items: ItemWithTags[], changedItems: ItemWithTags[]): ItemWithTags[] {
+  if (changedItems.length === 0) return items;
+
+  const byId = new Map(items.map((item) => [item.id, item]));
+  for (const item of changedItems) {
+    byId.set(item.id, item);
+  }
+
+  return sortItems(Array.from(byId.values()));
+}
+
 function removeItemFromList(items: ItemWithTags[], id: number): ItemWithTags[] {
   return items.filter((item) => item.id !== id);
 }
 
 export function useItems() {
-  const { setItems, searchQuery, searchMode, selectedTagIds, selectedCabinetId, showFavorites } = useAppStore();
+  const setItems = useAppStore((state) => state.setItems);
+  const searchQuery = useAppStore((state) => state.searchQuery);
+  const searchMode = useAppStore((state) => state.searchMode);
+  const selectedTagIds = useAppStore((state) => state.selectedTagIds);
+  const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
+  const showFavorites = useAppStore((state) => state.showFavorites);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const [allItems, setAllItems] = useState<ItemWithTags[]>([]);
   const [cabinetItems, setCabinetItems] = useState<ItemWithTags[]>([]);
@@ -114,8 +131,8 @@ export function useItems() {
   );
 
   const filtered = useMemo(
-    () => searchWithIndex(searchIndex, searchQuery),
-    [searchIndex, searchQuery],
+    () => searchWithIndex(searchIndex, deferredSearchQuery),
+    [searchIndex, deferredSearchQuery],
   );
 
   useEffect(() => {
@@ -136,21 +153,13 @@ export function useItems() {
     if (result.items.length === 0) return;
 
     const changedItems = await db.getItemsByIds(result.items.map((item) => item.id));
-    setAllItems((current) => {
-      let next = current;
-      for (const item of changedItems) {
-        next = upsertItem(next, item);
-      }
-      return next;
-    });
+    setAllItems((current) => upsertItems(current, changedItems));
     setCabinetItems((current) => {
-      let next = current;
-      for (const item of changedItems) {
-        if (next.some((cabinetItem) => cabinetItem.id === item.id)) {
-          next = upsertItem(next, item);
-        }
-      }
-      return next;
+      const currentIds = new Set(current.map((item) => item.id));
+      return upsertItems(
+        current,
+        changedItems.filter((item) => currentIds.has(item.id)),
+      );
     });
   }, []);
 

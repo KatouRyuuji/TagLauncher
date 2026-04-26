@@ -4,12 +4,17 @@ use std::os::windows::process::CommandExt;
 use std::path::Path;
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
+#[cfg(target_os = "windows")]
+use std::sync::OnceLock;
 use tauri::AppHandle;
 #[cfg(target_os = "windows")]
 use tauri::Manager;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[cfg(target_os = "windows")]
+static AUTO_ICON_CACHE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// 判断是否有自定义图标路径
 fn has_icon_path(item: &Item) -> bool {
@@ -27,15 +32,16 @@ fn auto_visual_path(app: &AppHandle, item: &Item) -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        let cache_dir = app
-            .path()
-            .app_cache_dir()
-            .or_else(|_| app.path().app_data_dir())
-            .unwrap_or_else(|_| std::env::temp_dir().join("taglauncher"))
-            .join("item-icons");
-        std::fs::create_dir_all(&cache_dir).ok()?;
+        let cache_dir = AUTO_ICON_CACHE_DIR.get_or_init(|| {
+            app.path()
+                .app_cache_dir()
+                .or_else(|_| app.path().app_data_dir())
+                .unwrap_or_else(|_| std::env::temp_dir().join("taglauncher"))
+                .join("item-icons")
+        });
+        std::fs::create_dir_all(cache_dir).ok()?;
 
-        let cached_path = icon_cache_path(&cache_dir, &item.path);
+        let cached_path = icon_cache_path(cache_dir, &item.path);
         if cached_path.exists() {
             return Some(cached_path.to_string_lossy().to_string());
         }

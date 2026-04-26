@@ -25,6 +25,9 @@ export interface SearchIndex {
   mode: SearchMode;
 }
 
+const searchFieldsCache = new WeakMap<ItemWithTags, SearchableFields>();
+const queryExprCache = new Map<string, Expr | null>();
+
 type Token =
   | { type: "term"; value: string; strict: boolean }
   | { type: "and" | "or" | "not" | "lparen" | "rparen" };
@@ -46,19 +49,28 @@ function normalize(value: string): string {
 }
 
 function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
+  const cachedFields = searchFieldsCache.get(item);
+  if (cachedFields) {
+    return { item, fields: cachedFields };
+  }
+
   const tagEntries = item.tags.map((tag) => ({
     name: tag.name,
     pinyinName: toPinyinText(tag.name),
     pinyinInitials: toPinyinInitials(tag.name),
   }));
 
+  const fields = {
+    pinyinName: toPinyinText(item.name),
+    pinyinInitials: toPinyinInitials(item.name),
+    tagEntries,
+  };
+
+  searchFieldsCache.set(item, fields);
+
   return {
     item,
-    fields: {
-      pinyinName: toPinyinText(item.name),
-      pinyinInitials: toPinyinInitials(item.name),
-      tagEntries,
-    },
+    fields,
   };
 }
 
@@ -231,9 +243,18 @@ class Parser {
 }
 
 function parseQuery(query: string): Expr | null {
+  const cached = queryExprCache.get(query);
+  if (cached !== undefined) return cached;
+
   const tokens = tokenize(query);
-  if (tokens.length === 0) return null;
-  return new Parser(tokens).parse();
+  const expr = tokens.length === 0 ? null : new Parser(tokens).parse();
+
+  if (queryExprCache.size > 128) {
+    queryExprCache.clear();
+  }
+  queryExprCache.set(query, expr);
+
+  return expr;
 }
 
 function isEnglishTypoMatch(source: string, query: string): boolean {

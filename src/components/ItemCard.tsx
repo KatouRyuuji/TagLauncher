@@ -111,14 +111,13 @@ function ItemCardComponent({
 }: ItemCardProps) {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [showTagEditor, setShowTagEditor] = useState(false);
-  const activeDrag = useInternalDragStore((state) => state.drag);
-  const hoverTarget = useInternalDragStore((state) => state.hoverTarget);
+  const tagDragOver = useInternalDragStore((state) =>
+    state.drag?.kind === "tag" &&
+    state.hoverTarget?.kind === "tag-item" &&
+    state.hoverTarget.itemId === item.id,
+  );
   const currentCabinetName =
     currentCabinetId === null ? null : cabinets.find((cabinet) => cabinet.id === currentCabinetId)?.name ?? null;
-  const tagDragOver =
-    activeDrag?.kind === "tag" &&
-    hoverTarget?.kind === "tag-item" &&
-    hoverTarget.itemId === item.id;
 
   const handleItemHandlePointerDown = useItemDrag(item, onToggleFavorite, onAddItemToCabinet);
   const fileSuffix = getFileSuffix(item);
@@ -133,7 +132,7 @@ function ItemCardComponent({
     <>
       <article
         data-drop-tag-item-id={item.id}
-        className={`card-hover-lift group relative flex min-h-[156px] cursor-pointer flex-col overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--bg-card)] p-3 ${
+        className={`card-hover-lift item-card-render-scope group relative flex min-h-[156px] cursor-pointer flex-col overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--bg-card)] p-3 ${
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
             : "border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:bg-[var(--bg-card-hover)]"

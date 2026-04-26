@@ -458,6 +458,19 @@
     justify-content: center;
     cursor: se-resize;
   }
+
+  .item-card-render-scope,
+  .item-row-render-scope {
+    content-visibility: auto;
+  }
+
+  .item-card-render-scope {
+    contain-intrinsic-size: 156px;
+  }
+
+  .item-row-render-scope {
+    contain-intrinsic-size: 68px;
+  }
 }
 
 @keyframes toast-slide-in {

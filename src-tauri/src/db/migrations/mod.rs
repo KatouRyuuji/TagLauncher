@@ -1,5 +1,6 @@
 mod v001_baseline;
 mod v002_item_tag_position;
+mod v003_performance_indexes;
 
 use rusqlite::Connection;
 
@@ -66,6 +67,7 @@ pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
     let migrations: Vec<Box<dyn Migration>> = vec![
         Box::new(v001_baseline::V001Baseline),
         Box::new(v002_item_tag_position::V002ItemTagPosition),
+        Box::new(v003_performance_indexes::V003PerformanceIndexes),
     ];
 
     let current_version = get_schema_version(conn);

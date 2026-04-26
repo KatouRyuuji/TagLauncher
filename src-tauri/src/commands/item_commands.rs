@@ -11,8 +11,8 @@ pub fn add_item(db: State<Database>, path: String) -> Result<Item, String> {
 
 #[tauri::command]
 pub fn add_items(db: State<Database>, paths: Vec<String>) -> item_service::AddItemsResult {
-    let conn = db.get_conn();
-    item_service::add_items(&conn, paths)
+    let mut conn = db.get_conn();
+    item_service::add_items(&mut conn, paths)
 }
 
 #[tauri::command]

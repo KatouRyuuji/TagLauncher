@@ -30,7 +30,10 @@ const PLACEHOLDERS: Record<SearchMode, string> = {
 
 export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }: SearchBarProps) {
   const { handleSearch } = useSearch();
-  const { viewMode, setViewMode, searchMode, setSearchMode } = useAppStore();
+  const viewMode = useAppStore((state) => state.viewMode);
+  const setViewMode = useAppStore((state) => state.setViewMode);
+  const searchMode = useAppStore((state) => state.searchMode);
+  const setSearchMode = useAppStore((state) => state.setSearchMode);
   const [inputValue, setInputValue] = useState("");
   const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
 

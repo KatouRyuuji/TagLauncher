@@ -1,7 +1,9 @@
 use crate::models::{Item, ItemWithTags, Tag};
 use rusqlite::{params, Connection};
+use std::collections::HashMap;
 
 /// 查询指定项目关联的所有标签
+#[cfg(test)]
 pub fn get_item_tags(conn: &Connection, item_id: i64) -> Result<Vec<Tag>, String> {
     let mut stmt = conn
         .prepare(
@@ -31,12 +33,66 @@ pub fn get_item_tags(conn: &Connection, item_id: i64) -> Result<Vec<Tag>, String
 
 /// 批量为项目列表附加标签信息
 pub fn items_with_tags(conn: &Connection, items: Vec<Item>) -> Result<Vec<ItemWithTags>, String> {
+    if items.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let item_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
+    let tags_by_item = get_tags_for_items(conn, &item_ids)?;
+
     let mut result = Vec::with_capacity(items.len());
     for item in items {
-        let tags = get_item_tags(conn, item.id)?;
+        let tags = tags_by_item.get(&item.id).cloned().unwrap_or_default();
         result.push(ItemWithTags { item, tags });
     }
     Ok(result)
+}
+
+fn get_tags_for_items(
+    conn: &Connection,
+    item_ids: &[i64],
+) -> Result<HashMap<i64, Vec<Tag>>, String> {
+    if item_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut tags_by_item: HashMap<i64, Vec<Tag>> = HashMap::new();
+
+    for chunk in item_ids.chunks(500) {
+        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT it.item_id, t.id, t.name, t.color
+             FROM item_tags it
+             INNER JOIN tags t ON t.id = it.tag_id
+             WHERE it.item_id IN ({})
+             ORDER BY it.item_id, it.position, t.name",
+            placeholders,
+        );
+        let params = chunk
+            .iter()
+            .map(|id| id as &dyn rusqlite::ToSql)
+            .collect::<Vec<_>>();
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params.as_slice(), |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    Tag {
+                        id: row.get(1)?,
+                        name: row.get(2)?,
+                        color: row.get(3)?,
+                    },
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        for row in rows {
+            let (item_id, tag) = row.map_err(|e| e.to_string())?;
+            tags_by_item.entry(item_id).or_default().push(tag);
+        }
+    }
+
+    Ok(tags_by_item)
 }
 
 /// 获取所有标签

@@ -79,6 +79,22 @@ pub fn add_item(conn: &Connection, path: &str) -> Result<Item, String> {
         .map_err(|e| e.to_string())
 }
 
+fn add_item_in_tx(tx: &rusqlite::Transaction<'_>, path: &str) -> Result<Item, String> {
+    let name = get_name(path);
+    let item_type = detect_type(path);
+
+    tx.execute(
+        "INSERT OR IGNORE INTO items (name, path, type) VALUES (?1, ?2, ?3)",
+        params![name, path, item_type],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let sql = format!("SELECT {} FROM items WHERE path = ?1", ITEM_COLS);
+    let mut stmt = tx.prepare(&sql).map_err(|e| e.to_string())?;
+    stmt.query_row([path], item_from_row)
+        .map_err(|e| e.to_string())
+}
+
 #[derive(Serialize)]
 pub struct AddItemsResult {
     pub items: Vec<Item>,
@@ -92,15 +108,52 @@ pub struct AddItemFailure {
 }
 
 /// 批量添加项目（逐条隔离失败，避免单条异常影响整批导入）
-pub fn add_items(conn: &Connection, paths: Vec<String>) -> AddItemsResult {
+pub fn add_items(conn: &mut Connection, paths: Vec<String>) -> AddItemsResult {
     let mut items = Vec::new();
     let mut failed = Vec::new();
 
+    let tx = match conn.transaction() {
+        Ok(tx) => tx,
+        Err(error) => {
+            return AddItemsResult {
+                items,
+                failed: paths
+                    .into_iter()
+                    .map(|path| AddItemFailure {
+                        path,
+                        error: error.to_string(),
+                    })
+                    .collect(),
+            };
+        }
+    };
+
     for path in paths {
-        match add_item(conn, &path) {
+        if path.trim().is_empty() {
+            failed.push(AddItemFailure {
+                path,
+                error: "路径不能为空".to_string(),
+            });
+            continue;
+        }
+
+        match add_item_in_tx(&tx, &path) {
             Ok(item) => items.push(item),
             Err(error) => failed.push(AddItemFailure { path, error }),
         }
+    }
+
+    if let Err(error) = tx.commit() {
+        return AddItemsResult {
+            items: Vec::new(),
+            failed: failed
+                .into_iter()
+                .chain(items.into_iter().map(|item| AddItemFailure {
+                    path: item.path,
+                    error: error.to_string(),
+                }))
+                .collect(),
+        };
     }
 
     AddItemsResult { items, failed }

@@ -13,18 +13,19 @@ interface DraggableTagListProps {
 }
 
 export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: DraggableTagListProps) {
-  const activeDrag = useInternalDragStore((state) => state.drag);
-  const hoverTarget = useInternalDragStore((state) => state.hoverTarget);
-  const dragIdx =
-    activeDrag?.kind === "reorder-tag" && activeDrag.itemId === item.id
-      ? activeDrag.sourceIdx
-      : null;
-  const overIdx =
-    hoverTarget?.kind === "reorder-tag" && hoverTarget.itemId === item.id
-      ? hoverTarget.targetIdx
-      : null;
-  const removeZoneActive =
-    hoverTarget?.kind === "reorder-remove" && hoverTarget.itemId === item.id;
+  const dragIdx = useInternalDragStore((state) =>
+    state.drag?.kind === "reorder-tag" && state.drag.itemId === item.id
+      ? state.drag.sourceIdx
+      : null,
+  );
+  const overIdx = useInternalDragStore((state) =>
+    state.hoverTarget?.kind === "reorder-tag" && state.hoverTarget.itemId === item.id
+      ? state.hoverTarget.targetIdx
+      : null,
+  );
+  const removeZoneActive = useInternalDragStore((state) =>
+    state.hoverTarget?.kind === "reorder-remove" && state.hoverTarget.itemId === item.id,
+  );
 
   const handleTagPointerDown = (
     event: React.PointerEvent<HTMLElement>,

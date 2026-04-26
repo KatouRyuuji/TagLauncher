@@ -41,9 +41,6 @@
     }
   },
   "plugins": {
-    "sql": {
-      "preload": ["sqlite:taglauncher.db"]
-    },
     "shell": {
       "open": true
     }
