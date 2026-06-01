@@ -132,6 +132,14 @@ async function openPreview(item) {
   if (serial !== renderSerial) return;
 
   handle.setTitle(`预览 · ${item.name}`);
+
+  // 适配当前版本的对象身份模型：失效对象（文件被删除/跨盘移动且无法重定位）
+  // 的 path 为最近已知位置，直接读文件会报错，这里给出明确提示而非生硬的 IO 错误。
+  if (item.is_missing) {
+    renderMissing(handle.container, item);
+    return;
+  }
+
   renderLoading(handle.container);
 
   try {
@@ -158,6 +166,19 @@ function renderLoading(container) {
 function renderError(container, error) {
   const message = error instanceof Error ? error.message : String(error);
   container.innerHTML = `<div class="object-preview-root"><div class="object-preview-error">${escapeHtml(message)}</div></div>`;
+}
+
+function renderMissing(container, item) {
+  container.innerHTML = `
+    <div class="object-preview-root">
+      <div class="object-preview-error">⚠ 对象已失效：文件可能已被删除，或移动到其他磁盘而无法自动定位。</div>
+      ${metaHtml([
+        ["名称", item.name],
+        ["类型", typeLabel(item.type)],
+        ["最近已知位置", item.path],
+      ])}
+    </div>
+  `;
 }
 
 async function renderFolder(container, item, serial) {
