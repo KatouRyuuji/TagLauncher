@@ -16,6 +16,8 @@ interface ThemeContextValue {
   importTheme: (sourcePath: string) => Promise<ThemeInstallResult>;
   exportTheme: (theme: ThemeDefinition, targetPath: string) => Promise<ThemeExportPayload>;
   themeDirectoryInfo: ThemeDirectoryInfo | null;
+  activeVariant: string | undefined;
+  setActiveVariant: (variant: string | undefined) => void;
   loading: boolean;
 }
 
@@ -30,6 +32,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     importTheme,
     exportTheme,
     themeDirectoryInfo,
+    activeVariant,
+    setActiveVariant,
     loading,
   } = useTheme();
 
@@ -56,6 +60,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         importTheme,
         exportTheme,
         themeDirectoryInfo,
+        activeVariant,
+        setActiveVariant,
         loading,
       }}
     >

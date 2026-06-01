@@ -31,8 +31,11 @@ src/
 └─ assets/          # 前端静态资源
 
 src-tauri/src/
-├─ commands.rs      # Tauri commands
-├─ db.rs            # SQLite 初始化与迁移
+├─ commands/        # Tauri 命令（按域分模块：item/tag/cabinet/mod/settings/synonym/launch/object_preview/search）
+├─ db/              # SQLite 连接、schema 与迁移（migrations/v00x）
+├─ services/        # 业务服务（item/tag/search/icon/object_preview/launch/path/settings）
+├─ extensions/      # Mod 与主题加载（mod_loader/mod_registry/theme_loader）
+├─ models/          # Rust 数据模型
 ├─ lib.rs           # Tauri 构建与命令注册
 └─ main.rs          # 入口
 ```
@@ -81,12 +84,11 @@ src-tauri/src/
 
 ## 3.4 搜索层 `lib/search.ts` + `hooks/useItems.ts`
 
-当前搜索流程是三段式：
+搜索引擎为自研实现（不依赖 Fuse.js）。当前搜索流程是三段式：
 
 1. `filterItemsByTags`：先做标签 AND 过滤。
-2. `buildSearchIndex`：对过滤结果构建拼音增强字段与 Fuse 索引。
-3. `searchWithIndex`：对 query（含同义词扩展）执行检索。
-4. 
+2. `buildSearchIndex`：对过滤结果构建拼音全拼/首字母增强字段（仅拼音字段，不构建 Fuse 索引）。
+3. `searchWithIndex`：先 `parseQuery` 解析表达式（`&&` `||` 空格 `()` `@` `!!`），对每个非严格子项做同义词扩展，再以前缀匹配 / 拼音 / 英文低容错 / 严格匹配逐项求值。
 ## 3.5 同义词层 `lib/synonyms.ts`
 
 - `loadSynonyms` 调后端 `read_synonyms`。
@@ -95,21 +97,24 @@ src-tauri/src/
 
 ## 4. 后端关键模块
 
-## 4.1 `db.rs`（数据库初始化与迁移）
+## 4.1 `db/`（连接、schema 与迁移）
 
 - 采用 SQLite（`rusqlite` bundled）。
-- 表结构包括：`items`、`tags`、`item_tags`、`items_fts`、`cabinets`、`cabinet_items`。
-- 包含迁移逻辑：例如 `items.type` 扩展支持 `image`。
+- `connection.rs` 负责连接与 `PRAGMA`，`schema.rs` 建表并幂等回填 FTS，`migrations/` 下按版本（v001..v004）做表结构迁移。
+- 表结构包括：`items`、`tags`、`item_tags`、`items_fts`、`cabinets`、`cabinet_items`、`mod_kv`、`mod_records` 等。
+- 迁移逻辑：例如 `items.type` 先后扩展支持 `image`、`audio`（v004）。
 
-## 4.2 `commands.rs`（命令实现）
+## 4.2 `commands/`（命令实现，按域分模块）
 
-主要命令组：
+实际约 58 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/settings/synonym/launch/object_preview/search），命令体一般转调 `services/` 下的业务服务。主要命令组：
 
-- 对象：`add_item` / `remove_item` / `get_items` / `launch_item` / `update_item_icon`
+- 对象：`add_item` / `add_items` / `remove_item` / `get_items` / `launch_item` / `update_item_icon`
 - 标签：`get_tags` / `add_tag` / `update_tag` / `remove_tag` / `set_item_tags`
 - 文件柜：`get_cabinets` / `add_cabinet` / `update_cabinet` / `remove_cabinet` / 关联命令
 - 搜索：`search_items`（备用后端搜索）
 - 同义词：`read_synonyms`
+- Mod/主题：`get_mods` / `get_mod_content` / `get_mod_dir` / `enable_mod` / `disable_mod` / `import_mod` / `delete_mod` / `get_theme_directory_info` / `install_theme_file` 等
+- 对象预览：`get_object_file_info` / `list_object_directory` / `get_audio_preview`
 
 ### 4.2.1 关键修复说明
 
@@ -180,7 +185,7 @@ src-tauri/src/
 
 ## 7.1 当前策略
 
-当前策略是生成标准 Windows MSI 安装包：
+当前策略是生成 Windows NSIS 安装包：
 
 ```bash
 npm run tauri build
@@ -188,9 +193,9 @@ npm run tauri build
 
 产物：
 
-- `src-tauri/target/release/bundle/msi/TagLauncher_1.1.0_x64_en-US.msi`
+- `src-tauri/target/release/bundle/nsis/TagLauncher_1.1.0_x64-setup.exe`
 
-MSI 使用 WiX Toolset 生成，会创建开始菜单快捷方式；桌面快捷方式在安装功能选择页中作为可选项。
+NSIS 安装包会创建开始菜单快捷方式；桌面快捷方式在安装功能选择页中作为可选项；安装语言可选 English / SimpChinese。
 
 ## 7.2 兼容性说明
 

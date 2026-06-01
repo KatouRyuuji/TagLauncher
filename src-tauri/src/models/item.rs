@@ -14,6 +14,8 @@ pub struct Item {
     pub created_at: String,
     pub last_used_at: Option<String>,
     pub is_favorite: bool,
+    /// 对象的文件当前是否丢失（删除/离线/跨盘移动且无法重定位）。
+    pub is_missing: bool,
 }
 
 /// 带标签的项目（用于前端展示）

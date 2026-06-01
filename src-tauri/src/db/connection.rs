@@ -24,7 +24,13 @@ impl Database {
 
     fn init(&self) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        // WAL + synchronous=NORMAL：显著减少写操作 fsync 次数（批量导入/对账写回/收藏切换更快），
+        // 查询结果不变。断电时持久性弱于默认 FULL（可能丢最后若干已提交事务、不损坏库），迭代期可接受。
+        conn.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;",
+        )?;
         schema::create_tables(&conn)?;
         migrations::run_pending(&conn)?;
         Ok(())

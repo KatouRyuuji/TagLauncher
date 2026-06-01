@@ -5,16 +5,25 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
         r#"
         -- ========== 项目表 ==========
+        -- 对象身份以 (volume_serial, file_id) 为准（NTFS 文件ID，跨重命名/同盘移动稳定）；
+        -- path 为"最近已知位置"，可更新、不再唯一；取不到文件ID的对象回退按 path 去重。
         CREATE TABLE IF NOT EXISTS items (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
-            path TEXT UNIQUE NOT NULL,
+            path TEXT NOT NULL,
             type TEXT CHECK(type IN ('folder', 'image', 'audio', 'exe', 'bat', 'ps1')),
             icon_path TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             last_used_at DATETIME,
-            is_favorite INTEGER DEFAULT 0
+            is_favorite INTEGER DEFAULT 0,
+            volume_serial INTEGER,
+            file_id TEXT,
+            is_missing INTEGER NOT NULL DEFAULT 0
         );
+
+        -- 注意: idx_items_identity（身份唯一索引）不能放在此批处理中,
+        -- 因为升级中的老库此时尚无 volume_serial/file_id 列(由 v005 迁移补齐),
+        -- 否则 CREATE INDEX 会因列不存在而报错。改为批处理后按列存在与否条件创建。
 
         -- ========== 标签表 ==========
         CREATE TABLE IF NOT EXISTS tags (
@@ -102,5 +111,130 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_mod_records_collection
             ON mod_records(mod_id, collection);
         "#,
-    )
+    )?;
+
+    // 身份唯一索引：仅当 items 已具备 file_id 列时创建（新库由上面的 CREATE TABLE 建出该列；
+    // 升级中的老库此时还没有该列，需等 v005 迁移补齐后由迁移内创建，故此处先跳过）。
+    if has_column(conn, "items", "file_id") {
+        conn.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_identity \
+             ON items(volume_serial, file_id) WHERE file_id IS NOT NULL;",
+        )?;
+    }
+
+    // 幂等回填 FTS 索引：老库可能 items 已有数据但 items_fts 为空
+    // （历史版本跳过了表重建 / 触发器只对增删改生效，不回填历史行）。
+    // 仅在 items_fts 为空且 items 有数据时执行 external-content FTS5 的 rebuild，
+    // 避免每次启动都重建造成开销。
+    let fts_count: i64 =
+        conn.query_row("SELECT count(*) FROM items_fts", [], |r| r.get(0))?;
+    let items_count: i64 = conn.query_row("SELECT count(*) FROM items", [], |r| r.get(0))?;
+    if fts_count == 0 && items_count > 0 {
+        conn.execute("INSERT INTO items_fts(items_fts) VALUES('rebuild')", [])?;
+    }
+
+    Ok(())
+}
+
+/// 判断表是否含某列（用于条件创建依赖该列的索引）。
+fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
+    conn.prepare(&format!(
+        "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name='{}'",
+        table, column
+    ))
+    .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+    .unwrap_or(0)
+        > 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::migrations;
+    use rusqlite::Connection;
+
+    /// 全新库初始化路径：create_tables（新结构）+ run_pending，最终应具备身份列与索引、path 不唯一。
+    #[test]
+    fn fresh_init_has_identity_columns_and_no_path_unique() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        create_tables(&conn).expect("create_tables");
+        migrations::run_pending(&conn).expect("run_pending");
+
+        assert!(has_column(&conn, "items", "volume_serial"));
+        assert!(has_column(&conn, "items", "file_id"));
+        assert!(has_column(&conn, "items", "is_missing"));
+
+        // path 不再唯一：可插两条同 path
+        conn.execute(
+            "INSERT INTO items (name, path, type) VALUES ('a','D:\\x.exe','exe')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO items (name, path, type) VALUES ('b','D:\\x.exe','exe')",
+            [],
+        )
+        .expect("path 不应有唯一约束");
+
+        let idx: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_items_identity'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(idx, 1, "身份唯一索引应存在");
+    }
+
+    /// 升级库路径：模拟 v4 老库（path UNIQUE、无身份列、schema_version=4），
+    /// 再走真实初始化序列 create_tables + run_pending，不应在建索引时因缺列而报错，
+    /// 且升级后应补齐身份列与索引。
+    #[test]
+    fn upgrade_from_v4_does_not_crash_on_identity_index() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE items (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                path TEXT UNIQUE NOT NULL,
+                type TEXT CHECK(type IN ('folder','image','audio','exe','bat','ps1')),
+                icon_path TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_used_at DATETIME,
+                is_favorite INTEGER DEFAULT 0
+            );
+            CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, color TEXT);
+            CREATE TABLE item_tags (item_id INTEGER, tag_id INTEGER, position INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(item_id, tag_id));
+            CREATE TABLE cabinets (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, color TEXT, created_at DATETIME);
+            CREATE TABLE cabinet_items (cabinet_id INTEGER, item_id INTEGER, PRIMARY KEY(cabinet_id, item_id));
+            CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE VIRTUAL TABLE items_fts USING fts5(name, path, content=items, content_rowid=id);
+            INSERT INTO app_meta (key, value) VALUES ('schema_version', '4');
+            INSERT INTO items (name, path, type) VALUES ('old','D:\old.exe','exe');
+            "#,
+        )
+        .expect("seed v4 db");
+
+        // 真实初始化序列：先 create_tables（此处不能因缺列建索引而报错），再 run_pending
+        create_tables(&conn).expect("create_tables 不应在老库上报错");
+        migrations::run_pending(&conn).expect("run_pending 升级");
+
+        assert!(has_column(&conn, "items", "file_id"), "升级后应补齐 file_id");
+        let idx: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_items_identity'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(idx, 1, "升级后身份索引应存在");
+
+        // 数据无损
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    }
 }

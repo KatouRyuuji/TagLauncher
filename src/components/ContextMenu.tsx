@@ -173,8 +173,20 @@ export function ContextMenu({
   useEffect(() => () => clearSubmenuHideTimer(), [clearSubmenuHideTimer]);
 
   const handleOpenFolder = async () => {
-    await db.openInExplorer(item.path);
-    onClose();
+    // 按 id 打开：后端会先按文件ID重定位到当前真实路径，避免对象被移动后打开失败
+    try {
+      await db.openInExplorerById(item.id);
+    } catch (e) {
+      // 对象已丢失/无法定位时给出明确反馈，避免"点了没反应"
+      const detail = e instanceof Error ? e.message : String(e);
+      window.dispatchEvent(
+        new CustomEvent("taglauncher-toast", {
+          detail: { message: `打开所在文件夹失败：${detail}`, type: "error" },
+        }),
+      );
+    } finally {
+      onClose();
+    }
   };
 
   const handleChangeThumbnail = async () => {

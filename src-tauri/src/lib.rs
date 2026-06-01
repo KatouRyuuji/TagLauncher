@@ -210,6 +210,7 @@ pub fn run() {
             // 启动/打开
             launch_item,
             open_in_explorer,
+            open_in_explorer_by_id,
             // 收藏
             toggle_favorite,
             // 文件柜
@@ -236,6 +237,7 @@ pub fn run() {
             get_mods,
             get_mod_load_errors,
             get_mod_content,
+            get_mod_dir,
             enable_mod,
             disable_mod,
             delete_mod,

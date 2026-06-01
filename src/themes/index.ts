@@ -6,7 +6,6 @@ export {
   DEFAULT_THEME_VARIABLES,
   THEME_VARIABLE_KEYS,
   toExportableTheme,
-  validateThemeContract,
   withDefaultThemeVariables,
 } from "./tokens";
 

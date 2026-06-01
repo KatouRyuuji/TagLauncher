@@ -6,11 +6,7 @@
 // ============================================================================
 
 import { create } from "zustand";
-import type { Tag, ItemWithTags, Cabinet } from "../types";
-
-function sameItemRefs(a: ItemWithTags[], b: ItemWithTags[]): boolean {
-  return a.length === b.length && a.every((item, index) => item === b[index]);
-}
+import type { Tag, Cabinet } from "../types";
 
 function sameTags(a: Tag[], b: Tag[]): boolean {
   return a.length === b.length && a.every((tag, index) =>
@@ -41,7 +37,6 @@ export type SidebarTab = "tags" | "cabinets";
 
 interface AppState {
   // ---- 数据缓存 ----
-  items: ItemWithTags[];       // 当前显示的项目列表（经过筛选和搜索）
   tags: Tag[];                 // 所有标签
   cabinets: Cabinet[];         // 所有文件柜
 
@@ -57,7 +52,6 @@ interface AppState {
   viewMode: "grid" | "list";   // 视图模式：网格 / 列表
 
   // ---- Actions ----
-  setItems: (items: ItemWithTags[]) => void;
   setTags: (tags: Tag[]) => void;
   setCabinets: (cabinets: Cabinet[]) => void;
   setSelectedTagIds: (ids: number[]) => void;
@@ -72,7 +66,6 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   // 初始状态
-  items: [],
   tags: [],
   cabinets: [],
   selectedTagIds: [],
@@ -84,7 +77,6 @@ export const useAppStore = create<AppState>((set) => ({
   viewMode: "grid",
 
   // 简单 setter
-  setItems: (items) => set((state) => sameItemRefs(state.items, items) ? state : { items }),
   setTags: (tags) => set((state) => sameTags(state.tags, tags) ? state : { tags }),
   setCabinets: (cabinets) => set((state) => sameCabinets(state.cabinets, cabinets) ? state : { cabinets }),
   setSelectedTagIds: (ids) => set((state) =>

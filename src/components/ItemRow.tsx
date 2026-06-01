@@ -134,10 +134,21 @@ function ItemRowComponent({
             />
           </div>
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-[var(--text-primary)]" title={item.name}>
-              {item.name}
+            <h3 className="flex items-center gap-1.5 truncate text-sm font-semibold text-[var(--text-primary)]" title={item.name}>
+              <span className="truncate">{item.name}</span>
+              {item.is_missing && (
+                <span
+                  className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-warning)] px-1 py-0.5 text-[9px] font-semibold leading-none text-[var(--color-warning)]"
+                  title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
+                >
+                  ⚠ 失效
+                </span>
+              )}
             </h3>
-            <p className="mt-1 truncate text-xs text-[var(--text-muted)]" title={item.path}>
+            <p
+              className={`mt-1 truncate text-xs ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
+              title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
+            >
               {item.path}
             </p>
           </div>

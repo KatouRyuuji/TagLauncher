@@ -34,6 +34,9 @@ pub fn update_item_icon(
 #[tauri::command]
 pub fn get_items(app: AppHandle, db: State<Database>) -> Result<Vec<ItemWithTags>, String> {
     let conn = db.get_conn();
+    // 刷新即对账：检测移动/重命名并自动更新位置，找不到的标记为失效。
+    // 对账失败不应阻断列表加载。
+    let _ = item_service::reconcile_items(&conn);
     item_service::get_items(&app, &conn)
 }
 

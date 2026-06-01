@@ -1,4 +1,5 @@
 pub mod cabinet_service;
+pub mod file_identity;
 pub mod icon_service;
 pub mod item_service;
 pub mod launch_service;

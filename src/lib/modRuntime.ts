@@ -135,6 +135,13 @@ export async function enableModRuntime(mod: ModInfo): Promise<void> {
         const json = await db.getModContent(id, entrypoints.theme);
         const theme = parseModTheme(id, json);
         if (theme) {
+          // 注入主题包绝对根目录，供前端按 convertFileSrc 解析 assets/fonts 相对路径。
+          // 取注册表中的真实目录（目录名可能与 id 不同），获取失败不阻断主题注册。
+          try {
+            theme.themeRoot = await db.getModDir(id);
+          } catch {
+            // 仅相对资源可能无法解析，主题其余部分仍可正常应用
+          }
           modThemeIdMap.set(id, theme.id);
           dispatchThemeAdded(theme);
         }

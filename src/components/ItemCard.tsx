@@ -228,7 +228,19 @@ function ItemCardComponent({
           </div>
         </div>
 
-        <p className="mt-2 line-clamp-2 min-h-[30px] break-all text-[11px] leading-4.5 text-[var(--text-muted)]" title={item.path}>
+        {item.is_missing && (
+          <span
+            className="mt-2 inline-flex w-fit items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-warning)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-warning)]"
+            title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
+          >
+            ⚠ 失效
+          </span>
+        )}
+
+        <p
+          className={`mt-2 line-clamp-2 min-h-[30px] break-all text-[11px] leading-4.5 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
+          title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
+        >
           {item.path}
         </p>
 

@@ -9,6 +9,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { notifyTagsChanged } from "../lib/modApi";
+import type { Tag } from "../types";
+
+/** 按名称排序，保持与后端 get_tags 的返回顺序一致 */
+function sortTags(list: Tag[]): Tag[] {
+  return [...list].sort((a, b) => a.name.localeCompare(b.name));
+}
 
 export function useTags() {
   const tags = useAppStore((state) => state.tags);
@@ -34,24 +40,39 @@ export function useTags() {
     refresh();
   }, [refresh]);
 
+  // 以下 CRUD 用 useCallback 保持引用稳定（仅依赖稳定的 setTags），
+  // 避免向下传递时（如 App 的 handleAddNewTagToItem → viewProps）引发整列表重渲染。
+  // 内部均以 useAppStore.getState() 读取最新 tags，无过期闭包风险。
+
   /** 新建标签，返回创建的 Tag 对象（含自增 ID） */
-  const addTag = async (name: string, color: string) => {
+  const addTag = useCallback(async (name: string, color: string) => {
     const tag = await db.addTag(name, color);
-    await refresh();
+    // 局部更新：把后端返回的 tag 追加进 store 并按名称排序
+    const next = sortTags([...useAppStore.getState().tags, tag]);
+    setTags(next);
+    notifyTagsChanged(next);
     return tag;
-  };
+  }, [setTags]);
 
   /** 更新标签名称和颜色 */
-  const updateTag = async (id: number, name: string, color: string) => {
+  const updateTag = useCallback(async (id: number, name: string, color: string) => {
     await db.updateTag(id, name, color);
-    await refresh();
-  };
+    // 局部更新：按 id 替换后重新排序
+    const next = sortTags(
+      useAppStore.getState().tags.map((t) => (t.id === id ? { ...t, name, color } : t)),
+    );
+    setTags(next);
+    notifyTagsChanged(next);
+  }, [setTags]);
 
   /** 删除标签（关联的 item_tags 记录会级联删除） */
-  const removeTag = async (id: number) => {
+  const removeTag = useCallback(async (id: number) => {
     await db.removeTag(id);
-    await refresh();
-  };
+    // 局部更新：按 id 过滤
+    const next = useAppStore.getState().tags.filter((t) => t.id !== id);
+    setTags(next);
+    notifyTagsChanged(next);
+  }, [setTags]);
 
   return { tags, loading, refresh, addTag, updateTag, removeTag };
 }

@@ -6,6 +6,16 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 
 核心理念：用标签代替传统的树形目录分类，支持一个项目挂多个标签，通过组合筛选快速定位。
 
+### 现有能力概览
+
+- 对象类型：`folder` / `image` / `audio` / `exe` / `bat` / `ps1`，未知文件按可启动对象归入 `exe`。
+- 标签 / 文件柜 / 收藏夹：三类筛选互斥；标签多选取交集；文件柜与收藏夹单选。
+- 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量删除。
+- 缩略图：支持手动设置/更换/清除；图片对象直接用图片，非图片对象提取系统图标缓存为 PNG，其余回退到类型 Emoji 图标。
+- 音频：提供 `get_audio_preview` 等对象预览命令。
+- 主题系统：内置主题 + 自定义 JSON 主题 + Mod 主题，支持变量/分层 token/组件 token/资源/字体/变体/自定义 CSS，以及导入、导出、刷新；启动时等待主题就绪再显示主窗口，避免闪烁。
+- Mod 扩展系统：支持 `css` / `css+js` / `theme` 三类 Mod，提供权限模型、生命周期回调、工具栏按钮、侧栏/浮动面板、卡片插槽、Mod 数据存储与文件读写接口。
+
 ---
 
 ## 二、技术架构
@@ -35,7 +45,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌────────────────┴────────────────────────┐  │
 │  │         lib 工具层                       │  │
 │  │  db.ts (Tauri invoke 封装)              │  │
-│  │  search.ts (Fuse.js + pinyin-pro)       │  │
+│  │  search.ts (自研搜索引擎 + pinyin-pro)  │  │
 │  │  synonyms.ts (同义词扩展)               │  │
 │  └────────────────┬────────────────────────┘  │
 │                   │ invoke()                  │
@@ -46,13 +56,19 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands.rs  ← 14 个 Tauri 命令        │  │
-│  │  db.rs        ← SQLite 初始化/连接管理  │  │
-│  │  lib.rs       ← 应用启动/插件注册       │  │
-│  │  main.rs      ← 入口                   │  │
+│  │  commands/  ← 约 58 个 Tauri 命令       │  │
+│  │             (按 item/cabinet/tag/mod/   │  │
+│  │              settings/synonym/launch/   │  │
+│  │              object_preview/search 分模块)│  │
+│  │  db/        ← SQLite 连接/schema/迁移   │  │
+│  │  services/  ← 业务服务层                │  │
+│  │  extensions/← Mod 与主题加载            │  │
+│  │  models/    ← Rust 数据模型             │  │
+│  │  lib.rs     ← 应用启动/插件/命令注册    │  │
+│  │  main.rs    ← 入口                      │  │
 │  │                                         │  │
 │  │  ┌───────────────────────────────────┐  │  │
-│  │  │  SQLite (taglauncher.db)          │  │  │
+│  │  │  SQLite (Save/taglauncher.db)     │  │  │
 │  │  │  items / tags / item_tags         │  │  │
 │  │  │  cabinets / cabinet_items         │  │  │
 │  │  │  items_fts (FTS5 全文搜索)        │  │  │
@@ -82,7 +98,7 @@ tag-launcher/
 │   │   └── useSearch.ts          # 搜索防抖
 │   ├── lib/
 │   │   ├── db.ts                 # Tauri invoke 封装层
-│   │   ├── search.ts             # Fuse.js 模糊搜索引擎
+│   │   ├── search.ts             # 自研搜索引擎（前缀/拼音/低容错/同义词/表达式）
 │   │   └── synonyms.ts           # 同义词字典加载
 │   ├── components/
 │   │   ├── Sidebar.tsx           # 左侧导航（标签/文件柜）
@@ -96,18 +112,30 @@ tag-launcher/
 │   └── data/
 │       └── synonyms.json         # 同义词默认数据（编译时嵌入 Rust）
 │
-├── src-tauri/                    # Rust 后端
+├── src-tauri/                    # Rust 后端（模块化目录，非单文件）
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── db.rs                 # Database 结构体、建表、迁移
-│   │   └── commands.rs           # 所有 Tauri 命令实现
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，约 58 个）
+│   │   │   ├── item_commands.rs
+│   │   │   ├── cabinet_commands.rs
+│   │   │   ├── tag_commands.rs
+│   │   │   ├── mod_commands.rs
+│   │   │   ├── settings_commands.rs
+│   │   │   ├── synonym_commands.rs
+│   │   │   ├── launch_commands.rs
+│   │   │   ├── object_preview_commands.rs
+│   │   │   └── search_commands.rs
+│   │   ├── db/                   # SQLite 连接、schema、建表与迁移
+│   │   ├── services/             # 业务服务层
+│   │   ├── extensions/           # Mod 与主题加载
+│   │   └── models/               # Rust 数据模型
 │   ├── Cargo.toml                # Rust 依赖
 │   └── tauri.conf.json           # Tauri 配置（窗口、权限等）
 │
 ├── package.json                  # 前端依赖和脚本
 ├── vite.config.ts                # Vite 构建配置
-├── tailwind.config.js            # Tailwind CSS 配置
+├── postcss.config.js             # PostCSS（Tailwind v4 CSS-first，配置在 src/index.css）
 └── tsconfig.json                 # TypeScript 编译配置
 ```
 
@@ -131,13 +159,18 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | 列名 | 类型 | 说明 |
 |------|------|------|
 | id | INTEGER PK | 自增主键 |
-| name | TEXT NOT NULL | 文件/文件夹名 |
-| path | TEXT UNIQUE NOT NULL | 完整路径（唯一） |
-| type | TEXT | 类型：folder/exe/bat/ps1 |
-| icon_path | TEXT | 自定义图标路径（预留） |
+| name | TEXT NOT NULL | 文件/文件夹名（重定位后自动同步） |
+| path | TEXT NOT NULL | 最近已知位置（不再唯一，随重命名/移动自动更新） |
+| type | TEXT | 类型：folder/image/audio/exe/bat/ps1 |
+| icon_path | TEXT | 自定义图标路径 |
 | created_at | DATETIME | 添加时间 |
 | last_used_at | DATETIME | 最后启动时间 |
 | is_favorite | INTEGER | 是否收藏（0/1） |
+| volume_serial | INTEGER | NTFS 卷序列号（对象特征，可空） |
+| file_id | TEXT | NTFS 文件ID 十六进制（对象特征，可空）；`(volume_serial, file_id)` 为身份唯一索引 |
+| is_missing | INTEGER | 文件是否丢失（0/1，删除/离线/跨盘移动且无法重定位） |
+
+> 对象身份以 `(volume_serial, file_id)` 为准（NTFS 文件ID，跨重命名/同盘移动稳定）；`path` 为可更新的最近已知位置。取不到文件ID的对象回退按 `path` 去重。详见 `src-tauri/src/services/file_identity.rs` 与迁移 `v005_object_identity`。
 
 #### tags（标签表）
 | 列名 | 类型 | 说明 |
@@ -174,7 +207,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ## 五、Tauri 命令清单
 
-所有前后端通信通过 `invoke()` 调用以下 Rust 命令：
+后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计约 58 个 `#[tauri::command]`，按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、缩略图预览等命令未全部展开）：
 
 | 命令名 | 参数 | 返回值 | 说明 |
 |--------|------|--------|------|
@@ -187,7 +220,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `update_tag` | id, name, color | () | 更新标签 |
 | `remove_tag` | id: i64 | () | 删除标签 |
 | `set_item_tags` | item_id, tag_ids | () | 设置项目的标签列表 |
-| `search_items` | query, tag_ids | Vec\<ItemWithTags\> | 后端搜索（FTS5 + LIKE 回退，前端主搜索仍使用 Fuse） |
+| `search_items` | query, tag_ids | Vec\<ItemWithTags\> | 后端辅助搜索（FTS5 + LIKE 回退）；前端主搜索使用自研 search.ts，不经过此命令 |
 | `launch_item` | id: i64 | () | 启动项目（cmd /C start） |
 | `open_in_explorer` | path: String | () | 在资源管理器中打开 |
 | `read_synonyms` | - | Vec\<Vec\<String\>\> | 读取同义词字典 |
@@ -205,34 +238,47 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ### 6.1 搜索流程
 
+主搜索在前端执行，使用自研 `src/lib/search.ts`（非 Fuse.js）：
+
 ```
 用户输入 → 150ms 防抖 → useSearch → appStore.searchQuery 更新
                                           ↓
                                     useItems.filtered (useMemo)
                                           ↓
-                                    fuzzySearch()
+                          filterItemsByTags → buildSearchIndex → searchWithIndex
                                           ↓
-                              ┌─── 1. 按 selectedTagIds 筛选（AND 逻辑）
-                              ├─── 2. pinyin-pro 生成拼音字段
-                              ├─── 3. expandQuery() 同义词扩展
-                              ├─── 4. Fuse.js 对每个扩展词搜索
-                              ├─── 5. 按最佳 score 去重
+                              ┌─── 1. filterItemsByTags：按 selectedTagIds 筛选（AND 逻辑）
+                              ├─── 2. buildSearchIndex：pinyin-pro 生成拼音全拼/首字母字段
+                              ├─── 3. parseQuery：解析表达式（&& || 空格OR () @ !!）
+                              ├─── 4. 对每个非严格子项 expandQuery() 做同义词扩展
+                              ├─── 5. 逐项匹配：前缀匹配 / 拼音 / 英文低容错 / 严格匹配
                               └─── 6. 收藏项置顶
 ```
 
-### 6.2 搜索模式
+### 6.2 搜索引擎能力（自研 search.ts）
 
-| 模式 | 搜索字段 | 权重 |
-|------|----------|------|
-| all | name(3), pinyinName(2), pinyinInitials(1.5), path(0.5), tagNames(3), tagPinyin(2), tagInitials(1.5) | 全部 |
-| name | name(3), pinyinName(2), pinyinInitials(1.5), path(0.5) | 仅名称/路径 |
-| tag | tagNames(3), tagPinyin(2), tagInitials(1.5) | 仅标签 |
+不依赖第三方模糊搜索库，匹配策略：
 
-### 6.3 同义词系统
+- 前缀匹配：从词首开始的包含匹配（`prefixMatches`），大小写不敏感。
+- 中文拼音：拼音全拼与拼音首字母匹配（pinyin-pro 生成）。
+- 英文低容错：基于编辑距离的弱容错（`isEnglishTypoMatch`），仅对 3 字符以上英文生效。
+- 同义词整词扩展：每个非严格子项命中同义词组时一并搜索同组词。
+- 表达式语法：`&&`（与）、`||`（或）、空格（OR 别名）、`()`（结合顺序）、`@`（严格匹配，关闭拼音/模糊/同义词）、`!!`（排除）。
 
-- 同义词字典存储在 exe 同级目录的 `synonyms.json`
-- 首次运行时自动从内置默认数据生成
-- 用户可直接编辑该文件，重启应用生效
+### 6.3 搜索模式
+
+| 模式 | 匹配范围 |
+|------|----------|
+| all | 名称 + 路径（弱）+ 标签（任一命中） |
+| name | 名称 + 路径（弱） |
+| tag | 对象的每个标签（任一命中） |
+
+### 6.4 同义词系统
+
+- 同义词字典优先读取 exe 同级目录的 `synonyms.json`。
+- 若该位置不可写/不可用，回退到应用数据目录（Windows 为 `%APPDATA%/com.taglauncher.app/synonyms.json`）。
+- 首次运行时自动从内置默认数据生成。
+- 用户可直接编辑该文件，重启应用生效。
 - 格式：`[["游戏","game","娱乐"], ["工具","tool","utility"], ...]`
 
 ---
@@ -295,16 +341,16 @@ npm run tauri dev    # 启动 Tauri 开发窗口
 
 ### 生产构建
 ```bash
-npm run tauri build  # 编译 + 打包 MSI
+npm run tauri build  # 编译 + 打包 NSIS 安装包
 ```
 
-产物位置：`src-tauri/target/release/bundle/msi/TagLauncher_1.1.0_x64_en-US.msi`
+产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.1.0_x64-setup.exe`
 
 ### 部署
-- 安装包部署：运行 MSI 安装包完成安装
+- 安装包部署：运行 NSIS `-setup.exe` 完成安装（安装语言可选 English / SimpChinese）。
 - 运行时依赖：Windows 10 1803+ 或 Windows 11（需要 WebView2）
-- 数据存储：`%APPDATA%/com.taglauncher.app/taglauncher.db`
-- 同义词字典：exe 同级目录的 `synonyms.json`（首次运行自动生成）
+- 数据存储：exe 同级目录的 `Save/taglauncher.db`（不是 `%APPDATA%`）
+- 同义词字典：优先 exe 同级目录的 `synonyms.json`，不可用时回退到应用数据目录（`%APPDATA%/com.taglauncher.app/synonyms.json`），首次运行自动生成。
 - 开始菜单快捷方式默认创建，桌面快捷方式可在安装功能选择页中选择。
 
 ---
@@ -316,10 +362,11 @@ npm run tauri build  # 编译 + 打包 MSI
 |------|------|------|
 | react | 19.x | UI 框架 |
 | zustand | 5.x | 状态管理 |
-| fuse.js | 7.x | 客户端模糊搜索 |
-| pinyin-pro | 3.x | 中文拼音转换 |
+| pinyin-pro | 3.x | 中文拼音转换（搜索引擎为自研 search.ts，未使用 fuse.js） |
 | tailwindcss | 4.x | CSS 工具类 |
 | @tauri-apps/api | 2.x | Tauri 前端 API |
+| @tauri-apps/plugin-dialog | 2.x | 系统文件/目录选择器 |
+| @tauri-apps/plugin-shell | 2.x | 启动对象、打开所在文件夹 |
 
 ### 后端
 | crate | 版本 | 用途 |

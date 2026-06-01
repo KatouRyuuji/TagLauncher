@@ -69,19 +69,26 @@ export function SelectionCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; active: boolean } | null>(null);
   const selectedItemIdsRef = useRef(selectedItemIds);
+  const prevItemIdsRef = useRef<number[] | null>(null);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
 
   useEffect(() => {
     selectedItemIdsRef.current = selectedItemIds;
   }, [selectedItemIds]);
 
+  // 仅在 itemIds 集合真正变化时清理失效选中项（首次挂载也会执行一次）；
+  // 框选 move 回写 selectedItemIds 不应触发清理重算。
   useEffect(() => {
-    const selected = new Set(selectedItemIds);
+    if (prevItemIdsRef.current !== null && sameNumberArray(prevItemIdsRef.current, itemIds)) return;
+    prevItemIdsRef.current = itemIds;
+
+    const currentSelected = selectedItemIdsRef.current;
+    const selected = new Set(currentSelected);
     const next = itemIds.filter((id) => selected.has(id));
-    if (!sameNumberArray(next, selectedItemIds)) {
+    if (!sameNumberArray(next, currentSelected)) {
       onSelectItems(next);
     }
-  }, [itemIds, onSelectItems, selectedItemIds]);
+  }, [itemIds, onSelectItems]);
 
   const collectIntersectingItems = (selectionRect: Rect) => {
     const container = containerRef.current;

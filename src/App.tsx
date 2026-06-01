@@ -27,81 +27,10 @@ import {
 } from "./lib/panelRegistry";
 import type { PanelDescriptor } from "./types/panel";
 import * as db from "./lib/db";
+import { hasPotentialExternalFileDrag, extractDroppedPaths } from "./lib/dropPaths";
 
 const WELCOME_HIDE_KEY = "taglauncher.hide_welcome_modal";
 const SKIP_REMOVE_ITEM_CONFIRM_KEY = "taglauncher.skip_remove_item_confirm";
-
-function hasPotentialExternalFileDrag(dataTransfer: DataTransfer): boolean {
-  const types = Array.from(dataTransfer.types ?? []);
-
-  if (types.includes("Files") || types.includes("text/uri-list")) {
-    return true;
-  }
-
-  if (dataTransfer.files.length > 0 || dataTransfer.items.length > 0) {
-    return true;
-  }
-
-  // WebView2 在外部拖拽进入阶段不一定稳定暴露标准类型。
-  // 没有类型时先允许主视图接管，真正落下时再解析路径。
-  return types.length === 0;
-}
-
-function fileUriToPath(uri: string): string | null {
-  const value = uri.trim();
-  if (!value) return null;
-
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== "file:") return null;
-
-    let pathname = decodeURIComponent(parsed.pathname);
-    if (/^\/[A-Za-z]:/.test(pathname)) {
-      pathname = pathname.slice(1);
-    }
-
-    if (parsed.host) {
-      return `\\\\${parsed.host}${pathname.replace(/\//g, "\\")}`;
-    }
-
-    return pathname.replace(/\//g, "\\");
-  } catch {
-    return null;
-  }
-}
-
-function extractDroppedPaths(dataTransfer: DataTransfer): string[] {
-  const result = new Set<string>();
-
-  for (const file of Array.from(dataTransfer.files ?? [])) {
-    const fileWithPath = file as File & { path?: string };
-    if (typeof fileWithPath.path === "string" && fileWithPath.path.trim().length > 0) {
-      result.add(fileWithPath.path.trim());
-    }
-  }
-
-  const uriList = dataTransfer.getData("text/uri-list");
-  for (const line of uriList.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const path = fileUriToPath(trimmed);
-    if (path) {
-      result.add(path);
-    }
-  }
-
-  const plain = dataTransfer.getData("text/plain");
-  for (const line of plain.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("file://")) continue;
-    const path = fileUriToPath(trimmed);
-    if (path) {
-      result.add(path);
-    }
-  }
-
-  return Array.from(result);
-}
 
 function App() {
   const {
@@ -140,6 +69,7 @@ function App() {
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const externalDragDepthRef = useRef(0);
   const recentDropRef = useRef<{ key: string; ts: number }>({ key: "", ts: 0 });
+  const recentLaunchRef = useRef<Map<number, number>>(new Map());
   const addDroppedPathsRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
   const [showSettings, setShowSettings] = useState(false);
   const { migration, dismissMigration } = useVersionCheck();
@@ -168,6 +98,17 @@ function App() {
 
   useEffect(() => {
     const preventNativeContextMenu = (event: MouseEvent) => {
+      // 输入框/文本域/可编辑区域放行原生右键菜单（复制粘贴等），其余仍拦截。
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        if (
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+      }
       event.preventDefault();
     };
 
@@ -369,6 +310,13 @@ function App() {
     [findItemById, setItemTags],
   );
 
+  // 用 ref 持有最新 tags，使 handleAddNewTagToItem 引用稳定（不随 tags 变化重建），
+  // 避免击穿下游 viewProps memo 导致框选等场景下整列表卡片重渲染。
+  const tagsRef = useRef(tags);
+  useEffect(() => {
+    tagsRef.current = tags;
+  }, [tags]);
+
   const handleAddNewTagToItem = useCallback(
     async (itemId: number, tagName: string, baseTagIds?: number[]): Promise<number[]> => {
       const normalizedName = tagName.trim();
@@ -376,7 +324,7 @@ function App() {
         return baseTagIds ?? [];
       }
 
-      const existingTag = tags.find((t) => t.name === normalizedName);
+      const existingTag = tagsRef.current.find((t) => t.name === normalizedName);
       let tagId: number;
 
       if (existingTag) {
@@ -396,7 +344,7 @@ function App() {
       await setItemTags(itemId, nextTagIds);
       return nextTagIds;
     },
-    [tags, addTag, findItemById, setItemTags],
+    [addTag, findItemById, setItemTags],
   );
 
   const handleClearCurrentFilter = useCallback(
@@ -433,6 +381,7 @@ function App() {
 
       if (skipConfirm) {
         await removeItem(itemId);
+        setSelectedItemIds((current) => current.filter((id) => id !== itemId));
         return;
       }
 
@@ -490,6 +439,18 @@ function App() {
     setSkipRemoveItemConfirm(false);
   }, []);
 
+  // 启动去抖：同一对象 300ms 内只真正启动一次，避免双击重复拉起进程。
+  const handleLaunchItem = useCallback(
+    async (itemId: number) => {
+      const now = Date.now();
+      const last = recentLaunchRef.current.get(itemId) ?? 0;
+      if (now - last < 300) return;
+      recentLaunchRef.current.set(itemId, now);
+      await launchItem(itemId);
+    },
+    [launchItem],
+  );
+
   const handleSelectItems = useCallback((itemIds: number[]) => {
     setSelectedItemIds(itemIds);
   }, []);
@@ -500,6 +461,20 @@ function App() {
     const selected = new Set(selectedItemIds);
     return items.filter((item) => selected.has(item.id));
   }, [items, selectedItemIds]);
+
+  // 选中对象实际拥有标签的并集，供"移除标签"菜单使用（避免列出谁都没有的标签）。
+  const selectedItemsTags = useMemo(() => {
+    const seen = new Set<number>();
+    const result: Array<{ id: number; name: string; color: string }> = [];
+    for (const item of selectedItems) {
+      for (const tag of item.tags) {
+        if (seen.has(tag.id)) continue;
+        seen.add(tag.id);
+        result.push({ id: tag.id, name: tag.name, color: tag.color });
+      }
+    }
+    return result;
+  }, [selectedItems]);
 
   const handleBatchAddTag = useCallback(async (tagId: number) => {
     await setManyItemTags(
@@ -557,7 +532,7 @@ function App() {
     cabinets,
     loading,
     currentCabinetId: selectedCabinetId,
-    onLaunch: launchItem,
+    onLaunch: handleLaunchItem,
     onRemove: removeItem,
     onSetTags: setItemTags,
     onSetManyTags: setManyItemTags,
@@ -610,6 +585,7 @@ function App() {
         <BatchSelectionToolbar
           selectedCount={isDraggingItem ? 0 : selectedItemIds.length}
           tags={tags}
+          removableTags={selectedItemsTags}
           cabinets={cabinets}
           canRemoveFromCabinet={selectedCabinetId !== null}
           onAddTag={handleBatchAddTag}
@@ -764,6 +740,7 @@ function ItemDropActions({
 function BatchSelectionToolbar({
   selectedCount,
   tags,
+  removableTags,
   cabinets,
   canRemoveFromCabinet,
   onAddTag,
@@ -775,6 +752,7 @@ function BatchSelectionToolbar({
 }: {
   selectedCount: number;
   tags: Array<{ id: number; name: string; color: string }>;
+  removableTags: Array<{ id: number; name: string; color: string }>;
   cabinets: Array<{ id: number; name: string; color: string }>;
   canRemoveFromCabinet: boolean;
   onAddTag: (tagId: number) => Promise<void>;
@@ -833,10 +811,10 @@ function BatchSelectionToolbar({
           open={openMenu === "remove-tag"}
           onClick={() => setOpenMenu(openMenu === "remove-tag" ? null : "remove-tag")}
         >
-          {tags.length === 0 ? (
-            <MenuEmptyText>暂无标签</MenuEmptyText>
+          {removableTags.length === 0 ? (
+            <MenuEmptyText>选中对象没有可移除标签</MenuEmptyText>
           ) : (
-            tags.map((tag) => (
+            removableTags.map((tag) => (
               <MenuOption key={tag.id} color={tag.color} label={tag.name} onClick={() => runAction(() => onRemoveTag(tag.id))} />
             ))
           )}

@@ -1,4 +1,4 @@
-import type { ThemeDefinition, ThemeValidationIssue } from "../types/theme";
+import type { ThemeDefinition } from "../types/theme";
 import { darkTheme } from "./dark";
 
 export const THEME_VARIABLE_KEYS = Object.keys(darkTheme.variables).sort();
@@ -15,21 +15,14 @@ export function withDefaultThemeVariables(theme: ThemeDefinition): ThemeDefiniti
   };
 }
 
-export function validateThemeContract(theme: ThemeDefinition): ThemeValidationIssue[] {
-  const issues: ThemeValidationIssue[] = [];
-  for (const key of THEME_VARIABLE_KEYS) {
-    if (!(key in theme.variables)) {
-      issues.push({
-        level: "warning",
-        message: `缺少推荐变量 "${key}"，将使用默认主题值兜底`,
-      });
-    }
-  }
-  return issues;
-}
-
 export function toExportableTheme(theme: ThemeDefinition): ThemeDefinition {
-  const { source: _source, fileName: _fileName, isPreset: _isPreset, ...rest } = theme;
+  const {
+    source: _source,
+    fileName: _fileName,
+    isPreset: _isPreset,
+    themeRoot: _themeRoot,
+    ...rest
+  } = theme;
   return {
     ...rest,
     isPreset: false,

@@ -28,6 +28,12 @@ export interface ThemeDefinition {
   isPreset?: boolean;
   source?: ThemeSource;
   fileName?: string;
+  /**
+   * 主题包绝对根目录（仅运行态使用，不参与导出）。
+   * 用于把 assets/fonts 中的相对路径解析为 WebView 可访问的 URL。
+   * custom 主题由前端依据主题目录推导；mod 主题需由上游注入。
+   */
+  themeRoot?: string;
 }
 
 export interface ThemeTokenLayers {

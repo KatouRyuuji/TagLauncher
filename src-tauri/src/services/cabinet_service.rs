@@ -99,7 +99,7 @@ pub fn get_cabinet_items(
 ) -> Result<Vec<ItemWithTags>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite
+            "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
              FROM items i
              INNER JOIN cabinet_items ci ON i.id = ci.item_id
              WHERE ci.cabinet_id = ?1

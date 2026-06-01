@@ -31,6 +31,16 @@ pub fn get_mod_content(
     mod_loader::read_mod_entrypoint(&mod_path, &entrypoint)
 }
 
+/// 返回 mod 的绝对目录路径（注册表中的真实目录，目录名可能与 id 不同）。
+/// 前端用于解析 mod 主题包内 assets/fonts 的相对路径。
+#[tauri::command]
+pub fn get_mod_dir(registry: State<ModRegistry>, mod_id: String) -> Result<String, String> {
+    registry
+        .get_mod_path(&mod_id)
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| format!("Mod '{}' not found", mod_id))
+}
+
 #[tauri::command]
 pub fn enable_mod(
     db: State<Database>,
@@ -74,7 +84,7 @@ pub fn delete_mod(
         .get_mod_path(&mod_id)
         .ok_or_else(|| format!("Mod '{}' not found", mod_id))?;
 
-    // 2. 从 enabled_mods 中移除（如果存在）
+    // 2. 从 enabled_mods 中移除（如果存在），并清理该 mod 在 SQLite 中的持久化数据
     {
         let conn = db.get_conn();
         let (mut enabled, _) = settings_service::get_enabled_mods(&conn);
@@ -82,6 +92,12 @@ pub fn delete_mod(
             enabled.retain(|id| id != &mod_id);
             settings_service::set_enabled_mods(&conn, &enabled)?;
         }
+
+        // 卸载时一并清理 mod 专属数据表，避免残留孤儿数据
+        conn.execute("DELETE FROM mod_kv WHERE mod_id = ?1", [&mod_id])
+            .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM mod_records WHERE mod_id = ?1", [&mod_id])
+            .map_err(|e| e.to_string())?;
     }
 
     // 3. 删除 mod 目录（递归）
@@ -398,8 +414,74 @@ pub fn import_mod(
 
     copy_dir_all(&source, &target)?;
 
-    let is_compatible = true;
-    let incompatible_reason: Option<String> = None;
+    // 与启动发现路径（lib.rs）一致地做版本兼容判断，不再硬编码 true。
+    // 1) min/max_app_version 校验
+    let app_version = settings_service::get_app_version();
+    let (mut is_compatible, mut incompatible_reason) = {
+        let min_ok = match manifest.min_app_version.as_deref() {
+            None => Ok(()),
+            Some(required) => {
+                if mod_loader::semver_gte(app_version, required) {
+                    Ok(())
+                } else {
+                    Err(format!("需要 App >= {}，当前版本为 {}", required, app_version))
+                }
+            }
+        };
+        let max_ok = match manifest.max_app_version.as_deref() {
+            None => Ok(()),
+            Some(max) => {
+                if mod_loader::semver_gte(max, app_version) {
+                    Ok(())
+                } else {
+                    Err(format!("此 mod 不兼容 App >= {}，当前版本为 {}", max, app_version))
+                }
+            }
+        };
+        match (min_ok, max_ok) {
+            (Ok(()), Ok(())) => (true, None),
+            (Err(e), _) => (false, Some(e)),
+            (_, Err(e)) => (false, Some(e)),
+        }
+    };
+
+    // 2) 依赖 / load_after 校验（基于已注册的其它 mod 全集）
+    if is_compatible {
+        let mod_map: std::collections::HashMap<String, ModInfo> = registry
+            .list_mods()
+            .into_iter()
+            .map(|m| (m.manifest.id.clone(), m))
+            .collect();
+
+        let mut reasons: Vec<String> = Vec::new();
+        for (dep_id, required_ver) in &manifest.dependencies {
+            match mod_map.get(dep_id) {
+                None => reasons.push(format!("依赖 mod '{}' 不存在", dep_id)),
+                Some(dep) if !dep.enabled => {
+                    reasons.push(format!("依赖 mod '{}' 未启用", dep_id))
+                }
+                Some(dep)
+                    if !mod_loader::semver_satisfies(&dep.manifest.version, required_ver) =>
+                {
+                    reasons.push(format!(
+                        "依赖 mod '{}' 版本不满足（需要 {}，实际 {}）",
+                        dep_id, required_ver, dep.manifest.version
+                    ))
+                }
+                _ => {}
+            }
+        }
+        for after_id in &manifest.load_after {
+            if !mod_map.contains_key(after_id) {
+                reasons.push(format!("前置 mod '{}' 不存在", after_id));
+            }
+        }
+        if !reasons.is_empty() {
+            is_compatible = false;
+            incompatible_reason = Some(format!("依赖未满足：{}", reasons.join("；")));
+        }
+    }
+
     registry.register(
         manifest.clone(),
         target.clone(),

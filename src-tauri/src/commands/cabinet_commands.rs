@@ -1,6 +1,7 @@
 use crate::db::Database;
 use crate::models::{Cabinet, ItemWithTags};
 use crate::services::cabinet_service;
+use crate::services::item_service;
 use tauri::{AppHandle, State};
 
 #[tauri::command]
@@ -59,5 +60,7 @@ pub fn get_cabinet_items(
     cabinet_id: i64,
 ) -> Result<Vec<ItemWithTags>, String> {
     let conn = db.get_conn();
+    // 刷新即对账：与全部项目视图一致，进入文件柜时也自动更新位置/失效态。
+    let _ = item_service::reconcile_items(&conn);
     cabinet_service::get_cabinet_items(&app, &conn, cabinet_id)
 }

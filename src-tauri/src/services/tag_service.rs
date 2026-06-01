@@ -151,16 +151,22 @@ pub fn remove_tag(conn: &Connection, id: i64) -> Result<(), String> {
 
 /// 设置项目的标签列表（全量替换）
 pub fn set_item_tags(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result<(), String> {
-    conn.execute("DELETE FROM item_tags WHERE item_id = ?1", [item_id])
+    // 用事务把 DELETE + 全部 INSERT 包成原子操作：中途任一失败整体回滚，
+    // 避免出现"删光旧标签但只写入部分新标签"导致对象标签丢失的情况。
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+
+    tx.execute("DELETE FROM item_tags WHERE item_id = ?1", [item_id])
         .map_err(|e| e.to_string())?;
 
     for (position, tag_id) in tag_ids.iter().enumerate() {
-        conn.execute(
+        tx.execute(
             "INSERT INTO item_tags (item_id, tag_id, position) VALUES (?1, ?2, ?3)",
             params![item_id, *tag_id, position as i64],
         )
         .map_err(|e| e.to_string())?;
     }
+
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 

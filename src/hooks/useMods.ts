@@ -85,10 +85,29 @@ export function useMods() {
 
   const disableMod = useCallback(
     async (modId: string) => {
-      await db.disableMod(modId);
       const mod = mods.find((m) => m.id === modId);
-      if (mod) await disableModRuntime(mod);
-      await loadMods();
+      try {
+        // 与 enable 顺序对齐：先尽力清理 runtime，再持久化到 db。
+        // 先单独执行 disable 生命周期回调以拿到“是否注册过”布尔
+        // （执行后回调会被移除，后续 disableModRuntime 内不会重复执行）。
+        const hadDisableHook = await callModLifecycle(modId, "disable");
+        if (mod) await disableModRuntime(mod);
+        if (!hadDisableHook) {
+          // Mod 未注册 disable 回调，自注册的全局副作用无法被自动回收
+          showToast(
+            `Mod "${mod?.name ?? modId}" 未注册 disable 清理回调，可能残留副作用，建议刷新页面`,
+            "warning",
+          );
+        }
+        await db.disableMod(modId);
+      } catch (error) {
+        showToast(
+          `Mod "${mod?.name ?? modId}" 禁用失败：${error instanceof Error ? error.message : String(error)}`,
+          "error",
+        );
+      } finally {
+        await loadMods();
+      }
     },
     [mods, loadMods],
   );

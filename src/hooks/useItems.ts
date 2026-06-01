@@ -2,13 +2,27 @@ import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } f
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
-import { notifyItemLaunched, notifyItemsChanged } from "../lib/modApi";
+import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import type { ItemWithTags } from "../types";
 
 function showToast(message: string, type: "info" | "success" | "error" | "warning" = "info") {
   window.dispatchEvent(
     new CustomEvent("taglauncher-toast", { detail: { message, type } }),
   );
+}
+
+/**
+ * 写操作错误反馈包装：失败时弹出可读 toast 再向上抛出。
+ * 保持原行为——本地乐观更新只在写成功后进行，失败抛出即跳过本地更新。
+ */
+async function withErrorToast<T>(action: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    showToast(`${action}失败：${detail}`, "error");
+    throw e;
+  }
 }
 
 function getPathDisplayName(path: string) {
@@ -54,7 +68,6 @@ function removeItemFromList(items: ItemWithTags[], id: number): ItemWithTags[] {
 }
 
 export function useItems() {
-  const setItems = useAppStore((state) => state.setItems);
   const searchQuery = useAppStore((state) => state.searchQuery);
   const searchMode = useAppStore((state) => state.searchMode);
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
@@ -80,8 +93,25 @@ export function useItems() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
+      // 记录刷新前的失效态，用于检测"本次新变为失效"的对象并主动提示
+      const prev = new Map(allItemsRef.current.map((i) => [i.id, i]));
       const data = await db.getItems();
       setAllItems(data);
+
+      const newlyMissing = data.filter(
+        (i) => i.is_missing && prev.has(i.id) && !prev.get(i.id)?.is_missing,
+      );
+      if (newlyMissing.length > 0) {
+        const names = newlyMissing
+          .slice(0, 3)
+          .map((i) => i.name)
+          .join("、");
+        const suffix = newlyMissing.length > 3 ? ` 等 ${newlyMissing.length} 个` : "";
+        showToast(
+          `${newlyMissing.length} 个对象的文件已丢失或移动到其他磁盘：${names}${suffix}（归类已保留，文件恢复后会自动重新关联）`,
+          "warning",
+        );
+      }
     } catch (e) {
       console.error("Failed to load items:", e);
     } finally {
@@ -90,9 +120,17 @@ export function useItems() {
   }, []);
 
   useEffect(() => {
-    if (selectedCabinetId !== null) {
-      db.getCabinetItems(selectedCabinetId).then(setCabinetItems).catch(console.error);
-    }
+    if (selectedCabinetId === null) return;
+    // 竞态防护：快速切换文件柜时，慢响应不得覆盖已切换的新选择
+    let cancelled = false;
+    db.getCabinetItems(selectedCabinetId)
+      .then((data) => {
+        if (!cancelled) setCabinetItems(data);
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+    };
   }, [selectedCabinetId]);
 
   useEffect(() => {
@@ -140,129 +178,155 @@ export function useItems() {
     [searchIndex, deferredSearchQuery],
   );
 
-  useEffect(() => {
-    setItems(filtered);
-  }, [filtered, setItems]);
-
-  const addItem = useCallback(async (path: string) => {
-    const item = await db.addItem(path);
-    await refreshItemById(item.id);
-  }, [refreshItemById]);
-
   const addItems = useCallback(async (paths: string[]) => {
-    const result = await db.addItems(paths);
-    if (result.failed.length > 0) {
-      const first = result.failed[0];
-      showToast(`导入失败 ${result.failed.length} 项：${getPathDisplayName(first.path)}（${first.error}）`, "warning");
-    }
-    if (result.items.length === 0) return;
+    await withErrorToast("批量导入", async () => {
+      const result = await db.addItems(paths);
+      if (result.failed.length > 0) {
+        const first = result.failed[0];
+        showToast(`导入失败 ${result.failed.length} 项：${getPathDisplayName(first.path)}（${first.error}）`, "warning");
+      }
+      if (result.items.length === 0) return;
 
-    const changedItems = await db.getItemsByIds(result.items.map((item) => item.id));
-    setAllItems((current) => upsertItems(current, changedItems));
-    setCabinetItems((current) => {
-      const currentIds = new Set(current.map((item) => item.id));
-      return upsertItems(
-        current,
-        changedItems.filter((item) => currentIds.has(item.id)),
-      );
+      const changedItems = await db.getItemsByIds(result.items.map((item) => item.id));
+      setAllItems((current) => upsertItems(current, changedItems));
+      setCabinetItems((current) => {
+        const currentIds = new Set(current.map((item) => item.id));
+        return upsertItems(
+          current,
+          changedItems.filter((item) => currentIds.has(item.id)),
+        );
+      });
     });
   }, []);
 
   const removeItem = useCallback(async (id: number) => {
-    await db.removeItem(id);
-    removeLocalItem(id);
+    await withErrorToast("删除项目", async () => {
+      await db.removeItem(id);
+      removeLocalItem(id);
+    });
   }, [removeLocalItem]);
 
   const removeItems = useCallback(async (ids: number[]) => {
     if (ids.length === 0) return;
 
-    for (const id of ids) {
-      await db.removeItem(id);
-    }
+    await withErrorToast("批量删除", async () => {
+      for (const id of ids) {
+        await db.removeItem(id);
+      }
 
-    const idSet = new Set(ids);
-    setAllItems((current) => current.filter((item) => !idSet.has(item.id)));
-    setCabinetItems((current) => current.filter((item) => !idSet.has(item.id)));
+      const idSet = new Set(ids);
+      setAllItems((current) => current.filter((item) => !idSet.has(item.id)));
+      setCabinetItems((current) => current.filter((item) => !idSet.has(item.id)));
+    });
   }, []);
 
   const updateItemIcon = useCallback(async (itemId: number, iconPath: string | null) => {
-    await db.updateItemIcon(itemId, iconPath);
-    await refreshItemById(itemId);
+    await withErrorToast("更新图标", async () => {
+      await db.updateItemIcon(itemId, iconPath);
+      await refreshItemById(itemId);
+    });
   }, [refreshItemById]);
 
   const setItemTags = useCallback(async (itemId: number, tagIds: number[]) => {
-    await db.setItemTags(itemId, tagIds);
-    await refreshItemById(itemId);
+    await withErrorToast("设置标签", async () => {
+      await db.setItemTags(itemId, tagIds);
+      await refreshItemById(itemId);
+    });
   }, [refreshItemById]);
 
   const setManyItemTags = useCallback(async (changes: Array<{ itemId: number; tagIds: number[] }>) => {
     if (changes.length === 0) return;
 
-    for (const change of changes) {
-      await db.setItemTags(change.itemId, change.tagIds);
-    }
+    await withErrorToast("批量设置标签", async () => {
+      for (const change of changes) {
+        await db.setItemTags(change.itemId, change.tagIds);
+      }
 
-    const changedItems = await db.getItemsByIds(changes.map((change) => change.itemId));
-    setAllItems((current) => upsertItems(current, changedItems));
-    setCabinetItems((current) => {
-      const currentIds = new Set(current.map((item) => item.id));
-      return upsertItems(
-        current,
-        changedItems.filter((item) => currentIds.has(item.id)),
-      );
+      const changedItems = await db.getItemsByIds(changes.map((change) => change.itemId));
+      setAllItems((current) => upsertItems(current, changedItems));
+      setCabinetItems((current) => {
+        const currentIds = new Set(current.map((item) => item.id));
+        return upsertItems(
+          current,
+          changedItems.filter((item) => currentIds.has(item.id)),
+        );
+      });
     });
   }, []);
 
   const launchItem = useCallback(async (id: number) => {
-    await db.launchItem(id);
-    const item = allItemsRef.current.find((i) => i.id === id);
-    if (item) notifyItemLaunched(id, item.name);
-  }, []);
+    try {
+      await withErrorToast("启动项目", async () => {
+        await db.launchItem(id);
+        const item = allItemsRef.current.find((i) => i.id === id);
+        if (item) notifyItemLaunched(id, item.name);
+      });
+    } catch (e) {
+      // 启动失败（含"对象已丢失"）：后端可能已将 is_missing 置 1，
+      // 刷新该项使失效徽标即时生效，再把错误抛给调用方。
+      void refreshItemById(id).catch(() => {});
+      throw e;
+    }
+  }, [refreshItemById]);
 
   const toggleFavorite = useCallback(async (id: number) => {
-    await db.toggleFavorite(id);
-    await refreshItemById(id);
+    await withErrorToast("切换收藏", async () => {
+      await db.toggleFavorite(id);
+      await refreshItemById(id);
+    });
   }, [refreshItemById]);
 
   const addItemToCabinet = useCallback(async (cabinetId: number, itemId: number) => {
-    await db.addItemToCabinet(cabinetId, itemId);
-    if (selectedCabinetId === cabinetId) {
-      const item = allItemsRef.current.find((current) => current.id === itemId) ?? await db.getItem(itemId);
-      setCabinetItems((current) => upsertItem(current, item));
-    }
+    await withErrorToast("添加到文件柜", async () => {
+      await db.addItemToCabinet(cabinetId, itemId);
+      if (selectedCabinetId === cabinetId) {
+        const item = allItemsRef.current.find((current) => current.id === itemId) ?? await db.getItem(itemId);
+        setCabinetItems((current) => upsertItem(current, item));
+      }
+    });
+    notifyCabinetItemsChanged(cabinetId, [itemId]);
   }, [selectedCabinetId]);
 
   const addItemsToCabinet = useCallback(async (cabinetId: number, itemIds: number[]) => {
     if (itemIds.length === 0) return;
 
-    for (const itemId of itemIds) {
-      await db.addItemToCabinet(cabinetId, itemId);
-    }
+    await withErrorToast("批量添加到文件柜", async () => {
+      for (const itemId of itemIds) {
+        await db.addItemToCabinet(cabinetId, itemId);
+      }
 
-    if (selectedCabinetId === cabinetId) {
-      const changedItems = await db.getItemsByIds(itemIds);
-      setCabinetItems((current) => upsertItems(current, changedItems));
-    }
+      if (selectedCabinetId === cabinetId) {
+        const changedItems = await db.getItemsByIds(itemIds);
+        setCabinetItems((current) => upsertItems(current, changedItems));
+      }
+    });
+    notifyCabinetItemsChanged(cabinetId, itemIds);
   }, [selectedCabinetId]);
 
   const removeItemFromCabinet = useCallback(async (cabinetId: number, itemId: number) => {
-    await db.removeItemFromCabinet(cabinetId, itemId);
-    if (selectedCabinetId === cabinetId) {
-      setCabinetItems((current) => removeItemFromList(current, itemId));
-    }
+    await withErrorToast("从文件柜移除", async () => {
+      await db.removeItemFromCabinet(cabinetId, itemId);
+      if (selectedCabinetId === cabinetId) {
+        setCabinetItems((current) => removeItemFromList(current, itemId));
+      }
+    });
+    notifyCabinetItemsChanged(cabinetId, [itemId]);
   }, [selectedCabinetId]);
 
   const removeItemsFromCabinet = useCallback(async (cabinetId: number, itemIds: number[]) => {
     if (itemIds.length === 0) return;
 
-    for (const itemId of itemIds) {
-      await db.removeItemFromCabinet(cabinetId, itemId);
-    }
+    await withErrorToast("批量从文件柜移除", async () => {
+      for (const itemId of itemIds) {
+        await db.removeItemFromCabinet(cabinetId, itemId);
+      }
 
-    if (selectedCabinetId === cabinetId) {
-      const idSet = new Set(itemIds);
-      setCabinetItems((current) => current.filter((item) => !idSet.has(item.id)));
-    }
+      if (selectedCabinetId === cabinetId) {
+        const idSet = new Set(itemIds);
+        setCabinetItems((current) => current.filter((item) => !idSet.has(item.id)));
+      }
+    });
+    notifyCabinetItemsChanged(cabinetId, itemIds);
   }, [selectedCabinetId]);
 
   const findItemById = useCallback(
@@ -276,7 +340,6 @@ export function useItems() {
     items: filtered,
     loading,
     refresh: loadAll,
-    addItem,
     addItems,
     removeItem,
     removeItems,

@@ -88,12 +88,20 @@ interface ModScope {
   removeCabinet(id: number): Promise<void>;
   addItemToCabinet(cabinetId: number, itemId: number): Promise<void>;
   removeItemFromCabinet(cabinetId: number, itemId: number): Promise<void>;
+  // 数据写入（批量版）
+  removeItems(ids: number[]): Promise<void>;
+  setManyItemTags(updates: Array<{ itemId: number; tagIds: number[] }>): Promise<void>;
+  addItemsToCabinet(cabinetId: number, itemIds: number[]): Promise<void>;
+  removeItemsFromCabinet(cabinetId: number, itemIds: number[]): Promise<void>;
+  launchItems(ids: number[]): Promise<void>;
   // 事件
   onSearchInput(cb: (query: string) => void): () => void;
   onItemLaunched(cb: (itemId: number, itemName: string) => void): () => void;
   onItemsChanged(cb: (items: ItemWithTags[]) => void): () => void;
   onTagsChanged(cb: (tags: Tag[]) => void): () => void;
   onCabinetsChanged(cb: (cabinets: Cabinet[]) => void): () => void;
+  /** 文件柜成员（项目）增删时触发，回调收到柜 ID 与本次变更涉及的项目 ID 列表 */
+  onCabinetItemsChanged(cb: (cabinetId: number, itemIds: number[]) => void): () => void;
   // 文件系统
   fs: {
     readText(path: string): Promise<string>;
@@ -177,12 +185,19 @@ interface TagLauncherModApi {
   removeCabinet(id: number): Promise<void>;
   addItemToCabinet(cabinetId: number, itemId: number): Promise<void>;
   removeItemFromCabinet(cabinetId: number, itemId: number): Promise<void>;
+  // 数据写入（批量版）
+  removeItems(ids: number[]): Promise<void>;
+  setManyItemTags(updates: Array<{ itemId: number; tagIds: number[] }>): Promise<void>;
+  addItemsToCabinet(cabinetId: number, itemIds: number[]): Promise<void>;
+  removeItemsFromCabinet(cabinetId: number, itemIds: number[]): Promise<void>;
+  launchItems(ids: number[]): Promise<void>;
   // 事件
   onSearchInput(cb: (query: string) => void): () => void;
   onItemLaunched(cb: (itemId: number, itemName: string) => void): () => void;
   onItemsChanged(cb: (items: ItemWithTags[]) => void): () => void;
   onTagsChanged(cb: (tags: Tag[]) => void): () => void;
   onCabinetsChanged(cb: (cabinets: Cabinet[]) => void): () => void;
+  onCabinetItemsChanged(cb: (cabinetId: number, itemIds: number[]) => void): () => void;
   // UI
   notify(message: string, type?: ToastType): void;
 }
@@ -192,12 +207,13 @@ const API_VERSION = "3.1.0";
 
 // ── 内部监听器集合 ────────────────────────────────────────────────────────
 
-const themeChangeListeners     = new Set<(id: string) => void>();
-const searchInputListeners     = new Set<(q: string) => void>();
-const itemLaunchedListeners    = new Set<(id: number, name: string) => void>();
-const itemsChangedListeners    = new Set<(items: ItemWithTags[]) => void>();
-const tagsChangedListeners     = new Set<(tags: Tag[]) => void>();
-const cabinetsChangedListeners = new Set<(cabs: Cabinet[]) => void>();
+const themeChangeListeners         = new Set<(id: string) => void>();
+const searchInputListeners         = new Set<(q: string) => void>();
+const itemLaunchedListeners        = new Set<(id: number, name: string) => void>();
+const itemsChangedListeners        = new Set<(items: ItemWithTags[]) => void>();
+const tagsChangedListeners         = new Set<(tags: Tag[]) => void>();
+const cabinetsChangedListeners     = new Set<(cabs: Cabinet[]) => void>();
+const cabinetItemsChangedListeners = new Set<(cabinetId: number, itemIds: number[]) => void>();
 
 // ── 公共通知函数（由应用 hooks 调用）──────────────────────────────────────
 
@@ -218,6 +234,9 @@ export function notifyTagsChanged(tags: Tag[]) {
 }
 export function notifyCabinetsChanged(cabs: Cabinet[]) {
   for (const cb of cabinetsChangedListeners) try { cb(cabs); } catch { /* */ }
+}
+export function notifyCabinetItemsChanged(cabinetId: number, itemIds: number[]) {
+  for (const cb of cabinetItemsChangedListeners) try { cb(cabinetId, itemIds); } catch { /* */ }
 }
 
 // ── 权限注册表 ────────────────────────────────────────────────────────────
@@ -270,7 +289,9 @@ export function registerModApiVersion(modId: string, apiVersion: string | undefi
 
 /**
  * 检查 mod 的 API 版本是否与当前 API 兼容。
- * 返回 null（兼容）或 警告消息（不完全兼容但不阻断）或 Error（主版本不兼容，阻断）。
+ * 返回 null（兼容）或 警告消息字符串（不完全兼容）。
+ * 注意：本函数仅告警、从不阻断注入——即使主版本不兼容也只返回警告文案，
+ * 由调用方决定如何呈现（当前通过 notify 弹出 toast）。
  */
 function checkApiVersionCompatibility(modId: string): string | null {
   const declared = modApiVersionMap.get(modId);
@@ -469,12 +490,37 @@ function removeCabinet(id: number):                        Promise<void>    { re
 function addItemToCabinet(cId: number, iId: number):       Promise<void>    { return db.addItemToCabinet(cId, iId); }
 function removeItemFromCabinet(cId: number, iId: number):  Promise<void>    { return db.removeItemFromCabinet(cId, iId); }
 
+// 数据写入（批量版）：内部逐条调用 db 层，成功后派发对应变更事件
+async function removeItems(ids: number[]): Promise<void> {
+  for (const id of ids) await db.removeItem(id);
+}
+async function setManyItemTags(updates: Array<{ itemId: number; tagIds: number[] }>): Promise<void> {
+  for (const u of updates) await db.setItemTags(u.itemId, u.tagIds);
+}
+async function addItemsToCabinet(cabinetId: number, itemIds: number[]): Promise<void> {
+  for (const id of itemIds) await db.addItemToCabinet(cabinetId, id);
+  notifyCabinetItemsChanged(cabinetId, itemIds);
+}
+async function removeItemsFromCabinet(cabinetId: number, itemIds: number[]): Promise<void> {
+  for (const id of itemIds) await db.removeItemFromCabinet(cabinetId, id);
+  notifyCabinetItemsChanged(cabinetId, itemIds);
+}
+async function launchItems(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  for (const id of ids) await db.launchItem(id);
+  // 复用单条启动事件逐个派发：一次批量查名后通知所有监听器
+  const items = await db.getItemsByIds(ids);
+  const nameById = new Map(items.map((i) => [i.id, i.name]));
+  for (const id of ids) notifyItemLaunched(id, nameById.get(id) ?? "");
+}
+
 // 事件
 function onSearchInput(cb: (q: string) => void)                   { searchInputListeners.add(cb);     return () => { searchInputListeners.delete(cb); }; }
 function onItemLaunched(cb: (id: number, name: string) => void)   { itemLaunchedListeners.add(cb);    return () => { itemLaunchedListeners.delete(cb); }; }
 function onItemsChanged(cb: (i: ItemWithTags[]) => void)          { itemsChangedListeners.add(cb);    return () => { itemsChangedListeners.delete(cb); }; }
 function onTagsChanged(cb: (t: Tag[]) => void)                    { tagsChangedListeners.add(cb);     return () => { tagsChangedListeners.delete(cb); }; }
 function onCabinetsChanged(cb: (c: Cabinet[]) => void)            { cabinetsChangedListeners.add(cb); return () => { cabinetsChangedListeners.delete(cb); }; }
+function onCabinetItemsChanged(cb: (cabinetId: number, itemIds: number[]) => void) { cabinetItemsChangedListeners.add(cb); return () => { cabinetItemsChangedListeners.delete(cb); }; }
 
 // UI
 function notify(msg: string, type: ToastType = "info") {
@@ -523,11 +569,11 @@ function onEvent(_modId: string, eventName: string, cb: (data: unknown, sourceMo
 // ── createScope ────────────────────────────────────────────────────────────
 
 function createScope(modId: string): ModScope {
-  // API 版本兼容性检查
+  // API 版本兼容性检查：仅告警不阻断；主版本不兼容用 error 级别使其更醒目
   const apiWarning = checkApiVersionCompatibility(modId);
   if (apiWarning) {
     console.warn(apiWarning);
-    notify(apiWarning, "warning");
+    notify(apiWarning, apiWarning.includes("主版本不兼容") ? "error" : "warning");
   }
 
   // 权限检查包装器
@@ -583,6 +629,11 @@ function createScope(modId: string): ModScope {
     trackUnsubscriber(modId, unsub);
     return unsub;
   }
+  function scopedOnCabinetItemsChanged(cb: (cabinetId: number, itemIds: number[]) => void) {
+    const unsub = onCabinetItemsChanged(cb);
+    trackUnsubscriber(modId, unsub);
+    return unsub;
+  }
   function scopedOnEvent(eventName: string, cb: (data: unknown, sourceModId: string) => void) {
     const unsub = onEvent(modId, eventName, cb);
     trackUnsubscriber(modId, unsub);
@@ -591,7 +642,13 @@ function createScope(modId: string): ModScope {
 
   return {
     id: modId,
-    storage,
+    // storage 与 data 一致，套用 guarded("storage", ...) 权限校验
+    storage: {
+      get:    guarded("storage", "storage.get",    storage.get),
+      set:    guarded("storage", "storage.set",    storage.set),
+      remove: guarded("storage", "storage.remove", storage.remove),
+      clear:  guarded("storage", "storage.clear",  storage.clear),
+    },
     data: {
       get: guarded("data", "data.get", data.get),
       set: guarded("data", "data.set", data.set),
@@ -627,12 +684,20 @@ function createScope(modId: string): ModScope {
     addItemToCabinet:      guarded("cabinets:write", "addItemToCabinet",      addItemToCabinet),
     removeItemFromCabinet: guarded("cabinets:write", "removeItemFromCabinet", removeItemFromCabinet),
 
+    // 数据写入（批量版，权限与单条一致）
+    removeItems:             guarded("items:write",    "removeItems",             removeItems),
+    setManyItemTags:         guarded("items:write",    "setManyItemTags",         setManyItemTags),
+    addItemsToCabinet:       guarded("cabinets:write", "addItemsToCabinet",       addItemsToCabinet),
+    removeItemsFromCabinet:  guarded("cabinets:write", "removeItemsFromCabinet",  removeItemsFromCabinet),
+    launchItems:             guarded("launch",         "launchItems",             launchItems),
+
     // 事件（读取权限）
     onSearchInput:     scopedOnSearchInput,
     onItemLaunched:    scopedOnItemLaunched,
     onItemsChanged:    guarded("items:read",    "onItemsChanged",    scopedOnItemsChanged),
     onTagsChanged:     guarded("tags:read",     "onTagsChanged",     scopedOnTagsChanged),
     onCabinetsChanged: guarded("cabinets:read", "onCabinetsChanged", scopedOnCabinetsChanged),
+    onCabinetItemsChanged: guarded("cabinets:read", "onCabinetItemsChanged", scopedOnCabinetItemsChanged),
 
     // 文件系统
     fs: {
@@ -706,7 +771,8 @@ export const modApi: TagLauncherModApi = {
   addItem, removeItem, addTag, updateTag, removeTag, setItemTags,
   launchItem, toggleFavorite,
   addCabinet, updateCabinet, removeCabinet, addItemToCabinet, removeItemFromCabinet,
-  onSearchInput, onItemLaunched, onItemsChanged, onTagsChanged, onCabinetsChanged,
+  removeItems, setManyItemTags, addItemsToCabinet, removeItemsFromCabinet, launchItems,
+  onSearchInput, onItemLaunched, onItemsChanged, onTagsChanged, onCabinetsChanged, onCabinetItemsChanged,
   notify,
 };
 

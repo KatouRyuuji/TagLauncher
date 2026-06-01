@@ -43,16 +43,16 @@ export function MigrationDialog({
           </div>
 
           <p className="mt-5 text-sm leading-7 text-[var(--text-secondary)]">
-            软件已完成版本升级，并自动尝试将现有数据映射到新结构。下面是本次已执行的迁移内容。
+            检测到应用版本已更新。现有数据将沿用兼容的存储结构，可继续正常使用。
           </p>
 
           {appliedMigrations.length > 0 && (
             <div className="surface-card-soft mt-5 p-4">
-              <div className="text-label">Applied</div>
+              <div className="text-label">Notes</div>
               <ul className="mt-3 space-y-2">
                 {appliedMigrations.map((migration, index) => (
                   <li key={`${migration}-${index}`} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
-                    <span className="mt-1 h-2 w-2 rounded-full bg-[var(--color-success)]" />
+                    <span className="mt-1 h-2 w-2 rounded-full bg-[var(--text-muted)]" />
                     <span>{migration}</span>
                   </li>
                 ))}

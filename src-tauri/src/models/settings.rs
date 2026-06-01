@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// 应用设置
+// 迭代期预留模型（当前设置实际走 app_meta 键值表存取），保留以备后续统一设置接口。
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppSettings {
     pub theme: String,
@@ -249,6 +251,8 @@ pub struct ThemeDirectoryInfo {
 }
 
 /// 迁移结果
+// 迭代期预留模型（迁移逻辑当前在 db/migrations，前端迁移提示用独立契约），保留备用。
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MigrationResult {
     pub from_version: u32,
@@ -258,6 +262,8 @@ pub struct MigrationResult {
 }
 
 /// 版本信息
+// 迭代期预留模型（版本检查当前用 get_app_version + KV），保留备用。
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VersionInfo {
     pub current: String,

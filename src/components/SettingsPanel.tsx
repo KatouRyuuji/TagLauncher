@@ -3,7 +3,7 @@ import { open as dialogOpen, save } from "@tauri-apps/plugin-dialog";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { ModManagerPanel } from "./ModManagerPanel";
 import { useThemeContext } from "./ThemeProvider";
-import type { ThemeDefinition, ThemeSource } from "../types/theme";
+import type { ThemeDefinition, ThemeSource, ThemeVariant } from "../types/theme";
 
 interface SettingsPanelProps {
   open: boolean;
@@ -27,6 +27,8 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     importTheme,
     exportTheme,
     themeDirectoryInfo,
+    activeVariant,
+    setActiveVariant,
   } = useThemeContext();
   const [busy, setBusy] = useState<"import" | "export" | "refresh" | "folder" | null>(null);
 
@@ -152,6 +154,14 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               </div>
 
               <ThemeSelect themes={availableThemes} currentThemeId={currentTheme.id} onSelect={setTheme} />
+
+              {currentTheme.variants && Object.keys(currentTheme.variants).length > 0 && (
+                <VariantSelect
+                  variants={currentTheme.variants}
+                  activeVariant={activeVariant}
+                  onSelect={setActiveVariant}
+                />
+              )}
             </section>
 
             <section className="mt-6">
@@ -222,6 +232,34 @@ function ThemeSelect({
               ))}
             </optgroup>
           )
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function VariantSelect({
+  variants,
+  activeVariant,
+  onSelect,
+}: {
+  variants: Record<string, ThemeVariant>;
+  activeVariant: string | undefined;
+  onSelect: (variant: string | undefined) => void;
+}) {
+  return (
+    <label className="mt-4 block">
+      <span className="mb-2 block text-xs font-semibold text-[var(--text-muted)]">主题变体</span>
+      <select
+        value={activeVariant ?? ""}
+        onChange={(event) => onSelect(event.target.value || undefined)}
+        className="w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+      >
+        <option value="">默认（无变体）</option>
+        {Object.entries(variants).map(([key, variant]) => (
+          <option key={key} value={key}>
+            {variant.name ?? key}
+          </option>
         ))}
       </select>
     </label>

@@ -21,7 +21,14 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: Ite
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave(selectedIds);
+      // 以原 item.tags 顺序为基准重建：保留原有顺序、剔除被取消项、新增项追加末尾，
+      // 避免"取消再重选"把标签挪到末尾打乱展示顺序。
+      const selectedSet = new Set(selectedIds);
+      const originalIds = item.tags.map((tag) => tag.id);
+      const kept = originalIds.filter((id) => selectedSet.has(id));
+      const keptSet = new Set(kept);
+      const added = selectedIds.filter((id) => !keptSet.has(id));
+      await onSave([...kept, ...added]);
     } finally {
       setSaving(false);
     }

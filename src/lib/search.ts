@@ -11,6 +11,7 @@ interface SearchIndexEntry {
 interface SearchableFields {
   pinyinName: string;
   pinyinInitials: string;
+  pathWithoutDrive: string;
   tagEntries: SearchableTag[];
 }
 
@@ -63,6 +64,8 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
   const fields = {
     pinyinName: toPinyinText(item.name),
     pinyinInitials: toPinyinInitials(item.name),
+    // 去盘符路径随拼音一起缓存（与 matchesName 的弱辅助匹配一致），避免每次匹配重跑正则
+    pathWithoutDrive: item.path.replace(/^[a-z]:[\\/]+/i, ""),
     tagEntries,
   };
 
@@ -194,8 +197,9 @@ class Parser {
     }
 
     expr = this.parseOr();
+    // 左结合：A!!B!!C 解析为 ((A−B)−C)，依次做差集，避免右结合带来的错误保留
     while (this.consume("not")) {
-      const right = this.parseExclude();
+      const right = this.parseOr();
       if (!expr || !right) return expr;
       expr = { type: "exclude", left: expr, right };
     }
@@ -266,6 +270,9 @@ function isEnglishTypoMatch(source: string, query: string): boolean {
   const sourcePrefix = source.slice(0, Math.max(query.length, 1));
   if (Math.abs(sourcePrefix.length - query.length) > 1) return false;
 
+  // 短词（<5 字母）收紧：不允许首字母替换，要求切片首字符与查询首字符一致，避免 bode→node 之类误命中
+  if (query.length < 5 && sourcePrefix[0] !== query[0]) return false;
+
   let prev = Array.from({ length: query.length + 1 }, (_, i) => i);
   for (let i = 1; i <= sourcePrefix.length; i += 1) {
     const next = [i];
@@ -308,7 +315,8 @@ function matchesName(entry: SearchIndexEntry, query: string, strict: boolean): b
     return true;
   }
 
-  return !strict && prefixMatches(entry.item.path, query);
+  // path 作为弱辅助字段：使用 createSearchEntry 缓存的去盘符路径，降低单个盘符字母的噪声命中
+  return !strict && prefixMatches(entry.fields.pathWithoutDrive, query);
 }
 
 function matchesTag(entry: SearchIndexEntry, query: string, strict: boolean): boolean {
@@ -350,18 +358,13 @@ export function searchWithIndex(index: SearchIndex, query: string): ItemWithTags
   const expr = parseQuery(normalized);
   if (!expr) return index.entries.map((entry) => entry.item);
 
-  return index.entries
-    .filter((entry) => evaluateExpr(entry, expr, index.mode))
-    .map((entry) => entry.item);
-}
-
-export function fuzzySearch(
-  items: ItemWithTags[],
-  query: string,
-  mode: SearchMode,
-  selectedTagIds: number[],
-): ItemWithTags[] {
-  const filtered = filterItemsByTags(items, selectedTagIds);
-  const index = buildSearchIndex(filtered, mode);
-  return searchWithIndex(index, query);
+  // 显式保证收藏置顶（设计 step8）：单趟分组——收藏在前、各组保持原相对顺序（等价稳定排序，
+  // 因 index.entries 本就是 source 顺序）。避免 map→sort→map 的包装/解包与 O(M log M) 排序。
+  const favs: ItemWithTags[] = [];
+  const rest: ItemWithTags[] = [];
+  for (const entry of index.entries) {
+    if (!evaluateExpr(entry, expr, index.mode)) continue;
+    (entry.item.is_favorite ? favs : rest).push(entry.item);
+  }
+  return favs.concat(rest);
 }

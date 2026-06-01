@@ -43,19 +43,24 @@ fn query_items_by_text(conn: &Connection, query: &str) -> Result<Vec<Item>, Stri
         return query_items_by_text_like(conn, query);
     }
 
-    let sql = "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite
+    let sql = "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
          FROM items i
          INNER JOIN items_fts ON i.id = items_fts.rowid
          WHERE items_fts MATCH ?1
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name";
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let items = match stmt
-        .query_map([search_query], item_from_row)
+    // query_map 返回的是惰性迭代器，FTS 的 MATCH 运行期错误要在迭代取行时才会暴露，
+    // 不能用 filter_map(|r| r.ok()) 吞掉（会把运行期错误变成空结果而不触发 LIKE 回退）。
+    // 先整体 collect 成 Result，Err 时回退到 LIKE 路径。
+    let rows: Result<Vec<Item>, rusqlite::Error> = match stmt.query_map([search_query], item_from_row)
     {
-        Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+        Ok(rows) => rows.collect(),
         Err(_) => return query_items_by_text_like(conn, query),
     };
-    Ok(items)
+    match rows {
+        Ok(items) => Ok(items),
+        Err(_) => query_items_by_text_like(conn, query),
+    }
 }
 
 fn query_items_by_text_like(conn: &Connection, query: &str) -> Result<Vec<Item>, String> {
@@ -76,7 +81,7 @@ fn query_items_by_text_like(conn: &Connection, query: &str) -> Result<Vec<Item>,
 fn query_items_by_tags(conn: &Connection, tag_ids: &[i64]) -> Result<Vec<Item>, String> {
     let placeholders: Vec<String> = tag_ids.iter().map(|_| "?".to_string()).collect();
     let sql = format!(
-        "SELECT DISTINCT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite
+        "SELECT DISTINCT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
          FROM items i
          INNER JOIN item_tags it ON i.id = it.item_id
          WHERE it.tag_id IN ({})
@@ -112,7 +117,7 @@ fn query_items_by_text_and_tags(
 
     let placeholders: Vec<String> = tag_ids.iter().map(|_| "?".to_string()).collect();
     let sql = format!(
-        "SELECT DISTINCT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite
+        "SELECT DISTINCT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
          FROM items i
          INNER JOIN items_fts ON i.id = items_fts.rowid
          INNER JOIN item_tags it ON i.id = it.item_id
@@ -132,11 +137,16 @@ fn query_items_by_text_and_tags(
     }
     let params: Vec<&dyn rusqlite::ToSql> = params_values.iter().map(|p| p.as_ref()).collect();
 
-    let items = match stmt.query_map(params.as_slice(), item_from_row) {
-        Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
-        Err(_) => return query_items_by_text_and_tags_like(conn, query, tag_ids),
-    };
-    Ok(items)
+    // 同上：先整体 collect，MATCH 运行期错误才能被捕获并回退到 LIKE 路径。
+    let rows: Result<Vec<Item>, rusqlite::Error> =
+        match stmt.query_map(params.as_slice(), item_from_row) {
+            Ok(rows) => rows.collect(),
+            Err(_) => return query_items_by_text_and_tags_like(conn, query, tag_ids),
+        };
+    match rows {
+        Ok(items) => Ok(items),
+        Err(_) => query_items_by_text_and_tags_like(conn, query, tag_ids),
+    }
 }
 
 fn query_items_by_text_and_tags_like(
@@ -147,7 +157,7 @@ fn query_items_by_text_and_tags_like(
     let search_query = format!("%{}%", query);
     let placeholders: Vec<String> = tag_ids.iter().map(|_| "?".to_string()).collect();
     let sql = format!(
-        "SELECT DISTINCT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite
+        "SELECT DISTINCT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
          FROM items i
          INNER JOIN item_tags it ON i.id = it.item_id
          WHERE (i.name LIKE ?1 OR i.path LIKE ?1)

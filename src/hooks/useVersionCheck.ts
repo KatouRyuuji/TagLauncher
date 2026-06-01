@@ -26,7 +26,7 @@ export function useVersionCheck() {
           // 版本已更新
           setMigration({
             show: true,
-            appliedMigrations: ["数据结构兼容性检查"],
+            appliedMigrations: ["检测到版本更新"],
             fromVersion: storedVersion,
             toVersion: currentVersion,
           });
