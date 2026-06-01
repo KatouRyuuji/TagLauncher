@@ -41,3 +41,52 @@ impl Database {
         self.conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 真实文件库初始化路径（内存库不覆盖 WAL）：
+    /// 验证 Database::new 在磁盘文件上启用 WAL、跑完 v001..v005 迁移、身份列就位、可读写。
+    #[test]
+    fn database_new_initializes_real_file_db() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("tl_dbinit_{}.db", std::process::id()));
+        let p = path.to_string_lossy().to_string();
+        // 预清理（含 WAL 旁文件与破坏性迁移备份）
+        for f in [p.clone(), format!("{p}-wal"), format!("{p}-shm"), format!("{p}.pre-v5.bak")] {
+            let _ = std::fs::remove_file(&f);
+        }
+
+        {
+            let db = Database::new(&path).expect("init real file db");
+            let conn = db.get_conn();
+            // WAL 在文件库上已启用
+            let mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
+            assert_eq!(mode.to_lowercase(), "wal");
+            // 迁移执行到 v5
+            let ver: String = conn
+                .query_row("SELECT value FROM app_meta WHERE key='schema_version'", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(ver, "5");
+            // 身份列就位
+            let cols: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('items') WHERE name IN ('file_id','is_missing','volume_serial')",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(cols, 3);
+            // 基本读写可用
+            conn.execute("INSERT INTO items (name, path, type) VALUES ('t', 'D:\\t.exe', 'exe')", [])
+                .unwrap();
+            let cnt: i64 = conn.query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0)).unwrap();
+            assert_eq!(cnt, 1);
+        }
+
+        for f in [p.clone(), format!("{p}-wal"), format!("{p}-shm"), format!("{p}.pre-v5.bak")] {
+            let _ = std::fs::remove_file(&f);
+        }
+    }
+}
