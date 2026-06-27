@@ -72,6 +72,18 @@ export async function removeItem(id: number): Promise<void> {
   return invokeCmd("remove_item", { id });
 }
 
+/** 批量删除项目（后端单条 IN 语句，原子） */
+export async function removeItems(ids: number[]): Promise<void> {
+  return invokeCmd("remove_items", { ids });
+}
+
+/** 批量设置多个对象的标签（后端整批一个事务，原子） */
+export async function setManyItemTags(
+  changes: Array<{ itemId: number; tagIds: number[] }>,
+): Promise<void> {
+  return invokeCmd("set_many_item_tags", { changes });
+}
+
 /** 设置项目缩略图路径（传 null 可清除） */
 export async function updateItemIcon(itemId: number, iconPath: string | null): Promise<void> {
   return invokeCmd("update_item_icon", { itemId, iconPath });
@@ -211,6 +223,16 @@ export async function addItemToCabinet(cabinetId: number, itemId: number): Promi
 /** 从文件柜移除项目 */
 export async function removeItemFromCabinet(cabinetId: number, itemId: number): Promise<void> {
   return invokeCmd("remove_item_from_cabinet", { cabinetId, itemId });
+}
+
+/** 批量将项目加入文件柜（后端整批一个事务，幂等） */
+export async function addItemsToCabinet(cabinetId: number, itemIds: number[]): Promise<void> {
+  return invokeCmd("add_items_to_cabinet", { cabinetId, itemIds });
+}
+
+/** 批量从文件柜移除项目（后端单条 IN 语句，原子） */
+export async function removeItemsFromCabinet(cabinetId: number, itemIds: number[]): Promise<void> {
+  return invokeCmd("remove_items_from_cabinet", { cabinetId, itemIds });
 }
 
 /** 获取文件柜内的所有项目（含标签信息） */

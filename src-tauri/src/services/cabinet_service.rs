@@ -1,9 +1,7 @@
 use crate::models::{Cabinet, Item, ItemWithTags};
-use crate::services::icon_service;
 use crate::services::item_service::item_from_row;
 use crate::services::tag_service;
 use rusqlite::{params, Connection};
-use tauri::AppHandle;
 
 /// 获取所有文件柜
 pub fn get_cabinets(conn: &Connection) -> Result<Vec<Cabinet>, String> {
@@ -91,9 +89,49 @@ pub fn remove_item_from_cabinet(
     Ok(())
 }
 
+/// 批量将项目加入文件柜（整批一个事务，幂等）。
+pub fn add_items_to_cabinet(
+    conn: &Connection,
+    cabinet_id: i64,
+    item_ids: &[i64],
+) -> Result<(), String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    for item_id in item_ids {
+        tx.execute(
+            "INSERT OR IGNORE INTO cabinet_items (cabinet_id, item_id) VALUES (?1, ?2)",
+            params![cabinet_id, *item_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 批量从文件柜移除项目（单条 DELETE ... IN (...)，原子）。
+pub fn remove_items_from_cabinet(
+    conn: &Connection,
+    cabinet_id: i64,
+    item_ids: &[i64],
+) -> Result<(), String> {
+    if item_ids.is_empty() {
+        return Ok(());
+    }
+    let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "DELETE FROM cabinet_items WHERE cabinet_id = ? AND item_id IN ({})",
+        placeholders
+    );
+    let mut params: Vec<&dyn rusqlite::ToSql> = vec![&cabinet_id];
+    for id in item_ids {
+        params.push(id);
+    }
+    conn.execute(&sql, params.as_slice())
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 获取文件柜内的所有项目
 pub fn get_cabinet_items(
-    app: &AppHandle,
     conn: &Connection,
     cabinet_id: i64,
 ) -> Result<Vec<ItemWithTags>, String> {
@@ -107,12 +145,45 @@ pub fn get_cabinet_items(
         )
         .map_err(|e| e.to_string())?;
 
-    let mut items: Vec<Item> = stmt
+    let items: Vec<Item> = stmt
         .query_map([cabinet_id], item_from_row)
         .map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())
         .collect();
 
-    icon_service::fill_auto_visual_paths(app, &mut items);
+    // 图标在锁外由调用方 fill_visuals 补齐（见 cabinet_commands::get_cabinet_items）
     tag_service::items_with_tags(conn, items)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::schema;
+    use crate::services::item_service;
+
+    fn setup() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch("PRAGMA foreign_keys = ON;").expect("fk");
+        schema::create_tables(&conn).expect("schema");
+        conn
+    }
+
+    #[test]
+    fn batch_add_and_remove_cabinet_items() {
+        let conn = setup();
+        let cab = add_cabinet(&conn, "Games", "#fff").expect("add cabinet");
+        let a = item_service::add_item(&conn, r"D:\__c__\1.exe").unwrap();
+        let b = item_service::add_item(&conn, r"D:\__c__\2.exe").unwrap();
+        let c = item_service::add_item(&conn, r"D:\__c__\3.exe").unwrap();
+
+        add_items_to_cabinet(&conn, cab.id, &[a.id, b.id, c.id]).expect("batch add");
+        // 幂等：重复加入不产生重复记录
+        add_items_to_cabinet(&conn, cab.id, &[a.id]).expect("idempotent add");
+        assert_eq!(get_cabinet_items(&conn, cab.id).unwrap().len(), 3);
+
+        remove_items_from_cabinet(&conn, cab.id, &[a.id, c.id]).expect("batch remove");
+        let left = get_cabinet_items(&conn, cab.id).unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].item.id, b.id);
+    }
 }

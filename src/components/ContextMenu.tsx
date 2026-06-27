@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 import * as db from "../lib/db";
 import type { Cabinet, ItemWithTags } from "../types";
 
@@ -171,6 +172,8 @@ export function ContextMenu({
   }, [showCabinetSub, updateSubmenuPosition]);
 
   useEffect(() => () => clearSubmenuHideTimer(), [clearSubmenuHideTimer]);
+
+  useEscapeKey(onClose);
 
   const handleOpenFolder = async () => {
     // 按 id 打开：后端会先按文件ID重定位到当前真实路径，避免对象被移动后打开失败

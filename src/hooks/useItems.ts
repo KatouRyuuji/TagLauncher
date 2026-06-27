@@ -210,9 +210,7 @@ export function useItems() {
     if (ids.length === 0) return;
 
     await withErrorToast("批量删除", async () => {
-      for (const id of ids) {
-        await db.removeItem(id);
-      }
+      await db.removeItems(ids);
 
       const idSet = new Set(ids);
       setAllItems((current) => current.filter((item) => !idSet.has(item.id)));
@@ -238,9 +236,7 @@ export function useItems() {
     if (changes.length === 0) return;
 
     await withErrorToast("批量设置标签", async () => {
-      for (const change of changes) {
-        await db.setItemTags(change.itemId, change.tagIds);
-      }
+      await db.setManyItemTags(changes);
 
       const changedItems = await db.getItemsByIds(changes.map((change) => change.itemId));
       setAllItems((current) => upsertItems(current, changedItems));
@@ -291,9 +287,7 @@ export function useItems() {
     if (itemIds.length === 0) return;
 
     await withErrorToast("批量添加到文件柜", async () => {
-      for (const itemId of itemIds) {
-        await db.addItemToCabinet(cabinetId, itemId);
-      }
+      await db.addItemsToCabinet(cabinetId, itemIds);
 
       if (selectedCabinetId === cabinetId) {
         const changedItems = await db.getItemsByIds(itemIds);
@@ -317,9 +311,7 @@ export function useItems() {
     if (itemIds.length === 0) return;
 
     await withErrorToast("批量从文件柜移除", async () => {
-      for (const itemId of itemIds) {
-        await db.removeItemFromCabinet(cabinetId, itemId);
-      }
+      await db.removeItemsFromCabinet(cabinetId, itemIds);
 
       if (selectedCabinetId === cabinetId) {
         const idSet = new Set(itemIds);

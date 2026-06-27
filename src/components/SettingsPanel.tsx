@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { open as dialogOpen, save } from "@tauri-apps/plugin-dialog";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { ModManagerPanel } from "./ModManagerPanel";
 import { useThemeContext } from "./ThemeProvider";
@@ -31,6 +32,8 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     setActiveVariant,
   } = useThemeContext();
   const [busy, setBusy] = useState<"import" | "export" | "refresh" | "folder" | null>(null);
+
+  useEscapeKey(onClose, open);
 
   if (!open) return null;
 

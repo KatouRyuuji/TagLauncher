@@ -192,6 +192,8 @@ pub fn run() {
             add_item,
             add_items,
             remove_item,
+            remove_items,
+            set_many_item_tags,
             update_item_icon,
             get_items,
             get_item,
@@ -220,6 +222,8 @@ pub fn run() {
             remove_cabinet,
             add_item_to_cabinet,
             remove_item_from_cabinet,
+            add_items_to_cabinet,
+            remove_items_from_cabinet,
             get_cabinet_items,
             // 同义词
             read_synonyms,

@@ -65,15 +65,20 @@ fn auto_visual_path(app: &AppHandle, item: &Item) -> Option<String> {
     None
 }
 
+/// 为单个项目补齐自动可视路径（图标提取/封面，涉及文件系统与 PowerShell IO，不依赖 DB）。
+pub fn fill_item_visual(app: &AppHandle, item: &mut Item) {
+    if has_icon_path(item) {
+        return;
+    }
+    if let Some(auto_path) = auto_visual_path(app, item) {
+        item.icon_path = Some(auto_path);
+    }
+}
+
 /// 为项目列表补齐自动可视路径
 pub fn fill_auto_visual_paths(app: &AppHandle, items: &mut [Item]) {
     for item in items.iter_mut() {
-        if has_icon_path(item) {
-            continue;
-        }
-        if let Some(auto_path) = auto_visual_path(app, item) {
-            item.icon_path = Some(auto_path);
-        }
+        fill_item_visual(app, item);
     }
 }
 

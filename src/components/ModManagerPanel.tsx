@@ -166,10 +166,22 @@ export function ModManagerPanel() {
                       已启用
                     </span>
                   )}
+                  {mod.is_compatible === false && (
+                    <span
+                      title={mod.incompatible_reason ?? "与当前应用版本不兼容"}
+                      className="rounded-[var(--radius-full)] bg-[var(--color-danger-bg)] px-2 py-1 text-[10px] font-semibold text-[var(--color-danger)]"
+                    >
+                      不兼容
+                    </span>
+                  )}
                 </div>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">
                   v{mod.version} · {mod.author}
+                  {mod.api_version ? ` · API ${mod.api_version}` : ""}
                 </p>
+                {mod.is_compatible === false && mod.incompatible_reason && (
+                  <p className="mt-1 text-xs text-[var(--color-danger)]">{mod.incompatible_reason}</p>
+                )}
                 <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{mod.description}</p>
               </div>
 

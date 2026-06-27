@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { getThemeTagPresetColors } from "../lib/tagColors";
 import type { Tag } from "../types";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 
 interface TagEditorProps {
   tag: Tag | null;
@@ -17,6 +18,8 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
   const [name, setName] = useState(tag?.name || "");
   const [color, setColor] = useState(tag?.color || presetColors[5] || presetColors[0]);
   const [saving, setSaving] = useState(false);
+
+  useEscapeKey(onClose);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();

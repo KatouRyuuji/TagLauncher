@@ -29,3 +29,5 @@ nul
 
 # test:design 的 esbuild 临时产物
 .tmp-test/
+
+PROJECT_STATUS.md

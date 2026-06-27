@@ -379,3 +379,35 @@ fn theme_to_pretty_json(theme: &ThemeDefinition) -> Result<String, String> {
     export_theme.file_name = None;
     serde_json::to_string_pretty(&export_theme).map_err(|e| format!("无法序列化主题: {}", e))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_and_validate_minimal_theme() {
+        let json = r#"{"id":"t","name":"T","variables":{"accent-primary":"white"}}"#;
+        let theme = parse_theme_json(json).expect("parse minimal theme");
+        assert_eq!(theme.id, "t");
+        validate_theme_for_loading(&theme).expect("minimal theme should be loadable");
+        // 缺少绝大多数推荐变量 → 产生 warning 级 issue（不阻断加载）
+        assert!(!validate_theme_contract(&theme).is_empty());
+    }
+
+    #[test]
+    fn validate_rejects_empty_id_and_bad_variable_keys() {
+        let no_id = parse_theme_json(r#"{"id":"","name":"T","variables":{"a":"b"}}"#).unwrap();
+        assert!(validate_theme_for_loading(&no_id).is_err());
+
+        let empty_vars = parse_theme_json(r#"{"id":"t","name":"T","variables":{}}"#).unwrap();
+        assert!(validate_theme_for_loading(&empty_vars).is_err());
+
+        let bad_key = parse_theme_json(r#"{"id":"t","name":"T","variables":{"--x":"b"}}"#).unwrap();
+        assert!(validate_theme_for_loading(&bad_key).is_err());
+    }
+
+    #[test]
+    fn parse_theme_json_rejects_invalid_json() {
+        assert!(parse_theme_json("{ not json").is_err());
+    }
+}

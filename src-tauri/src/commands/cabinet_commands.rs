@@ -53,14 +53,40 @@ pub fn remove_item_from_cabinet(
     cabinet_service::remove_item_from_cabinet(&conn, cabinet_id, item_id)
 }
 
+/// 批量将项目加入文件柜（整批一个事务，幂等）
+#[tauri::command]
+pub fn add_items_to_cabinet(
+    db: State<Database>,
+    cabinet_id: i64,
+    item_ids: Vec<i64>,
+) -> Result<(), String> {
+    let conn = db.get_conn();
+    cabinet_service::add_items_to_cabinet(&conn, cabinet_id, &item_ids)
+}
+
+/// 批量从文件柜移除项目（单条 IN 语句，原子）
+#[tauri::command]
+pub fn remove_items_from_cabinet(
+    db: State<Database>,
+    cabinet_id: i64,
+    item_ids: Vec<i64>,
+) -> Result<(), String> {
+    let conn = db.get_conn();
+    cabinet_service::remove_items_from_cabinet(&conn, cabinet_id, &item_ids)
+}
+
 #[tauri::command]
 pub fn get_cabinet_items(
     app: AppHandle,
     db: State<Database>,
     cabinet_id: i64,
 ) -> Result<Vec<ItemWithTags>, String> {
-    let conn = db.get_conn();
-    // 刷新即对账：与全部项目视图一致，进入文件柜时也自动更新位置/失效态。
-    let _ = item_service::reconcile_items(&conn);
-    cabinet_service::get_cabinet_items(&app, &conn, cabinet_id)
+    // 与 get_items 一致：锁内查库（含对账），释放锁后再补图标，避免锁内重 IO。
+    let mut items = {
+        let conn = db.get_conn();
+        let _ = item_service::reconcile_items(&conn);
+        cabinet_service::get_cabinet_items(&conn, cabinet_id)?
+    };
+    item_service::fill_visuals(&app, &mut items);
+    Ok(items)
 }

@@ -102,6 +102,10 @@ interface ModScope {
   onCabinetsChanged(cb: (cabinets: Cabinet[]) => void): () => void;
   /** 文件柜成员（项目）增删时触发，回调收到柜 ID 与本次变更涉及的项目 ID 列表 */
   onCabinetItemsChanged(cb: (cabinetId: number, itemIds: number[]) => void): () => void;
+  /** 读取当前主视图复选集合（对象 id 列表） */
+  getSelectedItemIds(): number[];
+  /** 主视图复选集合变化时触发，回调收到当前选中的对象 id 列表 */
+  onSelectionChanged(cb: (itemIds: number[]) => void): () => void;
   // 文件系统
   fs: {
     readText(path: string): Promise<string>;
@@ -198,6 +202,8 @@ interface TagLauncherModApi {
   onTagsChanged(cb: (tags: Tag[]) => void): () => void;
   onCabinetsChanged(cb: (cabinets: Cabinet[]) => void): () => void;
   onCabinetItemsChanged(cb: (cabinetId: number, itemIds: number[]) => void): () => void;
+  getSelectedItemIds(): number[];
+  onSelectionChanged(cb: (itemIds: number[]) => void): () => void;
   // UI
   notify(message: string, type?: ToastType): void;
 }
@@ -214,6 +220,10 @@ const itemsChangedListeners        = new Set<(items: ItemWithTags[]) => void>();
 const tagsChangedListeners         = new Set<(tags: Tag[]) => void>();
 const cabinetsChangedListeners     = new Set<(cabs: Cabinet[]) => void>();
 const cabinetItemsChangedListeners = new Set<(cabinetId: number, itemIds: number[]) => void>();
+const selectionChangedListeners    = new Set<(itemIds: number[]) => void>();
+
+// 当前主视图复选集合（由 App 通过 notifySelectionChanged 同步），供 Mod 读取选择上下文
+let currentSelectedItemIds: number[] = [];
 
 // ── 公共通知函数（由应用 hooks 调用）──────────────────────────────────────
 
@@ -237,6 +247,10 @@ export function notifyCabinetsChanged(cabs: Cabinet[]) {
 }
 export function notifyCabinetItemsChanged(cabinetId: number, itemIds: number[]) {
   for (const cb of cabinetItemsChangedListeners) try { cb(cabinetId, itemIds); } catch { /* */ }
+}
+export function notifySelectionChanged(itemIds: number[]) {
+  currentSelectedItemIds = itemIds.slice();
+  for (const cb of selectionChangedListeners) try { cb(currentSelectedItemIds.slice()); } catch { /* */ }
 }
 
 // ── 权限注册表 ────────────────────────────────────────────────────────────
@@ -475,34 +489,45 @@ function getItems():    Promise<ItemWithTags[]> { return db.getItems(); }
 function getTags():     Promise<Tag[]>          { return db.getTags(); }
 function getCabinets(): Promise<Cabinet[]>      { return db.getCabinets(); }
 
-// 数据写入
-function addItem(path: string):                            Promise<Item>    { return db.addItem(path); }
-function removeItem(id: number):                           Promise<void>    { return db.removeItem(id); }
-function addTag(name: string, color: string):              Promise<Tag>     { return db.addTag(name, color); }
-function updateTag(id: number, n: string, c: string):      Promise<void>    { return db.updateTag(id, n, c); }
-function removeTag(id: number):                            Promise<void>    { return db.removeTag(id); }
-function setItemTags(itemId: number, tagIds: number[]):    Promise<void>    { return db.setItemTags(itemId, tagIds); }
+// 写入后重取并广播变更事件，使其它 Mod 经 onItemsChanged/onTagsChanged 感知到由
+// 本 Mod（或批量 API）发起的数据改动（best-effort，重取失败不影响写入结果）。
+async function notifyItemsRefreshed(): Promise<void> {
+  try { notifyItemsChanged(await db.getItems()); } catch { /* ignore */ }
+}
+async function notifyTagsRefreshed(): Promise<void> {
+  try { notifyTagsChanged(await db.getTags()); } catch { /* ignore */ }
+}
+
+// 数据写入：db 操作成功后派发对应变更事件
+async function addItem(path: string): Promise<Item> { const r = await db.addItem(path); await notifyItemsRefreshed(); return r; }
+async function removeItem(id: number): Promise<void> { await db.removeItem(id); await notifyItemsRefreshed(); }
+async function addTag(name: string, color: string): Promise<Tag> { const r = await db.addTag(name, color); await notifyTagsRefreshed(); return r; }
+async function updateTag(id: number, n: string, c: string): Promise<void> { await db.updateTag(id, n, c); await notifyTagsRefreshed(); }
+async function removeTag(id: number): Promise<void> { await db.removeTag(id); await notifyTagsRefreshed(); await notifyItemsRefreshed(); }
+async function setItemTags(itemId: number, tagIds: number[]): Promise<void> { await db.setItemTags(itemId, tagIds); await notifyItemsRefreshed(); }
 function launchItem(id: number):                           Promise<void>    { return db.launchItem(id); }
-function toggleFavorite(id: number):                       Promise<boolean> { return db.toggleFavorite(id); }
+async function toggleFavorite(id: number): Promise<boolean> { const r = await db.toggleFavorite(id); await notifyItemsRefreshed(); return r; }
 function addCabinet(name: string, color: string):          Promise<Cabinet> { return db.addCabinet(name, color); }
 function updateCabinet(id: number, n: string, c: string):  Promise<void>    { return db.updateCabinet(id, n, c); }
 function removeCabinet(id: number):                        Promise<void>    { return db.removeCabinet(id); }
-function addItemToCabinet(cId: number, iId: number):       Promise<void>    { return db.addItemToCabinet(cId, iId); }
-function removeItemFromCabinet(cId: number, iId: number):  Promise<void>    { return db.removeItemFromCabinet(cId, iId); }
+async function addItemToCabinet(cId: number, iId: number): Promise<void> { await db.addItemToCabinet(cId, iId); notifyCabinetItemsChanged(cId, [iId]); }
+async function removeItemFromCabinet(cId: number, iId: number): Promise<void> { await db.removeItemFromCabinet(cId, iId); notifyCabinetItemsChanged(cId, [iId]); }
 
-// 数据写入（批量版）：内部逐条调用 db 层，成功后派发对应变更事件
+// 数据写入（批量版）：走后端原子批量命令，成功后派发对应变更事件
 async function removeItems(ids: number[]): Promise<void> {
-  for (const id of ids) await db.removeItem(id);
+  await db.removeItems(ids);
+  await notifyItemsRefreshed();
 }
 async function setManyItemTags(updates: Array<{ itemId: number; tagIds: number[] }>): Promise<void> {
-  for (const u of updates) await db.setItemTags(u.itemId, u.tagIds);
+  await db.setManyItemTags(updates);
+  await notifyItemsRefreshed();
 }
 async function addItemsToCabinet(cabinetId: number, itemIds: number[]): Promise<void> {
-  for (const id of itemIds) await db.addItemToCabinet(cabinetId, id);
+  await db.addItemsToCabinet(cabinetId, itemIds);
   notifyCabinetItemsChanged(cabinetId, itemIds);
 }
 async function removeItemsFromCabinet(cabinetId: number, itemIds: number[]): Promise<void> {
-  for (const id of itemIds) await db.removeItemFromCabinet(cabinetId, id);
+  await db.removeItemsFromCabinet(cabinetId, itemIds);
   notifyCabinetItemsChanged(cabinetId, itemIds);
 }
 async function launchItems(ids: number[]): Promise<void> {
@@ -521,6 +546,8 @@ function onItemsChanged(cb: (i: ItemWithTags[]) => void)          { itemsChanged
 function onTagsChanged(cb: (t: Tag[]) => void)                    { tagsChangedListeners.add(cb);     return () => { tagsChangedListeners.delete(cb); }; }
 function onCabinetsChanged(cb: (c: Cabinet[]) => void)            { cabinetsChangedListeners.add(cb); return () => { cabinetsChangedListeners.delete(cb); }; }
 function onCabinetItemsChanged(cb: (cabinetId: number, itemIds: number[]) => void) { cabinetItemsChangedListeners.add(cb); return () => { cabinetItemsChangedListeners.delete(cb); }; }
+function getSelectedItemIds(): number[] { return currentSelectedItemIds.slice(); }
+function onSelectionChanged(cb: (ids: number[]) => void) { selectionChangedListeners.add(cb); return () => { selectionChangedListeners.delete(cb); }; }
 
 // UI
 function notify(msg: string, type: ToastType = "info") {
@@ -634,6 +661,11 @@ function createScope(modId: string): ModScope {
     trackUnsubscriber(modId, unsub);
     return unsub;
   }
+  function scopedOnSelectionChanged(cb: (ids: number[]) => void) {
+    const unsub = onSelectionChanged(cb);
+    trackUnsubscriber(modId, unsub);
+    return unsub;
+  }
   function scopedOnEvent(eventName: string, cb: (data: unknown, sourceModId: string) => void) {
     const unsub = onEvent(modId, eventName, cb);
     trackUnsubscriber(modId, unsub);
@@ -698,6 +730,8 @@ function createScope(modId: string): ModScope {
     onTagsChanged:     guarded("tags:read",     "onTagsChanged",     scopedOnTagsChanged),
     onCabinetsChanged: guarded("cabinets:read", "onCabinetsChanged", scopedOnCabinetsChanged),
     onCabinetItemsChanged: guarded("cabinets:read", "onCabinetItemsChanged", scopedOnCabinetItemsChanged),
+    getSelectedItemIds,
+    onSelectionChanged: scopedOnSelectionChanged,
 
     // 文件系统
     fs: {
@@ -773,6 +807,7 @@ export const modApi: TagLauncherModApi = {
   addCabinet, updateCabinet, removeCabinet, addItemToCabinet, removeItemFromCabinet,
   removeItems, setManyItemTags, addItemsToCabinet, removeItemsFromCabinet, launchItems,
   onSearchInput, onItemLaunched, onItemsChanged, onTagsChanged, onCabinetsChanged, onCabinetItemsChanged,
+  getSelectedItemIds, onSelectionChanged,
   notify,
 };
 

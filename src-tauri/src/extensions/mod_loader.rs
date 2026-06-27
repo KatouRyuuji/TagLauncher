@@ -137,3 +137,32 @@ pub fn read_mod_entrypoint(mod_dir: &Path, filename: &str) -> Result<String, Str
     }
     std::fs::read_to_string(&file_path).map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn semver_gte_compares_major_minor_patch() {
+        assert!(semver_gte("1.2.0", "1.1.0"));
+        assert!(semver_gte("1.1.0", "1.1.0"));
+        assert!(semver_gte("2.0.0", "1.9.9"));
+        assert!(!semver_gte("1.0.0", "1.1.0"));
+        assert!(!semver_gte("0.9.9", "1.0.0"));
+    }
+
+    #[test]
+    fn semver_satisfies_caret_gte_and_exact() {
+        // ^：同主版本且 >= 指定
+        assert!(semver_satisfies("1.2.3", "^1.0.0"));
+        assert!(semver_satisfies("1.0.0", "^1.0.0"));
+        assert!(!semver_satisfies("2.0.0", "^1.0.0"));
+        assert!(!semver_satisfies("0.9.0", "^1.0.0"));
+        // >=：大于等于
+        assert!(semver_satisfies("1.5.0", ">=1.0.0"));
+        assert!(!semver_satisfies("0.9.0", ">=1.0.0"));
+        // 精确匹配
+        assert!(semver_satisfies("1.0.0", "1.0.0"));
+        assert!(!semver_satisfies("1.0.1", "1.0.0"));
+    }
+}

@@ -149,23 +149,37 @@ pub fn remove_tag(conn: &Connection, id: i64) -> Result<(), String> {
     Ok(())
 }
 
-/// 设置项目的标签列表（全量替换）
-pub fn set_item_tags(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result<(), String> {
-    // 用事务把 DELETE + 全部 INSERT 包成原子操作：中途任一失败整体回滚，
-    // 避免出现"删光旧标签但只写入部分新标签"导致对象标签丢失的情况。
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-
-    tx.execute("DELETE FROM item_tags WHERE item_id = ?1", [item_id])
+/// 全量替换单个对象标签的核心逻辑（不含事务，供 set_item_tags 与 set_many_item_tags 复用）。
+fn set_item_tags_core(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result<(), String> {
+    conn.execute("DELETE FROM item_tags WHERE item_id = ?1", [item_id])
         .map_err(|e| e.to_string())?;
 
     for (position, tag_id) in tag_ids.iter().enumerate() {
-        tx.execute(
+        conn.execute(
             "INSERT INTO item_tags (item_id, tag_id, position) VALUES (?1, ?2, ?3)",
             params![item_id, *tag_id, position as i64],
         )
         .map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
 
+/// 设置项目的标签列表（全量替换）
+pub fn set_item_tags(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result<(), String> {
+    // 用事务把 DELETE + 全部 INSERT 包成原子操作：中途任一失败整体回滚，
+    // 避免出现"删光旧标签但只写入部分新标签"导致对象标签丢失的情况。
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    set_item_tags_core(&tx, item_id, tag_ids)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 批量设置多个对象的标签（整批一个事务，原子）。
+pub fn set_many_item_tags(conn: &Connection, changes: &[(i64, Vec<i64>)]) -> Result<(), String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    for (item_id, tag_ids) in changes {
+        set_item_tags_core(&tx, *item_id, tag_ids)?;
+    }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -211,5 +225,31 @@ mod tests {
         let names: Vec<&str> = item_tags.iter().map(|tag| tag.name.as_str()).collect();
 
         assert_eq!(names, vec!["Gamma", "Alpha", "Beta"]);
+    }
+
+    #[test]
+    fn set_many_item_tags_applies_all_changes_atomically() {
+        let conn = setup_conn();
+        for name in ["I1", "I2"] {
+            conn.execute(
+                "INSERT INTO items (name, path, type) VALUES (?1, ?1, 'exe')",
+                params![name],
+            )
+            .unwrap();
+        }
+        let i1: i64 = conn.query_row("SELECT id FROM items WHERE name='I1'", [], |r| r.get(0)).unwrap();
+        let i2: i64 = conn.query_row("SELECT id FROM items WHERE name='I2'", [], |r| r.get(0)).unwrap();
+        for name in ["T1", "T2"] {
+            conn.execute("INSERT INTO tags (name, color) VALUES (?1, '#fff')", params![name]).unwrap();
+        }
+        let t1: i64 = conn.query_row("SELECT id FROM tags WHERE name='T1'", [], |r| r.get(0)).unwrap();
+        let t2: i64 = conn.query_row("SELECT id FROM tags WHERE name='T2'", [], |r| r.get(0)).unwrap();
+
+        set_many_item_tags(&conn, &[(i1, vec![t1, t2]), (i2, vec![t2])]).expect("set many");
+
+        assert_eq!(get_item_tags(&conn, i1).unwrap().len(), 2);
+        let i2_tags = get_item_tags(&conn, i2).unwrap();
+        assert_eq!(i2_tags.len(), 1);
+        assert_eq!(i2_tags[0].name, "T2");
     }
 }

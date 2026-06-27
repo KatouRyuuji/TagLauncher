@@ -221,6 +221,22 @@ pub fn add_items(conn: &mut Connection, paths: Vec<String>) -> AddItemsResult {
     AddItemsResult { items, failed }
 }
 
+/// 批量删除项目（单条 DELETE ... IN (...) 语句，天然原子）。
+pub fn remove_items(conn: &Connection, ids: &[i64]) -> Result<(), String> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!("DELETE FROM items WHERE id IN ({})", placeholders);
+    let params = ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::ToSql)
+        .collect::<Vec<_>>();
+    conn.execute(&sql, params.as_slice())
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 删除项目
 pub fn remove_item(conn: &Connection, id: i64) -> Result<(), String> {
     conn.execute("DELETE FROM items WHERE id = ?1", [id])
@@ -256,19 +272,27 @@ pub fn update_item_icon(
     Ok(())
 }
 
-/// 获取所有项目（含标签和自动图标）
-pub fn get_items(app: &AppHandle, conn: &Connection) -> Result<Vec<ItemWithTags>, String> {
+/// 获取所有项目（含标签，不含自动图标）。
+/// 自动图标涉及文件系统/PowerShell IO，由调用方在释放 DB 锁后用 fill_visuals 补齐，
+/// 避免在持有 DB 锁期间串行执行重 IO 阻塞其它命令。
+pub fn get_items(conn: &Connection) -> Result<Vec<ItemWithTags>, String> {
     let sql = format!("SELECT {} FROM items ORDER BY {}", ITEM_COLS, ITEM_ORDER);
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
-    let mut items: Vec<Item> = stmt
+    let items: Vec<Item> = stmt
         .query_map([], item_from_row)
         .map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())
         .collect();
 
-    icon_service::fill_auto_visual_paths(app, &mut items);
     tag_service::items_with_tags(conn, items)
+}
+
+/// 在锁外为列表补齐自动可视路径（图标/封面）。
+pub fn fill_visuals(app: &AppHandle, items: &mut [ItemWithTags]) {
+    for iwt in items.iter_mut() {
+        icon_service::fill_item_visual(app, &mut iwt.item);
+    }
 }
 
 /// 获取单个项目（含标签和自动图标）
@@ -364,12 +388,15 @@ pub fn reconcile_items(conn: &Connection) -> Result<(), String> {
 
         if exists {
             if identity.is_none() {
-                // 回填文件ID（忽略可能的唯一冲突：极少数重复记录）
+                // 回填文件ID。唯一冲突=极少数多条记录指向同一物理文件(硬链接/历史重复)，
+                // 记录日志以便排查，不阻断对账（该记录退化为按 path 处理）。
                 if let Some(newid) = file_identity::get_identity(&path) {
-                    let _ = tx.execute(
+                    if let Err(e) = tx.execute(
                         "UPDATE items SET volume_serial = ?1, file_id = ?2 WHERE id = ?3",
                         params![newid.volume_serial as i64, newid.file_id_hex(), id],
-                    );
+                    ) {
+                        eprintln!("[reconcile] 回填 file_id 失败 (item {}): {}", id, e);
+                    }
                 }
             }
             if is_missing != 0 {
@@ -437,7 +464,62 @@ pub fn resolve_current_path(conn: &Connection, id: i64) -> Result<String, String
 
 #[cfg(test)]
 mod tests {
-    use super::detect_type;
+    use super::*;
+    use crate::db::schema;
+    use rusqlite::Connection;
+
+    fn setup() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch("PRAGMA foreign_keys = ON;").expect("fk");
+        schema::create_tables(&conn).expect("schema");
+        conn
+    }
+
+    #[test]
+    fn add_item_dedupes_by_path_when_no_file_identity() {
+        // 不存在的路径取不到文件ID，走"按 path 去重"分支
+        let conn = setup();
+        let p = r"D:\__tl_test_nonexistent__\a.exe";
+        let a = add_item(&conn, p).expect("add 1");
+        let b = add_item(&conn, p).expect("add 2");
+        assert_eq!(a.id, b.id, "同一不存在路径应去重为同一条记录");
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn remove_items_deletes_all_given_ids_atomically() {
+        let conn = setup();
+        let a = add_item(&conn, r"D:\__tl_test__\1.exe").unwrap();
+        let b = add_item(&conn, r"D:\__tl_test__\2.exe").unwrap();
+        let c = add_item(&conn, r"D:\__tl_test__\3.exe").unwrap();
+        remove_items(&conn, &[a.id, c.id]).expect("batch remove");
+        let remaining: Vec<i64> = {
+            let mut stmt = conn.prepare("SELECT id FROM items ORDER BY id").unwrap();
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+        assert_eq!(remaining, vec![b.id]);
+    }
+
+    #[test]
+    fn reconcile_marks_missing_for_nonexistent_path_without_identity() {
+        let conn = setup();
+        let a = add_item(&conn, r"D:\__tl_test_missing__\x.exe").unwrap();
+        let before: i64 = conn
+            .query_row("SELECT is_missing FROM items WHERE id=?1", [a.id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(before, 0);
+        reconcile_items(&conn).expect("reconcile");
+        let after: i64 = conn
+            .query_row("SELECT is_missing FROM items WHERE id=?1", [a.id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(after, 1, "路径不存在且无文件ID应标记失效");
+    }
 
     #[test]
     fn detect_type_supports_audio_without_common_video_containers() {

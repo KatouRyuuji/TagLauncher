@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import welcomeImage from "../assets/welcome.png";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 
 interface WelcomeModalProps {
   open: boolean;
@@ -25,6 +26,8 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
   useEffect(() => {
     if (open) setHideNextTime(false);
   }, [open]);
+
+  useEscapeKey(() => onClose(hideNextTime), open);
 
   if (!open) return null;
 

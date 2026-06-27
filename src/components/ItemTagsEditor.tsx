@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ItemWithTags, Tag } from "../types";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 
 interface ItemTagsEditorProps {
   item: ItemWithTags;
@@ -13,6 +14,8 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: Ite
   const [selectedIds, setSelectedIds] = useState<number[]>(item.tags.map((tag) => tag.id));
   const [saving, setSaving] = useState(false);
   const [newTagName, setNewTagName] = useState("");
+
+  useEscapeKey(onClose);
 
   const toggleTag = (id: number) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
