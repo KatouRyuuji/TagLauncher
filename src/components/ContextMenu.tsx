@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import * as db from "../lib/db";
@@ -212,7 +213,9 @@ export function ContextMenu({
     onClose();
   };
 
-  return (
+  // 通过 Portal 渲染到 body：彻底免疫祖先的 transform / will-change / overflow，
+  // 保证 position:fixed 始终相对视口定位（虚拟化列表内右键也精准跟随鼠标）。
+  return createPortal(
     <>
       <div
         className="fixed inset-0"
@@ -302,7 +305,8 @@ export function ContextMenu({
           ))}
         </div>
       )}
-    </>
+    </>,
+    document.body,
   );
 }
 

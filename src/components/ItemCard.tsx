@@ -104,8 +104,8 @@ function useItemDrag(
   };
 }
 
-/** 将 Mod 插槽的 HTMLElement 挂载到 ref 指向的容器 */
-function useSlotContainer(slots: ItemSlotDescriptor[], item: ItemWithTags) {
+/** 将 Mod 插槽的 HTMLElement 挂载到 ref 指向的容器（卡片/行共用） */
+export function useSlotContainer(slots: ItemSlotDescriptor[], item: ItemWithTags) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!ref.current || slots.length === 0) return;

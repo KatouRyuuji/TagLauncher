@@ -9,12 +9,14 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 ### 现有能力概览
 
 - 对象类型：`folder` / `image` / `audio` / `exe` / `bat` / `ps1`，未知文件按可启动对象归入 `exe`。
-- 标签 / 文件柜 / 收藏夹：三类筛选互斥；标签多选取交集；文件柜与收藏夹单选。
+- 对象身份：以「NTFS 卷序列号 + 文件ID」为唯一标识，跨重命名/同盘移动稳定；`path` 降级为可更新的「最近已知位置」。跨盘符移动（卷序列号变化）时，以内容签名（文件大小 + 首/尾 16KB 的 FNV-1a 哈希）兜底重定位自动找回，详见 `file_identity.rs`。
+- 标签系统（图状层级，DAG）：标签是集合、可多父继承构成有向无环图；选中父标签筛选时并入其所有后代标签的对象。三类筛选（标签/文件柜/收藏夹）互斥；标签多选取交集；提供关系编辑器与独立图谱视图。
 - 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量删除。
+- 视图虚拟化：网格与列表视图均经 `@tanstack/react-virtual` 虚拟化（measureElement 动态测高），仅渲染可见项，大库滚动流畅、内存可控。
 - 缩略图：支持手动设置/更换/清除；图片对象直接用图片，非图片对象提取系统图标缓存为 PNG，其余回退到类型 Emoji 图标。
 - 音频：提供 `get_audio_preview` 等对象预览命令。
 - 主题系统：内置主题 + 自定义 JSON 主题 + Mod 主题，支持变量/分层 token/组件 token/资源/字体/变体/自定义 CSS，以及导入、导出、刷新；启动时等待主题就绪再显示主窗口，避免闪烁。
-- Mod 扩展系统：支持 `css` / `css+js` / `theme` 三类 Mod，提供权限模型、生命周期回调、工具栏按钮、侧栏/浮动面板、卡片插槽、Mod 数据存储与文件读写接口。
+- Mod 扩展系统：支持 `css` / `css+js` / `theme` 三类 Mod，提供权限模型、生命周期回调、工具栏按钮、侧栏/浮动面板、卡片与列表行对等插槽、Mod 数据存储、文件读写、受约束的网络请求原语（`net.fetch` 经 Rust 后端代理）、只读标签关系等接口（API 版本 3.2.0）。
 
 ---
 
@@ -56,7 +58,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands/  ← 约 58 个 Tauri 命令       │  │
+│  │  commands/  ← 约 69 个 Tauri 命令       │  │
 │  │             (按 item/cabinet/tag/mod/   │  │
 │  │              settings/synonym/launch/   │  │
 │  │              object_preview/search 分模块)│  │
@@ -116,7 +118,7 @@ tag-launcher/
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── commands/             # Tauri 命令（按业务域分模块，约 58 个）
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，约 69 个）
 │   │   │   ├── item_commands.rs
 │   │   │   ├── cabinet_commands.rs
 │   │   │   ├── tag_commands.rs
@@ -146,7 +148,7 @@ tag-launcher/
 ### 4.1 ER 关系图
 
 ```
-items ──< item_tags >── tags
+items ──< item_tags >── tags ──< tag_relations >── tags（父子自关联，DAG）
   │
   └──< cabinet_items >── cabinets
 
@@ -169,8 +171,11 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | volume_serial | INTEGER | NTFS 卷序列号（对象特征，可空） |
 | file_id | TEXT | NTFS 文件ID 十六进制（对象特征，可空）；`(volume_serial, file_id)` 为身份唯一索引 |
 | is_missing | INTEGER | 文件是否丢失（0/1，删除/离线/跨盘移动且无法重定位） |
+| sig_size | INTEGER | 内容签名：文件字节大小（v006，仅文件，可空） |
+| sig_head | INTEGER | 内容签名：首 16KB 的 FNV-1a 哈希（v006，可空） |
+| sig_tail | INTEGER | 内容签名：尾 16KB 的 FNV-1a 哈希（v006，可空） |
 
-> 对象身份以 `(volume_serial, file_id)` 为准（NTFS 文件ID，跨重命名/同盘移动稳定）；`path` 为可更新的最近已知位置。取不到文件ID的对象回退按 `path` 去重。详见 `src-tauri/src/services/file_identity.rs` 与迁移 `v005_object_identity`。
+> 对象身份以 `(volume_serial, file_id)` 为准（NTFS 文件ID，跨重命名/同盘移动稳定）；`path` 为可更新的最近已知位置。取不到文件ID的对象回退按 `path` 去重。**跨盘符移动时文件ID失效，由内容签名 `(sig_size, sig_head, sig_tail)` 在候选盘兜底重定位**。详见 `src-tauri/src/services/file_identity.rs` 与迁移 `v005_object_identity` / `v006_object_signature`。
 
 #### tags（标签表）
 | 列名 | 类型 | 说明 |
@@ -184,6 +189,15 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 |------|------|------|
 | item_id | INTEGER FK | 关联 items.id，级联删除 |
 | tag_id | INTEGER FK | 关联 tags.id，级联删除 |
+| position | INTEGER | 标签在对象内的展示顺序 |
+
+#### tag_relations（标签父子关系表，v007 · 图状 DAG）
+| 列名 | 类型 | 说明 |
+|------|------|------|
+| parent_id | INTEGER FK | 父标签，关联 tags.id，级联删除 |
+| child_id | INTEGER FK | 子标签，关联 tags.id，级联删除；`(parent_id, child_id)` 为主键 |
+
+> 标签构成有向无环图（DAG，可多父继承）：父标签是子标签的超集。新增关系时服务层做环检测（`add_tag_relation`），筛选时用 `WITH RECURSIVE` 展开后代（`expand_with_descendants`）。
 
 #### cabinets（文件柜表）
 | 列名 | 类型 | 说明 |
@@ -207,7 +221,9 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ## 五、Tauri 命令清单
 
-后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计约 58 个 `#[tauri::command]`，按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、缩略图预览等命令未全部展开）：
+后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 69 个 `#[tauri::command]`，按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、缩略图预览等命令未全部展开）：
+
+> v1.2.0 新增命令：`relocate_missing`（跨盘签名找回）、`get_tag_relations` / `add_tag_relation` / `remove_tag_relation`（标签 DAG）、`net_fetch`（Mod 网络原语）。
 
 | 命令名 | 参数 | 返回值 | 说明 |
 |--------|------|--------|------|
@@ -344,7 +360,7 @@ npm run tauri dev    # 启动 Tauri 开发窗口
 npm run tauri build  # 编译 + 打包 NSIS 安装包
 ```
 
-产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.1.0_x64-setup.exe`
+产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.2.0_x64-setup.exe`
 
 ### 部署
 - 安装包部署：运行 NSIS `-setup.exe` 完成安装（安装语言可选 English / SimpChinese）。

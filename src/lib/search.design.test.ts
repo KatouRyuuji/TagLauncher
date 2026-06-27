@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "./search";
+import { buildDescendantsMap } from "./tagGraph";
 import { setSynonymGroups } from "./synonyms";
 import type { ItemWithTags } from "../types";
 
@@ -50,6 +51,15 @@ assert.deepEqual(searchWithIndex(allIndex, "@忍者").map((i) => i.id), []);
 const tagFiltered = filterItemsByTags(items, [1, 3]);
 assert.deepEqual(tagFiltered.map((i) => i.id), [3]);
 assert.equal(tagFiltered[0], items[2]);
+
+// 图状标签层级：父标签 10 → 子标签 1（"2d游戏"）。选中父标签应并入打了子标签的对象（1、3）。
+const descMap = buildDescendantsMap([{ parentId: 10, childId: 1 }]);
+const expand = (id: number) => descMap.get(id) ?? new Set([id]);
+assert.deepEqual(filterItemsByTags(items, [10], expand).map((i) => i.id), [1, 3]);
+// 与其它选中标签求交集：父标签 10（并入子1） AND 标签 3 → 仅同时满足者（item 3）
+assert.deepEqual(filterItemsByTags(items, [10, 3], expand).map((i) => i.id), [3]);
+// 不传 expand 时退化为精确匹配：没有对象直接打了标签 10
+assert.deepEqual(filterItemsByTags(items, [10]).map((i) => i.id), []);
 
 // B1：多重排除应左结合 ((A−B)−C)，依次差集，而非右结合错误保留满足最后排除条件者
 const excludeItems = [item(11, "alpha"), item(12, "beta"), item(13, "gamma")];

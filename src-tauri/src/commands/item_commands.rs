@@ -98,3 +98,22 @@ pub fn toggle_favorite(db: State<Database>, id: i64) -> Result<bool, String> {
     let conn = db.get_conn();
     item_service::toggle_favorite(&conn, id)
 }
+
+/// 对失效对象按内容签名做跨盘符兜底找回，返回成功找回数量。
+/// 扫描阶段在锁外执行：先取数据释放锁 → 扫描候选盘 → 再加锁回写，避免长扫描阻塞其它命令。
+#[tauri::command]
+pub fn relocate_missing(db: State<Database>) -> Result<usize, String> {
+    let rows = {
+        let conn = db.get_conn();
+        item_service::read_missing_signatures(&conn)?
+    };
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let found = item_service::scan_for_signatures(&rows);
+    if found.is_empty() {
+        return Ok(0);
+    }
+    let conn = db.get_conn();
+    item_service::apply_signature_relocations(&conn, &found)
+}

@@ -207,6 +207,9 @@ pub fn run() {
             update_tag,
             remove_tag,
             set_item_tags,
+            get_tag_relations,
+            add_tag_relation,
+            remove_tag_relation,
             // 搜索
             search_items,
             // 启动/打开
@@ -215,6 +218,8 @@ pub fn run() {
             open_in_explorer_by_id,
             // 收藏
             toggle_favorite,
+            // 跨盘符兜底找回
+            relocate_missing,
             // 文件柜
             get_cabinets,
             add_cabinet,
@@ -237,6 +242,8 @@ pub fn run() {
             get_theme_directory_info,
             install_theme_file,
             export_theme_file,
+            // Mod 网络原语
+            net_fetch,
             // Mod
             get_mods,
             get_mod_load_errors,

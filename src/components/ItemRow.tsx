@@ -11,6 +11,8 @@ import {
 } from "../lib/internalPointerDrag";
 import { getFileSuffix, getTypeLabel } from "../lib/itemUtils";
 import { useInternalDragStore } from "../stores/internalDragStore";
+import { useModItemSlots } from "../hooks/useModItemSlots";
+import { useSlotContainer } from "./ItemCard";
 import type { ItemCardProps } from "./ItemCard";
 
 function ItemRowComponent({
@@ -33,6 +35,12 @@ function ItemRowComponent({
 }: ItemCardProps) {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [showTagEditor, setShowTagEditor] = useState(false);
+
+  // Mod 插槽（与 ItemCard 对等：header / actions / footer）
+  const modSlots = useModItemSlots();
+  const headerSlotRef = useSlotContainer(modSlots.header, item);
+  const actionsSlotRef = useSlotContainer(modSlots.actions, item);
+  const footerSlotRef = useSlotContainer(modSlots.footer, item);
   const tagDragOver = useInternalDragStore((state) =>
     state.drag?.kind === "tag" &&
     state.hoverTarget?.kind === "tag-item" &&
@@ -123,6 +131,7 @@ function ItemRowComponent({
           <span className="inline-flex h-7 w-7 items-center justify-center">
             <FavoriteStar active={item.is_favorite} />
           </span>
+          {modSlots.header.length > 0 && <div ref={headerSlotRef} className="flex items-center" />}
         </div>
 
         <div className="flex min-w-0 items-center gap-3">
@@ -159,6 +168,7 @@ function ItemRowComponent({
         </div>
 
         <div className="text-right">
+          {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="mb-1 flex justify-end" />}
           <p className="text-sm font-semibold text-[var(--text-tertiary)]" title={getTypeLabel(item.type)}>
             {getTypeLabel(item.type)}
           </p>
@@ -167,6 +177,10 @@ function ItemRowComponent({
           </p>
         </div>
       </div>
+
+      {modSlots.footer.length > 0 && (
+        <div ref={footerSlotRef} className="px-4 py-1 border-b border-[var(--border-subtle)]" />
+      )}
 
       {menuPos && (
         <ContextMenu

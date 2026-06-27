@@ -31,8 +31,15 @@ export function beginInternalPointerDrag({
   const previousUserSelect = document.body.style.userSelect;
   let activated = false;
   let finished = false;
+  let rafId: number | null = null;
+  let pendingMove: PointerEvent | null = null;
 
   const cleanup = () => {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    pendingMove = null;
     window.removeEventListener("pointermove", handlePointerMove, true);
     window.removeEventListener("pointerup", handlePointerUp, true);
     window.removeEventListener("pointercancel", handlePointerCancel, true);
@@ -41,6 +48,18 @@ export function beginInternalPointerDrag({
       sourceElement.releasePointerCapture?.(pointerId);
     }
     document.body.style.userSelect = previousUserSelect;
+  };
+
+  // 拖拽中每帧最多处理一次位置/落点更新，避免高刷屏下 elementFromPoint 与 store 写入过密
+  const flushMove = () => {
+    rafId = null;
+    const moveEvent = pendingMove;
+    pendingMove = null;
+    if (!moveEvent || finished || !activated) {
+      return;
+    }
+    useInternalDragStore.getState().updateDrag(moveEvent.clientX, moveEvent.clientY);
+    useInternalDragStore.getState().setHoverTarget(findHoverTarget(moveEvent));
   };
 
   const finish = async (target: InternalDragHoverTarget) => {
@@ -77,15 +96,18 @@ export function beginInternalPointerDrag({
     }
 
     if (!activated) {
+      // 激活帧立即处理，保证拖拽起始视觉与落点无延迟
       activated = true;
       document.body.style.userSelect = "none";
       useInternalDragStore.getState().startDrag(payload, moveEvent.clientX, moveEvent.clientY);
+      useInternalDragStore.getState().setHoverTarget(findHoverTarget(moveEvent));
     } else {
-      useInternalDragStore.getState().updateDrag(moveEvent.clientX, moveEvent.clientY);
+      // 后续移动合并到下一帧统一处理
+      pendingMove = moveEvent;
+      if (rafId === null) {
+        rafId = requestAnimationFrame(flushMove);
+      }
     }
-
-    const target = findHoverTarget(moveEvent);
-    useInternalDragStore.getState().setHoverTarget(target);
     moveEvent.preventDefault();
   };
 

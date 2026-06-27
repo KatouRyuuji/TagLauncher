@@ -7,6 +7,8 @@ interface SelectionCanvasProps {
   children: React.ReactNode;
   className?: string;
   dataRegion?: string;
+  /** 将滚动容器的 DOM 元素同步到此 ref，供虚拟化器（virtualizer）使用 */
+  scrollElementRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 interface Rect {
@@ -65,6 +67,7 @@ export function SelectionCanvas({
   children,
   className,
   dataRegion,
+  scrollElementRef,
 }: SelectionCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; active: boolean } | null>(null);
@@ -165,7 +168,10 @@ export function SelectionCanvas({
 
   return (
     <div
-      ref={containerRef}
+      ref={(el) => {
+        containerRef.current = el;
+        if (scrollElementRef) (scrollElementRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+      }}
       data-region={dataRegion}
       className={`relative ${className ?? ""}`}
       onPointerDown={handlePointerDown}

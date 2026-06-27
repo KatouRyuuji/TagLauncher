@@ -100,13 +100,13 @@ src-tauri/src/
 ## 4.1 `db/`（连接、schema 与迁移）
 
 - 采用 SQLite（`rusqlite` bundled）。
-- `connection.rs` 负责连接与 `PRAGMA`，`schema.rs` 建表并幂等回填 FTS，`migrations/` 下按版本（v001..v004）做表结构迁移。
-- 表结构包括：`items`、`tags`、`item_tags`、`items_fts`、`cabinets`、`cabinet_items`、`mod_kv`、`mod_records` 等。
-- 迁移逻辑：例如 `items.type` 先后扩展支持 `image`、`audio`（v004）。
+- `connection.rs` 负责连接与 `PRAGMA`，`schema.rs` 建表并幂等回填 FTS，`migrations/` 下按版本（v001..v007）做表结构迁移。
+- 表结构包括：`items`、`tags`、`item_tags`、`tag_relations`、`items_fts`、`cabinets`、`cabinet_items`、`mod_kv`、`mod_records` 等。
+- 迁移逻辑：`items.type` 扩展支持 `image`/`audio`（v004）→ 对象身份去 path 唯一+加文件ID（v005）→ 内容签名列（v006）→ 标签父子关系表（v007）。
 
 ## 4.2 `commands/`（命令实现，按域分模块）
 
-实际约 58 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/settings/synonym/launch/object_preview/search），命令体一般转调 `services/` 下的业务服务。主要命令组：
+实际约 69 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/net/settings/synonym/launch/object_preview/search），命令体一般转调 `services/` 下的业务服务。主要命令组：
 
 - 对象：`add_item` / `add_items` / `remove_item` / `get_items` / `launch_item` / `update_item_icon`
 - 标签：`get_tags` / `add_tag` / `update_tag` / `remove_tag` / `set_item_tags`
@@ -193,7 +193,7 @@ npm run tauri build
 
 产物：
 
-- `src-tauri/target/release/bundle/nsis/TagLauncher_1.1.0_x64-setup.exe`
+- `src-tauri/target/release/bundle/nsis/TagLauncher_1.2.0_x64-setup.exe`
 
 NSIS 安装包会创建开始菜单快捷方式；桌面快捷方式在安装功能选择页中作为可选项；安装语言可选 English / SimpChinese。
 

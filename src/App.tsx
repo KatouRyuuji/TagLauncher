@@ -16,6 +16,8 @@ import { RemoveFromAppConfirmDialog } from "./components/RemoveFromAppConfirmDia
 import { useItems } from "./hooks/useItems";
 import { useTags } from "./hooks/useTags";
 import { useCabinets } from "./hooks/useCabinets";
+import { useTagRelations } from "./hooks/useTagRelations";
+import { TagGraphView } from "./components/TagGraphView";
 import { useAppStore } from "./stores/appStore";
 import { useInternalDragStore } from "./stores/internalDragStore";
 import { loadSynonyms } from "./lib/synonyms";
@@ -38,6 +40,7 @@ const SKIP_REMOVE_ITEM_CONFIRM_KEY = "taglauncher.skip_remove_item_confirm";
 function App() {
   const {
     items,
+    allItems,
     loading,
     addItems,
     removeItem,
@@ -56,7 +59,9 @@ function App() {
   } = useItems();
   const { tags, addTag, updateTag, removeTag } = useTags();
   const { addCabinet, updateCabinet, removeCabinet } = useCabinets();
+  const { addRelation: addTagRelation, removeRelation: removeTagRelation } = useTagRelations();
   const viewMode = useAppStore((state) => state.viewMode);
+  const tagGraphOpen = useAppStore((state) => state.tagGraphOpen);
   const cabinets = useAppStore((state) => state.cabinets);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
@@ -577,6 +582,9 @@ function App() {
         onUpdateCabinet={updateCabinet}
         onRemoveCabinet={removeCabinet}
         onAddTagToItem={handleAddTagToItem}
+        onAddTagRelation={addTagRelation}
+        onRemoveTagRelation={removeTagRelation}
+        allItems={allItems}
         modPanels={sidebarPanels}
       />
       <main
@@ -633,6 +641,7 @@ function App() {
         onCancel={handleCancelRemoveFromApp}
       />
       <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
+      {tagGraphOpen && <TagGraphView allItems={allItems} />}
       <FloatingPanels />
       <ToastContainer />
       <MigrationDialog

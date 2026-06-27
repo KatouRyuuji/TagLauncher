@@ -78,21 +78,36 @@ fn query_items_by_text_like(conn: &Connection, query: &str) -> Result<Vec<Item>,
     Ok(items)
 }
 
+/// 为每个选中标签构建「对象拥有该标签或其任一后代」的 EXISTS 子句；
+/// 多个选中标签之间为 AND（交集语义，但每个选中项并入其后代）。
+/// 返回 (合并后的 WHERE 片段, 顺序参数)。
+fn tag_group_clauses(conn: &Connection, tag_ids: &[i64]) -> Result<(String, Vec<i64>), String> {
+    let mut clauses: Vec<String> = Vec::new();
+    let mut params: Vec<i64> = Vec::new();
+    for &tid in tag_ids {
+        // expand 至少含自身，不会为空
+        let expanded = tag_service::expand_with_descendants(conn, &[tid])?;
+        let ph = expanded.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        clauses.push(format!(
+            "EXISTS (SELECT 1 FROM item_tags it WHERE it.item_id = i.id AND it.tag_id IN ({}))",
+            ph
+        ));
+        params.extend(expanded);
+    }
+    Ok((clauses.join(" AND "), params))
+}
+
 fn query_items_by_tags(conn: &Connection, tag_ids: &[i64]) -> Result<Vec<Item>, String> {
-    let placeholders: Vec<String> = tag_ids.iter().map(|_| "?".to_string()).collect();
+    let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
     let sql = format!(
-        "SELECT DISTINCT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
+        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
          FROM items i
-         INNER JOIN item_tags it ON i.id = it.item_id
-         WHERE it.tag_id IN ({})
-         GROUP BY i.id
-         HAVING COUNT(DISTINCT it.tag_id) = {}
+         WHERE {}
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
-        placeholders.join(","),
-        tag_ids.len()
+        clause
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let params: Vec<&dyn rusqlite::ToSql> = tag_ids
+    let params: Vec<&dyn rusqlite::ToSql> = group_params
         .iter()
         .map(|id| id as &dyn rusqlite::ToSql)
         .collect();
@@ -115,25 +130,21 @@ fn query_items_by_text_and_tags(
         return query_items_by_text_and_tags_like(conn, query, tag_ids);
     }
 
-    let placeholders: Vec<String> = tag_ids.iter().map(|_| "?".to_string()).collect();
+    let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
     let sql = format!(
-        "SELECT DISTINCT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
+        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
          FROM items i
          INNER JOIN items_fts ON i.id = items_fts.rowid
-         INNER JOIN item_tags it ON i.id = it.item_id
          WHERE items_fts MATCH ?1
-         AND it.tag_id IN ({})
-         GROUP BY i.id
-         HAVING COUNT(DISTINCT it.tag_id) = {}
+         AND {}
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
-        placeholders.join(","),
-        tag_ids.len()
+        clause
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
     let mut params_values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(search_query)];
-    for id in tag_ids {
-        params_values.push(Box::new(*id));
+    for id in group_params {
+        params_values.push(Box::new(id));
     }
     let params: Vec<&dyn rusqlite::ToSql> = params_values.iter().map(|p| p.as_ref()).collect();
 
@@ -155,24 +166,20 @@ fn query_items_by_text_and_tags_like(
     tag_ids: &[i64],
 ) -> Result<Vec<Item>, String> {
     let search_query = format!("%{}%", query);
-    let placeholders: Vec<String> = tag_ids.iter().map(|_| "?".to_string()).collect();
+    let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
     let sql = format!(
-        "SELECT DISTINCT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
+        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
          FROM items i
-         INNER JOIN item_tags it ON i.id = it.item_id
          WHERE (i.name LIKE ?1 OR i.path LIKE ?1)
-         AND it.tag_id IN ({})
-         GROUP BY i.id
-         HAVING COUNT(DISTINCT it.tag_id) = {}
+         AND {}
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
-        placeholders.join(","),
-        tag_ids.len()
+        clause
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
     let mut params_values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(search_query)];
-    for id in tag_ids {
-        params_values.push(Box::new(*id));
+    for id in group_params {
+        params_values.push(Box::new(id));
     }
     let params: Vec<&dyn rusqlite::ToSql> = params_values.iter().map(|p| p.as_ref()).collect();
 
@@ -301,5 +308,33 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "Alpha");
+    }
+
+    #[test]
+    fn selecting_parent_tag_includes_child_tagged_items() {
+        let conn = setup_conn();
+        let game = insert_item(&conn, "GameA", r"D:\GameA.exe");
+        let _tool = insert_item(&conn, "ToolB", r"D:\ToolB.exe");
+
+        // 标签层级：娱乐(父) → 游戏(子)
+        conn.execute("INSERT INTO tags (name,color) VALUES ('娱乐','#fff')", [])
+            .unwrap();
+        let ent = conn.last_insert_rowid();
+        conn.execute("INSERT INTO tags (name,color) VALUES ('游戏','#fff')", [])
+            .unwrap();
+        let g = conn.last_insert_rowid();
+        crate::services::tag_service::add_tag_relation(&conn, ent, g).unwrap();
+
+        // GameA 仅打"游戏"标签
+        conn.execute(
+            "INSERT INTO item_tags (item_id, tag_id) VALUES (?1, ?2)",
+            params![game, g],
+        )
+        .unwrap();
+
+        // 选父标签"娱乐"应并入子标签"游戏"的对象 GameA（集合包含语义）
+        let items = query_items_by_tags(&conn, &[ent]).expect("by parent tag");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "GameA");
     }
 }

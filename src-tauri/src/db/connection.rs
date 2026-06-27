@@ -64,11 +64,11 @@ mod tests {
             // WAL 在文件库上已启用
             let mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
             assert_eq!(mode.to_lowercase(), "wal");
-            // 迁移执行到 v5
+            // 迁移执行到最新版本
             let ver: String = conn
                 .query_row("SELECT value FROM app_meta WHERE key='schema_version'", [], |r| r.get(0))
                 .unwrap();
-            assert_eq!(ver, "5");
+            assert_eq!(ver, "7");
             // 身份列就位
             let cols: i64 = conn
                 .query_row(

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { ItemWithTags } from "../types";
 import { TYPE_ICONS } from "../lib/itemUtils";
@@ -7,17 +7,23 @@ export function ItemVisualIcon({ item, emojiClass, imageClass }: { item: ItemWit
   const [imageFailed, setImageFailed] = useState(false);
   const iconPath = item.icon_path?.trim();
 
+  // 图标路径不变时复用同一资源 URL，避免大列表每次渲染重复做路径转换
+  const imageSrc = useMemo(
+    () => (iconPath ? convertFileSrc(iconPath.replace(/\\/g, "/")) : null),
+    [iconPath],
+  );
+
   useEffect(() => {
     setImageFailed(false);
   }, [iconPath]);
 
-  if (iconPath && !imageFailed) {
-    const normalizedPath = iconPath.replace(/\\/g, "/");
+  if (imageSrc && !imageFailed) {
     return (
       <img
-        src={convertFileSrc(normalizedPath)}
+        src={imageSrc}
         alt={`${item.name} 缩略图`}
         className={imageClass}
+        loading="lazy"
         onError={() => setImageFailed(true)}
         draggable={false}
       />

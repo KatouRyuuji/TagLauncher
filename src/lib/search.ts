@@ -77,10 +77,24 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
   };
 }
 
-export function filterItemsByTags(items: ItemWithTags[], selectedTagIds: number[]): ItemWithTags[] {
+/**
+ * 按选中标签筛选（AND 交集）。
+ * 传入 `expand` 时支持图状层级：每个选中标签的命中条件 = 对象拥有 {该标签 ∪ 其后代} 中任一标签
+ * （选中父标签即并入所有后代对象）；不传 `expand` 时退化为精确标签匹配。
+ */
+export function filterItemsByTags(
+  items: ItemWithTags[],
+  selectedTagIds: number[],
+  expand?: (tagId: number) => Set<number>,
+): ItemWithTags[] {
   if (selectedTagIds.length === 0) return items;
   return items.filter((item) =>
-    selectedTagIds.every((tid) => item.tags.some((t) => t.id === tid)),
+    selectedTagIds.every((tid) => {
+      const allowed = expand ? expand(tid) : null;
+      return allowed
+        ? item.tags.some((t) => allowed.has(t.id))
+        : item.tags.some((t) => t.id === tid);
+    }),
   );
 }
 

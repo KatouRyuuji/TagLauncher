@@ -13,7 +13,7 @@
 // ============================================================================
 
 import { invoke } from "@tauri-apps/api/core";
-import type { Item, Tag, ItemWithTags, Cabinet } from "../types";
+import type { Item, Tag, TagRelation, ItemWithTags, Cabinet } from "../types";
 
 /**
  * 统一的 invoke 包装：捕获后端错误并抛出带命令名的可读错误，
@@ -116,6 +116,23 @@ export async function setItemTags(itemId: number, tagIds: number[]): Promise<voi
   return invokeCmd("set_item_tags", { itemId, tagIds });
 }
 
+// ---- 标签层级关系（DAG，多继承） ----
+
+/** 获取所有父子关系边 */
+export async function getTagRelations(): Promise<TagRelation[]> {
+  return invokeCmd("get_tag_relations");
+}
+
+/** 新增父子关系（后端会拒绝自环/成环关系，抛出错误） */
+export async function addTagRelation(parentId: number, childId: number): Promise<void> {
+  return invokeCmd("add_tag_relation", { parentId, childId });
+}
+
+/** 删除父子关系 */
+export async function removeTagRelation(parentId: number, childId: number): Promise<void> {
+  return invokeCmd("remove_tag_relation", { parentId, childId });
+}
+
 // ---- 搜索 ----
 
 /** 后端搜索（当前未使用，主界面使用前端内存搜索） */
@@ -191,6 +208,38 @@ export async function getAudioPreview(path: string): Promise<AudioPreviewInfo> {
 /** 切换收藏状态，返回新的收藏状态 */
 export async function toggleFavorite(id: number): Promise<boolean> {
   return invokeCmd("toggle_favorite", { id });
+}
+
+// ---- 跨盘符兜底找回 ----
+
+/** 对失效对象按内容签名做跨盘找回，返回成功找回数量（扫描在后端锁外进行） */
+export async function relocateMissing(): Promise<number> {
+  return invokeCmd("relocate_missing");
+}
+
+// ---- Mod 网络 API ----
+
+export interface NetFetchRequest {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  timeoutMs?: number;
+}
+
+export interface NetFetchResponse {
+  status: number;
+  headers: Record<string, string>;
+  /** 响应体（base64 编码）*/
+  body: string;
+}
+
+/**
+ * Mod 网络原语：仅支持 http/https，强制超时与响应体大小上限（10MB）。
+ * 供 modApi net.fetch 调用；业务逻辑由 Mod 自行实现。
+ */
+export async function netFetch(req: NetFetchRequest): Promise<NetFetchResponse> {
+  return invokeCmd("net_fetch", { req });
 }
 
 // ---- 文件柜操作 ----

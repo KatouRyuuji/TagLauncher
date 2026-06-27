@@ -1,7 +1,11 @@
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ItemViewProps } from "../types";
 import { ItemRow } from "./ItemRow";
 import { SelectionCanvas } from "./SelectionCanvas";
+
+/** 列表行初始估算高度（py-3 × 2 + icon 44px ≈ 68px）；真实高度由 measureElement 动态校正 */
+const LIST_ROW_HEIGHT = 68;
 
 type ItemRowViewProps = Omit<
   ItemViewProps,
@@ -125,6 +129,14 @@ export function ItemListView({
   const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
   const itemIds = useMemo(() => items.map((item) => item.id), [items]);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => LIST_ROW_HEIGHT,
+    overscan: 6,
+  });
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center px-6 py-10">
@@ -163,6 +175,7 @@ export function ItemListView({
       itemIds={itemIds}
       selectedItemIds={selectedItemIds}
       onSelectItems={onSelectItems}
+      scrollElementRef={scrollRef}
     >
       <div className="surface-card overflow-hidden">
         <div className="sticky top-0 z-10 grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_96%,transparent)] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
@@ -172,14 +185,32 @@ export function ItemListView({
           <span className="text-right">类型</span>
         </div>
 
-        {items.map((item) => (
-          <ItemListRow
-            key={item.id}
-            item={item}
-            viewProps={viewProps}
-            selected={selectedItemIdSet.has(item.id)}
-          />
-        ))}
+        {/* 虚拟化列表：position:relative 撑开滚动高度；行用 top 定位（非 transform，
+            否则会令行内右键菜单等 position:fixed 元素错位），高度由 measureElement 动态测量。 */}
+        <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+          {virtualizer.getVirtualItems().map((vRow) => {
+            const item = items[vRow.index]!;
+            return (
+              <div
+                key={vRow.key}
+                data-index={vRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: vRow.start,
+                  left: 0,
+                  right: 0,
+                }}
+              >
+                <ItemListRow
+                  item={item}
+                  viewProps={viewProps}
+                  selected={selectedItemIdSet.has(item.id)}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
     </SelectionCanvas>
   );

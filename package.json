@@ -1,6 +1,6 @@
 {
   "name": "tag-launcher",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "标签式文件管理器",
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "test:design": "esbuild src/lib/search.design.test.ts --bundle --platform=node --format=esm --outfile=.tmp-test/search.design.test.mjs && node .tmp-test/search.design.test.mjs"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.14.4",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-shell": "^2.3.5",

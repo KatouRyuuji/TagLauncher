@@ -1,10 +1,14 @@
+// 备用图标生成脚本（手动运行：node generate-icon.mjs）。
+// 推荐优先使用官方命令：`npm run tauri icon src/assets/icon.png`
+// 它会从同一源图生成全部平台图标（含 icon.icns / @2x / Square / android / ios）。
 import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 import pngToIco from 'png-to-ico';
 
 const iconDir = './src-tauri/icons';
-const sourceIcon = './tagicon.png';
+// 应用图标唯一源（以此为准）
+const sourceIcon = './src/assets/icon.png';
 
 async function generateIcon() {
   const baseImage = sharp(sourceIcon);
@@ -19,6 +23,8 @@ async function generateIcon() {
   }
 
   await baseImage.clone().resize(512, 512).png().toFile(path.join(iconDir, 'icon.png'));
+  // tauri.conf.json 引用的高分屏图标（256x256 内容，按 @2x 命名）
+  await baseImage.clone().resize(256, 256).png().toFile(path.join(iconDir, '128x128@2x.png'));
 
   const icoBuffer = await pngToIco([
     path.join(iconDir, '32x32.png'),

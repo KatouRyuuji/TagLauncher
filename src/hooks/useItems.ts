@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } f
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
+import { buildDescendantsMap } from "../lib/tagGraph";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import type { ItemWithTags } from "../types";
 
@@ -73,6 +74,7 @@ export function useItems() {
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const showFavorites = useAppStore((state) => state.showFavorites);
+  const tagRelations = useAppStore((state) => state.tagRelations);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const [allItems, setAllItems] = useState<ItemWithTags[]>([]);
@@ -80,6 +82,8 @@ export function useItems() {
   const [loading, setLoading] = useState(true);
   const allItemsRef = useRef<ItemWithTags[]>([]);
   const cabinetItemsRef = useRef<ItemWithTags[]>([]);
+  const relocatingRef = useRef(false);
+  const relocateMissingRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     allItemsRef.current = allItems;
@@ -111,6 +115,8 @@ export function useItems() {
           `${newlyMissing.length} 个对象的文件已丢失或移动到其他磁盘：${names}${suffix}（归类已保留，文件恢复后会自动重新关联）`,
           "warning",
         );
+        // 兜底：后台按内容签名尝试跨盘找回（扫描在后端 DB 锁外执行，不阻塞）。
+        relocateMissingRef.current();
       }
     } catch (e) {
       console.error("Failed to load items:", e);
@@ -118,6 +124,32 @@ export function useItems() {
       setLoading(false);
     }
   }, []);
+
+  // 跨盘符兜底找回：对失效对象按内容签名扫描候选盘，命中则刷新并提示。
+  // 用 relocatingRef 防止并发/重复扫描；成功找回 0 个时保持安静。
+  const relocateMissing = useCallback(async (): Promise<number> => {
+    if (relocatingRef.current) return 0;
+    relocatingRef.current = true;
+    try {
+      const recovered = await db.relocateMissing();
+      if (recovered > 0) {
+        await loadAll();
+        showToast(`已跨盘找回 ${recovered} 个对象`, "success");
+      }
+      return recovered;
+    } catch (e) {
+      console.error("跨盘找回失败:", e);
+      return 0;
+    } finally {
+      relocatingRef.current = false;
+    }
+  }, [loadAll]);
+
+  useEffect(() => {
+    relocateMissingRef.current = () => {
+      void relocateMissing();
+    };
+  }, [relocateMissing]);
 
   useEffect(() => {
     if (selectedCabinetId === null) return;
@@ -163,9 +195,13 @@ export function useItems() {
     return allItems;
   }, [allItems, cabinetItems, selectedCabinetId, showFavorites]);
 
+  // 标签后代闭包：选中父标签时并入其所有后代标签的对象（图状层级筛选）。
+  const descendantsMap = useMemo(() => buildDescendantsMap(tagRelations), [tagRelations]);
+
   const tagFiltered = useMemo(
-    () => filterItemsByTags(source, selectedTagIds),
-    [source, selectedTagIds],
+    () =>
+      filterItemsByTags(source, selectedTagIds, (id) => descendantsMap.get(id) ?? new Set([id])),
+    [source, selectedTagIds, descendantsMap],
   );
 
   const searchIndex = useMemo(
@@ -330,8 +366,10 @@ export function useItems() {
 
   return {
     items: filtered,
+    allItems,
     loading,
     refresh: loadAll,
+    relocateMissing,
     addItems,
     removeItem,
     removeItems,

@@ -18,7 +18,10 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             is_favorite INTEGER DEFAULT 0,
             volume_serial INTEGER,
             file_id TEXT,
-            is_missing INTEGER NOT NULL DEFAULT 0
+            is_missing INTEGER NOT NULL DEFAULT 0,
+            sig_size INTEGER,
+            sig_head INTEGER,
+            sig_tail INTEGER
         );
 
         -- 注意: idx_items_identity（身份唯一索引）不能放在此批处理中,
@@ -42,6 +45,16 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
 
         CREATE INDEX IF NOT EXISTS idx_item_tags_tag_item
             ON item_tags(tag_id, item_id);
+
+        -- ========== 标签层级关系（DAG，多继承） ==========
+        CREATE TABLE IF NOT EXISTS tag_relations (
+            parent_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            child_id  INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            PRIMARY KEY (parent_id, child_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tag_relations_child
+            ON tag_relations(child_id);
 
         -- 注意: idx_item_tags_item_position 由 V003PerformanceIndexes 迁移创建,
         -- 不能放在此处, 否则会在 position 列尚未补齐时(老库)报错

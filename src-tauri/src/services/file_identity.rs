@@ -5,7 +5,9 @@
 //! - 路径重定位 `resolve_path`：少量 Windows FFI（`OpenFileById` + `GetFinalPathNameByHandleW`），
 //!   按文件ID O(1) 反查当前路径，无需扫盘；跨盘符/删除/离线时返回 None。
 
+use std::io::{Read, Seek, SeekFrom};
 use std::os::windows::ffi::OsStrExt;
+use std::path::Path;
 
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
@@ -238,6 +240,77 @@ fn to_wide(s: &str) -> Vec<u16> {
         .collect()
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// 内容签名：跨盘符移动后的兜底重定位
+//
+// 文件ID 仅在单卷内稳定，跨盘符（卷序列号变化）后失效。内容签名以
+// (文件大小 + 首/尾各 16KB 的 FNV-1a 哈希) 作为弱身份：仅当对象失效时，
+// 在候选盘按 size 廉价预筛、再哈希校验找回同一文件。不做实时监控。
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 首/尾各采样的字节数。
+const SIGNATURE_SAMPLE: u64 = 16 * 1024;
+
+/// 文件内容签名（弱身份，用于跨盘兜底匹配）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileSignature {
+    pub size: u64,
+    pub head_hash: u64,
+    pub tail_hash: u64,
+}
+
+/// FNV-1a 64 位哈希：实现稳定、零依赖，适合持久化后跨进程比对。
+fn fnv1a_64(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in bytes {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// 计算文件内容签名。仅对**文件**生效（目录/不存在/读失败返回 None）。
+/// 读取首 16KB 与尾 16KB（小文件则整体），开销恒定，与文件大小无关。
+pub fn compute_signature(path: &str) -> Option<FileSignature> {
+    let meta = std::fs::metadata(Path::new(path)).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    let size = meta.len();
+    if size == 0 {
+        let empty = fnv1a_64(&[]);
+        return Some(FileSignature {
+            size: 0,
+            head_hash: empty,
+            tail_hash: empty,
+        });
+    }
+
+    let mut file = std::fs::File::open(Path::new(path)).ok()?;
+
+    let head_len = size.min(SIGNATURE_SAMPLE) as usize;
+    let mut head = vec![0u8; head_len];
+    file.read_exact(&mut head).ok()?;
+    let head_hash = fnv1a_64(&head);
+
+    let tail_len = size.min(SIGNATURE_SAMPLE);
+    file.seek(SeekFrom::Start(size - tail_len)).ok()?;
+    let mut tail = vec![0u8; tail_len as usize];
+    file.read_exact(&mut tail).ok()?;
+    let tail_hash = fnv1a_64(&tail);
+
+    Some(FileSignature {
+        size,
+        head_hash,
+        tail_hash,
+    })
+}
+
+/// 候选盘根目录（所有逻辑盘），供按签名跨盘扫描使用。
+pub fn candidate_roots() -> Vec<String> {
+    logical_drive_roots()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,5 +397,38 @@ mod tests {
         };
         let hex = id.file_id_hex();
         assert_eq!(FileIdentity::parse_file_id_hex(&hex), Some(id.file_id));
+    }
+
+    #[test]
+    fn signature_matches_identical_content_regardless_of_path() {
+        // 同一内容复制到不同路径（模拟跨盘移动后内容不变）→ 签名应一致；
+        // 改一个字节 → 签名应不同。
+        let dir = unique_dir("signature");
+        let a = dir.join("a.bin");
+        let b = dir.join("nested").join("b.bin");
+        std::fs::create_dir_all(b.parent().unwrap()).unwrap();
+        let mut data = vec![0u8; 40 * 1024];
+        for (i, byte) in data.iter_mut().enumerate() {
+            *byte = (i % 251) as u8;
+        }
+        std::fs::write(&a, &data).unwrap();
+        std::fs::write(&b, &data).unwrap();
+
+        let sa = compute_signature(&a.to_string_lossy()).expect("sig a");
+        let sb = compute_signature(&b.to_string_lossy()).expect("sig b");
+        assert_eq!(sa, sb, "相同内容不同路径签名应一致");
+
+        // 改尾部一个字节
+        let mut data2 = data.clone();
+        *data2.last_mut().unwrap() ^= 0xff;
+        let c = dir.join("c.bin");
+        std::fs::write(&c, &data2).unwrap();
+        let sc = compute_signature(&c.to_string_lossy()).expect("sig c");
+        assert_ne!(sa, sc, "内容不同签名应不同");
+
+        // 目录无签名
+        assert!(compute_signature(&dir.to_string_lossy()).is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

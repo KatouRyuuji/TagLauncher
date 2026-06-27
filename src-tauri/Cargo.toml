@@ -1,6 +1,6 @@
 [package]
 name = "tag-launcher"
-version = "1.1.0"
+version = "1.2.0"
 description = "标签式文件管理器"
 authors = ["RyuuJi Soft"]
 edition = "2021"
@@ -21,7 +21,16 @@ serde_json = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 lofty = "0.24.0"
 base64 = "0.22.1"
+ureq = "2"
 
 [target.'cfg(windows)'.dependencies]
 # 用于按 NTFS 文件ID重定位对象当前路径（OpenFileById / GetFinalPathNameByHandleW）
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security"] }
+
+# 发布构建优化：LTO + 单代码生成单元提升运行性能，strip 移除调试符号显著减小二进制体积。
+# 不启用 panic="abort"：连接层依赖 Mutex 锁中毒恢复（panic 展开），abort 会改变该容错行为。
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

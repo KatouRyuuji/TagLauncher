@@ -137,9 +137,21 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
         Some(i) => (Some(i.volume_serial as i64), Some(i.file_id_hex())),
         None => (None, None),
     };
+    // 顺带记录内容签名（仅文件有效），用于跨盘符移动后的兜底重定位。
+    let sig = file_identity::compute_signature(path);
     conn.execute(
-        "INSERT INTO items (name, path, type, volume_serial, file_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![name, path, item_type, vol, fid],
+        "INSERT INTO items (name, path, type, volume_serial, file_id, sig_size, sig_head, sig_tail) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            name,
+            path,
+            item_type,
+            vol,
+            fid,
+            sig.map(|s| s.size as i64),
+            sig.map(|s| s.head_hash as i64),
+            sig.map(|s| s.tail_hash as i64)
+        ],
     )
     .map_err(|e| e.to_string())?;
 
@@ -369,20 +381,20 @@ pub fn toggle_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
 /// - 不在原路径且无文件ID → 标记失效。
 /// 仅断裂的对象才走 FFI 重定位，常规刷新只做一次廉价的 exists() 检查。
 pub fn reconcile_items(conn: &Connection) -> Result<(), String> {
-    let rows: Vec<(i64, String, Option<i64>, Option<String>, i64)> = {
+    let rows: Vec<(i64, String, Option<i64>, Option<String>, i64, Option<i64>)> = {
         let mut stmt = conn
-            .prepare("SELECT id, path, volume_serial, file_id, is_missing FROM items")
+            .prepare("SELECT id, path, volume_serial, file_id, is_missing, sig_size FROM items")
             .map_err(|e| e.to_string())?;
         let mapped = stmt
             .query_map([], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
             })
             .map_err(|e| e.to_string())?;
         mapped.filter_map(|r| r.ok()).collect()
     };
 
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    for (id, path, vol, fid, is_missing) in rows {
+    for (id, path, vol, fid, is_missing, sig_size) in rows {
         let exists = Path::new(&path).exists();
         let identity = row_identity(vol, fid);
 
@@ -397,6 +409,15 @@ pub fn reconcile_items(conn: &Connection) -> Result<(), String> {
                     ) {
                         eprintln!("[reconcile] 回填 file_id 失败 (item {}): {}", id, e);
                     }
+                }
+            }
+            // 惰性回填内容签名（仅文件、一次性）：为跨盘兜底重定位准备弱身份。
+            if sig_size.is_none() {
+                if let Some(sig) = file_identity::compute_signature(&path) {
+                    let _ = tx.execute(
+                        "UPDATE items SET sig_size = ?1, sig_head = ?2, sig_tail = ?3 WHERE id = ?4",
+                        params![sig.size as i64, sig.head_hash as i64, sig.tail_hash as i64, id],
+                    );
                 }
             }
             if is_missing != 0 {
@@ -460,6 +481,175 @@ pub fn resolve_current_path(conn: &Connection, id: i64) -> Result<String, String
 
     let _ = conn.execute("UPDATE items SET is_missing = 1 WHERE id = ?1", [id]);
     Err("对象已丢失，无法定位文件".to_string())
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 跨盘符兜底找回：对失效对象按内容签名在候选盘扫描重定位。
+// 扫描在 DB 锁外进行（命令层先取数据释放锁，扫描，再加锁回写），避免长扫描阻塞其它命令。
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 待按签名找回的失效对象（已带内容签名）。
+pub struct MissingSignatureRow {
+    pub id: i64,
+    pub size: u64,
+    pub head: u64,
+    pub tail: u64,
+}
+
+/// 读取所有"失效且有内容签名"的对象，供锁外扫描使用。
+pub fn read_missing_signatures(conn: &Connection) -> Result<Vec<MissingSignatureRow>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, sig_size, sig_head, sig_tail FROM items \
+             WHERE is_missing = 1 AND sig_size IS NOT NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(MissingSignatureRow {
+                id: r.get(0)?,
+                size: r.get::<_, i64>(1)? as u64,
+                head: r.get::<_, i64>(2)? as u64,
+                tail: r.get::<_, i64>(3)? as u64,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+/// 扫描时跳过的系统目录名与遍历上限（异常情况下防止无限扫描）。
+const SCAN_SKIP_DIRS: &[&str] = &[
+    "$Recycle.Bin",
+    "System Volume Information",
+    "$WinREAgent",
+    "$SysReset",
+    "Windows.old",
+];
+const SCAN_MAX_ENTRIES: usize = 3_000_000;
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+
+/// 在候选盘内一次遍历，按 (size → 签名) 匹配所有失效对象，返回 (item_id, 新路径)。
+/// 不持有 DB 锁。先按文件大小廉价预筛，命中大小再做哈希校验；全部找到即提前结束。
+pub fn scan_for_signatures(rows: &[MissingSignatureRow]) -> Vec<(i64, String)> {
+    use std::collections::HashMap;
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let mut by_size: HashMap<u64, Vec<usize>> = HashMap::new();
+    for (i, r) in rows.iter().enumerate() {
+        by_size.entry(r.size).or_default().push(i);
+    }
+    let mut resolved = vec![false; rows.len()];
+    let mut found: Vec<(i64, String)> = Vec::new();
+    let mut budget = SCAN_MAX_ENTRIES;
+
+    for root in file_identity::candidate_roots() {
+        if resolved.iter().all(|&x| x) || budget == 0 {
+            break;
+        }
+        scan_dir_tree(&root, &by_size, rows, &mut resolved, &mut found, &mut budget);
+    }
+    found
+}
+
+fn scan_dir_tree(
+    root: &str,
+    by_size: &std::collections::HashMap<u64, Vec<usize>>,
+    rows: &[MissingSignatureRow],
+    resolved: &mut [bool],
+    found: &mut Vec<(i64, String)>,
+    budget: &mut usize,
+) {
+    use std::os::windows::fs::MetadataExt;
+    let mut stack: Vec<std::path::PathBuf> = vec![std::path::PathBuf::from(root)];
+
+    while let Some(dir) = stack.pop() {
+        let read_dir = match std::fs::read_dir(&dir) {
+            Ok(rd) => rd,
+            Err(_) => continue,
+        };
+        for entry in read_dir.flatten() {
+            if *budget == 0 {
+                return;
+            }
+            *budget -= 1;
+
+            let meta = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            // 跳过 junction/符号链接，避免遍历成环
+            if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+                continue;
+            }
+
+            if meta.is_dir() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if SCAN_SKIP_DIRS.iter().any(|s| name.eq_ignore_ascii_case(s)) {
+                    continue;
+                }
+                stack.push(entry.path());
+            } else if meta.is_file() {
+                let indices = match by_size.get(&meta.len()) {
+                    Some(v) => v,
+                    None => continue, // 大小不匹配，跳过昂贵的哈希
+                };
+                let path = entry.path();
+                let path_str = path.to_string_lossy().to_string();
+                let sig = match file_identity::compute_signature(&path_str) {
+                    Some(s) => s,
+                    None => continue,
+                };
+                for &idx in indices {
+                    if resolved[idx] {
+                        continue;
+                    }
+                    if rows[idx].head == sig.head_hash && rows[idx].tail == sig.tail_hash {
+                        resolved[idx] = true;
+                        found.push((rows[idx].id, path_str.clone()));
+                    }
+                }
+                if resolved.iter().all(|&x| x) {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+/// 将扫描命中的新路径回写：重算文件身份与签名、更新位置并清除失效标记。
+/// 身份与已有记录冲突（极少数）时跳过该条，返回成功找回数量。
+pub fn apply_signature_relocations(
+    conn: &Connection,
+    found: &[(i64, String)],
+) -> Result<usize, String> {
+    let mut count = 0usize;
+    for (id, new_path) in found {
+        let (vol, fid) = match file_identity::get_identity(new_path) {
+            Some(i) => (Some(i.volume_serial as i64), Some(i.file_id_hex())),
+            None => (None, None),
+        };
+        let sig = file_identity::compute_signature(new_path);
+        match conn.execute(
+            "UPDATE items SET path = ?1, name = ?2, volume_serial = ?3, file_id = ?4, \
+             sig_size = ?5, sig_head = ?6, sig_tail = ?7, is_missing = 0 WHERE id = ?8",
+            params![
+                new_path,
+                get_name(new_path),
+                vol,
+                fid,
+                sig.map(|s| s.size as i64),
+                sig.map(|s| s.head_hash as i64),
+                sig.map(|s| s.tail_hash as i64),
+                id
+            ],
+        ) {
+            Ok(_) => count += 1,
+            Err(e) => eprintln!("[relocate] 回写对象 {} 失败(可能身份冲突): {}", id, e),
+        }
+    }
+    Ok(count)
 }
 
 #[cfg(test)]
@@ -537,5 +727,45 @@ mod tests {
         assert_eq!(detect_type(r"D:\Apps\tool.exe"), "exe");
         assert_eq!(detect_type(r"D:\Scripts\build.cmd"), "bat");
         assert_eq!(detect_type(r"D:\Scripts\profile.ps1"), "ps1");
+    }
+
+    #[test]
+    fn scan_dir_tree_finds_relocated_file_by_signature() {
+        use std::collections::HashMap;
+        let base = std::env::temp_dir().join(format!("tl_relocate_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let target = base.join("sub").join("moved.bin");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let data: Vec<u8> = (0..50_000u32).map(|i| (i % 97) as u8).collect();
+        std::fs::write(&target, &data).unwrap();
+
+        let target_str = target.to_string_lossy().to_string();
+        let sig = file_identity::compute_signature(&target_str).expect("sig");
+        let rows = vec![MissingSignatureRow {
+            id: 42,
+            size: sig.size,
+            head: sig.head_hash,
+            tail: sig.tail_hash,
+        }];
+        let mut by_size: HashMap<u64, Vec<usize>> = HashMap::new();
+        by_size.insert(sig.size, vec![0usize]);
+        let mut resolved = vec![false];
+        let mut found = Vec::new();
+        let mut budget = 1_000_000usize;
+
+        scan_dir_tree(
+            &base.to_string_lossy(),
+            &by_size,
+            &rows,
+            &mut resolved,
+            &mut found,
+            &mut budget,
+        );
+
+        assert_eq!(found.len(), 1, "应按内容签名找回文件");
+        assert_eq!(found[0].0, 42);
+        assert!(found[0].1.to_lowercase().ends_with("moved.bin"));
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

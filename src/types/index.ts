@@ -24,6 +24,12 @@ export interface Tag {
   color: string;
 }
 
+/** 标签父子关系边（DAG，多继承）：parent 是 child 的超集。 */
+export interface TagRelation {
+  parentId: number;
+  childId: number;
+}
+
 export interface ItemWithTags extends Item {
   tags: Tag[];
 }

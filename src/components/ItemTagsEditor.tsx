@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { ItemWithTags, Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 
@@ -46,7 +47,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: Ite
     setNewTagName("");
   };
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 flex items-center justify-center p-4"
       style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-panel)" as unknown as number }}
@@ -149,6 +150,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: Ite
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

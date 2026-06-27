@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TagEditor } from "./TagEditor";
+import { TagRelationsEditor } from "./TagRelationsEditor";
 import { resolvePanel, firePanelEvent } from "../lib/panelRegistry";
 import {
   beginInternalPointerDrag,
@@ -10,7 +11,7 @@ import {
   shouldSuppressInternalDragClick,
   useInternalDragStore,
 } from "../stores/internalDragStore";
-import type { Cabinet, Tag } from "../types";
+import type { Cabinet, Tag, ItemWithTags } from "../types";
 import type { PanelDescriptor } from "../types/panel";
 
 interface SidebarProps {
@@ -23,6 +24,9 @@ interface SidebarProps {
   onUpdateCabinet: (id: number, name: string, color: string) => Promise<void>;
   onRemoveCabinet: (id: number) => Promise<void>;
   onAddTagToItem: (itemId: number, tagId: number) => Promise<void>;
+  onAddTagRelation: (parentId: number, childId: number) => Promise<void>;
+  onRemoveTagRelation: (parentId: number, childId: number) => Promise<void>;
+  allItems: ItemWithTags[];
   modPanels?: PanelDescriptor[];
 }
 
@@ -36,11 +40,16 @@ export function Sidebar({
   onUpdateCabinet,
   onRemoveCabinet,
   onAddTagToItem,
+  onAddTagRelation,
+  onRemoveTagRelation,
+  allItems,
   modPanels = [],
 }: SidebarProps) {
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
+  const tagRelations = useAppStore((state) => state.tagRelations);
+  const setTagGraphOpen = useAppStore((state) => state.setTagGraphOpen);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const setSelectedCabinetId = useAppStore((state) => state.setSelectedCabinetId);
   const sidebarTab = useAppStore((state) => state.sidebarTab);
@@ -61,7 +70,20 @@ export function Sidebar({
   const [showAddTag, setShowAddTag] = useState(false);
   const [editingCabinet, setEditingCabinet] = useState<Cabinet | null>(null);
   const [showAddCabinet, setShowAddCabinet] = useState(false);
+  const [showRelationsEditor, setShowRelationsEditor] = useState(false);
   const visibleSection = activeDragKind === "item" ? "cabinets" : sidebarTab;
+
+  // 标签父/子计数：用于标签卡片上的层级标注（⊂父 / ⊃子）
+  const childCountByTag = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const r of tagRelations) m.set(r.parentId, (m.get(r.parentId) ?? 0) + 1);
+    return m;
+  }, [tagRelations]);
+  const parentCountByTag = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const r of tagRelations) m.set(r.childId, (m.get(r.childId) ?? 0) + 1);
+    return m;
+  }, [tagRelations]);
 
   const handleTagPointerDown = (event: React.PointerEvent<HTMLElement>, tag: Tag) => {
     beginInternalPointerDrag({
@@ -157,6 +179,8 @@ export function Sidebar({
               <div className="mb-2 flex items-center justify-between px-1">
                 <span className="text-label">标签集合</span>
                 <div className="flex items-center gap-1.5">
+                  <MiniPillButton label="关系" title="管理标签父子关系" onClick={() => setShowRelationsEditor(true)} />
+                  <MiniPillButton label="图谱" title="打开标签关系图" onClick={() => setTagGraphOpen(true)} />
                   <ClearFilterButton
                     disabled={selectedTagIds.length === 0}
                     label="清空"
@@ -207,6 +231,16 @@ export function Sidebar({
                         style={{ backgroundColor: tag.color }}
                       />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">{tag.name}</span>
+                      {!active && (parentCountByTag.get(tag.id) || childCountByTag.get(tag.id)) ? (
+                        <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-[var(--text-faint)]">
+                          {parentCountByTag.get(tag.id) ? (
+                            <span title={`${parentCountByTag.get(tag.id)} 个父标签`}>⊂{parentCountByTag.get(tag.id)}</span>
+                          ) : null}
+                          {childCountByTag.get(tag.id) ? (
+                            <span title={`${childCountByTag.get(tag.id)} 个子标签`}>⊃{childCountByTag.get(tag.id)}</span>
+                          ) : null}
+                        </span>
+                      ) : null}
                       {active && (
                         <span
                           className="rounded-[var(--radius-full)] border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
@@ -389,7 +423,39 @@ export function Sidebar({
           }}
         />
       )}
+
+      {showRelationsEditor && (
+        <TagRelationsEditor
+          tags={tags}
+          allItems={allItems}
+          onAddRelation={onAddTagRelation}
+          onRemoveRelation={onRemoveTagRelation}
+          onClose={() => setShowRelationsEditor(false)}
+        />
+      )}
     </aside>
+  );
+}
+
+function MiniPillButton({
+  label,
+  title,
+  onClick,
+}: {
+  label: string;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className="inline-flex h-7 items-center rounded-[var(--radius-full)] border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_72%,transparent)] px-2.5 text-[11px] font-medium text-[var(--text-muted)] hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-bg-light)] hover:text-[var(--accent-primary)]"
+    >
+      {label}
+    </button>
   );
 }
 

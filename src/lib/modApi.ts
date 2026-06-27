@@ -24,7 +24,7 @@
 
 import * as db from "./db";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { Item, ItemWithTags, Tag, Cabinet } from "../types";
+import type { Item, ItemWithTags, Tag, TagRelation, Cabinet } from "../types";
 import type { ModPermission } from "../types/mod";
 import type { PanelOptions, PanelHandle } from "../types/panel";
 import type { AudioPreviewInfo, ObjectDirectoryEntry, ObjectPreviewFileInfo } from "./db";
@@ -73,6 +73,7 @@ interface ModScope {
   // 数据读取
   getItems(): Promise<ItemWithTags[]>;
   getTags(): Promise<Tag[]>;
+  getTagRelations(): Promise<TagRelation[]>;
   getCabinets(): Promise<Cabinet[]>;
   // 数据写入
   addItem(path: string): Promise<Item>;
@@ -174,6 +175,7 @@ interface TagLauncherModApi {
   // 数据读取
   getItems(): Promise<ItemWithTags[]>;
   getTags(): Promise<Tag[]>;
+  getTagRelations(): Promise<TagRelation[]>;
   getCabinets(): Promise<Cabinet[]>;
   // 数据写入
   addItem(path: string): Promise<Item>;
@@ -209,7 +211,8 @@ interface TagLauncherModApi {
 }
 
 // ── 当前 API 版本 ────────────────────────────────────────────────────────
-const API_VERSION = "3.1.0";
+// 3.2.0：新增只读 getTagRelations（标签 DAG 关系，tags:read）。纯增量，旧 mod 不受影响。
+const API_VERSION = "3.2.0";
 
 // ── 内部监听器集合 ────────────────────────────────────────────────────────
 
@@ -487,6 +490,7 @@ function onThemeChange(cb: (id: string) => void) {
 // 数据读取
 function getItems():    Promise<ItemWithTags[]> { return db.getItems(); }
 function getTags():     Promise<Tag[]>          { return db.getTags(); }
+function getTagRelations(): Promise<TagRelation[]> { return db.getTagRelations(); }
 function getCabinets(): Promise<Cabinet[]>      { return db.getCabinets(); }
 
 // 写入后重取并广播变更事件，使其它 Mod 经 onItemsChanged/onTagsChanged 感知到由
@@ -569,10 +573,34 @@ function listObjectDirectory(path: string): Promise<ObjectDirectoryEntry[]> { re
 function getAudioPreview(path: string): Promise<AudioPreviewInfo> { return db.getAudioPreview(path); }
 function toAssetUrl(path: string): string { return convertFileSrc(path.replace(/\\/g, "/")); }
 
-// ── 网络（占位）────────────────────────────────────────────────────────────
+// ── 网络 API（由 Rust 后端代理，绕开 WebView CORS 限制） ──────────────────
 
-function netFetchPlaceholder(): Promise<Response> {
-  throw new Error("网络 API 尚未实现（net API is not yet implemented）");
+/**
+ * Mod 网络 fetch：转发到 Rust 后端 net_fetch 命令，后端强制 http/https、超时与体积上限。
+ * 业务逻辑（认证、重试、JSON 解析等）由 Mod 自行实现。
+ * 返回标准 Fetch API Response，Mod 可用 .text() / .json() / .arrayBuffer() 读取。
+ */
+async function netFetch(url: string, init?: RequestInit): Promise<Response> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const reqHeaders: Record<string, string> = {};
+  if (init?.headers) {
+    new Headers(init.headers).forEach((v, k) => { reqHeaders[k] = v; });
+  }
+  const body = typeof init?.body === "string" ? init.body : undefined;
+
+  const resp = await db.netFetch({ url, method, headers: reqHeaders, body });
+
+  // base64 body → Uint8Array → 标准 Fetch Response
+  const binaryStr = atob(resp.body);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+
+  return new Response(bytes, {
+    status: resp.status,
+    headers: resp.headers,
+  });
 }
 
 // ── 事件通信 ───────────────────────────────────────────────────────────────
@@ -699,6 +727,7 @@ function createScope(modId: string): ModScope {
     // 数据读取
     getItems:    guarded("items:read",    "getItems",    getItems),
     getTags:     guarded("tags:read",     "getTags",     getTags),
+    getTagRelations: guarded("tags:read", "getTagRelations", getTagRelations),
     getCabinets: guarded("cabinets:read", "getCabinets", getCabinets),
 
     // 数据写入
@@ -743,9 +772,9 @@ function createScope(modId: string): ModScope {
       remove:    guarded("fs:write", "fs.remove",    (path: string) => removeModFile(modId, path)),
     },
 
-    // 网络（占位）
+    // 网络（http/https 原语，后端代理绕 CORS）
     net: {
-      fetch: guarded("net", "net.fetch", netFetchPlaceholder),
+      fetch: guarded("net", "net.fetch", netFetch),
     },
 
     // 对象预览
@@ -801,7 +830,7 @@ export const modApi: TagLauncherModApi = {
   version: API_VERSION,
   createScope,
   getThemeVariable, setThemeVariable, getThemeId, onThemeChange,
-  getItems, getTags, getCabinets,
+  getItems, getTags, getTagRelations, getCabinets,
   addItem, removeItem, addTag, updateTag, removeTag, setItemTags,
   launchItem, toggleFavorite,
   addCabinet, updateCabinet, removeCabinet, addItemToCabinet, removeItemFromCabinet,

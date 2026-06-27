@@ -3,6 +3,8 @@ mod v002_item_tag_position;
 mod v003_performance_indexes;
 mod v004_audio_type;
 mod v005_object_identity;
+mod v006_object_signature;
+mod v007_tag_relations;
 
 use rusqlite::Connection;
 
@@ -91,6 +93,8 @@ pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
         Box::new(v003_performance_indexes::V003PerformanceIndexes),
         Box::new(v004_audio_type::V004AudioType),
         Box::new(v005_object_identity::V005ObjectIdentity),
+        Box::new(v006_object_signature::V006ObjectSignature),
+        Box::new(v007_tag_relations::V007TagRelations),
     ];
 
     let current_version = get_schema_version(conn);

@@ -6,13 +6,19 @@
 // ============================================================================
 
 import { create } from "zustand";
-import type { Tag, Cabinet } from "../types";
+import type { Tag, Cabinet, TagRelation } from "../types";
 
 function sameTags(a: Tag[], b: Tag[]): boolean {
   return a.length === b.length && a.every((tag, index) =>
     tag.id === b[index].id &&
     tag.name === b[index].name &&
     tag.color === b[index].color,
+  );
+}
+
+function sameRelations(a: TagRelation[], b: TagRelation[]): boolean {
+  return a.length === b.length && a.every((rel, index) =>
+    rel.parentId === b[index].parentId && rel.childId === b[index].childId,
   );
 }
 
@@ -38,6 +44,7 @@ export type SidebarTab = "tags" | "cabinets";
 interface AppState {
   // ---- 数据缓存 ----
   tags: Tag[];                 // 所有标签
+  tagRelations: TagRelation[]; // 标签父子关系边（DAG，多继承）
   cabinets: Cabinet[];         // 所有文件柜
 
   // ---- 筛选状态（三者互斥） ----
@@ -50,9 +57,11 @@ interface AppState {
   searchQuery: string;         // 搜索关键词
   searchMode: SearchMode;      // 搜索模式
   viewMode: "grid" | "list";   // 视图模式：网格 / 列表
+  tagGraphOpen: boolean;       // 是否打开独立标签关系图视图（单独模式）
 
   // ---- Actions ----
   setTags: (tags: Tag[]) => void;
+  setTagRelations: (relations: TagRelation[]) => void;
   setCabinets: (cabinets: Cabinet[]) => void;
   setSelectedTagIds: (ids: number[]) => void;
   toggleTagSelection: (id: number) => void;
@@ -62,11 +71,13 @@ interface AppState {
   setSearchQuery: (query: string) => void;
   setSearchMode: (mode: SearchMode) => void;
   setViewMode: (mode: "grid" | "list") => void;
+  setTagGraphOpen: (open: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   // 初始状态
   tags: [],
+  tagRelations: [],
   cabinets: [],
   selectedTagIds: [],
   selectedCabinetId: null,
@@ -75,9 +86,11 @@ export const useAppStore = create<AppState>((set) => ({
   searchQuery: "",
   searchMode: "all",
   viewMode: "grid",
+  tagGraphOpen: false,
 
   // 简单 setter
   setTags: (tags) => set((state) => sameTags(state.tags, tags) ? state : { tags }),
+  setTagRelations: (relations) => set((state) => sameRelations(state.tagRelations, relations) ? state : { tagRelations: relations }),
   setCabinets: (cabinets) => set((state) => sameCabinets(state.cabinets, cabinets) ? state : { cabinets }),
   setSelectedTagIds: (ids) => set((state) =>
     sameNumberArray(state.selectedTagIds, ids) &&
@@ -130,4 +143,5 @@ export const useAppStore = create<AppState>((set) => ({
   setSearchQuery: (query) => set((state) => state.searchQuery === query ? state : { searchQuery: query }),
   setSearchMode: (mode) => set((state) => state.searchMode === mode ? state : { searchMode: mode }),
   setViewMode: (mode) => set((state) => state.viewMode === mode ? state : { viewMode: mode }),
+  setTagGraphOpen: (open) => set((state) => state.tagGraphOpen === open ? state : { tagGraphOpen: open }),
 }));
