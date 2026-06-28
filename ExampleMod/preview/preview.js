@@ -29,6 +29,8 @@ const TYPE_ICONS = {
 
 let itemsById = new Map();
 let hoveredItemId = null;
+let lastPointerX = -1;
+let lastPointerY = -1;
 let panel = null;
 let closingPanel = false;
 let renderSerial = 0;
@@ -60,8 +62,18 @@ function itemIdFromElement(element) {
 }
 
 function onPointerMove(event) {
-  const id = itemIdFromElement(asElement(event.target));
-  hoveredItemId = id;
+  // 记录光标坐标 + 即时命中。坐标用于按 P 时重新命中（虚拟化列表行间存在间隙，
+  // 仅靠上次 pointermove 目标可能落在无 data-selectable-item-id 的包裹层而丢失悬停项）。
+  lastPointerX = event.clientX;
+  lastPointerY = event.clientY;
+  hoveredItemId = itemIdFromElement(asElement(event.target));
+}
+
+// 按 P 时以光标实际坐标重新命中卡片，规避虚拟化间隙/包裹层导致的悬停丢失。
+function hoveredIdAtPointer() {
+  if (lastPointerX < 0 || lastPointerY < 0) return null;
+  const el = document.elementFromPoint(lastPointerX, lastPointerY);
+  return itemIdFromElement(el instanceof Element ? el : null);
 }
 
 function isEditableTarget(target) {
@@ -75,8 +87,9 @@ async function onKeyDown(event) {
   if (event.key.toLowerCase() !== "p" || event.ctrlKey || event.metaKey || event.altKey) return;
   if (isEditableTarget(event.target)) return;
 
+  // 优先按光标实际位置重新命中，回退到上次悬停项，再回退到焦点项。
   const focusedId = itemIdFromElement(document.activeElement);
-  const itemId = hoveredItemId !== null ? hoveredItemId : focusedId;
+  const itemId = hoveredIdAtPointer() ?? hoveredItemId ?? focusedId;
   if (itemId === null) return;
 
   event.preventDefault();

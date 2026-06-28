@@ -2,7 +2,7 @@
   "id": "sky-cloud",
   "name": "Sky Cloud",
   "author": "TagLauncher Official Example",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "isPreset": false,
   "variables": {
     "font-family": "\"Segoe UI Variable Text\", \"PingFang SC\", \"HarmonyOS Sans SC\", \"Microsoft YaHei UI\", sans-serif",

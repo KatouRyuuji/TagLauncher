@@ -1,11 +1,11 @@
 {
   "id": "example-object-preview",
   "name": "对象预览示例",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "RyuuJi Soft",
-  "description": "悬浮在对象上按 P 打开按类型区分的预览弹窗。",
+  "description": "悬浮在对象上按 P 打开按类型区分的预览弹窗（已适配虚拟化列表的光标命中）。",
   "type": "css+js",
-  "api_version": "3.1.0",
+  "api_version": "3.2.0",
   "permissions": ["items:read", "dom", "objects:preview"],
   "entrypoints": {
     "css": "preview.css",
