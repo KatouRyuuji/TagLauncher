@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { getThemeTagPresetColors } from "../lib/tagColors";
 import type { Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface TagEditorProps {
   tag: Tag | null;
@@ -20,6 +22,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
   const [saving, setSaving] = useState(false);
 
   useEscapeKey(onClose);
+  const contentRef = useFocusTrap<HTMLDivElement>({ active: true });
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -32,13 +35,16 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
     }
   };
 
-  return (
+  // 经 portal 挂到 body：本组件是 fixed 全屏弹层，若渲染在带 backdrop-filter/filter 的
+  // 主题区域内（如 sky-cloud 的 sidebar），fixed 会被困在该区域内而非相对视口——
+  // 与 ContextMenu 同款处理，免疫任何主题的区域滤镜。
+  return createPortal(
     <div
       className="fixed inset-0 flex items-center justify-center p-4"
       style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-panel)" as unknown as number }}
       onClick={onClose}
     >
-      <div className="modal-surface w-[420px] max-w-[calc(100vw-2rem)] p-6" onClick={(event) => event.stopPropagation()}>
+      <div ref={contentRef} className="modal-surface w-[420px] max-w-[calc(100vw-2rem)] p-6" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-label">{label}</div>
@@ -125,6 +131,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

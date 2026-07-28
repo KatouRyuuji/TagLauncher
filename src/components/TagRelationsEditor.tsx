@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Tag, ItemWithTags } from "../types";
 import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import { buildDescendantsMap } from "../lib/tagGraph";
 
@@ -24,6 +26,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
   const [busy, setBusy] = useState(false);
 
   useEscapeKey(onClose);
+  const contentRef = useFocusTrap<HTMLDivElement>({ active: true });
 
   const tagById = new Map(tags.map((t) => [t.id, t]));
   const focused = focusedId == null ? null : tagById.get(focusedId) ?? null;
@@ -66,13 +69,17 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
     }
   };
 
-  return (
+  // 经 portal 挂到 body：本组件是 fixed 全屏弹层、挂载点在 Sidebar 内，第三方主题
+  // 若对 sidebar 区域使用 backdrop-filter/filter（如 sky-cloud），fixed 会被困在
+  // sidebar 内而非相对视口（"关系视图布局错乱"的根因）——portal 到 body 免疫此陷阱。
+  return createPortal(
     <div
       className="fixed inset-0 flex items-center justify-center p-4"
       style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-panel)" as unknown as number }}
       onClick={onClose}
     >
       <div
+        ref={contentRef}
         className="modal-surface w-[560px] max-w-[calc(100vw-2rem)] p-6"
         onClick={(event) => event.stopPropagation()}
       >
@@ -244,6 +251,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
