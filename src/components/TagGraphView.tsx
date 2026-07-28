@@ -1,9 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
-import { computeLayers } from "../lib/tagGraph";
+import { computeLayers, orderLayersByBarycenter } from "../lib/tagGraph";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import type { ItemWithTags } from "../types";
+
+/** 右侧关联对象列表每页展示数量（点击"显示更多"递增） */
+const RIGHT_PANEL_PAGE_SIZE = 50;
 
 interface NodePos {
   cx: number;
@@ -28,10 +31,19 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
   const setTagGraphOpen = useAppStore((s) => s.setTagGraphOpen);
 
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
+  // 右侧关联对象列表分页：热门标签可能关联数千对象，避免一次性全量渲染卡顿。
+  const [visibleCount, setVisibleCount] = useState(RIGHT_PANEL_PAGE_SIZE);
 
   useEscapeKey(() => setTagGraphOpen(false));
 
-  const tagById = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags]);
+  // 切换选中标签时重置分页
+  useEffect(() => {
+    setVisibleCount(RIGHT_PANEL_PAGE_SIZE);
+  }, [selectedNodeId]);
+
+  // 标签按名称排序作为层内默认顺序，再经 barycenter 优化减少边交叉。
+  const sortedTags = useMemo(() => [...tags].sort((a, b) => a.name.localeCompare(b.name)), [tags]);
+  const tagById = useMemo(() => new Map(sortedTags.map((t) => [t.id, t])), [sortedTags]);
 
   // 每个标签直接关联的对象
   const itemsByTag = useMemo(() => {
@@ -48,27 +60,28 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
 
   // 仅保留端点存在的关系边
   const validRelations = useMemo(() => {
-    const ids = new Set(tags.map((t) => t.id));
+    const ids = new Set(sortedTags.map((t) => t.id));
     return relations.filter((r) => ids.has(r.parentId) && ids.has(r.childId));
-  }, [tags, relations]);
+  }, [sortedTags, relations]);
 
-  // 按层级分组（层内按名称排序）
+  // 按层级分组，层内用 barycenter 排序减少连线交叉
   const layers = useMemo(() => {
-    const layerOf = computeLayers(tags.map((t) => t.id), validRelations);
-    const byLayer = new Map<number, typeof tags>();
-    for (const tag of tags) {
+    const layerOf = computeLayers(sortedTags.map((t) => t.id), validRelations);
+    const byLayer = new Map<number, number[]>();
+    for (const tag of sortedTags) {
       const l = layerOf.get(tag.id) ?? 0;
       const arr = byLayer.get(l);
-      if (arr) arr.push(tag);
-      else byLayer.set(l, [tag]);
+      if (arr) arr.push(tag.id);
+      else byLayer.set(l, [tag.id]);
     }
-    return Array.from(byLayer.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([level, list]) => ({
-        level,
-        tags: [...list].sort((a, b) => a.name.localeCompare(b.name)),
-      }));
-  }, [tags, validRelations]);
+    const levelKeys = Array.from(byLayer.keys()).sort((a, b) => a - b);
+    const layerIds = levelKeys.map((level) => byLayer.get(level)!);
+    const orderedIds = orderLayersByBarycenter(layerIds, validRelations, 3);
+    return orderedIds.map((ids, index) => ({
+      level: levelKeys[index],
+      tags: ids.map((id) => tagById.get(id)).filter((t): t is NonNullable<typeof t> => t != null),
+    }));
+  }, [sortedTags, validRelations, tagById]);
 
   const contentRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef<Map<number, HTMLElement>>(new Map());
@@ -295,7 +308,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                   <p className="px-2 text-xs text-[var(--text-faint)]">还没有对象打上此标签</p>
                 ) : (
                   <div className="space-y-1">
-                    {selectedItems.map((it) => (
+                    {selectedItems.slice(0, visibleCount).map((it) => (
                       <div
                         key={it.id}
                         className="flex min-w-0 items-center gap-2.5 rounded-[var(--radius-md)] px-2 py-1.5 hover:bg-[var(--bg-hover)]"
@@ -307,6 +320,15 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                         <span className="min-w-0 flex-1 truncate text-sm text-[var(--text-secondary)]">{it.name}</span>
                       </div>
                     ))}
+                    {selectedItems.length > visibleCount && (
+                      <button
+                        type="button"
+                        onClick={() => setVisibleCount((n) => n + RIGHT_PANEL_PAGE_SIZE)}
+                        className="mt-1 w-full rounded-[var(--radius-md)] px-2 py-1.5 text-center text-xs text-[var(--accent-primary)] hover:bg-[var(--bg-hover)]"
+                      >
+                        显示更多（剩 {selectedItems.length - visibleCount}）
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
