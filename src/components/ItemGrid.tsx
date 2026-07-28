@@ -1,6 +1,6 @@
 import type { ItemViewProps } from "../types";
 import { ItemCard } from "./ItemCard";
-import { SelectionCanvas } from "./SelectionCanvas";
+import { SelectionCanvas, type Rect } from "./SelectionCanvas";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
@@ -42,7 +42,6 @@ const ItemGridCard = memo(function ItemGridCard({
     cabinets,
     currentCabinetId,
     onLaunch,
-    onRemove,
     onSetTags,
     onAddTagToItem,
     onRemoveTagFromItem,
@@ -55,7 +54,6 @@ const ItemGridCard = memo(function ItemGridCard({
     onUpdateThumbnail,
   } = viewProps;
   const handleLaunch = useCallback(() => onLaunch(item.id), [item.id, onLaunch]);
-  const handleRemove = useCallback(() => onRemove(item.id), [item.id, onRemove]);
   const handleToggleFavorite = useCallback(() => onToggleFavorite(item.id), [item.id, onToggleFavorite]);
 
   return (
@@ -65,7 +63,6 @@ const ItemGridCard = memo(function ItemGridCard({
       cabinets={cabinets}
       currentCabinetId={currentCabinetId}
       onLaunch={handleLaunch}
-      onRemove={handleRemove}
       onSetTags={onSetTags}
       onAddTagToItem={onAddTagToItem}
       onRemoveTagFromItem={onRemoveTagFromItem}
@@ -88,7 +85,6 @@ export function ItemGrid({
   loading,
   currentCabinetId,
   onLaunch,
-  onRemove,
   onSetTags,
   onAddTagToItem,
   onRemoveTagFromItem,
@@ -107,7 +103,6 @@ export function ItemGrid({
     cabinets,
     currentCabinetId,
     onLaunch,
-    onRemove,
     onSetTags,
     onAddTagToItem,
     onRemoveTagFromItem,
@@ -123,7 +118,6 @@ export function ItemGrid({
     cabinets,
     currentCabinetId,
     onLaunch,
-    onRemove,
     onSetTags,
     onAddTagToItem,
     onRemoveTagFromItem,
@@ -142,6 +136,9 @@ export function ItemGrid({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [lanes, setLanes] = useState(estimateInitialLanes);
   const rowCount = Math.ceil(items.length / Math.max(1, lanes));
+
+  // 记录每一行的虚拟化测量位置与高度；缺失行用 estimate 估算。
+  const rowMetricsRef = useRef<Map<number, { start: number; size: number }>>(new Map());
 
   const computeLanes = useCallback(() => {
     const el = scrollRef.current;
@@ -172,6 +169,12 @@ export function ItemGrid({
     overscan: 3,
   });
 
+  // 每次渲染把可见行的真实测量数据记录下来，供 getItemRects 使用。
+  const virtualItems = virtualizer.getVirtualItems();
+  for (const vRow of virtualItems) {
+    rowMetricsRef.current.set(vRow.index, { start: vRow.start, size: vRow.size });
+  }
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center px-6 py-10">
@@ -182,6 +185,38 @@ export function ItemGrid({
       </div>
     );
   }
+
+  // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
+  // 已渲染行使用真实测量值，未渲染行用 estimateSize 估算，从而支持跨屏框选。
+  const getItemRects = useCallback((): Map<number, Rect> => {
+    const container = scrollRef.current;
+    if (!container) return new Map();
+
+    const style = getComputedStyle(container);
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const paddingRight = parseFloat(style.paddingRight) || 0;
+    const contentWidth = container.clientWidth - paddingLeft - paddingRight;
+    const colWidth = (contentWidth - (lanes - 1) * GRID_GAP) / lanes;
+
+    const map = new Map<number, Rect>();
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+      const metric = rowMetricsRef.current.get(rowIndex);
+      const rowStart = metric?.start ?? rowIndex * GRID_ROW_EST;
+      const rowSize = metric?.size ?? GRID_ROW_EST;
+
+      for (let colIndex = 0; colIndex < lanes; colIndex++) {
+        const itemIndex = rowIndex * lanes + colIndex;
+        if (itemIndex >= items.length) break;
+        const left = paddingLeft + colIndex * (colWidth + GRID_GAP);
+        const right = left + colWidth;
+        const top = paddingTop + rowStart;
+        const bottom = top + rowSize - GRID_GAP; // 行间距不算入卡片
+        map.set(items[itemIndex].id, { left, top, right, bottom });
+      }
+    }
+    return map;
+  }, [lanes, rowCount, items]);
 
   if (items.length === 0) {
     return (
@@ -211,6 +246,7 @@ export function ItemGrid({
       selectedItemIds={selectedItemIds}
       onSelectItems={onSelectItems}
       scrollElementRef={scrollRef}
+      getItemRects={getItemRects}
     >
       {/* 虚拟化网格：position:relative 撑开滚动高度，每行绝对定位 */}
       <div

@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ItemViewProps } from "../types";
 import { ItemRow } from "./ItemRow";
-import { SelectionCanvas } from "./SelectionCanvas";
+import { SelectionCanvas, type Rect } from "./SelectionCanvas";
 
 /** 列表行初始估算高度（py-3 × 2 + icon 44px ≈ 68px）；真实高度由 measureElement 动态校正 */
 const LIST_ROW_HEIGHT = 68;
@@ -32,7 +32,6 @@ const ItemListRow = memo(function ItemListRow({
     cabinets,
     currentCabinetId,
     onLaunch,
-    onRemove,
     onSetTags,
     onAddTagToItem,
     onRemoveTagFromItem,
@@ -45,7 +44,6 @@ const ItemListRow = memo(function ItemListRow({
     onUpdateThumbnail,
   } = viewProps;
   const handleLaunch = useCallback(() => onLaunch(item.id), [item.id, onLaunch]);
-  const handleRemove = useCallback(() => onRemove(item.id), [item.id, onRemove]);
   const handleToggleFavorite = useCallback(() => onToggleFavorite(item.id), [item.id, onToggleFavorite]);
 
   return (
@@ -55,7 +53,6 @@ const ItemListRow = memo(function ItemListRow({
       cabinets={cabinets}
       currentCabinetId={currentCabinetId}
       onLaunch={handleLaunch}
-      onRemove={handleRemove}
       onSetTags={onSetTags}
       onAddTagToItem={onAddTagToItem}
       onRemoveTagFromItem={onRemoveTagFromItem}
@@ -78,7 +75,6 @@ export function ItemListView({
   loading,
   currentCabinetId,
   onLaunch,
-  onRemove,
   onSetTags,
   onAddTagToItem,
   onRemoveTagFromItem,
@@ -97,7 +93,6 @@ export function ItemListView({
     cabinets,
     currentCabinetId,
     onLaunch,
-    onRemove,
     onSetTags,
     onAddTagToItem,
     onRemoveTagFromItem,
@@ -113,7 +108,6 @@ export function ItemListView({
     cabinets,
     currentCabinetId,
     onLaunch,
-    onRemove,
     onSetTags,
     onAddTagToItem,
     onRemoveTagFromItem,
@@ -130,12 +124,46 @@ export function ItemListView({
   const itemIds = useMemo(() => items.map((item) => item.id), [items]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const rowMetricsRef = useRef<Map<number, { start: number; size: number }>>(new Map());
+
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => LIST_ROW_HEIGHT,
     overscan: 6,
   });
+
+  // 记录可见行真实测量数据；缺失行用 estimateSize 估算。
+  const virtualItems = virtualizer.getVirtualItems();
+  for (const vRow of virtualItems) {
+    rowMetricsRef.current.set(vRow.index, { start: vRow.start, size: vRow.size });
+  }
+
+  // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
+  const getItemRects = useCallback((): Map<number, Rect> => {
+    const container = scrollRef.current;
+    if (!container) return new Map();
+
+    const style = getComputedStyle(container);
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const paddingRight = parseFloat(style.paddingRight) || 0;
+    const contentWidth = container.clientWidth - paddingLeft - paddingRight;
+
+    const map = new Map<number, Rect>();
+    for (let index = 0; index < items.length; index++) {
+      const metric = rowMetricsRef.current.get(index);
+      const start = metric?.start ?? index * LIST_ROW_HEIGHT;
+      const size = metric?.size ?? LIST_ROW_HEIGHT;
+      map.set(items[index].id, {
+        left: paddingLeft,
+        top: paddingTop + start,
+        right: paddingLeft + contentWidth,
+        bottom: paddingTop + start + size,
+      });
+    }
+    return map;
+  }, [items]);
 
   if (loading) {
     return (
@@ -176,6 +204,7 @@ export function ItemListView({
       selectedItemIds={selectedItemIds}
       onSelectItems={onSelectItems}
       scrollElementRef={scrollRef}
+      getItemRects={getItemRects}
     >
       <div className="surface-card overflow-hidden">
         <div className="sticky top-0 z-10 grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_96%,transparent)] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
