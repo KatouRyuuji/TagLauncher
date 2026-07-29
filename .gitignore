@@ -30,6 +30,11 @@ nul
 # test:design 的 esbuild 临时产物
 .tmp-test/
 
+# Vite dev 的 CSS 编译缓存偶发落在仓库根/src-tauri（含把 Temp 路径误当文件名的变体）
+index.css.js
+src-tauri/index.css.js
+src-tauri/C*index.css.js
+
 PROJECT_STATUS.md
 
 功能清单.md

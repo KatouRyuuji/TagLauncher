@@ -23,6 +23,7 @@ import {
   callModLifecycle,
   trackModStart,
   purgeModResources,
+  setExecutingModId,
 } from "./modApi";
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
@@ -63,7 +64,15 @@ function executeJs(modId: string, jsContent: string) {
   script.id = jsTagId(modId);
   // 注入 __MOD_ID__ 常量，供 mod 调用 createScope(__MOD_ID__) 获取专属作用域
   script.textContent = `(function(){const __MOD_ID__=${JSON.stringify(modId)};\n${jsContent}\n})();`;
-  document.head.appendChild(script);
+  // 绑定当前执行 mod：内联 script 在 appendChild 时同步执行其顶层代码，
+  // 期间 mod 通常调用 createScope(__MOD_ID__)，据此校验其不冒用他人 id。
+  // 执行结束（同步）后立即清除；异步回调阶段无法归因，createScope 仅校验注册。
+  setExecutingModId(modId);
+  try {
+    document.head.appendChild(script);
+  } finally {
+    setExecutingModId(null);
+  }
 }
 
 function removeJs(modId: string) {
@@ -84,24 +93,66 @@ function dispatchThemeRemoved(themeId: string) {
   window.dispatchEvent(new CustomEvent<string>(MOD_THEME_REMOVED, { detail: themeId }));
 }
 
+/** 内置保留主题 id（与后端 theme_loader::RESERVED_THEME_IDS 同步，禁止 mod 主题占用） */
+const RESERVED_THEME_IDS = ["dark", "light", "sakura"];
+
 /**
- * 解析 mod 提供的主题 JSON。
+ * 校验 mod 主题结构（与后端 theme_loader::validate_theme_for_loading 同款口径）。
+ * 通过返回 null，不通过返回错误描述字符串。
+ */
+function validateModTheme(theme: ThemeDefinition): string | null {
+  if (!theme.id || theme.id.trim() === "") return "缺少主题 id";
+  if (!theme.name || theme.name.trim() === "") return "缺少主题 name";
+  if (RESERVED_THEME_IDS.includes(theme.id)) return `主题 id "${theme.id}" 与内置主题冲突`;
+  const variables = theme.variables;
+  if (!variables || typeof variables !== "object" || Object.keys(variables).length === 0) {
+    return "缺少 variables 或 variables 为空";
+  }
+  const badKey = Object.keys(variables).find((k) => k.trim() === "" || k.startsWith("--"));
+  if (badKey !== undefined) {
+    return `变量名 "${badKey}" 无效（不能为空且不应包含 -- 前缀）`;
+  }
+  return null;
+}
+
+/**
+ * 解析 mod 提供的主题 JSON，并做与后端一致的结构/保留 id 校验。
  * 保留 JSON 中声明的 id；若未声明则默认为 mod-theme-${modId}。
+ * 解析或校验失败时提示用户并返回 null（不注册该主题）。
  */
 function parseModTheme(modId: string, jsonContent: string): ThemeDefinition | null {
+  let parsed: ThemeDefinition;
   try {
-    const parsed = JSON.parse(jsonContent) as ThemeDefinition;
-    if (!parsed.id || parsed.id.trim() === "") {
-      parsed.id = `mod-theme-${modId}`;
-    }
-    return parsed;
+    parsed = JSON.parse(jsonContent) as ThemeDefinition;
   } catch {
     console.warn(`[modRuntime] Failed to parse theme JSON for mod "${modId}"`);
+    window.dispatchEvent(
+      new CustomEvent("taglauncher-toast", {
+        detail: { message: `Mod "${modId}" 主题 JSON 解析失败`, type: "error" },
+      }),
+    );
     return null;
   }
+  if (!parsed.id || parsed.id.trim() === "") {
+    parsed.id = `mod-theme-${modId}`;
+  }
+  const error = validateModTheme(parsed);
+  if (error) {
+    console.warn(`[modRuntime] Mod "${modId}" 主题校验失败：${error}`);
+    window.dispatchEvent(
+      new CustomEvent("taglauncher-toast", {
+        detail: { message: `Mod "${modId}" 主题校验失败：${error}`, type: "error" },
+      }),
+    );
+    return null;
+  }
+  return parsed;
 }
 
 // ── 主接口 ────────────────────────────────────────────────────────────────
+
+/** 模块级初始化标记：防止 StrictMode / 重复调用导致 mod 被加载两次 */
+let initModRuntimePromise: Promise<void> | null = null;
 
 /** 启用单个 mod：注册元信息，读取入口文件，按类型注入 */
 export async function enableModRuntime(mod: ModInfo): Promise<void> {
@@ -154,6 +205,16 @@ export async function enableModRuntime(mod: ModInfo): Promise<void> {
     // 检查安装状态，触发 install / update 生命周期
     await handleInstallLifecycle(mod);
   } catch (err) {
+    // 启用中途失败：对称回滚已注入资源，避免部分加载状态
+    await purgeModResources(id).catch(() => {});
+    removeCss(id);
+    removeJs(id);
+    const themeId = modThemeIdMap.get(id);
+    if (themeId) {
+      modThemeIdMap.delete(id);
+      dispatchThemeRemoved(themeId);
+    }
+
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[modRuntime] Failed to enable mod "${id}":`, err);
     window.dispatchEvent(
@@ -161,6 +222,7 @@ export async function enableModRuntime(mod: ModInfo): Promise<void> {
         detail: { message: `Mod "${mod.name}" 加载失败：${msg}`, type: "error" },
       }),
     );
+    throw err;
   }
 }
 
@@ -224,14 +286,21 @@ export async function reloadModRuntime(mod: ModInfo): Promise<void> {
  *   "^1.0.0"  — 主版本相同，且不低于 1.0.0
  *   ">=1.0.0" — 不低于 1.0.0
  *   "1.0.0"   — 精确匹配
+ *
+ * 注意：须与后端 `mod_loader::semver_satisfies` 保持同款语义（二者算法一致）。
+ * 未改用成熟 semver 库是受本轮改动文件范围约束（不新增 package.json/Cargo.toml 依赖）；
+ * 若后续统一为库实现，请前后端一并替换。
  */
 export function semverSatisfies(version: string, range: string): boolean {
   const parse = (s: string): number[] => s.split(".").map((p) => parseInt(p.split("-")[0], 10) || 0);
   const v = parse(version);
-  const r = range.replace(/^\^|^>=/, "");
+  // 与后端 mod_loader::semver_satisfies 一致：前缀判断用 trim 后的 range，
+  // 精确匹配分支与后端同样比较原始字符串（含空白时两侧同样不匹配）。
+  const trimmedRange = range.trim();
+  const r = trimmedRange.replace(/^\^|^>=/, "");
   const rv = parse(r);
 
-  if (range.startsWith("^")) {
+  if (trimmedRange.startsWith("^")) {
     if (v[0] !== rv[0]) return false;
     for (let i = 0; i < 3; i++) {
       if ((v[i] || 0) > (rv[i] || 0)) return true;
@@ -239,7 +308,7 @@ export function semverSatisfies(version: string, range: string): boolean {
     }
     return true;
   }
-  if (range.startsWith(">=")) {
+  if (trimmedRange.startsWith(">=")) {
     for (let i = 0; i < 3; i++) {
       if ((v[i] || 0) > (rv[i] || 0)) return true;
       if ((v[i] || 0) < (rv[i] || 0)) return false;
@@ -338,54 +407,59 @@ function topologicalSort(mods: ModInfo[]): { sorted: ModInfo[]; cycles: string[]
   return { sorted, cycles };
 }
 
-/** 应用启动时：按依赖拓扑顺序批量注入所有已启用的 mod */
-export async function initModRuntime(mods: ModInfo[]): Promise<void> {
-  const enabled = mods.filter((m) => m.enabled);
-
-  // 先进行依赖检查，将依赖不满足的 mod 禁用
-  const validMods: ModInfo[] = [];
-  for (const mod of enabled) {
-    const check = checkDependencySatisfied(mod, enabled);
-    if (check.satisfied) {
-      validMods.push(mod);
-    } else {
-      const reasons: string[] = [];
-      if (check.missing.length) reasons.push(`缺少依赖：${check.missing.join(", ")}`);
-      for (const u of check.unsatisfied) {
-        reasons.push(`依赖 "${u.id}" 版本不满足（需要 ${u.required}，实际 ${u.actual}）`);
+/** 应用启动时：按依赖拓扑顺序批量注入所有已启用的 mod（幂等：StrictMode 或重复调用只执行一次） */
+export function initModRuntime(mods: ModInfo[]): Promise<void> {
+  if (initModRuntimePromise) {
+    return initModRuntimePromise;
+  }
+  initModRuntimePromise = (async () => {
+    const enabled = mods.filter((mod) => mod.enabled);
+    // 先校验依赖并过滤出可加载的 mod
+    const validMods: ModInfo[] = [];
+    for (const mod of enabled) {
+      const check = checkDependencySatisfied(mod, enabled);
+      if (check.satisfied) {
+        validMods.push(mod);
+      } else {
+        const reasons: string[] = [];
+        if (check.missing.length) reasons.push(`缺少依赖：${check.missing.join(", ")}`);
+        for (const u of check.unsatisfied) {
+          reasons.push(`依赖 "${u.id}" 版本不满足（需要 ${u.required}，实际 ${u.actual}）`);
+        }
+        console.warn(`[modRuntime] Mod "${mod.id}" 依赖未满足，跳过加载：${reasons.join("；")}`);
+        window.dispatchEvent(
+          new CustomEvent("taglauncher-toast", {
+            detail: {
+              message: `Mod "${mod.name}" 依赖未满足，已跳过加载：${reasons.join("；")}`,
+              type: "warning",
+            },
+          }),
+        );
       }
-      console.warn(`[modRuntime] Mod "${mod.id}" 依赖未满足，跳过加载：${reasons.join("；")}`);
+    }
+
+    const { sorted, cycles } = topologicalSort(validMods);
+
+    if (cycles.length > 0) {
+      console.warn(`[modRuntime] 检测到循环依赖，受影响 mod：${cycles.join(", ")}`);
       window.dispatchEvent(
         new CustomEvent("taglauncher-toast", {
           detail: {
-            message: `Mod "${mod.name}" 依赖未满足，已跳过加载：${reasons.join("；")}`,
+            message: `检测到 Mod 循环依赖：${cycles.join(", ")}，加载顺序可能不正确`,
             type: "warning",
           },
         }),
       );
     }
-  }
 
-  const { sorted, cycles } = topologicalSort(validMods);
-
-  if (cycles.length > 0) {
-    console.warn(`[modRuntime] 检测到循环依赖，受影响 mod：${cycles.join(", ")}`);
-    window.dispatchEvent(
-      new CustomEvent("taglauncher-toast", {
-        detail: {
-          message: `检测到 Mod 循环依赖：${cycles.join(", ")}，加载顺序可能不正确`,
-          type: "warning",
-        },
-      }),
-    );
-  }
-
-  // 按拓扑顺序串行加载（保证依赖先初始化完毕）
-  for (const mod of sorted) {
-    try {
-      await enableModRuntime(mod);
-    } catch (err) {
-      console.error(`[modRuntime] Failed to enable mod "${mod.id}" during init:`, err);
+    // 按拓扑顺序串行加载（保证依赖先初始化完毕）
+    for (const mod of sorted) {
+      try {
+        await enableModRuntime(mod);
+      } catch (err) {
+        console.error(`[modRuntime] Failed to enable mod "${mod.id}" during init:`, err);
+      }
     }
-  }
+  })();
+  return initModRuntimePromise;
 }

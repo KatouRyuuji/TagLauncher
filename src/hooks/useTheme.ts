@@ -7,13 +7,13 @@ import type {
 } from "../types/theme";
 import {
   presetThemes,
-  getPresetTheme,
   getDefaultTheme,
   toExportableTheme,
   withDefaultThemeVariables,
 } from "../themes";
 import { applyTheme } from "../lib/theme";
 import { notifyThemeChange } from "../lib/modApi";
+import { showToast } from "../lib/toast";
 import * as db from "../lib/db";
 
 export const MOD_THEME_ADDED = "mod-theme-added";
@@ -51,14 +51,6 @@ function deriveThemeRoot(
   return undefined;
 }
 
-function showToast(message: string, type: "info" | "success" | "error" | "warning" = "info") {
-  window.dispatchEvent(
-    new CustomEvent("taglauncher-toast", {
-      detail: { message, type },
-    }),
-  );
-}
-
 function normalizeTheme(theme: ThemeDefinition, source: ThemeDefinition["source"]): ThemeDefinition {
   const normalized = withDefaultThemeVariables(theme);
   return {
@@ -93,9 +85,21 @@ export function useTheme() {
     [customThemes, modThemes],
   );
 
+  // 用 ref 同步最新 availableThemes，避免 syncCurrentTheme 的 stale closure
+  const availableThemesRef = useRef<ThemeDefinition[]>(availableThemes);
+  useEffect(() => {
+    availableThemesRef.current = availableThemes;
+  }, [availableThemes]);
+
+  // availableThemesRef 由 effect 更新（滞后一拍）；customThemesRef 在 refreshCustomThemes
+  // 中随 setCustomThemes 同步更新（领先一拍）。二者并查，修复「importTheme 返回后同一
+  // 微任务链里立即 setTheme(新主题)」时渲染尚未 flush、findTheme miss 而错误回退默认
+  // 主题并持久化的竞态（回归测试：useTheme.race.test.tsx）。
   const findTheme = useCallback(
-    (id: string): ThemeDefinition | undefined => availableThemes.find((theme) => theme.id === id),
-    [availableThemes],
+    (id: string): ThemeDefinition | undefined =>
+      availableThemesRef.current.find((theme) => theme.id === id) ??
+      customThemesRef.current.find((theme) => theme.id === id),
+    [],
   );
 
   const currentTheme = useMemo(
@@ -266,9 +270,9 @@ export function useTheme() {
     const handleRemoved = (e: Event) => {
       const themeId = (e as CustomEvent<string>).detail;
       setModThemes((prev) => prev.filter((theme) => theme.id !== themeId));
-      // 以 desiredThemeIdRef 为唯一意图来源：被移除的正是当前意图主题时回退到 dark
+      // 以 desiredThemeIdRef 为唯一意图来源：被移除的正是当前意图主题时回退到默认主题
       if (desiredThemeIdRef.current === themeId) {
-        const fallback = getPresetTheme("dark") ?? getDefaultTheme();
+        const fallback = getDefaultTheme();
         desiredThemeIdRef.current = fallback.id;
         setCurrentThemeId(fallback.id);
         applyAndBroadcast(fallback);

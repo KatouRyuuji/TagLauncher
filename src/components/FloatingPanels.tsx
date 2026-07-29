@@ -11,8 +11,19 @@ import { createPortal } from "react-dom";
 import type { PanelDescriptor, ModalButton } from "../types/panel";
 import {
   PANEL_CREATE, PANEL_DESTROY, PANEL_SHOW, PANEL_HIDE, PANEL_TITLE,
-  resolvePanel, firePanelEvent,
+  resolvePanel, firePanelEvent, destroyPanel,
 } from "../lib/panelRegistry";
+
+/**
+ * 面板 × 按钮/遮罩的统一关闭行为：
+ * 先派发 close 事件让 mod 有机会拦截处理；若 mod 未监听（面板仍存在），
+ * 宿主侧兜底销毁，避免 × 按钮对不监听 close 的 mod 完全无效。
+ */
+function requestClosePanel(fullId: string): void {
+  firePanelEvent(fullId, "close");
+  // destroyPanel 有重入守卫：mod 已在 close 监听中自行 close() 时此处为 no-op
+  destroyPanel(fullId);
+}
 
 export function FloatingPanels() {
   const [panels, setPanels] = useState<PanelDescriptor[]>([]);
@@ -114,15 +125,13 @@ interface FloatingPanelProps {
 function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const resolved = useRef(false);
 
-  // 初次挂载时 resolve PanelHandle
+  // 初次挂载时 resolve PanelHandle；面板隐藏时保持容器常驻，仅 CSS 隐藏
   useEffect(() => {
-    if (!resolved.current && contentRef.current) {
-      resolved.current = true;
+    if (contentRef.current) {
       resolvePanel(panel.id, contentRef.current);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [panel.id]);
 
   // 拖拽标题栏移动浮动面板（直接操作 DOM，避免频繁 setState）
   const handleTitleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -188,8 +197,6 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
   // z-index = 基础层(CSS var) + 序号（最大 49，不超过 settings-overlay 200）
   const zIndexBase = "var(--z-floating-panel)";
 
-  if (!panel.visible) return null;
-
   return (
     <div
       ref={wrapperRef}
@@ -200,6 +207,7 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
         width:  panel.width,
         height: panel.height,
         zIndex: `calc(${zIndexBase} + ${Math.min(zSerial, 49)})` as unknown as number,
+        display: panel.visible ? undefined : "none",
       }}
       onMouseDown={onBringToFront}
     >
@@ -218,7 +226,7 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
           className="shrink-0 inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] hover:bg-[var(--bg-hover)] transition-colors"
           style={{ color: "var(--text-muted)", cursor: "pointer" }}
           onMouseDown={(e) => e.stopPropagation()}
-          onClick={() => firePanelEvent(panel.id, "close")}
+          onClick={() => requestClosePanel(panel.id)}
           title="关闭"
         >
           ✕
@@ -256,14 +264,16 @@ interface ModalPanelProps {
 
 function ModalPanel({ panel }: ModalPanelProps) {
   const contentRef = useRef<HTMLDivElement>(null);
-  const resolved = useRef(false);
 
+  // visible=false 时下方 return null 会卸载容器 div，再次 show 时挂载的是全新 div。
+  // 因此不能只在首次挂载 resolve 一次：每次渲染后都幂等调用 resolvePanel——
+  // 对已 resolve 的面板它只更新 handle.container 引用（见 panelRegistry），
+  // 保证 mod 的 hide→show 循环后 handle.container 始终指向当前真实 DOM。
   useEffect(() => {
-    if (!resolved.current && contentRef.current) {
-      resolved.current = true;
+    if (contentRef.current) {
       resolvePanel(panel.id, contentRef.current);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  });
 
   if (!panel.visible) return null;
 
@@ -277,7 +287,7 @@ function ModalPanel({ panel }: ModalPanelProps) {
       <div
         className="fixed inset-0"
         style={{ backgroundColor: "var(--overlay-bg)", zIndex: overlayZ }}
-        onClick={() => firePanelEvent(panel.id, "close")}
+        onClick={() => requestClosePanel(panel.id)}
       />
       {/* 内容区 */}
       <div
@@ -306,7 +316,7 @@ function ModalPanel({ panel }: ModalPanelProps) {
             <button
               className="shrink-0 inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] hover:bg-[var(--bg-hover)] transition-colors"
               style={{ color: "var(--text-muted)", cursor: "pointer" }}
-              onClick={() => firePanelEvent(panel.id, "close")}
+              onClick={() => requestClosePanel(panel.id)}
               title="关闭"
             >
               ✕
@@ -334,7 +344,7 @@ function ModalPanel({ panel }: ModalPanelProps) {
                       firePanelEvent(panel.id, "modal-confirm");
                     } else if (btn.action === "cancel") {
                       firePanelEvent(panel.id, "modal-cancel");
-                      firePanelEvent(panel.id, "close");
+                      requestClosePanel(panel.id);
                     } else {
                       firePanelEvent(panel.id, "modal-button", btn.id);
                     }
