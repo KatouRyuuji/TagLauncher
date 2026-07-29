@@ -1,6 +1,6 @@
 [package]
 name = "tag-launcher"
-version = "1.2.0"
+version = "1.3.0"
 description = "标签式文件管理器"
 authors = ["RyuuJi Soft"]
 edition = "2021"
@@ -18,14 +18,20 @@ tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 lofty = "0.24.0"
 base64 = "0.22.1"
 ureq = "2"
 
+[dev-dependencies]
+# 集成测试（tests/）需直接用 rusqlite 播种旧版本 schema 并做原始 SQL 断言。
+# 与主依赖同版本，Cargo 统一为同一实例（不重复编译 sqlite）；仅暴露给测试，不入库产物。
+rusqlite = { version = "0.31", features = ["bundled"] }
+
 [target.'cfg(windows)'.dependencies]
-# 用于按 NTFS 文件ID重定位对象当前路径（OpenFileById / GetFinalPathNameByHandleW）
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security"] }
+# 用于按 NTFS 文件ID重定位对象当前路径（OpenFileById / GetFinalPathNameByHandleW），
+# 以及用关联程序打开对象（ShellExecuteW，替代经 cmd.exe 的启动，杜绝命令注入）。
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 # 发布构建优化：LTO + 单代码生成单元提升运行性能，strip 移除调试符号显著减小二进制体积。
 # 不启用 panic="abort"：连接层依赖 Mutex 锁中毒恢复（panic 展开），abort 会改变该容错行为。

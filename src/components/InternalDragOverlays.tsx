@@ -14,7 +14,7 @@ export function InternalDragGhost() {
         top:  `calc(${activeInternalDrag.y}px + var(--drag-ghost-offset-y))`,
       }}
     >
-      <div className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs shadow-2xl" style={{ backgroundColor: "var(--bg-elevated)", borderWidth: "var(--border-width)" as unknown as number, borderStyle: "var(--border-style)", borderColor: "var(--border-default)", color: "var(--text-primary)" }}>
+      <div className="inline-flex items-center gap-2 rounded-none px-3 py-1.5 text-xs shadow-2xl" style={{ backgroundColor: "var(--bg-elevated)", borderWidth: "var(--border-width)" as unknown as number, borderStyle: "var(--border-style)", borderColor: "var(--border-default)", color: "var(--text-primary)" }}>
         {"color" in activeInternalDrag && (
           <span
             className="h-2.5 w-2.5 rounded-full shrink-0"
@@ -68,7 +68,7 @@ export function ItemDropActions({
         }`}
       >
         <div>
-          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] bg-white/70">
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)]">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M9 8l-4 4 4 4" />
             </svg>
@@ -87,7 +87,7 @@ export function ItemDropActions({
         }`}
       >
         <div>
-          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] bg-white/70">
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)]">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12m-8 4v6m4-6v6M9 7l1-2h4l1 2m-8 0 1 13h8l1-13" />
             </svg>

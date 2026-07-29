@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TagLauncher",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "identifier": "com.taglauncher.app",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:3456",
+    "devUrl": "http://127.0.0.1:3456",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
@@ -56,7 +56,9 @@
         "enable": true,
         "scope": ["**"]
       },
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; font-src 'self' data: asset: http://asset.localhost; media-src 'self' data: blob: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; frame-src 'none'",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; font-src 'self' data: asset: http://asset.localhost; media-src 'self' data: blob: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:3456 http://127.0.0.1:3456; object-src 'none'; base-uri 'self'; frame-src 'none'",
+      "dangerousDisableAssetCspModification": ["script-src", "style-src"]
     }
   },
   "plugins": {

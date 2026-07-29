@@ -50,34 +50,46 @@ fn select_item_by_id(conn: &Connection, id: i64) -> Result<Item, String> {
         .map_err(|e| e.to_string())
 }
 
-/// 自动检测文件类型
-pub fn detect_type(path: &str) -> &'static str {
-    const IMAGE_EXTS: &[&str] = &[
-        "png", "jpg", "jpeg", "webp", "bmp", "gif", "ico", "svg", "tif", "tiff", "avif", "heic",
-        "heif",
-    ];
-    const AUDIO_EXTS: &[&str] = &[
-        "aac", "ape", "aiff", "aif", "afc", "aifc", "mp3", "mp2", "mp1", "wav", "wave", "wv",
-        "opus", "flac", "ogg", "m4a", "m4b", "m4p", "m4r", "mpc", "mp+", "mpp", "spx",
-    ];
+/// 图片扩展名（单一来源，供 detect_type 与 object_preview_service 共用）。
+pub const IMAGE_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "webp", "bmp", "gif", "ico", "svg", "tif", "tiff", "avif", "heic", "heif",
+];
 
-    let p = Path::new(path);
-    if p.is_dir() {
-        return "folder";
-    }
-    match p
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .as_deref()
-    {
-        Some(ext) if IMAGE_EXTS.contains(&ext) => "image",
-        Some(ext) if AUDIO_EXTS.contains(&ext) => "audio",
+/// 音频扩展名（单一来源，供 detect_type 与 object_preview_service 共用）。
+pub const AUDIO_EXTS: &[&str] = &[
+    "aac", "ape", "aiff", "aif", "afc", "aifc", "mp3", "mp2", "mp1", "wav", "wave", "wv", "opus",
+    "flac", "ogg", "m4a", "m4b", "m4p", "m4r", "mpc", "mp+", "mpp", "spx",
+];
+
+/// 按（已小写的）扩展名归类为对象类型。不含目录判断——目录由调用方先行处理。
+///
+/// 未知扩展名归为 `"exe"`：启动统一走 ShellExecuteW("open")、**不依据 type 分支**，
+/// 故这里 `"exe"` 的语义是「当作可用关联程序 shell 打开的通用文件」，而非"必为可执行程序"。
+/// 该归类仅影响前端图标/分类展示，不影响启动正确性，因此 items.type 的 CHECK 约束保持不变
+/// （前端对非可执行扩展的图标区分由前端处理）。
+pub fn classify_by_extension(ext: Option<&str>) -> &'static str {
+    match ext {
+        Some(e) if IMAGE_EXTS.contains(&e) => "image",
+        Some(e) if AUDIO_EXTS.contains(&e) => "audio",
         Some("exe") => "exe",
         Some("bat") | Some("cmd") => "bat",
         Some("ps1") => "ps1",
         _ => "exe",
     }
+}
+
+/// 自动检测文件类型
+pub fn detect_type(path: &str) -> &'static str {
+    let p = Path::new(path);
+    if p.is_dir() {
+        return "folder";
+    }
+    classify_by_extension(
+        p.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .as_deref(),
+    )
 }
 
 /// 从路径提取文件名
@@ -92,53 +104,105 @@ pub fn get_name(path: &str) -> String {
 /// 添加项目：以文件身份(卷序列号+文件ID)为唯一键去重；取不到身份时回退按 path 去重。
 fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
     let identity = file_identity::get_identity(path);
+    // 内容签名（仅文件有效）：用于跨盘兜底重定位，也用于身份命中时的二次校验。
+    let sig = file_identity::compute_signature(path);
+    // 有效身份：默认取捕获到的身份；若与既有同身份记录发生签名冲突（克隆盘卷序列号重复），
+    // 降级为无身份处理，避免改写既有记录、也避开身份唯一索引冲突。
+    let mut effective_identity = identity;
 
     if let Some(idn) = identity {
-        // 已管理同一文件（即使被改名/移动过）→ 更新到最新位置、清除失效标记后返回
+        // 连同既有记录的路径与内容签名一起取出：签名用于二次校验，路径用于区分冲突情形。
+        let existing: Option<(i64, String, Option<i64>, Option<i64>, Option<i64>)> = conn
+            .query_row(
+                "SELECT id, path, sig_size, sig_head, sig_tail FROM items \
+                 WHERE volume_serial = ?1 AND file_id = ?2",
+                params![idn.volume_serial as i64, idn.file_id_hex()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+
+        if let Some((existing_id, existing_path, esize, ehead, etail)) = existing {
+            // 二次校验：卷序列号在克隆/镜像盘上可能重复，使不同物理文件共享 (vol,fid)。
+            // 若新文件与既有记录都带内容签名且不一致，判为身份冲突。
+            // 任一方缺签名时无法反证，沿用身份判定（保持既有行为）。
+            let conflict = match (sig, esize, ehead, etail) {
+                (Some(ns), Some(es), Some(eh), Some(et)) => {
+                    ns.size as i64 != es || ns.head_hash as i64 != eh || ns.tail_hash as i64 != et
+                }
+                _ => false,
+            };
+            if conflict {
+                // 区分「克隆盘异文件」与「同文件被编辑后移动/改名」（file_id 不变、签名变化）：
+                // - 既有记录的 path 仍存在 → 那里确有另一个文件（克隆盘撞车）→ 降级无身份插入；
+                // - 既有记录的 path 已不存在 → 大概率同一文件被移动且编辑 → 更新既有记录到
+                //   最新位置并刷新签名，否则会产生"旧记录+新记录"双份且下一轮对账撞唯一索引。
+                if Path::new(&existing_path).exists() {
+                    effective_identity = None;
+                } else {
+                    if let Some(ns) = sig {
+                        conn.execute(
+                            "UPDATE items SET path = ?1, name = ?2, is_missing = 0, \
+                             sig_size = ?3, sig_head = ?4, sig_tail = ?5 WHERE id = ?6",
+                            params![
+                                path,
+                                get_name(path),
+                                ns.size as i64,
+                                ns.head_hash as i64,
+                                ns.tail_hash as i64,
+                                existing_id
+                            ],
+                        )
+                        .map_err(|e| e.to_string())?;
+                    } else {
+                        conn.execute(
+                            "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
+                            params![path, get_name(path), existing_id],
+                        )
+                        .map_err(|e| e.to_string())?;
+                    }
+                    return select_item_by_id(conn, existing_id);
+                }
+            } else {
+                // 已管理同一文件（即使被改名/移动过）→ 更新到最新位置、清除失效标记后返回。
+                conn.execute(
+                    "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
+                    params![path, get_name(path), existing_id],
+                )
+                .map_err(|e| e.to_string())?;
+                return select_item_by_id(conn, existing_id);
+            }
+        }
+    }
+
+    if effective_identity.is_none() {
+        // 无文件身份（或身份冲突降级）→ 按 path 去重。去掉原 `AND file_id IS NULL` 过滤：
+        // 避免"曾以身份入库的文件被再次拖入、但此刻 get_identity 瞬时失败(文件被独占锁等)"时
+        // 重复插入同路径记录。命中则刷新名称并清除失效标记（不触碰其已有身份列）。
         if let Some(existing_id) = conn
             .query_row(
-                "SELECT id FROM items WHERE volume_serial = ?1 AND file_id = ?2",
-                params![idn.volume_serial as i64, idn.file_id_hex()],
+                "SELECT id FROM items WHERE path = ?1",
+                [path],
                 |r| r.get::<_, i64>(0),
             )
             .optional()
             .map_err(|e| e.to_string())?
         {
             conn.execute(
-                "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
-                params![path, get_name(path), existing_id],
+                "UPDATE items SET name = ?1, is_missing = 0 WHERE id = ?2",
+                params![get_name(path), existing_id],
             )
             .map_err(|e| e.to_string())?;
             return select_item_by_id(conn, existing_id);
         }
-    } else if let Some(existing_id) = conn
-        .query_row(
-            "SELECT id FROM items WHERE path = ?1 AND file_id IS NULL",
-            [path],
-            |r| r.get::<_, i64>(0),
-        )
-        .optional()
-        .map_err(|e| e.to_string())?
-    {
-        // 无文件身份的对象（非 NTFS/网络盘等）按 path 去重；
-        // 与有身份分支保持一致：命中已存在记录时清除失效标记并刷新名称，
-        // 避免"重新拖入已恢复的对象后仍显示失效"。
-        conn.execute(
-            "UPDATE items SET name = ?1, is_missing = 0 WHERE id = ?2",
-            params![get_name(path), existing_id],
-        )
-        .map_err(|e| e.to_string())?;
-        return select_item_by_id(conn, existing_id);
     }
 
     let name = get_name(path);
     let item_type = detect_type(path);
-    let (vol, fid) = match identity {
+    let (vol, fid) = match effective_identity {
         Some(i) => (Some(i.volume_serial as i64), Some(i.file_id_hex())),
         None => (None, None),
     };
-    // 顺带记录内容签名（仅文件有效），用于跨盘符移动后的兜底重定位。
-    let sig = file_identity::compute_signature(path);
     conn.execute(
         "INSERT INTO items (name, path, type, volume_serial, file_id, sig_size, sig_head, sig_tail) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -233,19 +297,27 @@ pub fn add_items(conn: &mut Connection, paths: Vec<String>) -> AddItemsResult {
     AddItemsResult { items, failed }
 }
 
-/// 批量删除项目（单条 DELETE ... IN (...) 语句，天然原子）。
+/// SQL `IN (...)` 占位符分块大小（对齐 tag_service::get_tags_for_items，
+/// 避免超过 SQLite 变量数上限；大批量选择/删除时按块执行）。
+const IN_CHUNK: usize = 500;
+
+/// 批量删除项目：按 IN_CHUNK 分块，多块包在单事务里保持整体原子。
 pub fn remove_items(conn: &Connection, ids: &[i64]) -> Result<(), String> {
     if ids.is_empty() {
         return Ok(());
     }
-    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!("DELETE FROM items WHERE id IN ({})", placeholders);
-    let params = ids
-        .iter()
-        .map(|id| id as &dyn rusqlite::ToSql)
-        .collect::<Vec<_>>();
-    conn.execute(&sql, params.as_slice())
-        .map_err(|e| e.to_string())?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    for chunk in ids.chunks(IN_CHUNK) {
+        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!("DELETE FROM items WHERE id IN ({})", placeholders);
+        let params = chunk
+            .iter()
+            .map(|id| id as &dyn rusqlite::ToSql)
+            .collect::<Vec<_>>();
+        tx.execute(&sql, params.as_slice())
+            .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -307,28 +379,46 @@ pub fn fill_visuals(app: &AppHandle, items: &mut [ItemWithTags]) {
     }
 }
 
-/// 获取单个项目（含标签和自动图标）
-pub fn get_item(app: &AppHandle, conn: &Connection, id: i64) -> Result<ItemWithTags, String> {
+/// 获取单个项目（含标签，不含自动图标）。
+/// 自动图标涉及文件系统/PowerShell IO，由调用方在释放 DB 锁后用 fill_visuals 补齐，
+/// 避免在持有 DB 锁期间串行执行重 IO 阻塞其它命令（与 get_items 一致）。
+pub fn get_item(conn: &Connection, id: i64) -> Result<ItemWithTags, String> {
     let sql = format!("SELECT {} FROM items WHERE id = ?1", ITEM_COLS);
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let mut items = vec![
+    let items = vec![
         stmt.query_row([id], item_from_row)
             .map_err(|e| e.to_string())?,
     ];
 
-    icon_service::fill_auto_visual_paths(app, &mut items);
     tag_service::items_with_tags(conn, items)?
         .into_iter()
         .next()
         .ok_or_else(|| format!("Item {} not found", id))
 }
 
-/// 批量获取指定项目（含标签和自动图标）
-pub fn get_items_by_ids(
-    app: &AppHandle,
-    conn: &Connection,
-    ids: &[i64],
-) -> Result<Vec<ItemWithTags>, String> {
+/// 按默认排序（ITEM_ORDER：收藏优先 → 最近使用 DESC(NULLS LAST) → 名称）在内存中排序。
+/// 分块查询后各块内部有序但整体无序，需在此统一重排以保持与单条 SQL ORDER BY 一致的顺序。
+/// last_used_at 为 SQLite DATETIME 文本（ISO 格式），字节序比较与 SQLite 默认 BINARY 排序一致。
+fn sort_items_by_default_order(items: &mut [Item]) {
+    items.sort_by(|a, b| {
+        // is_favorite DESC（true 在前）
+        b.is_favorite
+            .cmp(&a.is_favorite)
+            // last_used_at DESC NULLS LAST
+            .then_with(|| match (&a.last_used_at, &b.last_used_at) {
+                (Some(x), Some(y)) => y.cmp(x),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            })
+            // name ASC
+            .then_with(|| a.name.cmp(&b.name))
+    });
+}
+
+/// 批量获取指定项目（含标签，不含自动图标）。图标由调用方在锁外用 fill_visuals 补齐。
+/// id 列表按 IN_CHUNK 分块查询后在内存里按默认顺序重排。
+pub fn get_items_by_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<ItemWithTags>, String> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -337,39 +427,37 @@ pub fn get_items_by_ids(
     unique_ids.sort_unstable();
     unique_ids.dedup();
 
-    let placeholders = unique_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!(
-        "SELECT {} FROM items WHERE id IN ({}) ORDER BY {}",
-        ITEM_COLS, placeholders, ITEM_ORDER,
-    );
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let params = unique_ids
-        .iter()
-        .map(|id| id as &dyn rusqlite::ToSql)
-        .collect::<Vec<_>>();
+    let mut items: Vec<Item> = Vec::with_capacity(unique_ids.len());
+    for chunk in unique_ids.chunks(IN_CHUNK) {
+        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!("SELECT {} FROM items WHERE id IN ({})", ITEM_COLS, placeholders);
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let params = chunk
+            .iter()
+            .map(|id| id as &dyn rusqlite::ToSql)
+            .collect::<Vec<_>>();
+        let chunk_items = stmt
+            .query_map(params.as_slice(), item_from_row)
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok());
+        items.extend(chunk_items);
+    }
+    sort_items_by_default_order(&mut items);
 
-    let mut items: Vec<Item> = stmt
-        .query_map(params.as_slice(), item_from_row)
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    icon_service::fill_auto_visual_paths(app, &mut items);
     tag_service::items_with_tags(conn, items)
 }
 
 /// 切换收藏状态
 pub fn toggle_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
-    conn.execute(
-        "UPDATE items SET is_favorite = CASE WHEN is_favorite = 0 THEN 1 ELSE 0 END WHERE id = ?1",
-        [id],
-    )
-    .map_err(|e| e.to_string())?;
-
+    // UPDATE ... RETURNING 一次完成翻转并取回新值（省去二次 SELECT 往返）。
+    // id 不存在时 RETURNING 无行返回，query_row 返回错误（与原"翻转 0 行后 SELECT 取不到"一致）。
     let new_val: i64 = conn
-        .query_row("SELECT is_favorite FROM items WHERE id = ?1", [id], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "UPDATE items SET is_favorite = CASE WHEN is_favorite = 0 THEN 1 ELSE 0 END \
+             WHERE id = ?1 RETURNING is_favorite",
+            [id],
+            |r| r.get(0),
+        )
         .map_err(|e| e.to_string())?;
 
     Ok(new_val != 0)
@@ -380,64 +468,154 @@ pub fn toggle_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
 /// - 不在原路径但有文件ID → 用文件ID重定位（同盘移动/重命名），成功则更新 path/name，失败标记失效。
 /// - 不在原路径且无文件ID → 标记失效。
 /// 仅断裂的对象才走 FFI 重定位，常规刷新只做一次廉价的 exists() 检查。
+///
+/// 对账拆为三段以便把重 IO 移出全局 DB 锁（避免持锁期间逐对象串行执行文件系统/FFI IO
+/// 阻塞其它命令）：① `read_reconcile_snapshot` 锁内取快照 → ② `plan_reconcile` 锁外做
+/// exists()/FFI/签名等重 IO 生成写入计划 → ③ `apply_reconcile` 锁内批量回写。
+/// 本函数按顺序串起三段，供测试与不需要锁外化的调用方使用；两个列表刷新热路径
+/// （get_items / get_cabinet_items）均由命令层分段调用以在重 IO 期间释放锁。
+/// 三段合并与内联版本对数据库的最终效果完全一致。
+// 保留为便捷入口（当前仅对账回归测试直接调用；命令层已全部走分段），标 allow 避免 dead_code 告警。
+#[allow(dead_code)]
 pub fn reconcile_items(conn: &Connection) -> Result<(), String> {
-    let rows: Vec<(i64, String, Option<i64>, Option<String>, i64, Option<i64>)> = {
-        let mut stmt = conn
-            .prepare("SELECT id, path, volume_serial, file_id, is_missing, sig_size FROM items")
-            .map_err(|e| e.to_string())?;
-        let mapped = stmt
-            .query_map([], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
-            })
-            .map_err(|e| e.to_string())?;
-        mapped.filter_map(|r| r.ok()).collect()
-    };
+    let rows = read_reconcile_snapshot(conn)?;
+    let writes = plan_reconcile(rows);
+    apply_reconcile(conn, &writes)
+}
 
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    for (id, path, vol, fid, is_missing, sig_size) in rows {
-        let exists = Path::new(&path).exists();
-        let identity = row_identity(vol, fid);
+/// 对账快照行（锁内一次性读出，随后据此在锁外做重 IO）。
+pub struct ReconcileRow {
+    id: i64,
+    path: String,
+    volume_serial: Option<i64>,
+    file_id: Option<String>,
+    is_missing: i64,
+    sig_size: Option<i64>,
+}
+
+/// 对账写入项：锁外 IO 阶段生成的写入计划，锁内批量原子回写。
+pub enum ReconcileWrite {
+    /// 回填文件身份（卷序列号 + 文件ID）。
+    BackfillIdentity { id: i64, volume_serial: i64, file_id: String },
+    /// 惰性回填内容签名（大小 + 首/尾哈希）。
+    BackfillSignature { id: i64, size: i64, head: i64, tail: i64 },
+    /// 文件在原路径且曾失效 → 清除失效标记。
+    ClearMissing { id: i64 },
+    /// 按文件ID重定位到新路径并清除失效标记。
+    Relocate { id: i64, new_path: String, new_name: String },
+    /// 文件找不到 → 标记失效。
+    MarkMissing { id: i64 },
+}
+
+/// 【对账·第一段】锁内一次性读出对账所需快照（不做任何文件 IO）。
+pub fn read_reconcile_snapshot(conn: &Connection) -> Result<Vec<ReconcileRow>, String> {
+    let mut stmt = conn
+        .prepare("SELECT id, path, volume_serial, file_id, is_missing, sig_size FROM items")
+        .map_err(|e| e.to_string())?;
+    let mapped = stmt
+        .query_map([], |r| {
+            Ok(ReconcileRow {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                volume_serial: r.get(2)?,
+                file_id: r.get(3)?,
+                is_missing: r.get(4)?,
+                sig_size: r.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(mapped.filter_map(|r| r.ok()).collect())
+}
+
+/// 【对账·第二段】不持 DB 锁：对每个对象做 exists()/get_identity(FFI)/compute_signature(读文件)/
+/// resolve_path(FFI 枚举盘符) 等重 IO，产出写入计划。纯文件系统访问，不触碰数据库，
+/// 故可在释放全局 DB 锁后执行——这是把重 IO 移出锁的关键一段。
+pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
+    let mut writes = Vec::new();
+    for row in rows {
+        let exists = Path::new(&row.path).exists();
+        let identity = row_identity(row.volume_serial, row.file_id);
 
         if exists {
             if identity.is_none() {
                 // 回填文件ID。唯一冲突=极少数多条记录指向同一物理文件(硬链接/历史重复)，
-                // 记录日志以便排查，不阻断对账（该记录退化为按 path 处理）。
-                if let Some(newid) = file_identity::get_identity(&path) {
-                    if let Err(e) = tx.execute(
-                        "UPDATE items SET volume_serial = ?1, file_id = ?2 WHERE id = ?3",
-                        params![newid.volume_serial as i64, newid.file_id_hex(), id],
-                    ) {
-                        eprintln!("[reconcile] 回填 file_id 失败 (item {}): {}", id, e);
-                    }
+                // 由回写阶段记录日志以便排查，不阻断对账（该记录退化为按 path 处理）。
+                if let Some(newid) = file_identity::get_identity(&row.path) {
+                    writes.push(ReconcileWrite::BackfillIdentity {
+                        id: row.id,
+                        volume_serial: newid.volume_serial as i64,
+                        file_id: newid.file_id_hex(),
+                    });
                 }
             }
             // 惰性回填内容签名（仅文件、一次性）：为跨盘兜底重定位准备弱身份。
-            if sig_size.is_none() {
-                if let Some(sig) = file_identity::compute_signature(&path) {
-                    let _ = tx.execute(
-                        "UPDATE items SET sig_size = ?1, sig_head = ?2, sig_tail = ?3 WHERE id = ?4",
-                        params![sig.size as i64, sig.head_hash as i64, sig.tail_hash as i64, id],
-                    );
+            if row.sig_size.is_none() {
+                if let Some(sig) = file_identity::compute_signature(&row.path) {
+                    writes.push(ReconcileWrite::BackfillSignature {
+                        id: row.id,
+                        size: sig.size as i64,
+                        head: sig.head_hash as i64,
+                        tail: sig.tail_hash as i64,
+                    });
                 }
             }
-            if is_missing != 0 {
-                let _ = tx.execute("UPDATE items SET is_missing = 0 WHERE id = ?1", [id]);
+            if row.is_missing != 0 {
+                writes.push(ReconcileWrite::ClearMissing { id: row.id });
             }
         } else if let Some(idn) = identity {
-            match file_identity::resolve_path(idn, &path) {
+            match file_identity::resolve_path(idn, &row.path) {
                 Some(new_path) => {
-                    let _ = tx.execute(
-                        "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
-                        params![new_path, get_name(&new_path), id],
-                    );
+                    let new_name = get_name(&new_path);
+                    writes.push(ReconcileWrite::Relocate {
+                        id: row.id,
+                        new_path,
+                        new_name,
+                    });
                 }
-                None if is_missing == 0 => {
-                    let _ = tx.execute("UPDATE items SET is_missing = 1 WHERE id = ?1", [id]);
+                None if row.is_missing == 0 => {
+                    writes.push(ReconcileWrite::MarkMissing { id: row.id });
                 }
                 None => {}
             }
-        } else if is_missing == 0 {
-            let _ = tx.execute("UPDATE items SET is_missing = 1 WHERE id = ?1", [id]);
+        } else if row.is_missing == 0 {
+            writes.push(ReconcileWrite::MarkMissing { id: row.id });
+        }
+    }
+    writes
+}
+
+/// 【对账·第三段】锁内批量回写：把写入计划包在单个事务里原子应用。
+/// 各条写入的容错策略与原内联实现一致：身份回填失败记日志、其余静默忽略。
+pub fn apply_reconcile(conn: &Connection, writes: &[ReconcileWrite]) -> Result<(), String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    for w in writes {
+        match w {
+            ReconcileWrite::BackfillIdentity { id, volume_serial, file_id } => {
+                if let Err(e) = tx.execute(
+                    "UPDATE items SET volume_serial = ?1, file_id = ?2 WHERE id = ?3",
+                    params![volume_serial, file_id, id],
+                ) {
+                    eprintln!("[reconcile] 回填 file_id 失败 (item {}): {}", id, e);
+                }
+            }
+            ReconcileWrite::BackfillSignature { id, size, head, tail } => {
+                let _ = tx.execute(
+                    "UPDATE items SET sig_size = ?1, sig_head = ?2, sig_tail = ?3 WHERE id = ?4",
+                    params![size, head, tail, id],
+                );
+            }
+            ReconcileWrite::ClearMissing { id } => {
+                let _ = tx.execute("UPDATE items SET is_missing = 0 WHERE id = ?1", [id]);
+            }
+            ReconcileWrite::Relocate { id, new_path, new_name } => {
+                let _ = tx.execute(
+                    "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
+                    params![new_path, new_name, id],
+                );
+            }
+            ReconcileWrite::MarkMissing { id } => {
+                let _ = tx.execute("UPDATE items SET is_missing = 1 WHERE id = ?1", [id]);
+            }
         }
     }
     tx.commit().map_err(|e| e.to_string())?;
@@ -528,8 +706,17 @@ const SCAN_SKIP_DIRS: &[&str] = &[
 const SCAN_MAX_ENTRIES: usize = 3_000_000;
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 
-/// 在候选盘内一次遍历，按 (size → 签名) 匹配所有失效对象，返回 (item_id, 新路径)。
-/// 不持有 DB 锁。先按文件大小廉价预筛，命中大小再做哈希校验；全部找到即提前结束。
+/// 每个失效对象最多保留的候选匹配数：达到 2 即可判定"歧义"，无需再找第 3 个。
+const MAX_SIGNATURE_CANDIDATES: usize = 2;
+
+/// 在候选盘内遍历，按 (size → 签名) 匹配失效对象，仅返回**唯一命中**的 (item_id, 新路径)。
+/// 不持有 DB 锁。先按文件大小廉价预筛，命中大小再做哈希校验。
+///
+/// 内容签名是弱身份（size + 首/尾 16KB 哈希），可能有多个不同文件恰好同签名。为避免把对象
+/// 误重定位到错误文件，此处**收集每个对象的全部候选**（最多留 2 个），扫描结束后只回写
+/// 恰好唯一命中的对象；0 个（未找到）或 ≥2 个（歧义）不自动回写，留给用户处理。
+/// 代价是无法在首个命中即提前结束（需扫到预算/遍历完以确认唯一性），但该操作仅在用户显式
+/// 触发"跨盘找回"时运行、且在锁外执行，可接受。
 pub fn scan_for_signatures(rows: &[MissingSignatureRow]) -> Vec<(i64, String)> {
     use std::collections::HashMap;
     if rows.is_empty() {
@@ -539,25 +726,36 @@ pub fn scan_for_signatures(rows: &[MissingSignatureRow]) -> Vec<(i64, String)> {
     for (i, r) in rows.iter().enumerate() {
         by_size.entry(r.size).or_default().push(i);
     }
-    let mut resolved = vec![false; rows.len()];
-    let mut found: Vec<(i64, String)> = Vec::new();
+    let mut candidates: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
     let mut budget = SCAN_MAX_ENTRIES;
 
     for root in file_identity::candidate_roots() {
-        if resolved.iter().all(|&x| x) || budget == 0 {
+        // 提前结束：所有对象都已收集到足够候选（均判定为歧义）或预算耗尽。
+        if budget == 0 || candidates.iter().all(|c| c.len() >= MAX_SIGNATURE_CANDIDATES) {
             break;
         }
-        scan_dir_tree(&root, &by_size, rows, &mut resolved, &mut found, &mut budget);
+        scan_dir_tree(&root, &by_size, rows, &mut candidates, &mut budget);
     }
-    found
+
+    // 仅回写"恰好唯一命中"的对象。
+    candidates
+        .into_iter()
+        .enumerate()
+        .filter_map(|(idx, mut paths)| {
+            if paths.len() == 1 {
+                Some((rows[idx].id, paths.pop().unwrap()))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn scan_dir_tree(
     root: &str,
     by_size: &std::collections::HashMap<u64, Vec<usize>>,
     rows: &[MissingSignatureRow],
-    resolved: &mut [bool],
-    found: &mut Vec<(i64, String)>,
+    candidates: &mut [Vec<String>],
     budget: &mut usize,
 ) {
     use std::os::windows::fs::MetadataExt;
@@ -595,6 +793,13 @@ fn scan_dir_tree(
                     Some(v) => v,
                     None => continue, // 大小不匹配，跳过昂贵的哈希
                 };
+                // 这些候选对象若都已收集满，跳过昂贵的哈希。
+                if indices
+                    .iter()
+                    .all(|&idx| candidates[idx].len() >= MAX_SIGNATURE_CANDIDATES)
+                {
+                    continue;
+                }
                 let path = entry.path();
                 let path_str = path.to_string_lossy().to_string();
                 let sig = match file_identity::compute_signature(&path_str) {
@@ -602,16 +807,12 @@ fn scan_dir_tree(
                     None => continue,
                 };
                 for &idx in indices {
-                    if resolved[idx] {
+                    if candidates[idx].len() >= MAX_SIGNATURE_CANDIDATES {
                         continue;
                     }
                     if rows[idx].head == sig.head_hash && rows[idx].tail == sig.tail_hash {
-                        resolved[idx] = true;
-                        found.push((rows[idx].id, path_str.clone()));
+                        candidates[idx].push(path_str.clone());
                     }
-                }
-                if resolved.iter().all(|&x| x) {
-                    return;
                 }
             }
         }
@@ -677,6 +878,49 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn in_queries_chunk_beyond_variable_limit() {
+        // 插入 600 条（> IN_CHUNK=500）触发分块；验证 get_items_by_ids / remove_items
+        // 在超过单条 IN 占位符规模时仍正确（不触发变量上限）、且排序跨块保持。
+        let conn = setup();
+        {
+            let tx = conn.unchecked_transaction().unwrap();
+            for i in 0..600i64 {
+                tx.execute(
+                    "INSERT INTO items (name, path, type, is_favorite) VALUES (?1, ?2, 'exe', ?3)",
+                    rusqlite::params![
+                        format!("item{:04}", i),
+                        format!(r"D:\n\{}.exe", i),
+                        if i == 599 { 1i64 } else { 0i64 }
+                    ],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        let ids: Vec<i64> = {
+            let mut stmt = conn.prepare("SELECT id FROM items").unwrap();
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+        assert_eq!(ids.len(), 600);
+
+        // 分块查询应返回全部对象，且收藏项排在最前（跨块排序生效）。
+        let fetched = get_items_by_ids(&conn, &ids).expect("get_items_by_ids > chunk");
+        assert_eq!(fetched.len(), 600, "分块查询应返回全部对象");
+        assert!(fetched[0].item.is_favorite, "收藏项应排在最前（跨块排序）");
+        assert_eq!(fetched[0].item.name, "item0599");
+
+        // 分块删除应清空全部（整体原子）。
+        remove_items(&conn, &ids).expect("remove_items > chunk");
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(remaining, 0, "分块删除应清空");
     }
 
     #[test]
@@ -749,22 +993,60 @@ mod tests {
         }];
         let mut by_size: HashMap<u64, Vec<usize>> = HashMap::new();
         by_size.insert(sig.size, vec![0usize]);
-        let mut resolved = vec![false];
-        let mut found = Vec::new();
+        let mut candidates: Vec<Vec<String>> = vec![Vec::new()];
         let mut budget = 1_000_000usize;
 
         scan_dir_tree(
             &base.to_string_lossy(),
             &by_size,
             &rows,
-            &mut resolved,
-            &mut found,
+            &mut candidates,
             &mut budget,
         );
 
-        assert_eq!(found.len(), 1, "应按内容签名找回文件");
-        assert_eq!(found[0].0, 42);
-        assert!(found[0].1.to_lowercase().ends_with("moved.bin"));
+        assert_eq!(candidates[0].len(), 1, "应按内容签名找回唯一文件");
+        assert!(candidates[0][0].to_lowercase().ends_with("moved.bin"));
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn scan_for_signatures_skips_ambiguous_multi_candidate() {
+        // 同一签名（内容相同）复制到两个文件 → 命中多候选，应判为歧义、不自动回写。
+        let base = std::env::temp_dir().join(format!("tl_ambig_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let data: Vec<u8> = (0..60_000u32).map(|i| (i % 101) as u8).collect();
+        let a = base.join("a.bin");
+        let b = base.join("nested").join("b.bin");
+        std::fs::create_dir_all(b.parent().unwrap()).unwrap();
+        std::fs::write(&a, &data).unwrap();
+        std::fs::write(&b, &data).unwrap();
+
+        let sig = file_identity::compute_signature(&a.to_string_lossy()).expect("sig");
+        let rows = vec![MissingSignatureRow {
+            id: 7,
+            size: sig.size,
+            head: sig.head_hash,
+            tail: sig.tail_hash,
+        }];
+
+        // 用内部遍历直接验证候选收集（scan_for_signatures 走全盘遍历，测试里用 scan_dir_tree 定向）。
+        use std::collections::HashMap;
+        let mut by_size: HashMap<u64, Vec<usize>> = HashMap::new();
+        by_size.insert(sig.size, vec![0usize]);
+        let mut candidates: Vec<Vec<String>> = vec![Vec::new()];
+        let mut budget = 1_000_000usize;
+        scan_dir_tree(&base.to_string_lossy(), &by_size, &rows, &mut candidates, &mut budget);
+
+        assert!(candidates[0].len() >= 2, "同签名多文件应收集到多个候选");
+        // 多候选 → filter 只保留唯一命中，故不产出回写项。
+        let unique: Vec<_> = candidates
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, mut p)| if p.len() == 1 { Some((rows[idx].id, p.pop().unwrap())) } else { None })
+            .collect();
+        assert!(unique.is_empty(), "歧义命中不应自动回写");
 
         let _ = std::fs::remove_dir_all(&base);
     }

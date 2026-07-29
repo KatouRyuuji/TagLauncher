@@ -1,3 +1,5 @@
+import { useEscapeKey } from "../hooks/useEscapeKey";
+
 interface MigrationDialogProps {
   open: boolean;
   appliedMigrations: string[];
@@ -13,6 +15,7 @@ export function MigrationDialog({
   toVersion,
   onClose,
 }: MigrationDialogProps) {
+  useEscapeKey(onClose, open);
   if (!open) return null;
 
   return (

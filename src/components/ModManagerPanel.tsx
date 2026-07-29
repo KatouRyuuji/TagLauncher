@@ -262,12 +262,16 @@ export function ModManagerPanel() {
                 <div className="text-label">Security</div>
                 <h3 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">启用脚本扩展</h3>
                 <p className="mt-3 text-sm leading-7 text-[var(--text-secondary)]">
-                  此扩展包含 JavaScript 代码，会在应用中执行。请确认其来源可信，再继续启用。
+                  此扩展包含 JavaScript 代码，启用后将以应用的完全权限在本机运行（可读写你的数据、访问网络、调用系统能力）。
+                  请仅在信任来源时启用。
                 </p>
 
                 {permissions.length > 0 && (
                   <div className="surface-card-soft mt-5 p-4">
-                    <div className="text-label">Permissions</div>
+                    <div className="text-label">Declared capabilities</div>
+                    <p className="mt-2 text-xs leading-6 text-[var(--text-muted)]">
+                      以下为扩展自行声明的用途，仅供参考，并非对其能力的安全限制。
+                    </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {permissions.map((permission) => {
                         const meta = PERMISSION_META[permission] ?? { label: permission, color: "var(--text-muted)" };

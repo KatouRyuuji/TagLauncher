@@ -21,10 +21,10 @@ export interface ItemCardProps {
   cabinets: Cabinet[];
   currentCabinetId: number | null;
   onLaunch: () => void;
-  onRemove: () => void;
   onAddTagToItem: (itemId: number, tagId: number) => Promise<void>;
   onRemoveTagFromItem: (itemId: number, tagId: number) => Promise<void>;
   onAddNewTagToItem: (itemId: number, tagName: string, baseTagIds?: number[]) => Promise<number[]>;
+  onRecycleNewTags?: (tagIds: number[]) => Promise<void>;
   onSetTags: (itemId: number, tagIds: number[]) => Promise<void>;
   onToggleFavorite: () => void;
   onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>;
@@ -129,9 +129,9 @@ function ItemCardComponent({
   cabinets,
   currentCabinetId,
   onLaunch,
-  onRemove,
   onRemoveTagFromItem,
   onAddNewTagToItem,
+  onRecycleNewTags,
   onSetTags,
   onToggleFavorite,
   onAddItemToCabinet,
@@ -184,10 +184,13 @@ function ItemCardComponent({
           event.preventDefault();
           setMenuPos({ x: event.clientX, y: event.clientY });
         }}
-        onKeyDown={(event) => event.key === "Enter" && onLaunch()}
+        onKeyDown={(event) => {
+          // 仅当事件源自卡片本身时响应 Enter 启动；
+          // 子元素（标签删除按钮、Mod 插槽按钮等）上的 Enter 应触发其自身行为，不冒泡为启动。
+          if (event.key === "Enter" && event.target === event.currentTarget) onLaunch();
+        }}
         tabIndex={0}
       >
-        <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,var(--accent-primary),transparent)] opacity-60" />
         {selected && (
           <div className="absolute right-3 top-3 z-10 flex h-6 w-6 items-center justify-center rounded-[var(--radius-full)] bg-[var(--accent-primary)] text-[var(--text-invert)] shadow-[var(--shadow-sm)]">
             <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2}>
@@ -300,7 +303,7 @@ function ItemCardComponent({
           position={menuPos}
           onClose={() => setMenuPos(null)}
           onLaunch={onLaunch}
-          onRemove={onRemove}
+          onRemove={() => void onRequestRemoveFromApp(item.id)}
           onEditTags={() => setShowTagEditor(true)}
           onToggleFavorite={onToggleFavorite}
           onAddItemToCabinet={onAddItemToCabinet}
@@ -318,6 +321,7 @@ function ItemCardComponent({
             setShowTagEditor(false);
           }}
           onAddNewTag={async (name, baseTagIds) => onAddNewTagToItem(item.id, name, baseTagIds)}
+          onRecycleNewTags={onRecycleNewTags}
           onClose={() => setShowTagEditor(false)}
         />
       )}

@@ -54,7 +54,7 @@ const ItemGridCard = memo(function ItemGridCard({
     onUpdateThumbnail,
   } = viewProps;
   const handleLaunch = useCallback(() => onLaunch(item.id), [item.id, onLaunch]);
-  const handleToggleFavorite = useCallback(() => onToggleFavorite(item.id), [item.id, onToggleFavorite]);
+  const handleToggleFavorite = useCallback(() => { void onToggleFavorite(item.id).catch(() => {}); }, [item.id, onToggleFavorite]);
 
   return (
     <ItemCard
@@ -170,24 +170,22 @@ export function ItemGrid({
   });
 
   // 每次渲染把可见行的真实测量数据记录下来，供 getItemRects 使用。
+  // 注意：写 ref 属于副作用，必须放在 useLayoutEffect 中（渲染期写入在并发渲染被丢弃时会残留脏数据）。
   const virtualItems = virtualizer.getVirtualItems();
-  for (const vRow of virtualItems) {
-    rowMetricsRef.current.set(vRow.index, { start: vRow.start, size: vRow.size });
-  }
+  useLayoutEffect(() => {
+    for (const vRow of virtualItems) {
+      rowMetricsRef.current.set(vRow.index, { start: vRow.start, size: vRow.size });
+    }
+  }, [virtualItems]);
 
-  if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center px-6 py-10">
-        <div className="surface-card flex items-center gap-3 px-5 py-4 text-sm text-[var(--text-muted)]">
-          <span className="inline-flex h-3 w-3 animate-pulse rounded-full bg-[var(--accent-primary)]" />
-          正在加载项目数据...
-        </div>
-      </div>
-    );
-  }
+  // lanes 变化后行数重排，旧行索引的度量对应到错误的行，清空等待重新测量，避免框选短暂错位
+  useLayoutEffect(() => {
+    rowMetricsRef.current.clear();
+  }, [lanes]);
 
   // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
   // 已渲染行使用真实测量值，未渲染行用 estimateSize 估算，从而支持跨屏框选。
+  // 注意：此 Hook 必须位于所有条件返回之前，否则违反 Rules of Hooks。
   const getItemRects = useCallback((): Map<number, Rect> => {
     const container = scrollRef.current;
     if (!container) return new Map();
@@ -217,6 +215,17 @@ export function ItemGrid({
     }
     return map;
   }, [lanes, rowCount, items]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-1 items-center justify-center px-6 py-10">
+        <div className="surface-card flex items-center gap-3 px-5 py-4 text-sm text-[var(--text-muted)]">
+          <span className="inline-flex h-3 w-3 animate-pulse rounded-full bg-[var(--accent-primary)]" />
+          正在加载项目数据...
+        </div>
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     return (

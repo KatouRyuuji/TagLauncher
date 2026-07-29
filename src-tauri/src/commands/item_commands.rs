@@ -3,13 +3,18 @@ use crate::models::{Item, ItemWithTags};
 use crate::services::item_service;
 use tauri::{AppHandle, State};
 
-#[tauri::command]
+// 拖拽导入：每个文件的 get_identity(FFI) / compute_signature(读文件) / detect_type 是重 IO，
+// 用 (async) 放到工作线程执行，避免在主线程同步跑而冻结 UI。函数体全同步（无 await），
+// DB 锁只在工作线程内的同步区间持有并随即释放，无跨 await 持锁。
+#[tauri::command(async)]
 pub fn add_item(db: State<Database>, path: String) -> Result<Item, String> {
     let conn = db.get_conn();
     item_service::add_item(&conn, &path)
 }
 
-#[tauri::command]
+// 批量拖入大量文件是重 IO 大头，同样用 (async) 放到工作线程；add_items 的 &mut conn 事务在
+// 工作线程内同步执行，函数体无 await，无跨 await 持锁。
+#[tauri::command(async)]
 pub fn add_items(db: State<Database>, paths: Vec<String>) -> item_service::AddItemsResult {
     let mut conn = db.get_conn();
     item_service::add_items(&mut conn, paths)
@@ -59,14 +64,23 @@ pub fn update_item_icon(
     item_service::update_item_icon(&conn, item_id, icon_path)
 }
 
-#[tauri::command]
+// 首次加载会串行抽取图标（PowerShell/文件 IO）+ 对账重 IO，是 UI 卡顿大头；用 (async) 放到
+// 工作线程执行，不冻结主线程。函数体全同步（无 await），DB 锁只在各短临界区内持有并随即释放，
+// 无跨 await 持锁。
+#[tauri::command(async)]
 pub fn get_items(app: AppHandle, db: State<Database>) -> Result<Vec<ItemWithTags>, String> {
-    // 锁内只做 DB 工作（对账 + 查询），随后释放锁再补图标，
-    // 避免在持有全局 DB 锁期间串行执行 PowerShell 图标提取等重 IO 阻塞其它命令。
+    // 刷新即对账（检测移动/重命名并更新位置、找不到的标记失效），采用三段式把重 IO 移出锁：
+    //   ① 锁内取快照 → ② 释放锁做 exists()/FFI/签名等重 IO 生成写入计划 → ③ 锁内批量回写 + 查询。
+    // 随后再次释放锁补图标（PowerShell/文件 IO）。锁只在 ①③ 两段短临界区持有，
+    // 逐对象的重 IO 全在锁外完成，不再阻塞其它命令。对账失败不阻断列表加载。
+    let snapshot = {
+        let conn = db.get_conn();
+        item_service::read_reconcile_snapshot(&conn).unwrap_or_default()
+    };
+    let writes = item_service::plan_reconcile(snapshot);
     let mut items = {
         let conn = db.get_conn();
-        // 刷新即对账：检测移动/重命名并自动更新位置，找不到的标记为失效；失败不阻断加载。
-        let _ = item_service::reconcile_items(&conn);
+        let _ = item_service::apply_reconcile(&conn, &writes);
         item_service::get_items(&conn)?
     };
     item_service::fill_visuals(&app, &mut items);
@@ -79,8 +93,13 @@ pub fn get_item(
     db: State<Database>,
     id: i64,
 ) -> Result<ItemWithTags, String> {
-    let conn = db.get_conn();
-    item_service::get_item(&app, &conn, id)
+    // 锁内只取数据，释放锁后再补图标（PowerShell/文件 IO），避免阻塞其它命令。
+    let mut item = {
+        let conn = db.get_conn();
+        item_service::get_item(&conn, id)?
+    };
+    item_service::fill_visuals(&app, std::slice::from_mut(&mut item));
+    Ok(item)
 }
 
 #[tauri::command]
@@ -89,8 +108,12 @@ pub fn get_items_by_ids(
     db: State<Database>,
     ids: Vec<i64>,
 ) -> Result<Vec<ItemWithTags>, String> {
-    let conn = db.get_conn();
-    item_service::get_items_by_ids(&app, &conn, &ids)
+    let mut items = {
+        let conn = db.get_conn();
+        item_service::get_items_by_ids(&conn, &ids)?
+    };
+    item_service::fill_visuals(&app, &mut items);
+    Ok(items)
 }
 
 #[tauri::command]
@@ -101,7 +124,8 @@ pub fn toggle_favorite(db: State<Database>, id: i64) -> Result<bool, String> {
 
 /// 对失效对象按内容签名做跨盘符兜底找回，返回成功找回数量。
 /// 扫描阶段在锁外执行：先取数据释放锁 → 扫描候选盘 → 再加锁回写，避免长扫描阻塞其它命令。
-#[tauri::command]
+/// 全盘扫描是重 IO，用 (async) 放到工作线程；函数体无 await，DB 锁只在取数据/回写两小段内持有。
+#[tauri::command(async)]
 pub fn relocate_missing(db: State<Database>) -> Result<usize, String> {
     let rows = {
         let conn = db.get_conn();

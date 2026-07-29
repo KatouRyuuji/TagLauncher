@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ItemViewProps } from "../types";
 import { ItemRow } from "./ItemRow";
@@ -44,7 +44,7 @@ const ItemListRow = memo(function ItemListRow({
     onUpdateThumbnail,
   } = viewProps;
   const handleLaunch = useCallback(() => onLaunch(item.id), [item.id, onLaunch]);
-  const handleToggleFavorite = useCallback(() => onToggleFavorite(item.id), [item.id, onToggleFavorite]);
+  const handleToggleFavorite = useCallback(() => { void onToggleFavorite(item.id).catch(() => {}); }, [item.id, onToggleFavorite]);
 
   return (
     <ItemRow
@@ -134,21 +134,32 @@ export function ItemListView({
   });
 
   // 记录可见行真实测量数据；缺失行用 estimateSize 估算。
+  // 注意：写 ref 属于副作用，必须放在 useLayoutEffect 中（渲染期写入在并发渲染被丢弃时会残留脏数据）。
   const virtualItems = virtualizer.getVirtualItems();
-  for (const vRow of virtualItems) {
-    rowMetricsRef.current.set(vRow.index, { start: vRow.start, size: vRow.size });
-  }
+  useLayoutEffect(() => {
+    for (const vRow of virtualItems) {
+      rowMetricsRef.current.set(vRow.index, { start: vRow.start, size: vRow.size });
+    }
+  }, [virtualItems]);
 
   // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
+  // 注意：vRow.start 相对于行容器（position:relative 的 div），而行容器位于 sticky
+  // 表头之下，因此必须用行容器的实际 DOM 位置校正，否则框选矩形整体上移一个表头高度。
+  const rowContainerRef = useRef<HTMLDivElement>(null);
   const getItemRects = useCallback((): Map<number, Rect> => {
     const container = scrollRef.current;
     if (!container) return new Map();
 
-    const style = getComputedStyle(container);
-    const paddingTop = parseFloat(style.paddingTop) || 0;
-    const paddingLeft = parseFloat(style.paddingLeft) || 0;
-    const paddingRight = parseFloat(style.paddingRight) || 0;
-    const contentWidth = container.clientWidth - paddingLeft - paddingRight;
+    // 行容器在滚动容器内容坐标系中的实际偏移（含表头高度、surface-card 边框等）
+    const rowContainer = rowContainerRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const baseLeft = rowContainer
+      ? rowContainer.getBoundingClientRect().left - containerRect.left + container.scrollLeft
+      : 0;
+    const baseTop = rowContainer
+      ? rowContainer.getBoundingClientRect().top - containerRect.top + container.scrollTop
+      : 0;
+    const contentWidth = rowContainer?.clientWidth ?? container.clientWidth;
 
     const map = new Map<number, Rect>();
     for (let index = 0; index < items.length; index++) {
@@ -156,10 +167,10 @@ export function ItemListView({
       const start = metric?.start ?? index * LIST_ROW_HEIGHT;
       const size = metric?.size ?? LIST_ROW_HEIGHT;
       map.set(items[index].id, {
-        left: paddingLeft,
-        top: paddingTop + start,
-        right: paddingLeft + contentWidth,
-        bottom: paddingTop + start + size,
+        left: baseLeft,
+        top: baseTop + start,
+        right: baseLeft + contentWidth,
+        bottom: baseTop + start + size,
       });
     }
     return map;
@@ -216,7 +227,7 @@ export function ItemListView({
 
         {/* 虚拟化列表：position:relative 撑开滚动高度；行用 top 定位（非 transform，
             否则会令行内右键菜单等 position:fixed 元素错位），高度由 measureElement 动态测量。 */}
-        <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+        <div ref={rowContainerRef} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {virtualizer.getVirtualItems().map((vRow) => {
             const item = items[vRow.index]!;
             return (

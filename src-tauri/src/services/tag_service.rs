@@ -203,26 +203,24 @@ pub fn get_tag_relations(conn: &Connection) -> Result<Vec<(i64, i64)>, String> {
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
-/// 某标签的所有后代集合（沿 child 边 BFS，含传入节点自身）。
+/// 某标签的所有后代集合（沿 child 边闭包，含传入节点自身）。
+/// 用递归 CTE 一次查询完成（与 expand_with_descendants 一致），UNION 天然去重并终止潜在环。
 fn descendants_of(conn: &Connection, id: i64) -> Result<HashSet<i64>, String> {
     let mut stmt = conn
-        .prepare("SELECT child_id FROM tag_relations WHERE parent_id = ?1")
+        .prepare(
+            "WITH RECURSIVE descendants(id) AS (
+                SELECT ?1
+                UNION
+                SELECT tr.child_id FROM tag_relations tr JOIN descendants d ON tr.parent_id = d.id
+             )
+             SELECT id FROM descendants",
+        )
         .map_err(|e| e.to_string())?;
-    let mut seen: HashSet<i64> = HashSet::new();
-    seen.insert(id);
-    let mut stack = vec![id];
-    while let Some(cur) = stack.pop() {
-        let children: Vec<i64> = stmt
-            .query_map([cur], |r| r.get::<_, i64>(0))
-            .map_err(|e| e.to_string())?
-            .filter_map(|r| r.ok())
-            .collect();
-        for c in children {
-            if seen.insert(c) {
-                stack.push(c);
-            }
-        }
-    }
+    let seen = stmt
+        .query_map([id], |r| r.get::<_, i64>(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
     Ok(seen)
 }
 

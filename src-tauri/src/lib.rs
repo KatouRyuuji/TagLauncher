@@ -1,8 +1,11 @@
 mod commands;
-mod db;
-mod extensions;
-mod models;
-mod services;
+// 集成测试（tests/ 目录把本 crate 当外部 rlib 使用）只能访问 pub 项，
+// 故将以下四个模块公开，使其 service/db/model/extension 层可被跨模块链路测试直接调用。
+// 仅放宽可见性，不改变任何业务逻辑。
+pub mod db;
+pub mod extensions;
+pub mod models;
+pub mod services;
 
 pub use commands::*;
 pub use db::Database;
@@ -13,6 +16,50 @@ use services::path_service;
 use services::settings_service;
 use std::path::PathBuf;
 use tauri::Manager;
+
+/// 将旧版数据库以一致快照方式迁移到新位置。
+///
+/// 旧库可能处于 WAL 模式且存在未 checkpoint 的 `-wal` 旁文件——仅复制主 `.db` 会丢失其中
+/// 已提交但未合并的最新事务（经典 WAL 复制陷阱）。改用源库连接的 `VACUUM INTO` 产出单文件
+/// 一致快照（含所有已提交改动、无旁文件依赖）。先清理目标及其 WAL/SHM 旁文件，既避免陈旧旁
+/// 文件与新快照不匹配导致打开时数据错乱，也满足 `VACUUM INTO` 要求目标文件不存在。
+fn migrate_legacy_db(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+    let dst_str = dst.to_string_lossy().to_string();
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{}", dst_str, suffix));
+    }
+    // 优先 VACUUM INTO（一致快照，含未 checkpoint 的 WAL 数据）；以只读方式打开旧库，
+    // 避免旧库位于只读位置（Program Files、只读盘）时因无法创建 -shm/-wal 而失败。
+    let vacuum_result = rusqlite::Connection::open_with_flags(
+        src,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .and_then(|src_conn| {
+        let target = dst_str.replace('\'', "''");
+        src_conn.execute_batch(&format!("VACUUM INTO '{}'", target))
+    });
+    match vacuum_result {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            // 回退：只读打开/VACUUM 失败（如旧库带未 checkpoint 的 -wal，只读无法回放）
+            // 时退回普通打开 + VACUUM；再不行用旧的 fs::copy 兜底（只需读权限）。
+            eprintln!("[migrate] 只读 VACUUM INTO 失败({})，尝试读写打开后重试", e);
+            let retry = rusqlite::Connection::open(src).and_then(|src_conn| {
+                let target = dst_str.replace('\'', "''");
+                src_conn.execute_batch(&format!("VACUUM INTO '{}'", target))
+            });
+            match retry {
+                Ok(_) => Ok(()),
+                Err(e2) => {
+                    eprintln!("[migrate] VACUUM INTO 仍失败({})，回退 fs::copy", e2);
+                    std::fs::copy(src, dst)
+                        .map(|_| ())
+                        .map_err(|e3| format!("迁移旧数据库失败 {:?} -> {:?}: {}", src, dst, e3))
+                }
+            }
+        }
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -40,11 +87,8 @@ pub fn run() {
             if needs_legacy_scan {
                 if let Some(src) = find_legacy_db(&app_dir) {
                     if src != db_path {
-                        std::fs::copy(&src, &db_path).map_err(|e| {
-                            std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                format!("Failed to migrate database from {:?}: {}", src, e),
-                            )
+                        migrate_legacy_db(&src, &db_path).map_err(|e| {
+                            std::io::Error::new(std::io::ErrorKind::Other, e)
                         })?;
                     }
                 }
@@ -238,6 +282,21 @@ pub fn run() {
             set_current_theme,
             get_setting,
             set_setting,
+            // 数据目录 / 导入导出备份
+            get_data_directory_info,
+            set_data_directory,
+            reset_data_directory,
+            backup_data,
+            export_data,
+            import_data,
+            restart_app,
+            // AI 自动打标
+            ai_get_config,
+            ai_set_config,
+            ai_is_configured,
+            ai_clear_api_key,
+            ai_test_connection,
+            ai_suggest_tags,
             get_custom_themes,
             get_theme_directory_info,
             install_theme_file,

@@ -75,13 +75,6 @@ pub fn fill_item_visual(app: &AppHandle, item: &mut Item) {
     }
 }
 
-/// 为项目列表补齐自动可视路径
-pub fn fill_auto_visual_paths(app: &AppHandle, items: &mut [Item]) {
-    for item in items.iter_mut() {
-        fill_item_visual(app, item);
-    }
-}
-
 #[cfg(target_os = "windows")]
 fn icon_cache_path(cache_dir: &Path, input_path: &str) -> PathBuf {
     cache_dir.join(format!("{}.png", icon_cache_key(input_path)))

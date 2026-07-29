@@ -2,6 +2,16 @@
 // lib/modApi.ts — 暴露给 JS Mod 的全局 API（v2.2）
 // ============================================================================
 //
+// ⚠️ 安全模型（务必知悉，勿误解）：
+//   Mod 属于「可信扩展」。Mod JS 以内联 <script> 在应用主 realm 内执行，拥有与
+//   宿主完全相同的能力（window / fetch / DOM / Tauri invoke 全量后端命令）。
+//   下方的 permissions 权限声明**不是安全沙箱边界**，其作用是：
+//     1) 面向用户的能力/意图标注——启用前在 UI 展示该 mod 声明要用哪些能力；
+//     2) 对「守规矩」mod 的 API 误用防呆——经 createScope 的调用会按声明校验，
+//        并拒绝未注册 / 冒用他人身份的 scope 请求（见 createScope）。
+//   任何 mod 都能绕过本层直接调用后端命令，因此**安装/启用 mod 前必须确认来源可信**。
+//   真正的进程/realm 级隔离需 iframe/Worker 沙箱改造，不在当前可信模型范围内。
+//
 // 使用方式（在 mod JS 中）：
 //   const api = window.__tagLauncherModApi.createScope(__MOD_ID__);
 //
@@ -258,27 +268,49 @@ export function notifySelectionChanged(itemIds: number[]) {
 
 // ── 权限注册表 ────────────────────────────────────────────────────────────
 
-/** modId → 已授权的权限集合（undefined = 不限制） */
-const modPermissionsMap = new Map<string, Set<ModPermission>>();
+/**
+ * modId → 权限状态。三态区分（关键：不再把「未注册」当作「不受限」）：
+ *   - 键不存在        → 未注册的 mod（未经 registerModPermissions）→ 拒绝一切
+ *   - 值为 null        → 已注册但未声明 permissions（旧 mod，向后兼容）→ 不受限
+ *   - 值为 Set<...>    → 已注册且显式声明（含空集）→ 仅允许集合内权限
+ */
+const modPermissionsMap = new Map<string, Set<ModPermission> | null>();
 
 /**
  * 注册 mod 的权限声明（由 modRuntime 在注入前调用）。
- * permissions 为 undefined → 不限制（向后兼容：旧 mod 未声明 permissions 字段）
+ * permissions 为 undefined → 注册为「不受限」（向后兼容：旧 mod 未声明 permissions 字段）
  * permissions 为空数组    → 无任何权限（显式声明无需任何权限）
  * permissions 为非空数组  → 仅允许声明的权限
  */
 export function registerModPermissions(modId: string, permissions: ModPermission[] | undefined): void {
   if (permissions === undefined) {
-    modPermissionsMap.delete(modId); // 未声明 = 不限制
+    modPermissionsMap.set(modId, null); // 已注册 + 不受限（旧 mod）
   } else {
-    modPermissionsMap.set(modId, new Set(permissions)); // 显式声明（含空数组）= 严格限制
+    modPermissionsMap.set(modId, new Set(permissions)); // 已注册 + 显式声明（含空数组）
   }
 }
 
+/** 该 modId 是否已经过 registerModPermissions 注册（无论是否受限） */
+function isModRegistered(modId: string): boolean {
+  return modPermissionsMap.has(modId);
+}
+
 function hasPermission(modId: string, permission: ModPermission): boolean {
+  if (!modPermissionsMap.has(modId)) return false; // 未注册 → 拒绝
   const perms = modPermissionsMap.get(modId);
-  if (!perms) return true; // 未限制
+  if (perms == null) return true; // 已注册但不受限（旧 mod）
   return perms.has(permission);
+}
+
+// ── 当前正在注入执行的 mod（供 createScope 校验自报 id）─────────────────────
+// modRuntime.executeJs 在同步执行 mod 顶层代码前后设置/清除此值。mod 顶层通过
+// createScope(__MOD_ID__) 获取作用域时，可据此拒绝「冒用他人 id」的请求。
+// 异步回调中该值为 null（无法判定调用方），此时仅校验 id 是否已注册。
+let currentExecutingModId: string | null = null;
+
+/** 由 modRuntime 在 executeJs 前后调用，标记/清除当前正在执行的 mod id */
+export function setExecutingModId(modId: string | null): void {
+  currentExecutingModId = modId;
 }
 
 function requirePermission(modId: string, permission: ModPermission, opName: string): void {
@@ -536,22 +568,36 @@ async function removeItemsFromCabinet(cabinetId: number, itemIds: number[]): Pro
 }
 async function launchItems(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
-  for (const id of ids) await db.launchItem(id);
+  // 逐项隔离失败：某个对象失效不中断后续启动，结束后统一报告
+  const failed: number[] = [];
+  for (const id of ids) {
+    try {
+      await db.launchItem(id);
+    } catch {
+      failed.push(id);
+    }
+  }
   // 复用单条启动事件逐个派发：一次批量查名后通知所有监听器
   const items = await db.getItemsByIds(ids);
   const nameById = new Map(items.map((i) => [i.id, i.name]));
-  for (const id of ids) notifyItemLaunched(id, nameById.get(id) ?? "");
+  for (const id of ids) {
+    if (!failed.includes(id)) notifyItemLaunched(id, nameById.get(id) ?? "");
+  }
+  if (failed.length > 0) {
+    const names = failed.map((id) => nameById.get(id) ?? `#${id}`).join("、");
+    throw new Error(`${failed.length} 个对象启动失败：${names}`);
+  }
 }
 
-// 事件
-function onSearchInput(cb: (q: string) => void)                   { searchInputListeners.add(cb);     return () => { searchInputListeners.delete(cb); }; }
-function onItemLaunched(cb: (id: number, name: string) => void)   { itemLaunchedListeners.add(cb);    return () => { itemLaunchedListeners.delete(cb); }; }
-function onItemsChanged(cb: (i: ItemWithTags[]) => void)          { itemsChangedListeners.add(cb);    return () => { itemsChangedListeners.delete(cb); }; }
-function onTagsChanged(cb: (t: Tag[]) => void)                    { tagsChangedListeners.add(cb);     return () => { tagsChangedListeners.delete(cb); }; }
-function onCabinetsChanged(cb: (c: Cabinet[]) => void)            { cabinetsChangedListeners.add(cb); return () => { cabinetsChangedListeners.delete(cb); }; }
-function onCabinetItemsChanged(cb: (cabinetId: number, itemIds: number[]) => void) { cabinetItemsChangedListeners.add(cb); return () => { cabinetItemsChangedListeners.delete(cb); }; }
+// 事件（导出供应用内部桥接 Mod 数据变更到主 UI 使用）
+export function onSearchInput(cb: (q: string) => void)                   { searchInputListeners.add(cb);     return () => { searchInputListeners.delete(cb); }; }
+export function onItemLaunched(cb: (id: number, name: string) => void)   { itemLaunchedListeners.add(cb);    return () => { itemLaunchedListeners.delete(cb); }; }
+export function onItemsChanged(cb: (i: ItemWithTags[]) => void)          { itemsChangedListeners.add(cb);    return () => { itemsChangedListeners.delete(cb); }; }
+export function onTagsChanged(cb: (t: Tag[]) => void)                    { tagsChangedListeners.add(cb);     return () => { tagsChangedListeners.delete(cb); }; }
+export function onCabinetsChanged(cb: (c: Cabinet[]) => void)            { cabinetsChangedListeners.add(cb); return () => { cabinetsChangedListeners.delete(cb); }; }
+export function onCabinetItemsChanged(cb: (cabinetId: number, itemIds: number[]) => void) { cabinetItemsChangedListeners.add(cb); return () => { cabinetItemsChangedListeners.delete(cb); }; }
 function getSelectedItemIds(): number[] { return currentSelectedItemIds.slice(); }
-function onSelectionChanged(cb: (ids: number[]) => void) { selectionChangedListeners.add(cb); return () => { selectionChangedListeners.delete(cb); }; }
+export function onSelectionChanged(cb: (ids: number[]) => void) { selectionChangedListeners.add(cb); return () => { selectionChangedListeners.delete(cb); }; }
 
 // UI
 function notify(msg: string, type: ToastType = "info") {
@@ -586,7 +632,17 @@ async function netFetch(url: string, init?: RequestInit): Promise<Response> {
   if (init?.headers) {
     new Headers(init.headers).forEach((v, k) => { reqHeaders[k] = v; });
   }
-  const body = typeof init?.body === "string" ? init.body : undefined;
+  // body 仅支持 string / URLSearchParams / ArrayBuffer / Uint8Array；
+  // FormData / Blob 等多部件内容暂不支持，显式报错而非静默丢弃
+  let body: string | undefined;
+  if (typeof init?.body === "string") {
+    body = init.body;
+  } else if (init?.body instanceof URLSearchParams) {
+    body = init.body.toString();
+    reqHeaders["content-type"] ??= "application/x-www-form-urlencoded;charset=UTF-8";
+  } else if (init?.body != null) {
+    throw new Error("net.fetch 暂不支持 FormData/Blob 等非文本 body");
+  }
 
   const resp = await db.netFetch({ url, method, headers: reqHeaders, body });
 
@@ -624,6 +680,19 @@ function onEvent(_modId: string, eventName: string, cb: (data: unknown, sourceMo
 // ── createScope ────────────────────────────────────────────────────────────
 
 function createScope(modId: string): ModScope {
+  // 安全校验（可信模型下的误用/越权防呆，非沙箱边界）：
+  // 1) 未注册的 modId 一律拒绝——堵住「createScope('任意未注册id') → 旧逻辑放行授全权」的绕过。
+  if (!isModRegistered(modId)) {
+    throw new Error(`[Mod] 拒绝为未注册的 mod "${modId}" 创建作用域`);
+  }
+  // 2) 若正处于某 mod 的同步注入执行中，则请求 id 必须与当前执行 mod 一致，拒绝冒用他人身份。
+  //    （异步回调阶段 currentExecutingModId 为 null，无法判定调用方，跳过此校验。）
+  if (currentExecutingModId !== null && currentExecutingModId !== modId) {
+    throw new Error(
+      `[Mod "${currentExecutingModId}"] 拒绝以他人身份 "${modId}" 创建作用域`,
+    );
+  }
+
   // API 版本兼容性检查：仅告警不阻断；主版本不兼容用 error 级别使其更醒目
   const apiWarning = checkApiVersionCompatibility(modId);
   if (apiWarning) {
@@ -753,14 +822,14 @@ function createScope(modId: string): ModScope {
     launchItems:             guarded("launch",         "launchItems",             launchItems),
 
     // 事件（读取权限）
-    onSearchInput:     scopedOnSearchInput,
-    onItemLaunched:    scopedOnItemLaunched,
+    onSearchInput:     guarded("items:read",  "onSearchInput",     scopedOnSearchInput),
+    onItemLaunched:    guarded("items:read",  "onItemLaunched",    scopedOnItemLaunched),
     onItemsChanged:    guarded("items:read",    "onItemsChanged",    scopedOnItemsChanged),
     onTagsChanged:     guarded("tags:read",     "onTagsChanged",     scopedOnTagsChanged),
     onCabinetsChanged: guarded("cabinets:read", "onCabinetsChanged", scopedOnCabinetsChanged),
     onCabinetItemsChanged: guarded("cabinets:read", "onCabinetItemsChanged", scopedOnCabinetItemsChanged),
-    getSelectedItemIds,
-    onSelectionChanged: scopedOnSelectionChanged,
+    getSelectedItemIds: guarded("items:read", "getSelectedItemIds", getSelectedItemIds),
+    onSelectionChanged: guarded("items:read", "onSelectionChanged", scopedOnSelectionChanged),
 
     // 文件系统
     fs: {
@@ -824,20 +893,11 @@ function createScope(modId: string): ModScope {
   };
 }
 
-// ── 全局 API（不走权限检查，供应用内部使用） ─────────────────────────────
+// ── 全局 API（仅暴露 version 与 createScope，防止绕过权限体系） ─────────────
 
-export const modApi: TagLauncherModApi = {
+export const modApi: Pick<TagLauncherModApi, "version" | "createScope"> = {
   version: API_VERSION,
   createScope,
-  getThemeVariable, setThemeVariable, getThemeId, onThemeChange,
-  getItems, getTags, getTagRelations, getCabinets,
-  addItem, removeItem, addTag, updateTag, removeTag, setItemTags,
-  launchItem, toggleFavorite,
-  addCabinet, updateCabinet, removeCabinet, addItemToCabinet, removeItemFromCabinet,
-  removeItems, setManyItemTags, addItemsToCabinet, removeItemsFromCabinet, launchItems,
-  onSearchInput, onItemLaunched, onItemsChanged, onTagsChanged, onCabinetsChanged, onCabinetItemsChanged,
-  getSelectedItemIds, onSelectionChanged,
-  notify,
 };
 
 export function initModApi() {

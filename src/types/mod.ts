@@ -1,5 +1,9 @@
 /**
- * Mod 权限声明（在 manifest.json 中声明后由运行时强制执行）
+ * Mod 权限声明。
+ *
+ * ⚠️ 权限声明**不是安全沙箱边界**：Mod JS 运行于应用主 realm，拥有与宿主相同的完全能力，
+ *    可绕过本层直接调用后端命令。权限的作用是：(1) 面向用户的能力/意图标注（启用前 UI 展示）；
+ *    (2) 对经 createScope 的「守规矩」调用做 API 误用防呆。安装/启用 mod 前须确认来源可信。
  *   "items:read"      — 调用 getItems() / onItemsChanged()
  *   "items:write"     — addItem() / removeItem() / setItemTags() / toggleFavorite()
  *   "tags:read"       — getTags() / onTagsChanged()
@@ -18,8 +22,8 @@
  *   "objects:preview" — 读取被管理对象的预览信息和资源 URL
  *   "data"            — mod 专属数据库存储
  *
- * 若 permissions 未声明（undefined），则不受限制（向后兼容）。
- * 若 permissions 为 []，则无任何权限。
+ * 若 permissions 未声明（undefined），则经 createScope 的调用不受限（向后兼容）。
+ * 若 permissions 为 []，则经 createScope 的调用无任何权限（但 mod 仍可绕过本层，见上）。
  */
 export type ModPermission =
   | "items:read"
@@ -55,7 +59,7 @@ export interface ModManifest {
   min_app_version?: string;
   /** Mod 针对的 API 版本（如 "2.1.0"）；不声明则跳过版本协商 */
   api_version?: string;
-  /** 权限声明列表；声明后运行时强制执行，不声明则不受限 */
+  /** 权限声明列表：能力/意图标注 + 对 createScope 调用的误用防呆，非安全沙箱（详见 ModPermission） */
   permissions?: ModPermission[];
   /** Mod 间通信的事件约定 */
   events?: {

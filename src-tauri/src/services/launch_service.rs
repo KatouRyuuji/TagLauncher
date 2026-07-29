@@ -1,28 +1,49 @@
 use crate::services::item_service;
 use rusqlite::Connection;
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 use std::path::Path;
 
+/// 用系统关联程序打开文件/文件夹/URL：把路径作为**单个宽字符串**交给 Win32
+/// ShellExecuteW（"open" 动词），**不经 cmd.exe**，从根上杜绝 `&`/`^`/`(` 等 shell
+/// 元字符导致的命令注入（原实现 `cmd /C start "" <path>` 对不含空格的路径不加引号，
+/// 会把这些字符当命令分隔符解释）。ShellExecuteW 不做任何 shell 解析。
 #[cfg(target_os = "windows")]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
+fn shell_open(path: &str) -> Result<(), String> {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let file: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    let verb: Vec<u16> = "open".encode_utf16().chain(std::iter::once(0)).collect();
+
+    // ShellExecuteW 约定：返回值 > 32 表示成功，否则即为错误码（如文件不存在）。
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if result as isize > 32 {
+        Ok(())
+    } else {
+        Err(format!("无法打开对象（ShellExecute 错误码 {}）", result as isize))
+    }
+}
 
 /// 启动项目
 pub fn launch_item(conn: &Connection, id: i64) -> Result<(), String> {
     // 路径可能已因重命名/移动失效：先按文件ID重定位到当前真实路径（并持久化）。
     let path = item_service::resolve_current_path(conn, id)?;
 
-    // 经 cmd /C start 间接启动：spawn 成功仅代表已成功"发起"启动
-    //（start 在子进程内的失败无法被外层捕获），此处在发起成功后再更新 last_used_at，
-    // 至少避免路径无效/重定位失败(resolve_current_path 返回 Err)时仍污染"最近使用"排序。
+    // 经 ShellExecuteW 用关联程序打开。与旧的 cmd/start 不同，这里能拿到成功/失败信号：
+    // 打开失败（如路径无效）直接返回 Err，从而不更新 last_used_at、不污染"最近使用"排序。
     #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .creation_flags(CREATE_NO_WINDOW)
-            .args(["/C", "start", "", &path])
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
+    shell_open(&path)?;
+
+    #[cfg(not(target_os = "windows"))]
+    let _ = &path;
 
     conn.execute(
         "UPDATE items SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?1",

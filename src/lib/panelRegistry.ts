@@ -57,6 +57,9 @@ function buildDescriptor(fullId: string, modId: string, opts: PanelOptions): Pan
   const H = window.innerHeight;
   const w = opts.width  ?? 320;
   const h = opts.height ?? 240;
+  // 视口钳制：mod 传入越界坐标时面板将永久无法找回，钳制到可视区域内
+  const clampX = (x: number) => Math.max(0, Math.min(x, Math.max(0, W - w)));
+  const clampY = (y: number) => Math.max(0, Math.min(y, Math.max(0, H - h)));
   return {
     id:           fullId,
     modId,
@@ -64,8 +67,8 @@ function buildDescriptor(fullId: string, modId: string, opts: PanelOptions): Pan
     title:        opts.title ?? fullId,
     width:        w,
     height:       h,
-    x:            opts.x ?? Math.round((W - w) / 2),
-    y:            opts.y ?? Math.round((H - h) / 2),
+    x:            clampX(opts.x ?? Math.round((W - w) / 2)),
+    y:            clampY(opts.y ?? Math.round((H - h) / 2)),
     resizable:    opts.resizable  ?? true,
     collapsible:  opts.collapsible ?? true,
     modalButtons: opts.modalButtons ?? [],
@@ -101,6 +104,10 @@ export function requestPanel(
   return new Promise<PanelHandle>((resolve, reject) => {
     const timerId = window.setTimeout(() => {
       pendingMap.delete(fullId);
+      // 超时后同步清理登记，避免 React 延迟挂载时面板成为无法销毁的孤儿
+      panelListeners.delete(fullId);
+      modPanelsMap.get(modId)?.delete(fullId);
+      window.dispatchEvent(new CustomEvent<string>(PANEL_DESTROY, { detail: fullId }));
       reject(new Error(`Panel "${fullId}" 创建超时（5s 内 React 未挂载容器）`));
     }, 5000);
 
@@ -118,25 +125,33 @@ export function requestPanel(
  */
 export function resolvePanel(fullId: string, contentEl: HTMLElement): void {
   const pending = pendingMap.get(fullId);
-  if (!pending) {
-    // 已 resolve（React 重渲染时再次触发 ref callback），无需处理
+  if (pending) {
+    clearTimeout(pending.timerId);
+    pendingMap.delete(fullId);
+
+    const handle = buildPanelHandle(fullId, contentEl);
+    activePanels.set(fullId, handle);
+    pending.resolve(handle);
     return;
   }
 
-  clearTimeout(pending.timerId);
-  pendingMap.delete(fullId);
-
-  const handle = buildPanelHandle(fullId, contentEl);
-  activePanels.set(fullId, handle);
-  pending.resolve(handle);
+  // 已 resolve：更新现有 handle 的 container 引用（应对 React 重挂载）
+  const existing = activePanels.get(fullId);
+  if (existing) {
+    existing.container = contentEl;
+  }
 }
 
 /**
  * 销毁指定 Panel（handle.close() 或外部调用）。
  * 触发 React 卸载容器，清理内部状态。
+ * 注意：先清理注册表再派发 close 事件，避免 mod 在 close 监听内调 close() 造成无限递归。
  */
 export function destroyPanel(fullId: string): void {
   const { modId } = splitId(fullId);
+
+  // 重入守卫：若已在销毁过程中，直接返回
+  if (!activePanels.has(fullId) && !pendingMap.has(fullId)) return;
 
   // 取消 pending（若 React 还未挂载）
   const pending = pendingMap.get(fullId);
@@ -145,13 +160,13 @@ export function destroyPanel(fullId: string): void {
     pendingMap.delete(fullId);
   }
 
-  // 触发 "close" 事件
-  firePanelEvent(fullId, "close");
-
-  // 清理内部状态
+  // 先清理内部状态，防止 close 事件回调重入
   activePanels.delete(fullId);
   panelListeners.delete(fullId);
   modPanelsMap.get(modId)?.delete(fullId);
+
+  // 触发 "close" 事件
+  firePanelEvent(fullId, "close");
 
   // 通知 React 卸载容器
   window.dispatchEvent(new CustomEvent<string>(PANEL_DESTROY, { detail: fullId }));

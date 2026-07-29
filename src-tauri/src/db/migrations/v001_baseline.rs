@@ -1,4 +1,5 @@
 use super::Migration;
+use crate::db::has_column;
 use rusqlite::Connection;
 
 /// 基线迁移：确保从旧版本升级的数据库兼容新 schema
@@ -13,6 +14,12 @@ impl Migration for V001Baseline {
     }
     fn description(&self) -> &str {
         "Baseline: ensure icon_path, is_favorite, image type"
+    }
+
+    // 可能重建 items 表（旧库 type 约束缺 'image'），统一标为破坏性：
+    // 由 run_pending 在事务外做备份并关闭外键强制。
+    fn is_breaking(&self) -> bool {
+        true
     }
 
     fn up(&self, conn: &Connection) -> Result<(), rusqlite::Error> {
@@ -40,16 +47,6 @@ impl Migration for V001Baseline {
     }
 }
 
-fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
-    conn.prepare(&format!(
-        "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name='{}'",
-        table, column
-    ))
-    .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
-    .unwrap_or(0)
-        > 0
-}
-
 fn items_table_supports_image_type(conn: &Connection) -> bool {
     let sql = conn
         .query_row(
@@ -61,12 +58,11 @@ fn items_table_supports_image_type(conn: &Connection) -> bool {
     sql.to_lowercase().contains("'image'")
 }
 
+// 表重建在 run_pending 提供的事务内执行、外键强制已由框架在事务外关闭，
+// 故此处不再自开 BEGIN / 设置 foreign_keys PRAGMA（事务内 PRAGMA 为 no-op）。
 fn migrate_items_table_with_image_type(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
         r#"
-        PRAGMA foreign_keys = OFF;
-        BEGIN TRANSACTION;
-
         DROP TRIGGER IF EXISTS items_ai;
         DROP TRIGGER IF EXISTS items_ad;
         DROP TRIGGER IF EXISTS items_au;
@@ -118,9 +114,6 @@ fn migrate_items_table_with_image_type(conn: &Connection) -> Result<(), rusqlite
             INSERT INTO items_fts(items_fts, rowid, name, path) VALUES('delete', old.id, old.name, old.path);
             INSERT INTO items_fts(rowid, name, path) VALUES (new.id, new.name, new.path);
         END;
-
-        COMMIT;
-        PRAGMA foreign_keys = ON;
         "#,
     )
 }

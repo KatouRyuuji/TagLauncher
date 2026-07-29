@@ -37,7 +37,7 @@ export function TagFilterBar() {
                   ? `color-mix(in srgb, ${tag.color} 42%, transparent)`
                   : `color-mix(in srgb, ${tag.color} 22%, transparent)`,
                 backgroundColor: active
-                  ? `color-mix(in srgb, ${tag.color} 18%, white)`
+                  ? `color-mix(in srgb, ${tag.color} 18%, var(--bg-card))`
                   : `color-mix(in srgb, ${tag.color} 10%, transparent)`,
                 color: active ? tag.color : `color-mix(in srgb, ${tag.color} 76%, var(--text-secondary))`,
                 boxShadow: active ? `0 10px 24px color-mix(in srgb, ${tag.color} 12%, transparent)` : "none",

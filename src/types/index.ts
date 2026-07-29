@@ -41,12 +41,13 @@ export interface ItemViewProps {
   loading: boolean;
   currentCabinetId: number | null;
   onLaunch: (id: number) => Promise<void>;
-  onRemove: (id: number) => Promise<void>;
   onSetTags: (itemId: number, tagIds: number[]) => Promise<void>;
   onSetManyTags: (changes: Array<{ itemId: number; tagIds: number[] }>) => Promise<void>;
   onAddTagToItem: (itemId: number, tagId: number) => Promise<void>;
   onRemoveTagFromItem: (itemId: number, tagId: number) => Promise<void>;
   onAddNewTagToItem: (itemId: number, tagName: string, baseTagIds?: number[]) => Promise<number[]>;
+  /** 回收标签编辑器取消时未落库的新建空标签（避免点取消却已写入 DB 的残留） */
+  onRecycleNewTags?: (tagIds: number[]) => Promise<void>;
   onToggleFavorite: (id: number) => Promise<void>;
   onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onAddItemsToCabinet: (cabinetId: number, itemIds: number[]) => Promise<void>;

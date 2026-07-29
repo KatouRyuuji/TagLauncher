@@ -8,12 +8,7 @@ import {
   checkDependencySatisfied,
 } from "../lib/modRuntime";
 import { callModLifecycle, clearModLifecycle } from "../lib/modApi";
-
-function showToast(message: string, type: "info" | "success" | "error" | "warning" = "info") {
-  window.dispatchEvent(
-    new CustomEvent("taglauncher-toast", { detail: { message, type } }),
-  );
-}
+import { showToast } from "../lib/toast";
 
 export function useMods() {
   const [mods, setMods] = useState<ModInfo[]>([]);
@@ -23,7 +18,9 @@ export function useMods() {
     try {
       const modList = await db.getMods();
       setMods(modList);
-    } catch {
+    } catch (e) {
+      // IPC 失败时明示错误，避免用户看到"暂无扩展"的假象
+      showToast(`加载扩展列表失败：${e instanceof Error ? e.message : String(e)}`, "error");
       setMods([]);
     } finally {
       setLoading(false);

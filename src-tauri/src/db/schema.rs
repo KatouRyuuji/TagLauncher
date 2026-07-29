@@ -1,3 +1,4 @@
+use crate::db::has_column;
 use rusqlite::Connection;
 
 /// 创建所有基础表（幂等）
@@ -128,10 +129,15 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
 
     // 身份唯一索引：仅当 items 已具备 file_id 列时创建（新库由上面的 CREATE TABLE 建出该列；
     // 升级中的老库此时还没有该列，需等 v005 迁移补齐后由迁移内创建，故此处先跳过）。
+    // 同时补齐 idx_items_path 全索引：按 path 去重的查询是 `WHERE path = ?`（不限定 file_id，
+    // 以便瞬时拿不到身份时也能命中既有身份记录）。注意不能用 `WHERE file_id IS NULL` 部分索引——
+    // 查询谓词推不出 `file_id IS NULL`，部分索引永不命中（先 DROP 再建，自愈历史误建的版本）。
     if has_column(conn, "items", "file_id") {
         conn.execute_batch(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_identity \
-             ON items(volume_serial, file_id) WHERE file_id IS NOT NULL;",
+             ON items(volume_serial, file_id) WHERE file_id IS NOT NULL; \
+             DROP INDEX IF EXISTS idx_items_path; \
+             CREATE INDEX idx_items_path ON items(path);",
         )?;
     }
 
@@ -147,17 +153,6 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
     }
 
     Ok(())
-}
-
-/// 判断表是否含某列（用于条件创建依赖该列的索引）。
-fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
-    conn.prepare(&format!(
-        "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name='{}'",
-        table, column
-    ))
-    .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
-    .unwrap_or(0)
-        > 0
 }
 
 #[cfg(test)]
@@ -198,6 +193,16 @@ mod tests {
             )
             .unwrap();
         assert_eq!(idx, 1, "身份唯一索引应存在");
+
+        // 无身份对象按 path 去重的部分索引应存在（避免全表扫描）。
+        let path_idx: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_items_path'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(path_idx, 1, "path 部分索引应存在");
     }
 
     /// 升级库路径：模拟 v4 老库（path UNIQUE、无身份列、schema_version=4），

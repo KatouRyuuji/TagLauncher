@@ -1,5 +1,9 @@
 * text=auto eol=lf
 
+# Windows batch scripts must keep CRLF: cmd.exe mis-parses labels/blocks with LF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 *.png binary
 *.jpg binary
 *.jpeg binary

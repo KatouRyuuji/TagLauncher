@@ -13,6 +13,12 @@ impl Migration for V004AudioType {
         "Add audio item type"
     }
 
+    // 可能重建 items 表（旧库 type 约束缺 'audio'），统一标为破坏性：
+    // 由 run_pending 在事务外做备份并关闭外键强制。
+    fn is_breaking(&self) -> bool {
+        true
+    }
+
     fn up(&self, conn: &Connection) -> Result<(), rusqlite::Error> {
         if !items_table_supports_audio_type(conn) {
             migrate_items_table_with_audio_type(conn)?;
@@ -63,12 +69,11 @@ fn items_table_supports_audio_type(conn: &Connection) -> bool {
     sql.to_lowercase().contains("'audio'")
 }
 
+// 表重建在 run_pending 提供的事务内执行、外键强制已由框架在事务外关闭，
+// 故此处不再自开 BEGIN / 设置 foreign_keys PRAGMA（事务内 PRAGMA 为 no-op）。
 fn migrate_items_table_with_audio_type(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
         r#"
-        PRAGMA foreign_keys = OFF;
-        BEGIN TRANSACTION;
-
         DROP TRIGGER IF EXISTS items_ai;
         DROP TRIGGER IF EXISTS items_ad;
         DROP TRIGGER IF EXISTS items_au;
@@ -116,9 +121,6 @@ fn migrate_items_table_with_audio_type(conn: &Connection) -> Result<(), rusqlite
 
         CREATE INDEX IF NOT EXISTS idx_cabinet_items_item
             ON cabinet_items(item_id);
-
-        COMMIT;
-        PRAGMA foreign_keys = ON;
         "#,
     )
 }

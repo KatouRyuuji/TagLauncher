@@ -75,16 +75,26 @@ pub fn remove_items_from_cabinet(
     cabinet_service::remove_items_from_cabinet(&conn, cabinet_id, &item_ids)
 }
 
-#[tauri::command]
+// 与 get_items 对等：同样会串行抽图标 + 对账重 IO，用 (async) 放到工作线程避免冻结 UI；
+// 函数体全同步（无 await），DB 锁只在各短临界区内持有并随即释放，无跨 await 持锁。
+#[tauri::command(async)]
 pub fn get_cabinet_items(
     app: AppHandle,
     db: State<Database>,
     cabinet_id: i64,
 ) -> Result<Vec<ItemWithTags>, String> {
-    // 与 get_items 一致：锁内查库（含对账），释放锁后再补图标，避免锁内重 IO。
+    // 与 get_items 完全对等的列表刷新热路径，同样用三段式把对账重 IO 移出全局 DB 锁：
+    //   ① 锁内取快照 → ② 释放锁做 exists()/FFI/签名等重 IO 生成写入计划 → ③ 锁内批量回写 + 查询。
+    // 随后再次释放锁补图标（PowerShell/文件 IO）。锁只在 ①③ 两段短临界区持有，
+    // 逐对象的重 IO 全在锁外完成。对账失败不阻断列表加载。
+    let snapshot = {
+        let conn = db.get_conn();
+        item_service::read_reconcile_snapshot(&conn).unwrap_or_default()
+    };
+    let writes = item_service::plan_reconcile(snapshot);
     let mut items = {
         let conn = db.get_conn();
-        let _ = item_service::reconcile_items(&conn);
+        let _ = item_service::apply_reconcile(&conn, &writes);
         cabinet_service::get_cabinet_items(&conn, cabinet_id)?
     };
     item_service::fill_visuals(&app, &mut items);

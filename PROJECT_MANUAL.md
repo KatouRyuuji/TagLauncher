@@ -2,7 +2,7 @@
 
 ## 一、项目简介
 
-TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「标签」管理和快速启动本地文件夹及可执行文件（exe/bat/ps1）。
+TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「标签」管理和快速启动本地文件夹、程序、脚本、图片与音频等对象（folder/image/audio/exe/bat/ps1）。
 
 核心理念：用标签代替传统的树形目录分类，支持一个项目挂多个标签，通过组合筛选快速定位。
 
@@ -16,7 +16,9 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - 缩略图：支持手动设置/更换/清除；图片对象直接用图片，非图片对象提取系统图标缓存为 PNG，其余回退到类型 Emoji 图标。
 - 音频：提供 `get_audio_preview` 等对象预览命令。
 - 主题系统：内置主题 + 自定义 JSON 主题 + Mod 主题，支持变量/分层 token/组件 token/资源/字体/变体/自定义 CSS，以及导入、导出、刷新；启动时等待主题就绪再显示主窗口，避免闪烁。
-- Mod 扩展系统：支持 `css` / `css+js` / `theme` 三类 Mod，提供权限模型、生命周期回调、工具栏按钮、侧栏/浮动面板、卡片与列表行对等插槽、Mod 数据存储、文件读写、受约束的网络请求原语（`net.fetch` 经 Rust 后端代理）、只读标签关系等接口（API 版本 3.2.0）。
+- Mod 扩展系统：支持 `css` / `css+js` / `theme` 三类 Mod，提供权限声明（能力/意图标注 + API 误用防呆，**非安全沙箱**——Mod 属可信扩展，JS 以完全权限运行于主 realm，启用前须确认来源可信）、生命周期回调、工具栏按钮、侧栏/浮动面板、卡片与列表行对等插槽、Mod 数据存储、文件读写、受约束的网络请求原语（`net.fetch` 经 Rust 后端代理）、只读标签关系等接口（API 版本 3.2.0）。
+- AI 自动打标：兼容 Anthropic Messages API（官方或第三方兼容地址），在设置中填写 base URL / API key / 模型后，可为全部或未打标对象批量打标，支持「新对象自动打标」「允许创建新标签」「每对象最多标签数」等选项；后端仅提供无状态「建议标签」原语，批量遍历/并发/进度/取消由前端编排。
+- 数据管理：数据目录可自定义（exe 旁 `datapath.json` 记录重定向，仅重定向 `Save/`）；支持一键备份、导出、导入，统一走 SQLite Online Backup API（页级一致快照），导入前自动安全备份、可回退；切换目录或导入后自动重启生效。
 
 ---
 
@@ -58,9 +60,10 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands/  ← 约 69 个 Tauri 命令       │  │
+│  │  commands/  ← 约 81 个 Tauri 命令       │  │
 │  │             (按 item/cabinet/tag/mod/   │  │
-│  │              settings/synonym/launch/   │  │
+│  │              net/ai/data/settings/      │  │
+│  │              synonym/launch/            │  │
 │  │              object_preview/search 分模块)│  │
 │  │  db/        ← SQLite 连接/schema/迁移   │  │
 │  │  services/  ← 业务服务层                │  │
@@ -118,11 +121,14 @@ tag-launcher/
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── commands/             # Tauri 命令（按业务域分模块，约 69 个）
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，约 81 个）
 │   │   │   ├── item_commands.rs
 │   │   │   ├── cabinet_commands.rs
 │   │   │   ├── tag_commands.rs
 │   │   │   ├── mod_commands.rs
+│   │   │   ├── net_commands.rs
+│   │   │   ├── ai_commands.rs           # AI 自动打标（Anthropic 协议）
+│   │   │   ├── data_commands.rs         # 数据目录/导入/导出/备份
 │   │   │   ├── settings_commands.rs
 │   │   │   ├── synonym_commands.rs
 │   │   │   ├── launch_commands.rs
@@ -221,8 +227,10 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ## 五、Tauri 命令清单
 
-后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 69 个 `#[tauri::command]`，按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、缩略图预览等命令未全部展开）：
+后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 81 个 `#[tauri::command]`，按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
 
+> v1.3.0 新增命令：AI 自动打标 `ai_get_config` / `ai_set_config` / `ai_is_configured` / `ai_test_connection` / `ai_suggest_tags`（5 个）；数据管理 `get_data_directory_info` / `set_data_directory` / `reset_data_directory` / `backup_data` / `export_data` / `import_data` / `restart_app`（7 个）。
+>
 > v1.2.0 新增命令：`relocate_missing`（跨盘签名找回）、`get_tag_relations` / `add_tag_relation` / `remove_tag_relation`（标签 DAG）、`net_fetch`（Mod 网络原语）。
 
 | 命令名 | 参数 | 返回值 | 说明 |
@@ -347,7 +355,73 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 
 ---
 
-## 九、构建与部署
+## 九、AI 自动打标（Anthropic 协议）
+
+后端模块 `commands/ai_commands.rs` 提供无状态的「为一个对象建议标签」原语，批量遍历、并发、进度与取消由前端编排（KISS：进度/取消在 UI 侧最自然）。HTTP 采用 `ureq`（阻塞，与 `net_fetch` 一致，不引入 async 运行时）。
+
+### 9.1 配置
+
+- 配置项存于 `app_meta` KV 表，键名前缀 `ai.`：`ai.base_url` / `ai.api_key` / `ai.model` / `ai.auto_tag_on_add` / `ai.max_tags` / `ai.allow_new_tags` / `ai.extra_prompt`。
+- 模型由用户填写（Anthropic 兼容模型名，必填、无内置默认）；每对象最多标签数默认 5（限制 1–20）。
+- 前端入口：设置页 `AiSettingsSection`，填写 base URL / API key / 模型并可「测试连接」。
+
+### 9.2 命令
+
+| 命令名 | 参数 | 返回值 | 说明 |
+|--------|------|--------|------|
+| `ai_get_config` | - | AiConfig | 读取 AI 配置（**不含明文密钥**，仅回传 `hasApiKey` 是否已配置；明文密钥只在后端内部使用） |
+| `ai_set_config` | config: AiConfig | () | 写入 AI 配置 |
+| `ai_is_configured` | - | bool | 是否已配置（不泄露 key，供前端判断是否自动打标） |
+| `ai_test_connection` | - | String | 发一条极简消息测试连通性，返回模型回显 |
+| `ai_suggest_tags` | name, path, item_type, existing_tags | Vec\<String\> | 为单个对象建议标签（去重并按配置裁剪数量） |
+
+### 9.3 协议兼容与解析
+
+- **端点归一化**：`ai.base_url` 结尾自动补全为 `/v1/messages`（`.../v1/messages` 原样；`.../v1` 补 `/messages`；其它补 `/v1/messages`）。鉴权头仅发送 `x-api-key` + `anthropic-version`（**不再额外发送 `Authorization: Bearer`**，避免密钥暴露给会记录该头的第三方网关）；`ai.base_url` 强制 https（本机 `http://localhost` 除外），防止密钥明文过网。
+- **响应解析**：优先取 Anthropic `content[].text`，兜底 OpenAI 风格 `choices[].message.content`。
+- **标签解析**：优先解析首个 JSON 数组；失败时按逗号/换行/顿号回退切分；统一去重、去空、超长（>40 字符）丢弃并裁剪到上限。
+
+### 9.4 前端编排
+
+- Hook `hooks/useAiTagging.ts`：并发池（`CONCURRENCY = 3`）加速慢速 API；标签「创建 + 应用」串行化，避免并发下重复建标；提供进度与取消。
+- 「新对象自动打标」：导入新对象后，`useItems` 派发 `taglauncher-items-added` 事件，`App` 监听后以 silent 后台模式调用 AI 打标。
+- 组件 `components/AiTaggingModal.tsx`：批量打标进度弹窗。
+
+---
+
+## 十、数据管理与数据目录
+
+后端模块 `commands/data_commands.rs`。设计要点：导出/备份/迁移统一走 **SQLite Online Backup API**（`rusqlite` 的 `backup` feature，页级一致快照，不受 WAL 未 checkpoint、文件句柄占用影响）；数据目录「指针」不能存于数据库自身，因此放在 exe 旁的 `datapath.json`。
+
+### 10.1 数据目录重定向
+
+- 默认数据目录为 exe 同级 `Save/`。用户可切换到自定义目录，重定向路径记录在 exe 旁 `datapath.json`（`path_service` 的 `read_data_dir_redirect` / `write_data_dir_redirect` / `default_save_dir`）。
+- **仅重定向 `Save/`**（应用原生数据：数据库、备份等）；`Builtin/`、`Plugins_Theme/`、`Plugins_Mods/` 仍固定 exe 同级。
+- 切换目录或导入数据后需**重启应用**生效（命令内部调用 `app.restart()`）。
+
+### 10.2 命令
+
+| 命令名 | 参数 | 返回值 | 说明 |
+|--------|------|--------|------|
+| `get_data_directory_info` | - | DataDirectoryInfo | 当前目录 / 默认目录 / 是否自定义 / DB 大小 / 备份目录 |
+| `set_data_directory` | new_dir, migrate | () | 切换数据目录（migrate=true 时快照当前库到新目录；目标已有库则拒绝覆盖）|
+| `reset_data_directory` | - | () | 恢复默认目录（清除重定向）|
+| `backup_data` | - | String | 一键备份当前库到 `Save/Backups/`，返回备份路径（本机灾备，**保留** AI 密钥以支持完整恢复）|
+| `export_data` | target_path | () | 导出当前库到用户指定 `.db`（对外分享出口，**自动剔除 `ai.*` 密钥并 VACUUM 重写**）|
+| `import_data` | source_path | String | 校验来源库 → 自动安全备份当前库 → 灌入当前库，返回安全备份路径 |
+| `restart_app` | - | () | 重启应用（切目录/导入后调用）|
+
+- 前端入口：设置页 `DataSettingsSection`，展示当前目录 / DB 大小 / 是否自定义，并提供 切换 / 恢复默认 / 一键备份 / 导出 / 导入 / 打开备份目录。切换目录时若目标已存在数据库，后端拒绝迁移覆盖，前端转为内联确认，提供「直接使用该目录数据」（`migrate=false`，不复制当前数据）与「取消」两个选择。
+
+---
+
+## 十一、构建与部署
+
+### 环境准备（v1.3.0 新增）
+
+- `setup.bat`：一键检测并安装 Node / Rust(rustup) / VS C++ BuildTools / WebView2，并执行 `npm install`（全英文 + UTF-8 + CRLF）。
+- `dev.bat` / `build.bat`：自动注入 `%USERPROFILE%\.cargo\bin` 到 PATH 并做环境前置检查；`build.bat` 支持可选 target 参数。
+- `build-arm64.bat`：面向 `aarch64-pc-windows-msvc` 的 ARM64 构建，会自动 `rustup target add`（对应 GitHub issue #1）。
 
 ### 开发模式
 ```bash
@@ -357,21 +431,23 @@ npm run tauri dev    # 启动 Tauri 开发窗口
 
 ### 生产构建
 ```bash
-npm run tauri build  # 编译 + 打包 NSIS 安装包
+npm run tauri build  # 编译 + 打包 NSIS 安装包（x64）
 ```
 
-产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.2.0_x64-setup.exe`
+产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.3.0_x64-setup.exe`
+
+ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `..._arm64-setup.exe`。
 
 ### 部署
 - 安装包部署：运行 NSIS `-setup.exe` 完成安装（安装语言可选 English / SimpChinese）。
-- 运行时依赖：Windows 10 1803+ 或 Windows 11（需要 WebView2）
-- 数据存储：exe 同级目录的 `Save/taglauncher.db`（不是 `%APPDATA%`）
+- 运行时依赖：Windows 10 1803+ 或 Windows 11（需要 WebView2）；支持 x64 与 ARM64。
+- 数据存储：默认 exe 同级目录的 `Save/taglauncher.db`（不是 `%APPDATA%`）；数据目录可在设置中自定义，重定向记录于 exe 旁 `datapath.json`（仅重定向 `Save/`）。
 - 同义词字典：优先 exe 同级目录的 `synonyms.json`，不可用时回退到应用数据目录（`%APPDATA%/com.taglauncher.app/synonyms.json`），首次运行自动生成。
 - 开始菜单快捷方式默认创建，桌面快捷方式可在安装功能选择页中选择。
 
 ---
 
-## 十、关键依赖
+## 十二、关键依赖
 
 ### 前端
 | 包名 | 版本 | 用途 |
@@ -388,5 +464,26 @@ npm run tauri build  # 编译 + 打包 NSIS 安装包
 | crate | 版本 | 用途 |
 |-------|------|------|
 | tauri | 2.x | 应用框架 |
-| rusqlite | 0.31 | SQLite 驱动（bundled 模式） |
+| rusqlite | 0.31 | SQLite 驱动（`bundled` + `backup` feature：Online Backup 用于导入/导出/备份） |
+| ureq | 2.x | 阻塞式 HTTP（Mod `net_fetch` 与 AI 打标 Anthropic 请求） |
 | serde / serde_json | 1.x | 序列化/反序列化 |
+
+---
+
+## 十三、安全模型与性能要点（v1.3.0 硬化）
+
+### 安全
+
+- **对象启动经 `ShellExecuteW`（"open" 动词），不经 `cmd.exe`**：从根上杜绝路径中 `&` / `^` / `(` 等 shell 元字符导致的命令注入（旧实现 `cmd /C start "" <path>` 对无空格路径不加引号，会把这些字符当命令分隔符）。见 `services/launch_service.rs`。
+- **AI 密钥最小暴露面**：明文密钥只存后端 `app_meta`，`ai_get_config` 不下发明文（仅回传 `hasApiKey`）；鉴权仅发 `x-api-key`（不发 `Authorization: Bearer`）；`ai.base_url` 强制 https（本机 `localhost` 除外）；**导出 `export_data` 自动剔除 `ai.*` 密钥并 VACUUM 重写**，本机备份 / 迁移则保留密钥以支持完整恢复。
+- **Mod `net.fetch` SSRF 防御**：自定义 DNS 解析器（`SsrfGuardResolver`）在解析层拦截环回 / 私网 / 链路本地 / 保留地址，fail-closed，重定向每一跳重新校验；仅 http/https、默认 30s（上限 120s）超时、10MB 体积上限。见 `commands/net_commands.rs`。
+- **WebView CSP**：`tauri.conf.json` 配置 `csp` / `devCsp`（`default-src 'self'`、`connect-src` 限本机 IPC/asset、`object-src 'none'`、`frame-src 'none'` 等），收敛脚本 / 网络 / 框架来源，作为纵深防御。
+- **Mod / 主题为「可信扩展」**：其 `permissions` 是能力声明（运行时由 JS 宿主据此约束可调用的 API 面），**并非操作系统级安全沙箱边界**——Mod 与应用同处一个 WebView，请仅安装可信来源的扩展。
+
+### 性能
+
+- **列表加载 / 刷新（`get_items`）改用 `#[tauri::command(async)]` 工作线程执行**，不占用主 IPC 线程；并以「锁内取快照 → 锁外做 exists()/FFI/签名/图标抽取等重 IO → 锁内批量回写」三段式，把重 IO 移出 DB 全局锁，首屏与刷新不再冻结界面（图标抽取走 PowerShell / 文件 IO，是卡顿大头）。
+- **批量拖拽导入（`add_item` / `add_items`）改用 async 工作线程**：文件ID FFI、内容签名读取、类型识别等重 IO 从 UI 主线程移到工作线程，导入期间界面不冻结。**注意**——其重 IO 仍在 DB 事务锁内串行执行（既有逻辑未改），async 化仅解决「不冻结主线程」，并不等于「移出 DB 锁」或「并发无阻塞」。
+- 其余重 IO 命令同样以 async 工作线程执行：跨盘找回 `relocate_missing`、数据 `backup_data` / `export_data` / `import_data` / `set_data_directory`、AI `ai_test_connection` / `ai_suggest_tags`、Mod `net_fetch`。
+
+

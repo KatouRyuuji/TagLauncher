@@ -1,18 +1,16 @@
 use crate::models::{Item, ItemWithTags};
-use crate::services::icon_service;
 use crate::services::item_service::{item_from_row, ITEM_COLS, ITEM_ORDER};
 use crate::services::tag_service;
 use rusqlite::Connection;
-use tauri::AppHandle;
 
-/// 搜索项目（支持文本 + 标签组合查询）
+/// 搜索项目（支持文本 + 标签组合查询）。不含自动图标：
+/// 图标涉及重 IO，由调用方在释放 DB 锁后用 item_service::fill_visuals 补齐。
 pub fn search_items(
-    app: &AppHandle,
     conn: &Connection,
     query: &str,
     tag_ids: &[i64],
 ) -> Result<Vec<ItemWithTags>, String> {
-    let mut items: Vec<Item> = if query.is_empty() && tag_ids.is_empty() {
+    let items: Vec<Item> = if query.is_empty() && tag_ids.is_empty() {
         query_all_items(conn)?
     } else if !query.is_empty() && tag_ids.is_empty() {
         query_items_by_text(conn, query)?
@@ -22,7 +20,6 @@ pub fn search_items(
         query_items_by_text_and_tags(conn, query, tag_ids)?
     };
 
-    icon_service::fill_auto_visual_paths(app, &mut items);
     tag_service::items_with_tags(conn, items)
 }
 

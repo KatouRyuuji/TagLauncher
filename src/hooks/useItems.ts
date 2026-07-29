@@ -4,13 +4,8 @@ import * as db from "../lib/db";
 import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
+import { showToast } from "../lib/toast";
 import type { ItemWithTags } from "../types";
-
-function showToast(message: string, type: "info" | "success" | "error" | "warning" = "info") {
-  window.dispatchEvent(
-    new CustomEvent("taglauncher-toast", { detail: { message, type } }),
-  );
-}
 
 /**
  * 写操作错误反馈包装：失败时弹出可读 toast 再向上抛出。
@@ -68,6 +63,9 @@ function removeItemFromList(items: ItemWithTags[], id: number): ItemWithTags[] {
   return items.filter((item) => item.id !== id);
 }
 
+/** 稳定的空数组引用：切柜期间 cabinetItems 尚未归属新柜时回退，避免闪现旧柜内容。 */
+const EMPTY_ITEMS: ItemWithTags[] = [];
+
 export function useItems() {
   const searchQuery = useAppStore((state) => state.searchQuery);
   const searchMode = useAppStore((state) => state.searchMode);
@@ -79,11 +77,17 @@ export function useItems() {
 
   const [allItems, setAllItems] = useState<ItemWithTags[]>([]);
   const [cabinetItems, setCabinetItems] = useState<ItemWithTags[]>([]);
+  // cabinetItems 当前归属的文件柜 id：切柜后新数据到达前，用它判断 cabinetItems 是否已对应
+  // 当前选中柜，避免短暂显示上一个柜子的内容（竞态视觉错位）。
+  const [cabinetItemsOwner, setCabinetItemsOwner] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const allItemsRef = useRef<ItemWithTags[]>([]);
   const cabinetItemsRef = useRef<ItemWithTags[]>([]);
   const relocatingRef = useRef(false);
   const relocateMissingRef = useRef<() => void>(() => {});
+  // 仅首屏加载显示整屏 loading；后台刷新（刷新按钮/跨盘找回后）保留旧列表原地更新，
+  // 不清空、不闪 spinner、不丢滚动位置。
+  const initialLoadRef = useRef(true);
 
   useEffect(() => {
     allItemsRef.current = allItems;
@@ -95,7 +99,7 @@ export function useItems() {
   }, [cabinetItems]);
 
   const loadAll = useCallback(async () => {
-    setLoading(true);
+    if (initialLoadRef.current) setLoading(true);
     try {
       // 记录刷新前的失效态，用于检测"本次新变为失效"的对象并主动提示
       const prev = new Map(allItemsRef.current.map((i) => [i.id, i]));
@@ -121,6 +125,7 @@ export function useItems() {
     } catch (e) {
       console.error("Failed to load items:", e);
     } finally {
+      initialLoadRef.current = false;
       setLoading(false);
     }
   }, []);
@@ -153,11 +158,15 @@ export function useItems() {
 
   useEffect(() => {
     if (selectedCabinetId === null) return;
-    // 竞态防护：快速切换文件柜时，慢响应不得覆盖已切换的新选择
+    // 竞态防护：快速切换文件柜时，慢响应不得覆盖已切换的新选择；
+    // 数据到达时一并记录归属，供 source 判定是否已对应当前选中柜。
     let cancelled = false;
     db.getCabinetItems(selectedCabinetId)
       .then((data) => {
-        if (!cancelled) setCabinetItems(data);
+        if (!cancelled) {
+          setCabinetItems(data);
+          setCabinetItemsOwner(selectedCabinetId);
+        }
       })
       .catch(console.error);
     return () => {
@@ -190,10 +199,12 @@ export function useItems() {
       return allItems.filter((item) => item.is_favorite);
     }
     if (selectedCabinetId !== null) {
-      return cabinetItems;
+      // 仅当 cabinetItems 已归属当前选中柜时采用，否则回退空集（等待本柜数据到达），
+      // 避免切柜瞬间闪现上一个柜子的内容。
+      return cabinetItemsOwner === selectedCabinetId ? cabinetItems : EMPTY_ITEMS;
     }
     return allItems;
-  }, [allItems, cabinetItems, selectedCabinetId, showFavorites]);
+  }, [allItems, cabinetItems, cabinetItemsOwner, selectedCabinetId, showFavorites]);
 
   // 标签后代闭包：选中父标签时并入其所有后代标签的对象（图状层级筛选）。
   const descendantsMap = useMemo(() => buildDescendantsMap(tagRelations), [tagRelations]);
@@ -232,6 +243,14 @@ export function useItems() {
           changedItems.filter((item) => currentIds.has(item.id)),
         );
       });
+
+      // 通知新对象已加入（供 AI 自动打标等后台监听）。携带完整对象，
+      // 避免监听方读到尚未 flush 的列表状态。
+      if (changedItems.length > 0) {
+        window.dispatchEvent(
+          new CustomEvent("taglauncher-items-added", { detail: { items: changedItems } }),
+        );
+      }
     });
   }, []);
 
@@ -293,6 +312,8 @@ export function useItems() {
         const item = allItemsRef.current.find((i) => i.id === id);
         if (item) notifyItemLaunched(id, item.name);
       });
+      // 启动成功后刷新该项，同步 last_used_at 排序
+      void refreshItemById(id).catch(() => {});
     } catch (e) {
       // 启动失败（含"对象已丢失"）：后端可能已将 is_missing 置 1，
       // 刷新该项使失效徽标即时生效，再把错误抛给调用方。
@@ -369,7 +390,6 @@ export function useItems() {
     allItems,
     loading,
     refresh: loadAll,
-    relocateMissing,
     addItems,
     removeItem,
     removeItems,

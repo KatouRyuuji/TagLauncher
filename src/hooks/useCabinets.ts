@@ -36,17 +36,17 @@ export function useCabinets() {
   }, [loadCabinets]);
 
   /** 新建文件柜 */
-  const addCabinet = async (name: string, color: string) => {
+  const addCabinet = useCallback(async (name: string, color: string) => {
     const cab = await db.addCabinet(name, color);
     // 局部更新：把后端返回的文件柜追加进 store 并按名称排序
     const next = sortCabinets([...useAppStore.getState().cabinets, cab]);
     setCabinets(next);
     notifyCabinetsChanged(next);
     return cab;
-  };
+  }, [setCabinets]);
 
   /** 更新文件柜名称和颜色 */
-  const updateCabinet = async (id: number, name: string, color: string) => {
+  const updateCabinet = useCallback(async (id: number, name: string, color: string) => {
     await db.updateCabinet(id, name, color);
     // 局部更新：按 id 替换后重新排序（保留 created_at）
     const next = sortCabinets(
@@ -54,16 +54,20 @@ export function useCabinets() {
     );
     setCabinets(next);
     notifyCabinetsChanged(next);
-  };
+  }, [setCabinets]);
 
   /** 删除文件柜（关联的 cabinet_items 记录会级联删除） */
-  const removeCabinet = async (id: number) => {
+  const removeCabinet = useCallback(async (id: number) => {
     await db.removeCabinet(id);
     // 局部更新：按 id 过滤
     const next = useAppStore.getState().cabinets.filter((c) => c.id !== id);
     setCabinets(next);
     notifyCabinetsChanged(next);
-  };
+    // 若删除的是当前选中文件柜，清除选中状态避免幽灵筛选
+    if (useAppStore.getState().selectedCabinetId === id) {
+      useAppStore.getState().setSelectedCabinetId(null);
+    }
+  }, [setCabinets]);
 
   return { refresh: loadCabinets, addCabinet, updateCabinet, removeCabinet };
 }

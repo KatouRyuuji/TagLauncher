@@ -14,7 +14,9 @@ TagLauncher 是一个基于 **Tauri 2 + React + TypeScript + Rust + SQLite** 的
 - 缩略图：支持手动设置、更换、清除缩略图，图片对象和系统类型图标作为默认视觉回退。
 - 主题系统：支持内置主题、自定义 JSON 主题、Mod 主题，以及主题导入、导出和刷新；应用会等待主题准备完成后再显示主窗口，避免启动闪烁。
 - 扩展系统：支持 CSS、CSS+JS、Theme Mod，提供权限、生命周期、工具栏按钮、侧栏/浮动面板、**卡片与列表行对等插槽**、Mod 数据存储、文件读写、**受约束的网络请求原语（net.fetch，经 Rust 后端代理绕 CORS）**、只读标签关系等接口。
-- 欢迎与反馈：支持首次欢迎弹窗、关于弹窗、Toast 和版本迁移提示。
+- **AI 自动打标**：在设置中填写兼容 Anthropic 协议的 API 地址、密钥与模型（三项均需自行填写，无内置默认模型），即可一键为全部（或仅未打标）对象智能打标；可开启「新对象自动打标」，导入新对象时后台自动调用 AI；支持限制标签数量、是否允许创建新标签、自定义打标偏好。密钥仅存本机、不下发前端。
+- **数据管理**：支持自定义数据存放目录（exe 旁 `datapath.json` 重定向），以及一键备份、导出、导入应用数据；导出/备份走 SQLite 在线备份 API 生成页级一致快照，导入前自动备份当前库可回退。
+- 欢迎与反馈：支持首次欢迎弹窗（简介 + 特性 + 扫码赞助）、关于弹窗、Toast 和版本迁移提示。
 
 ## 交互概览
 
@@ -42,13 +44,17 @@ TagLauncher 是一个基于 **Tauri 2 + React + TypeScript + Rust + SQLite** 的
 
 建议开发与打包环境：
 
-- Windows 10 / 11 x64
+- Windows 10 / 11（x64 或 ARM64）
 - Node.js 20+
 - Rust stable
 - Visual Studio C++ Build Tools
 - WebView2 Runtime
 
-首次拉取后建议确认工具可用：
+### 一键配置环境（推荐）
+
+新设备拉取后，双击运行仓库根目录的 `setup.bat` 即可自动检测并安装缺失的 Node.js、Rust(rustup)、VS C++ Build Tools、WebView2 Runtime，并完成 `npm install`。脚本为全英文 + UTF-8 编码，可安全重复运行；装完新工具后请重开一个终端再继续。
+
+首次拉取后也可手动确认工具可用：
 
 ```bash
 node -v
@@ -59,7 +65,7 @@ cargo -V
 
 ## 快速运行
 
-在 `tag-launcher/` 目录执行：
+配置好环境后，双击 `dev.bat` 启动开发模式（会自动预检 Node/Rust 与依赖）；或在 `tag-launcher/` 目录执行：
 
 ```bash
 npm install
@@ -86,7 +92,7 @@ cd src-tauri && cargo test
 
 ## 打包
 
-当前应用版本为 `1.2.0`，Release 打包命令：
+当前应用版本为 `1.3.0`。双击 `build.bat` 一键打包（会自动 `npm install` 并预检工具链），或执行：
 
 ```bash
 npm run tauri build
@@ -95,10 +101,20 @@ npm run tauri build
 Windows Release 默认生成 NSIS 安装包：
 
 ```text
-src-tauri/target/release/bundle/nsis/TagLauncher_1.2.0_x64-setup.exe
+src-tauri/target/release/bundle/nsis/TagLauncher_1.3.0_x64-setup.exe
 ```
 
 安装包安装时会创建开始菜单快捷方式，并在功能选择页提供桌面快捷方式可选项；安装语言可在 English / SimpChinese 之间选择。项目 MIT 许可证会显示在安装程序许可页面中。
+
+### Windows ARM64（原生构建）
+
+在 Windows on ARM 设备上可构建原生 ARM64 安装包，避免 x64 模拟带来的性能与能耗损失：
+
+```bash
+build-arm64.bat
+```
+
+该脚本等价于 `build.bat aarch64-pc-windows-msvc`，会自动执行 `rustup target add aarch64-pc-windows-msvc` 并按目标架构打包，输出位于 `src-tauri/target/aarch64-pc-windows-msvc/release/bundle/`。如链接器提示缺少 ARM64 工具集，请在 Visual Studio Installer 中补装「MSVC v143 - ARM64 build tools」组件。
 
 ## 数据目录
 
@@ -110,7 +126,18 @@ Plugins_Theme/    自定义主题目录
 Plugins_Mods/     Mod 目录
 Save/             应用原生数据目录
 Save/taglauncher.db
+Save/Backups/     备份与导入前自动快照
 ```
+
+### 自定义数据目录
+
+可在「设置 → 数据管理」中把应用原生数据（`Save/`）重定向到任意目录。重定向指针写在 exe 旁的 `datapath.json`（仅影响 `Save/`，`Builtin/` 与 `Plugins_*` 仍固定在 exe 同级）：
+
+```json
+{ "save_dir": "D:\\MyData\\TagLauncher\\Save" }
+```
+
+切换目录会把当前数据库以 SQLite 在线备份快照复制到新位置；导入数据会覆盖当前库并在导入前自动备份到 `Save/Backups/`。两类操作完成后应用会自动重启以生效。
 
 同义词词库：
 

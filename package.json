@@ -1,6 +1,6 @@
 {
   "name": "tag-launcher",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "标签式文件管理器",
   "type": "module",
   "scripts": {
@@ -8,7 +8,10 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test:design": "esbuild src/lib/search.design.test.ts --bundle --platform=node --format=esm --outfile=.tmp-test/search.design.test.mjs && node .tmp-test/search.design.test.mjs"
+    "test:design": "esbuild src/lib/search.design.test.ts --bundle --platform=node --format=esm --outfile=.tmp-test/search.design.test.mjs && node .tmp-test/search.design.test.mjs",
+    "test": "node scripts/run-tests.mjs --frontend-only",
+    "test:all": "node scripts/run-tests.mjs",
+    "test:unit": "vitest run"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.4",
@@ -23,15 +26,21 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.0",
     "@tauri-apps/cli": "^2.10.0",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
     "autoprefixer": "^10.4.24",
+    "esbuild": "^0.27.3",
+    "jsdom": "^29.1.1",
     "png-to-ico": "^3.0.1",
     "postcss": "^8.5.6",
     "sharp": "^0.34.5",
     "tailwindcss": "^4.2.0",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.1.10"
   }
 }

@@ -21,9 +21,9 @@ function ItemRowComponent({
   cabinets,
   currentCabinetId,
   onLaunch,
-  onRemove,
   onRemoveTagFromItem,
   onAddNewTagToItem,
+  onRecycleNewTags,
   onSetTags,
   onToggleFavorite,
   onAddItemToCabinet,
@@ -123,7 +123,10 @@ function ItemRowComponent({
           event.preventDefault();
           setMenuPos({ x: event.clientX, y: event.clientY });
         }}
-        onKeyDown={(event) => event.key === "Enter" && onLaunch()}
+        onKeyDown={(event) => {
+          // 仅当事件源自行本身时响应 Enter 启动；子元素（标签删除按钮、Mod 插槽等）不冒泡为启动。
+          if (event.key === "Enter" && event.target === event.currentTarget) onLaunch();
+        }}
         tabIndex={0}
       >
         <div className="flex items-center gap-2">
@@ -191,7 +194,7 @@ function ItemRowComponent({
           position={menuPos}
           onClose={() => setMenuPos(null)}
           onLaunch={onLaunch}
-          onRemove={onRemove}
+          onRemove={() => void onRequestRemoveFromApp(item.id)}
           onEditTags={() => setShowTagEditor(true)}
           onToggleFavorite={onToggleFavorite}
           onAddItemToCabinet={onAddItemToCabinet}
@@ -209,6 +212,7 @@ function ItemRowComponent({
             setShowTagEditor(false);
           }}
           onAddNewTag={async (name, baseTagIds) => onAddNewTagToItem(item.id, name, baseTagIds)}
+          onRecycleNewTags={onRecycleNewTags}
           onClose={() => setShowTagEditor(false)}
         />
       )}

@@ -1,4 +1,6 @@
+pub mod ai_commands;
 pub mod cabinet_commands;
+pub mod data_commands;
 pub mod item_commands;
 pub mod launch_commands;
 pub mod mod_commands;
@@ -9,7 +11,9 @@ pub mod settings_commands;
 pub mod synonym_commands;
 pub mod tag_commands;
 
+pub use ai_commands::*;
 pub use cabinet_commands::*;
+pub use data_commands::*;
 pub use item_commands::*;
 pub use launch_commands::*;
 pub use mod_commands::*;

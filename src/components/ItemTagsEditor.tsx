@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ItemWithTags, Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
@@ -8,15 +8,39 @@ interface ItemTagsEditorProps {
   tags: Tag[];
   onSave: (tagIds: number[]) => Promise<void>;
   onAddNewTag: (name: string, baseTagIds: number[]) => Promise<number[]>;
+  /** 取消时回收本次会话新建但未落库的空标签 */
+  onRecycleNewTags?: (tagIds: number[]) => Promise<void>;
   onClose: () => void;
 }
 
-export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: ItemTagsEditorProps) {
+export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTags, onClose }: ItemTagsEditorProps) {
   const [selectedIds, setSelectedIds] = useState<number[]>(item.tags.map((tag) => tag.id));
   const [saving, setSaving] = useState(false);
   const [newTagName, setNewTagName] = useState("");
+  // 跟踪本次会话中通过 quick-create 真正新建的标签 id（复用同名已有标签不计入）：
+  // 进入编辑器时快照已有 id，之后 diff 出的新 id 即为新建。
+  const knownTagIdsRef = useRef<Set<number>>(new Set(tags.map((t) => t.id)));
+  const createdTagIdsRef = useRef<number[]>([]);
 
-  useEscapeKey(onClose);
+  useEffect(() => {
+    for (const tag of tags) {
+      if (!knownTagIdsRef.current.has(tag.id)) {
+        knownTagIdsRef.current.add(tag.id);
+        createdTagIdsRef.current.push(tag.id);
+      }
+    }
+  }, [tags]);
+
+  // 取消/关闭：回收本次新建且未保存的空标签，避免"点取消却已写入 DB"的残留
+  const handleClose = () => {
+    if (createdTagIdsRef.current.length > 0) {
+      void onRecycleNewTags?.(createdTagIdsRef.current);
+      createdTagIdsRef.current = [];
+    }
+    onClose();
+  };
+
+  useEscapeKey(handleClose);
 
   const toggleTag = (id: number) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
@@ -33,6 +57,8 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: Ite
       const keptSet = new Set(kept);
       const added = selectedIds.filter((id) => !keptSet.has(id));
       await onSave([...kept, ...added]);
+      // 保存成功：新建标签已随保存落库，清空回收清单
+      createdTagIdsRef.current = [];
     } finally {
       setSaving(false);
     }
@@ -51,7 +77,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: Ite
     <div
       className="fixed inset-0 flex items-center justify-center p-4"
       style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-panel)" as unknown as number }}
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="modal-surface w-[520px] max-w-[calc(100vw-2rem)] p-6"
@@ -63,7 +89,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: Ite
             <h2 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">管理项目标签</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">{item.name}</p>
           </div>
-          <button type="button" onClick={onClose} className="icon-button">
+          <button type="button" onClick={handleClose} className="icon-button">
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
             </svg>
@@ -90,8 +116,8 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: Ite
                     className="inline-flex items-center gap-2 rounded-[var(--radius-full)] border px-3 py-2 text-xs font-medium"
                     style={{
                       backgroundColor: selected
-                        ? `color-mix(in srgb, ${tag.color} var(--tag-selected-alpha), white)`
-                        : `color-mix(in srgb, ${tag.color} var(--tag-muted-alpha), white)`,
+                        ? `color-mix(in srgb, ${tag.color} var(--tag-selected-alpha), var(--bg-card))`
+                        : `color-mix(in srgb, ${tag.color} var(--tag-muted-alpha), var(--bg-card))`,
                       borderColor: selected
                         ? `color-mix(in srgb, ${tag.color} var(--tag-selected-border-alpha), transparent)`
                         : `color-mix(in srgb, ${tag.color} 26%, transparent)`,
@@ -137,7 +163,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onClose }: Ite
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="action-button">
+          <button type="button" onClick={handleClose} className="action-button">
             取消
           </button>
           <button

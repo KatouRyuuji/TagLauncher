@@ -147,8 +147,33 @@ pub fn mark_mod_version(
 // Mod 数据 API
 // ============================================================================
 
+/// 校验 mod_id：非空、长度受限、仅含合法字符（字母/数字/`.`/`_`/`-`），
+/// 且已在注册表中存在。可信模型下用于挡明显越权 / 非法 id（非强身份校验）。
+/// pub 以便集成测试验证 kv/record/file 命令共用的 id 合法性 + 注册表存在性校验。
+pub fn ensure_valid_mod_id(registry: &ModRegistry, mod_id: &str) -> Result<(), String> {
+    if mod_id.is_empty() || mod_id.len() > 128 {
+        return Err("非法的 mod id".to_string());
+    }
+    if !mod_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    {
+        return Err("mod id 含非法字符".to_string());
+    }
+    if registry.get_mod_path(mod_id).is_none() {
+        return Err(format!("Mod '{}' not found", mod_id));
+    }
+    Ok(())
+}
+
 #[tauri::command]
-pub fn mod_kv_get(db: State<Database>, mod_id: String, key: String) -> Result<Option<String>, String> {
+pub fn mod_kv_get(
+    db: State<Database>,
+    registry: State<ModRegistry>,
+    mod_id: String,
+    key: String,
+) -> Result<Option<String>, String> {
+    ensure_valid_mod_id(&registry, &mod_id)?;
     let conn = db.get_conn();
     conn.query_row(
         "SELECT value FROM mod_kv WHERE mod_id = ?1 AND key = ?2",
@@ -163,7 +188,14 @@ pub fn mod_kv_get(db: State<Database>, mod_id: String, key: String) -> Result<Op
 }
 
 #[tauri::command]
-pub fn mod_kv_set(db: State<Database>, mod_id: String, key: String, value: String) -> Result<(), String> {
+pub fn mod_kv_set(
+    db: State<Database>,
+    registry: State<ModRegistry>,
+    mod_id: String,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    ensure_valid_mod_id(&registry, &mod_id)?;
     let conn = db.get_conn();
     conn.execute(
         "INSERT OR REPLACE INTO mod_kv (mod_id, key, value, updated_at) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)",
@@ -174,7 +206,13 @@ pub fn mod_kv_set(db: State<Database>, mod_id: String, key: String, value: Strin
 }
 
 #[tauri::command]
-pub fn mod_kv_remove(db: State<Database>, mod_id: String, key: String) -> Result<(), String> {
+pub fn mod_kv_remove(
+    db: State<Database>,
+    registry: State<ModRegistry>,
+    mod_id: String,
+    key: String,
+) -> Result<(), String> {
+    ensure_valid_mod_id(&registry, &mod_id)?;
     let conn = db.get_conn();
     conn.execute("DELETE FROM mod_kv WHERE mod_id = ?1 AND key = ?2", [&mod_id, &key])
         .map_err(|e| e.to_string())?;
@@ -182,7 +220,13 @@ pub fn mod_kv_remove(db: State<Database>, mod_id: String, key: String) -> Result
 }
 
 #[tauri::command]
-pub fn mod_records_list(db: State<Database>, mod_id: String, collection: String) -> Result<Vec<String>, String> {
+pub fn mod_records_list(
+    db: State<Database>,
+    registry: State<ModRegistry>,
+    mod_id: String,
+    collection: String,
+) -> Result<Vec<String>, String> {
+    ensure_valid_mod_id(&registry, &mod_id)?;
     let conn = db.get_conn();
     let mut stmt = conn
         .prepare("SELECT value FROM mod_records WHERE mod_id = ?1 AND collection = ?2 ORDER BY updated_at DESC")
@@ -194,7 +238,15 @@ pub fn mod_records_list(db: State<Database>, mod_id: String, collection: String)
 }
 
 #[tauri::command]
-pub fn mod_record_put(db: State<Database>, mod_id: String, collection: String, id: String, value: String) -> Result<(), String> {
+pub fn mod_record_put(
+    db: State<Database>,
+    registry: State<ModRegistry>,
+    mod_id: String,
+    collection: String,
+    id: String,
+    value: String,
+) -> Result<(), String> {
+    ensure_valid_mod_id(&registry, &mod_id)?;
     let conn = db.get_conn();
     conn.execute(
         "INSERT OR REPLACE INTO mod_records (mod_id, collection, id, value, updated_at) VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP)",
@@ -205,7 +257,14 @@ pub fn mod_record_put(db: State<Database>, mod_id: String, collection: String, i
 }
 
 #[tauri::command]
-pub fn mod_record_remove(db: State<Database>, mod_id: String, collection: String, id: String) -> Result<(), String> {
+pub fn mod_record_remove(
+    db: State<Database>,
+    registry: State<ModRegistry>,
+    mod_id: String,
+    collection: String,
+    id: String,
+) -> Result<(), String> {
+    ensure_valid_mod_id(&registry, &mod_id)?;
     let conn = db.get_conn();
     conn.execute(
         "DELETE FROM mod_records WHERE mod_id = ?1 AND collection = ?2 AND id = ?3",
@@ -227,11 +286,13 @@ pub struct ModFileEntry {
 }
 
 /// 校验 relative_path 不逃出 mod 目录，返回绝对路径
-fn resolve_mod_file_path(
+/// pub 以便集成测试验证 mod 文件 API 的目录逃逸（../、绝对路径）防御。
+pub fn resolve_mod_file_path(
     registry: &ModRegistry,
     mod_id: &str,
     relative_path: &str,
 ) -> Result<PathBuf, String> {
+    ensure_valid_mod_id(registry, mod_id)?;
     let mod_path = registry
         .get_mod_path(mod_id)
         .ok_or_else(|| format!("Mod '{}' not found", mod_id))?;

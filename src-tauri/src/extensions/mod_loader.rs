@@ -51,10 +51,33 @@ pub fn discover_mods(mods_dir: &Path) -> (Vec<(ModManifest, PathBuf)>, Vec<ModLo
             }
         };
 
+        // id 字符集在载入期即校验（与 mod_commands::ensure_valid_mod_id 同一规则）：
+        // 否则含中文/空格等 id 的 mod 能加载，但其 kv/record/file 命令会在调用期全被拒，
+        // 故障面割裂且报错不指向根因。
+        if !is_valid_mod_id(&manifest.id) {
+            errors.push(ModLoadError {
+                dir_name,
+                error: format!(
+                    "mod id \"{}\" 非法：仅允许字母、数字及 . _ -，且 ≤128 字符",
+                    manifest.id
+                ),
+            });
+            continue;
+        }
+
         result.push((manifest, path));
     }
 
     (result, errors)
+}
+
+/// mod id 合法性：与 mod_commands::ensure_valid_mod_id 同一规则（载入期与命令期一致）。
+fn is_valid_mod_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
 }
 
 /// 简单语义版本比较：current >= required
@@ -75,7 +98,11 @@ pub fn semver_gte(current: &str, required: &str) -> bool {
     parse(current) >= parse(required)
 }
 
-/// 语义版本范围匹配（支持 ^x.y.z、>=x.y.z 和精确匹配）
+/// 语义版本范围匹配（支持 ^x.y.z、>=x.y.z 和精确匹配）。
+///
+/// 注意：须与前端 `modRuntime.ts::semverSatisfies` 保持同款语义（二者算法一致）。
+/// 未改用 `semver` crate 是受本轮改动文件范围约束（不新增 Cargo.toml 依赖）；
+/// 若后续统一为库实现，请前后端一并替换。
 pub fn semver_satisfies(version: &str, range: &str) -> bool {
     let parse = |s: &str| -> Vec<u32> {
         s.split('.')

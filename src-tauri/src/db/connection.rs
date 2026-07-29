@@ -26,10 +26,14 @@ impl Database {
         let conn = self.conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         // WAL + synchronous=NORMAL：显著减少写操作 fsync 次数（批量导入/对账写回/收藏切换更快），
         // 查询结果不变。断电时持久性弱于默认 FULL（可能丢最后若干已提交事务、不损坏库），迭代期可接受。
+        // temp_store=MEMORY / 更大页缓存 / mmap：提升排序与读多路径的查询性能，均为安全的读侧优化。
         conn.execute_batch(
             "PRAGMA foreign_keys = ON;
              PRAGMA journal_mode = WAL;
-             PRAGMA synchronous = NORMAL;",
+             PRAGMA synchronous = NORMAL;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA cache_size = -16384;
+             PRAGMA mmap_size = 268435456;",
         )?;
         schema::create_tables(&conn)?;
         migrations::run_pending(&conn)?;

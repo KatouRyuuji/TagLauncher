@@ -72,6 +72,11 @@ export function useTags() {
     const next = useAppStore.getState().tags.filter((t) => t.id !== id);
     setTags(next);
     notifyTagsChanged(next);
+    // 若删除的标签在筛选中，同步移除避免幽灵筛选
+    const { selectedTagIds, setSelectedTagIds } = useAppStore.getState();
+    if (selectedTagIds.includes(id)) {
+      setSelectedTagIds(selectedTagIds.filter((tagId) => tagId !== id));
+    }
   }, [setTags]);
 
   return { tags, loading, refresh, addTag, updateTag, removeTag };

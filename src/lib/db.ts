@@ -140,6 +140,11 @@ export async function searchItems(query: string, tagIds: number[]): Promise<Item
   return invokeCmd("search_items", { query, tagIds });
 }
 
+/** 读取同义词分组（每组内词互为同义，供搜索扩展） */
+export async function readSynonyms(): Promise<string[][]> {
+  return invokeCmd("read_synonyms");
+}
+
 // ---- 启动/打开 ----
 
 /** 启动项目（更新 last_used_at 并调用系统 start 命令） */
@@ -314,6 +319,104 @@ export async function getSetting(key: string): Promise<string | null> {
 /** 写入设置值 */
 export async function setSetting(key: string, value: string): Promise<void> {
   return invokeCmd("set_setting", { key, value });
+}
+
+// ---- 数据目录 / 导入导出备份 ----
+
+export interface DataDirectoryInfo {
+  saveDir: string;
+  defaultSaveDir: string;
+  isCustom: boolean;
+  dbSizeBytes: number;
+  backupsDir: string;
+}
+
+/** 获取当前数据目录信息 */
+export async function getDataDirectoryInfo(): Promise<DataDirectoryInfo> {
+  return invokeCmd("get_data_directory_info");
+}
+
+/** 切换数据目录（migrate=true 会把当前库快照到新目录）。返回后需重启生效。 */
+export async function setDataDirectory(newDir: string, migrate: boolean): Promise<void> {
+  return invokeCmd("set_data_directory", { newDir, migrate });
+}
+
+/** 恢复默认数据目录（exe 同级 Save/）。返回后需重启生效。 */
+export async function resetDataDirectory(): Promise<void> {
+  return invokeCmd("reset_data_directory");
+}
+
+/** 一键备份到 Save/Backups/，返回备份文件路径（本机灾备，保留完整配置以支持恢复） */
+export async function backupData(): Promise<string> {
+  return invokeCmd("backup_data");
+}
+
+/** 导出数据到指定 .db 文件（副本会剔除 AI 密钥等敏感配置，供安全分享） */
+export async function exportData(targetPath: string): Promise<void> {
+  return invokeCmd("export_data", { targetPath });
+}
+
+/** 导入数据（覆盖当前库，导入前自动备份）。返回自动备份路径。之后应重启应用。 */
+export async function importData(sourcePath: string): Promise<string> {
+  return invokeCmd("import_data", { sourcePath });
+}
+
+/** 重启应用 */
+export async function restartApp(): Promise<void> {
+  return invokeCmd("restart_app");
+}
+
+// ---- AI 自动打标 ----
+
+export interface AiConfig {
+  baseUrl: string;
+  /**
+   * 写入方向：明文密钥；留空表示"不修改已存密钥"。
+   * 读取方向（aiGetConfig）：后端不下发明文密钥，此字段恒为空串——请改用 hasApiKey 判断是否已配置。
+   */
+  apiKey: string;
+  model: string;
+  autoTagOnAdd: boolean;
+  maxTags: number;
+  allowNewTags: boolean;
+  extraPrompt: string;
+  /** 仅 aiGetConfig 返回：后端是否已存有密钥（明文密钥不下发前端）。写入时可省略。 */
+  hasApiKey?: boolean;
+}
+
+/** 读取 AI 配置（不含明文密钥，是否已配置见 hasApiKey） */
+export async function aiGetConfig(): Promise<AiConfig> {
+  return invokeCmd("ai_get_config");
+}
+
+/** 写入 AI 配置（apiKey 留空表示不修改已存密钥） */
+export async function aiSetConfig(config: AiConfig): Promise<void> {
+  return invokeCmd("ai_set_config", { config });
+}
+
+/** 是否已配置 AI（base_url + api_key 非空） */
+export async function aiIsConfigured(): Promise<boolean> {
+  return invokeCmd("ai_is_configured");
+}
+
+/** 显式清除已保存的 API 密钥（"留空=不修改"语义下删除密钥的专用通道） */
+export async function aiClearApiKey(): Promise<void> {
+  return invokeCmd("ai_clear_api_key");
+}
+
+/** 测试 AI 连接，成功返回模型回显 */
+export async function aiTestConnection(): Promise<string> {
+  return invokeCmd("ai_test_connection");
+}
+
+/** 为单个对象建议标签名列表 */
+export async function aiSuggestTags(
+  name: string,
+  path: string,
+  itemType: string,
+  existingTags: string[],
+): Promise<string[]> {
+  return invokeCmd("ai_suggest_tags", { name, path, itemType, existingTags });
 }
 
 // ---- Mod 操作 ----

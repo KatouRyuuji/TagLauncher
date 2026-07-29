@@ -3,20 +3,15 @@ import { open as dialogOpen, save } from "@tauri-apps/plugin-dialog";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { ModManagerPanel } from "./ModManagerPanel";
+import { AiSettingsSection } from "./AiSettingsSection";
+import { DataSettingsSection } from "./DataSettingsSection";
 import { useThemeContext } from "./ThemeProvider";
+import { showToast } from "../lib/toast";
 import type { ThemeDefinition, ThemeSource, ThemeVariant } from "../types/theme";
 
 interface SettingsPanelProps {
   open: boolean;
   onClose: () => void;
-}
-
-function showToast(message: string, type: "info" | "success" | "error" | "warning" = "info") {
-  window.dispatchEvent(
-    new CustomEvent("taglauncher-toast", {
-      detail: { message, type },
-    }),
-  );
 }
 
 export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
@@ -166,6 +161,10 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 />
               )}
             </section>
+
+            <AiSettingsSection />
+
+            <DataSettingsSection />
 
             <section className="mt-6">
               <div className="mb-3">

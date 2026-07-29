@@ -51,7 +51,7 @@ export interface PanelHandle {
   /** 全局唯一 id（格式：modId::panelId） */
   readonly id: string;
   /** 内容容器 div，mod 可向此写入 innerHTML 或 appendChild */
-  readonly container: HTMLElement;
+  container: HTMLElement;
   /** 显示面板 */
   show(): void;
   /** 隐藏面板（不销毁） */

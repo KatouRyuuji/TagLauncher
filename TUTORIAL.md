@@ -31,9 +31,9 @@ src/
 └─ assets/          # 前端静态资源
 
 src-tauri/src/
-├─ commands/        # Tauri 命令（按域分模块：item/tag/cabinet/mod/settings/synonym/launch/object_preview/search）
+├─ commands/        # Tauri 命令（按域分模块：item/tag/cabinet/mod/net/ai/data/settings/synonym/launch/object_preview/search）
 ├─ db/              # SQLite 连接、schema 与迁移（migrations/v00x）
-├─ services/        # 业务服务（item/tag/search/icon/object_preview/launch/path/settings）
+├─ services/        # 业务服务（item/tag/search/icon/object_preview/launch/file_identity/path/settings + net）
 ├─ extensions/      # Mod 与主题加载（mod_loader/mod_registry/theme_loader）
 ├─ models/          # Rust 数据模型
 ├─ lib.rs           # Tauri 构建与命令注册
@@ -106,14 +106,17 @@ src-tauri/src/
 
 ## 4.2 `commands/`（命令实现，按域分模块）
 
-实际约 69 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/net/settings/synonym/launch/object_preview/search），命令体一般转调 `services/` 下的业务服务。主要命令组：
+实际约 81 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/net/ai/data/settings/synonym/launch/object_preview/search），命令体一般转调 `services/` 下的业务服务。主要命令组：
 
 - 对象：`add_item` / `add_items` / `remove_item` / `get_items` / `launch_item` / `update_item_icon`
-- 标签：`get_tags` / `add_tag` / `update_tag` / `remove_tag` / `set_item_tags`
+- 标签：`get_tags` / `add_tag` / `update_tag` / `remove_tag` / `set_item_tags` / `get_tag_relations` / `add_tag_relation` / `remove_tag_relation`
 - 文件柜：`get_cabinets` / `add_cabinet` / `update_cabinet` / `remove_cabinet` / 关联命令
 - 搜索：`search_items`（备用后端搜索）
 - 同义词：`read_synonyms`
 - Mod/主题：`get_mods` / `get_mod_content` / `get_mod_dir` / `enable_mod` / `disable_mod` / `import_mod` / `delete_mod` / `get_theme_directory_info` / `install_theme_file` 等
+- 网络原语：`net_fetch`（Mod 用，经后端 ureq 代理）
+- AI 打标：`ai_get_config` / `ai_set_config` / `ai_is_configured` / `ai_test_connection` / `ai_suggest_tags`
+- 数据管理：`get_data_directory_info` / `set_data_directory` / `reset_data_directory` / `backup_data` / `export_data` / `import_data` / `restart_app`
 - 对象预览：`get_object_file_info` / `list_object_directory` / `get_audio_preview`
 
 ### 4.2.1 关键修复说明
@@ -123,11 +126,11 @@ src-tauri/src/
 - 现改为按 `path` 回查，保证重复添加返回正确对象。
 
 2. 锁粒度优化
-- `get_items` / `search_items` / `get_cabinet_items` 改为：
+- `get_items` / `get_item` / `get_items_by_ids` / `search_items` / `get_cabinet_items` 统一改为：
   - 先短锁查询数据；
-  - 释放锁后执行图标提取；
+  - 释放锁后执行图标提取（`item_service::fill_visuals`）；
   - 再短锁补齐标签。
-- 目的是避免 DB 锁在外部 IO（如 PowerShell 图标提取）期间被长时间占用。
+- 目的是避免 DB 锁在外部 IO（如 PowerShell 图标提取）期间被长时间占用。v1.3.0 把 `get_item` / `get_items_by_ids` / `search_items` 也纳入此模式（此前它们在持锁期间跑图标提取会串行阻塞所有 DB 命令），并删除了不再使用的 `icon_service::fill_auto_visual_paths`。
 
 3. 移除潜在 panic
 - `get_item_tags` 和 `items_with_tags` 改为 `Result` 链路，移除 `unwrap`。
@@ -142,12 +145,27 @@ src-tauri/src/
 - 初始化数据库并 `app.manage(database)`。
 - 注册所有 command 供前端 `invoke` 调用。
 
+## 4.4 `ai_commands.rs`（AI 自动打标，Anthropic 协议）
+
+- 后端只暴露无状态原语 `ai_suggest_tags`（给一个对象建议标签）；批量遍历、并发、进度、取消由前端 `hooks/useAiTagging.ts` 编排（并发池 `CONCURRENCY = 3`，建标/应用标签串行化避免重复建标）。
+- HTTP 用 `ureq`（阻塞，与 `net_fetch` 一致，不引入 async 运行时）。
+- 配置存于 `app_meta` KV（复用 `settings_service` 的 `get_setting`/`set_setting`），键前缀 `ai.`：`base_url`/`api_key`/`model`/`auto_tag_on_add`/`max_tags`/`allow_new_tags`/`extra_prompt`；模型由用户填写（Anthropic 兼容模型名，必填、无内置默认）。
+- 关键函数：`build_endpoint`（端点归一化，补 `/v1/messages`）、`extract_text`（Anthropic `content[].text` 优先、OpenAI `choices` 兜底）、`parse_tag_list`（JSON 数组优先，逗号/换行回退）。均带单测。
+- 新对象自动打标：`useItems` 派发 `taglauncher-items-added` 事件 → `App` 监听 → silent 后台调用。
+
+## 4.5 `data_commands.rs`（数据目录 / 导入 / 导出 / 备份）
+
+- 导出/备份/迁移统一走 **SQLite Online Backup API**（`rusqlite` 的 `backup` feature，页级一致快照），核心内部函数 `snapshot_live_db`。
+- 数据目录「指针」不能存于数据库自身，放在 exe 旁 `datapath.json`：`path_service` 的 `read_data_dir_redirect` / `write_data_dir_redirect` / `default_save_dir`；**仅重定向 `Save/`**，Builtin/Plugins 仍固定 exe 同级。
+- `import_data`：`validate_importable_db` 校验来源库（`app_meta.schema_version > 0`）→ 自动把当前库备份到 `Save/Backups/`（可回退）→ 用 Backup API 灌入当前连接。
+- 切换目录 / 导入后需 `restart_app`（`app.restart()`）生效。
+
 ## 5. 数据模型速览
 
 ### 5.1 items
 
-- `id`、`name`、`path`（唯一）
-- `type`：`folder/image/exe/bat/ps1`
+- `id`、`name`、`path`（最近已知位置，不再唯一）
+- `type`：`folder/image/audio/exe/bat/ps1`
 - `icon_path`
 - `created_at`、`last_used_at`
 - `is_favorite`
@@ -193,7 +211,9 @@ npm run tauri build
 
 产物：
 
-- `src-tauri/target/release/bundle/nsis/TagLauncher_1.2.0_x64-setup.exe`
+- `src-tauri/target/release/bundle/nsis/TagLauncher_1.3.0_x64-setup.exe`
+
+ARM64 构建用 `build-arm64.bat`（`aarch64-pc-windows-msvc`，脚本会自动 `rustup target add`），产物为 `..._arm64-setup.exe`；`build.bat` 亦支持传入可选 target 参数。
 
 NSIS 安装包会创建开始菜单快捷方式；桌面快捷方式在安装功能选择页中作为可选项；安装语言可选 English / SimpChinese。
 
@@ -223,14 +243,19 @@ NSIS 安装包会创建开始菜单快捷方式；桌面快捷方式在安装功
 - `NAME_KEYS` / `TAG_KEYS` 权重可调。
 - 调整后需手测中文、拼音、同义词检索效果。
 
-## 8.3 欢迎弹窗图片替换
+## 8.3 欢迎弹窗定制
 
-- 默认资源：`src/assets/welcome.png`
-- 引用位置：`src/components/WelcomeModal.tsx`
+v1.3.0 起欢迎弹窗改为 标题+简介 + 特性列表 + 右侧扫码赞助卡片 + B 站主页链接。
+
+- 组件：`src/components/WelcomeModal.tsx`
+- 特性列表：编辑 `FEATURES` 数组（`isNew: true` 会显示「新」徽标）。
+- 赞助二维码：`src/assets/QRCode.png`；B 站链接常量 `BILIBILI_URL`。
+- 版本号：通过 `getAppVersion()` 动态获取展示。
+- 「下次不再显示」使用 `localStorage` 键 `taglauncher.hide_welcome_modal`。
 
 ## 9. 构建与回归建议
 
-常用命令：
+首次准备开发环境可运行 `setup.bat`（一键检测并安装 Node / Rust / VS C++ BuildTools / WebView2 并 `npm install`）。常用命令：
 
 ```bash
 npm run test:design

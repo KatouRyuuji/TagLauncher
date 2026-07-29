@@ -86,7 +86,10 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
 
         const tagIds = item.tags.map((itemTag) => itemTag.id);
         const [moved] = tagIds.splice(idx, 1);
-        tagIds.splice(target.targetIdx, 0, moved);
+        // 统一落点语义为「插入到目标位置之前」：
+        // 向后拖（idx < targetIdx）时移除源元素后目标下标前移一位，需减 1 校正。
+        const insertAt = target.targetIdx > idx ? target.targetIdx - 1 : target.targetIdx;
+        tagIds.splice(insertAt, 0, moved);
         await onReorder(item.id, tagIds);
       },
     });
@@ -110,7 +113,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
             dragIdx === idx ? "opacity-40" : ""
           } ${overIdx === idx && dragIdx !== null && dragIdx !== idx ? "ring-1 ring-[var(--accent-primary)]" : ""}`}
           style={{
-            backgroundColor: `color-mix(in srgb, ${tag.color} var(--tag-color-alpha, 20%), white)`,
+            backgroundColor: `color-mix(in srgb, ${tag.color} var(--tag-color-alpha, 20%), var(--bg-card))`,
             color: tag.color,
             borderColor: `color-mix(in srgb, ${tag.color} 28%, transparent)`,
           }}

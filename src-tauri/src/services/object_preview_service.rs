@@ -6,14 +6,11 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 
-const IMAGE_EXTS: &[&str] = &[
-    "png", "jpg", "jpeg", "webp", "bmp", "gif", "ico", "svg", "tif", "tiff", "avif", "heic", "heif",
-];
+/// 单次目录列举返回的最大项数（超大目录只取前 N 项，防内存/IPC 膨胀）。
+const MAX_DIR_ENTRIES: usize = 5000;
 
-const AUDIO_EXTS: &[&str] = &[
-    "aac", "ape", "aiff", "aif", "afc", "aifc", "mp3", "mp2", "mp1", "wav", "wave", "wv", "opus",
-    "flac", "ogg", "m4a", "m4b", "m4p", "m4r", "mpc", "mp+", "mpp", "spx",
-];
+/// 内嵌封面 base64 的原始字节上限：超过则丢弃（预览降级为无封面），避免撑爆 IPC/内存。
+const MAX_COVER_BYTES: usize = 5 * 1_048_576; // 5 MB
 
 #[derive(Debug, Serialize)]
 pub struct ObjectFileInfo {
@@ -76,6 +73,9 @@ pub fn list_object_directory(path: &str) -> Result<Vec<ObjectDirectoryEntry>, St
 
     let mut entries = Vec::new();
     for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
+        if entries.len() >= MAX_DIR_ENTRIES {
+            break; // 目录项数上限：超大目录只返回前 N 项，避免内存/IPC 膨胀
+        }
         let entry = entry.map_err(|e| e.to_string())?;
         let path_buf = entry.path();
         let meta = entry.metadata().map_err(|e| e.to_string())?;
@@ -147,8 +147,12 @@ fn select_cover_picture(tag: &lofty::tag::Tag) -> Option<&lofty::picture::Pictur
 }
 
 fn picture_data_url(picture: &lofty::picture::Picture) -> Option<String> {
+    let data = picture.data();
+    if data.len() > MAX_COVER_BYTES {
+        return None; // 过大封面丢弃，预览降级为无封面，避免撑爆 IPC/内存
+    }
     let mime = picture.mime_type()?.as_str();
-    let encoded = general_purpose::STANDARD.encode(picture.data());
+    let encoded = general_purpose::STANDARD.encode(data);
     Some(format!("data:{};base64,{}", mime, encoded))
 }
 
@@ -163,20 +167,13 @@ fn detect_preview_type(path: &Path) -> &'static str {
     if path.is_dir() {
         return "folder";
     }
-
-    match path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .as_deref()
-    {
-        Some(ext) if IMAGE_EXTS.contains(&ext) => "image",
-        Some(ext) if AUDIO_EXTS.contains(&ext) => "audio",
-        Some("exe") => "exe",
-        Some("bat") | Some("cmd") => "bat",
-        Some("ps1") => "ps1",
-        _ => "exe",
-    }
+    // 扩展名归类与 IMAGE_EXTS/AUDIO_EXTS 单一来源，复用 item_service（避免两处列表漂移）。
+    crate::services::item_service::classify_by_extension(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .as_deref(),
+    )
 }
 
 fn audio_encoding_label(path: &str, fallback: &str) -> String {

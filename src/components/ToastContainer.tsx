@@ -7,24 +7,18 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback } from "react";
+import { showToast, type ToastType } from "../lib/toast";
 
 export interface ToastMessage {
   id: number;
   message: string;
-  type: "info" | "success" | "error" | "warning";
+  type: ToastType;
 }
 
 const TOAST_DURATION = 3500; // ms
 
-// ── 外部调用入口（应用内部使用）────────────────────────────────────────────
-
-export function showToast(message: string, type: ToastMessage["type"] = "info") {
-  window.dispatchEvent(
-    new CustomEvent<{ message: string; type: ToastMessage["type"] }>("taglauncher-toast", {
-      detail: { message, type },
-    }),
-  );
-}
+// 兼容既有 `import { showToast } from "./ToastContainer"` 的调用点，统一转发到 lib/toast。
+export { showToast };
 
 // ── 组件 ──────────────────────────────────────────────────────────────────
 
@@ -66,7 +60,7 @@ export function ToastContainer() {
           <span style={{ color: toastIconColor(toast.type), flexShrink: 0 }}>
             {toastIcon(toast.type)}
           </span>
-          <span className="flex-1 truncate">{toast.message}</span>
+          <span className="flex-1 line-clamp-2 break-words">{toast.message}</span>
           <button
             onClick={() => dismiss(toast.id)}
             className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-full)] opacity-50 transition-opacity hover:bg-[var(--bg-hover)] hover:opacity-100"

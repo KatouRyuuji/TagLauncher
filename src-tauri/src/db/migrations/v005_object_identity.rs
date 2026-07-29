@@ -1,4 +1,5 @@
 use super::Migration;
+use crate::db::has_column;
 use rusqlite::Connection;
 
 /// 对象身份重构：把唯一标识从"绝对路径"改为"NTFS 卷序列号 + 文件ID"。
@@ -31,22 +32,11 @@ impl Migration for V005ObjectIdentity {
     }
 }
 
-fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
-    conn.prepare(&format!(
-        "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name='{}'",
-        table, column
-    ))
-    .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
-    .unwrap_or(0)
-        > 0
-}
-
+// 表重建在 run_pending 提供的事务内执行、外键强制已由框架在事务外关闭，
+// 故此处不再自开 BEGIN / 设置 foreign_keys PRAGMA（事务内 PRAGMA 为 no-op）。
 fn rebuild_items_with_identity(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
         r#"
-        PRAGMA foreign_keys = OFF;
-        BEGIN TRANSACTION;
-
         DROP TRIGGER IF EXISTS items_ai;
         DROP TRIGGER IF EXISTS items_ad;
         DROP TRIGGER IF EXISTS items_au;
@@ -91,9 +81,6 @@ fn rebuild_items_with_identity(conn: &Connection) -> Result<(), rusqlite::Error>
             INSERT INTO items_fts(items_fts, rowid, name, path) VALUES('delete', old.id, old.name, old.path);
             INSERT INTO items_fts(rowid, name, path) VALUES (new.id, new.name, new.path);
         END;
-
-        COMMIT;
-        PRAGMA foreign_keys = ON;
         "#,
     )
 }

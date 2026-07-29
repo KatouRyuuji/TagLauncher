@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import * as db from "../lib/db";
+import { showToast } from "../lib/toast";
 import type { Cabinet, ItemWithTags } from "../types";
 
 interface ContextMenuProps {
@@ -183,11 +184,7 @@ export function ContextMenu({
     } catch (e) {
       // 对象已丢失/无法定位时给出明确反馈，避免"点了没反应"
       const detail = e instanceof Error ? e.message : String(e);
-      window.dispatchEvent(
-        new CustomEvent("taglauncher-toast", {
-          detail: { message: `打开所在文件夹失败：${detail}`, type: "error" },
-        }),
-      );
+      showToast(`打开所在文件夹失败：${detail}`, "error");
     } finally {
       onClose();
     }

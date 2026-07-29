@@ -54,18 +54,29 @@ function mergeVariantTokens(target: Record<string, string>, tokens?: ThemeTokenL
 }
 
 /**
- * 检查 CSS 字符串中大括号是否平衡（跳过字符串字面量内容）。
+ * 检查 CSS 字符串中大括号是否平衡（跳过字符串字面量与 /* ... *\/ 注释内容）。
  * 返回错误描述字符串，或 null（无问题）。
  */
 function detectCssBraceError(css: string): string | null {
   let depth = 0;
   let inStr = false;
   let strChar = "";
+  let inComment = false;
   for (let i = 0; i < css.length; i++) {
     const ch = css[i];
+    if (inComment) {
+      if (ch === "/" && css[i - 1] === "*") inComment = false;
+      continue;
+    }
     if (inStr) {
       if (ch === strChar && css[i - 1] !== "\\") inStr = false;
-    } else if (ch === '"' || ch === "'") {
+      continue;
+    }
+    if (ch === "*" && css[i - 1] === "/") {
+      inComment = true;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
       inStr = true;
       strChar = ch;
     } else if (ch === "{") {
@@ -77,6 +88,90 @@ function detectCssBraceError(css: string): string | null {
   }
   if (depth > 0) return `${depth} 个未闭合的 "{"`;
   return null;
+}
+
+/**
+ * CSS 转义序列解码（用于安全检测前的归一化）。
+ * CSS 允许 @\69mport、u\72l(...) 等转义写法，浏览器照常解析，
+ * 若只做字面匹配，@import / url() 检查可被轻松绕过。
+ */
+function unescapeCss(css: string): string {
+  return css.replace(/\\([0-9a-fA-F]{1,6}\s?|.)/g, (_match, esc: string) => {
+    const hexMatch = /^[0-9a-fA-F]{1,6}/.exec(esc);
+    if (hexMatch) {
+      const codePoint = parseInt(hexMatch[0], 16);
+      // 非法码点按 U+FFFD 处理（与浏览器一致）
+      if (codePoint === 0 || codePoint > 0x10ffff) return "�";
+      return String.fromCodePoint(codePoint);
+    }
+    return esc;
+  });
+}
+
+/**
+ * 主题 CSS 基本消毒（仅对非内置主题 custom / mod）。纵深防御，与 CSP 配合：
+ *  - 先做 CSS 转义归一化，阻止 @\69mport / u\72l() 形式的绕过；
+ *  - 移除 @import：阻止 mod/自定义主题拉取远程样式表或远程字体表；
+ *  - 中和指向远程 http(s) 主机的 url()：阻止远程信标/追踪，替换为 url(about:blank)，
+ *    但放行 Tauri asset 协议主机（asset.localhost / ipc.localhost）——主题本地字体/
+ *    图片经 convertFileSrc 解析后即走该主机。
+ * 保留 data: / blob: / 相对路径 / var() / asset 协议等正常写法。
+ */
+function sanitizeThemeCss(css: string): string {
+  const normalized = unescapeCss(css);
+  const withoutImport = normalized.replace(/@import\b[^;]*;?/gi, "");
+  return withoutImport.replace(
+    /url\(\s*(['"]?)(https?:\/\/[^)'"]*)\1\s*\)/gi,
+    (match, _quote: string, rawUrl: string) => {
+      try {
+        const host = new URL(rawUrl).hostname.toLowerCase();
+        if (host === "asset.localhost" || host === "ipc.localhost") return match;
+      } catch {
+        /* URL 解析失败按远程处理，一律中和 */
+      }
+      return "url(about:blank)";
+    },
+  );
+}
+
+/**
+ * 消毒单个主题变量值（非内置主题）：
+ * 变量值可能夹带 url(http://远程信标)，配合 background-image: var(--x) 即可外联。
+ * 复用完整 CSS 消毒口径（unescape 归一化 + 远程 url() 中和）。
+ */
+function sanitizeThemeVariableValue(value: string): string {
+  return sanitizeThemeCss(value);
+}
+
+/**
+ * 消毒 asset 值（非内置主题）。与变量值分开处理：
+ * 不做 unescape 输出（保留 Windows 路径中的反斜杠，如 C:\fonts\x.woff2），
+ * 仅检测 unescape 后文本是否含威胁，命中则整体中和。
+ */
+function sanitizeThemeAssetValue(value: string): string {
+  const normalized = unescapeCss(value).trim();
+  // 裸远程 URL（asset 值直接写 https://...）
+  if (/^https?:\/\//i.test(normalized)) {
+    try {
+      const host = new URL(normalized).hostname.toLowerCase();
+      if (host === "asset.localhost" || host === "ipc.localhost") return value;
+    } catch {
+      /* 解析失败按威胁处理 */
+    }
+    return "about:blank";
+  }
+  // url() 包裹的远程 URL
+  const remoteMatch = /url\(\s*(['"]?)(https?:\/\/[^)'"]*)\1\s*\)/i.exec(normalized);
+  if (remoteMatch) {
+    try {
+      const host = new URL(remoteMatch[2]).hostname.toLowerCase();
+      if (host === "asset.localhost" || host === "ipc.localhost") return value;
+    } catch {
+      /* 解析失败按威胁处理 */
+    }
+    return "url(about:blank)";
+  }
+  return value;
 }
 
 export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = {}) {
@@ -108,6 +203,13 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
   root.classList.add("theme-switching");
 
   // 2. 清理契约内变量并写入默认值 + 当前主题值，避免切换不完整主题时继承上一个主题的残留值。
+  //    非内置主题的变量值与 asset 值需消毒（可能夹带 url(http://远程信标)）。
+  const sanitizeVar = theme.isPreset
+    ? (v: string) => v
+    : sanitizeThemeVariableValue;
+  const sanitizeAsset = theme.isPreset
+    ? (v: string) => v
+    : sanitizeThemeAssetValue;
   for (const key of THEME_VARIABLE_KEYS) {
     root.style.removeProperty(`--${key}`);
   }
@@ -116,14 +218,14 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
   }
   dynamicThemeVariableKeys.clear();
   for (const [key, value] of Object.entries(variables)) {
-    root.style.setProperty(`--${key}`, value);
+    root.style.setProperty(`--${key}`, sanitizeVar(value));
     if (!THEME_VARIABLE_KEYS.includes(key)) {
       dynamicThemeVariableKeys.add(key);
     }
   }
   for (const [key, value] of Object.entries(theme.assets ?? {})) {
     const variableKey = `asset-${key}`;
-    root.style.setProperty(`--${variableKey}`, cssUrl(value, themeRoot));
+    root.style.setProperty(`--${variableKey}`, cssUrl(sanitizeAsset(value), themeRoot));
     dynamicThemeVariableKeys.add(variableKey);
   }
 
@@ -139,9 +241,11 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
   // 4. 注入主题自定义 CSS（用于变量无法覆盖的深度定制：布局、图标、选择器级样式）
   //    变体的 css 追加在主题 css 之后，使其能覆盖基础样式
   let styleEl = document.getElementById(CUSTOM_CSS_ID) as HTMLStyleElement | null;
-  const combinedCss = [theme.css, variant?.css]
+  const rawCombinedCss = [theme.css, variant?.css]
     .filter((part): part is string => !!part?.trim())
     .join("\n");
+  // 内置主题 CSS 可信直接注入；custom / mod 主题 CSS 视为不可信，注入前基本消毒
+  const combinedCss = theme.isPreset ? rawCombinedCss : sanitizeThemeCss(rawCombinedCss);
   if (combinedCss.trim()) {
     // 注入前检查括号平衡，不平衡时警告（仍继续注入，浏览器会尽力解析有效部分）
     const cssError = detectCssBraceError(combinedCss);

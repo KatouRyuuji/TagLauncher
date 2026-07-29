@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 /** 主内容区底部的批量操作工具条（选中对象时出现） */
 export function BatchSelectionToolbar({
   selectedCount,
+  totalCount,
   tags,
   removableTags,
   cabinets,
@@ -12,9 +13,12 @@ export function BatchSelectionToolbar({
   onAddToCabinet,
   onRemoveFromCabinet,
   onRemoveFromApp,
+  onSelectAll,
   onClearSelection,
 }: {
   selectedCount: number;
+  /** 当前结果集总数（用于"全选当前结果"兜底，覆盖虚拟化未渲染的条目）。 */
+  totalCount: number;
   tags: Array<{ id: number; name: string; color: string }>;
   removableTags: Array<{ id: number; name: string; color: string }>;
   cabinets: Array<{ id: number; name: string; color: string }>;
@@ -24,6 +28,7 @@ export function BatchSelectionToolbar({
   onAddToCabinet: (cabinetId: number) => Promise<void>;
   onRemoveFromCabinet: () => Promise<void>;
   onRemoveFromApp: () => Promise<void>;
+  onSelectAll: () => void;
   onClearSelection: () => void;
 }) {
   const [openMenu, setOpenMenu] = useState<"add-tag" | "remove-tag" | "cabinet" | null>(null);
@@ -106,6 +111,16 @@ export function BatchSelectionToolbar({
           </button>
         </ToolbarMenuButton>
 
+        {selectedCount < totalCount && (
+          <button
+            type="button"
+            onClick={onSelectAll}
+            className="action-button"
+            title="选中当前筛选结果的全部对象（含虚拟化未渲染的条目）"
+          >
+            全选 {totalCount}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void onRemoveFromApp()}

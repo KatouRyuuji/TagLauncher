@@ -1,4 +1,5 @@
 use super::Migration;
+use crate::db::has_column;
 use rusqlite::Connection;
 
 /// 为对象增加内容签名列（文件大小 + 首/尾采样哈希），用于跨盘符移动后的兜底重定位：
@@ -29,16 +30,6 @@ impl Migration for V006ObjectSignature {
         }
         Ok(())
     }
-}
-
-fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
-    conn.prepare(&format!(
-        "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name='{}'",
-        table, column
-    ))
-    .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
-    .unwrap_or(0)
-        > 0
 }
 
 #[cfg(test)]

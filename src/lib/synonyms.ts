@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { readSynonyms } from "./db";
 
 let synonymMap = new Map<string, string[]>();
 
@@ -21,7 +21,7 @@ function buildSynonymMap(groups: string[][]): Map<string, string[]> {
 
 export async function loadSynonyms(): Promise<void> {
   try {
-    const groups = await invoke<string[][]>("read_synonyms");
+    const groups = await readSynonyms();
     synonymMap = buildSynonymMap(groups);
   } catch (error) {
     console.error("Failed to load synonyms:", error);

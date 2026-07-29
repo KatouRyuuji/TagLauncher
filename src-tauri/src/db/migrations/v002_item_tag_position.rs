@@ -1,4 +1,5 @@
 use super::Migration;
+use crate::db::has_column;
 use rusqlite::Connection;
 
 /// 为项目标签关联增加展示顺序字段。
@@ -21,12 +22,4 @@ impl Migration for V002ItemTagPosition {
     }
 }
 
-fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
-    conn.prepare(&format!(
-        "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name='{}'",
-        table, column,
-    ))
-    .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
-    .unwrap_or(0)
-        > 0
-}
+// has_column 复用 crate::db::has_column（见 db/mod.rs）。

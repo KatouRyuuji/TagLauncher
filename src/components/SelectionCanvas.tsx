@@ -273,7 +273,7 @@ export function SelectionCanvas({
 
     if (!drag.active) {
       if (selectedItemIdsRef.current.length > 0) {
-        onSelectItems([]);
+        onSelectItemsRef.current([]);
       }
     }
 
