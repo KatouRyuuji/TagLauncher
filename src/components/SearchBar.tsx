@@ -129,7 +129,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <div className="surface-card-soft flex items-center gap-1 p-1">
+        <div className="flex items-center gap-1 p-1">
           {MODES.map((mode) => (
             <button
               key={mode.value}
@@ -186,7 +186,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
           )}
         </div>
 
-        <div className="surface-card-soft flex items-center gap-1 p-1">
+        <div className="flex items-center gap-1 p-1">
           <button
             type="button"
             onClick={() => setViewMode("grid")}

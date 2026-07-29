@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TagEditor } from "./TagEditor";
 import { TagRelationsEditor } from "./TagRelationsEditor";
-import { resolvePanel, firePanelEvent } from "../lib/panelRegistry";
+import { resolvePanel, firePanelEvent, destroyPanel } from "../lib/panelRegistry";
 import {
   beginInternalPointerDrag,
   findClosestNumberDataAttribute,
@@ -141,7 +141,7 @@ export function Sidebar({
       </div>
 
       <div className="border-b border-[var(--border-subtle)] px-4 py-3">
-        <div className="surface-card-soft flex gap-1 p-1">
+        <div className="flex gap-1 p-1">
           <SidebarTabButton
             active={visibleSection === "tags"}
             label="标签"
@@ -227,8 +227,13 @@ export function Sidebar({
                       }`}
                     >
                       <span
-                        className="h-3 w-3 shrink-0 rounded-full ring-2 ring-white/50"
-                        style={{ backgroundColor: tag.color }}
+                        className="h-3 w-3 shrink-0 rounded-full"
+                        style={{
+                          backgroundColor: tag.color,
+                          boxShadow: active
+                            ? `0 0 0 2px #ffffff`
+                            : `0 0 0 2px var(--border-subtle)`,
+                        }}
                       />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">{tag.name}</span>
                       {!active && (parentCountByTag.get(tag.id) || childCountByTag.get(tag.id)) ? (
@@ -549,7 +554,13 @@ function FilterNavButton({
       style={accentStyle}
       {...props}
     >
-      <span className="mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-white/65 text-current shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]">
+      <span
+        className={`mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] text-current ${
+          active
+            ? "bg-[var(--accent-primary-bg)]"
+            : "bg-[var(--bg-hover)]"
+        }`}
+      >
         {accent === "favorite" ? (
           <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 2.75 14.84 8.5l6.35.92-4.6 4.48 1.09 6.33L12 17.26l-5.68 2.97 1.09-6.33-4.6-4.48 6.35-.92L12 2.75Z" />
@@ -571,14 +582,12 @@ function FilterNavButton({
 function SidebarPanelSlot({ panel }: { panel: PanelDescriptor }) {
   const [collapsed, setCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const resolved = useRef(false);
 
   useEffect(() => {
-    if (!resolved.current && containerRef.current) {
-      resolved.current = true;
+    if (containerRef.current) {
       resolvePanel(panel.id, containerRef.current);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [panel.id]);
 
   return (
     <div className="mt-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_82%,transparent)] p-2">
@@ -597,7 +606,11 @@ function SidebarPanelSlot({ panel }: { panel: PanelDescriptor }) {
           <button
             type="button"
             className="inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-            onClick={() => firePanelEvent(panel.id, "close")}
+            onClick={() => {
+              // 先派发 close 事件让 mod 拦截；未拦截时宿主兜底销毁（destroyPanel 有重入守卫）
+              firePanelEvent(panel.id, "close");
+              destroyPanel(panel.id);
+            }}
             title="关闭"
           >
             ✕
@@ -605,13 +618,11 @@ function SidebarPanelSlot({ panel }: { panel: PanelDescriptor }) {
         </div>
       )}
 
-      {!collapsed && (
-        <div
-          ref={containerRef}
-          className="mx-1 mt-1 min-h-[40px] rounded-[var(--radius-md)] px-2 py-1 text-[var(--text-primary)]"
-          style={{ fontSize: "var(--font-size-sm)" }}
-        />
-      )}
+      <div
+        ref={containerRef}
+        className="mx-1 mt-1 min-h-[40px] rounded-[var(--radius-md)] px-2 py-1 text-[var(--text-primary)]"
+        style={{ fontSize: "var(--font-size-sm)", display: collapsed ? "none" : undefined }}
+      />
     </div>
   );
 }
