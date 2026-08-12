@@ -157,7 +157,12 @@ export function useItems() {
   }, [relocateMissing]);
 
   useEffect(() => {
-    if (selectedCabinetId === null) return;
+    if (selectedCabinetId === null) {
+      // 离开文件柜视图时重置归属：否则再次切回同一柜会因 owner 仍相等而
+      // 直接回显离开期间的旧数据（违背"切柜期间回退空数组避免闪现旧数据"的设计）。
+      setCabinetItemsOwner(null);
+      return;
+    }
     // 竞态防护：快速切换文件柜时，慢响应不得覆盖已切换的新选择；
     // 数据到达时一并记录归属，供 source 判定是否已对应当前选中柜。
     let cancelled = false;

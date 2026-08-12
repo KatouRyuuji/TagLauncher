@@ -54,6 +54,26 @@ describe("appStore", () => {
     expect(useAppStore.getState().selectedCabinetId).toBeNull();
   });
 
+  it("setSidebarTab('cabinets') 会清空标签与收藏筛选（页签与主视图保持一致）", () => {
+    useAppStore.setState({ sidebarTab: "tags", selectedTagIds: [10], showFavorites: true });
+
+    useAppStore.getState().setSidebarTab("cabinets");
+
+    expect(useAppStore.getState().sidebarTab).toBe("cabinets");
+    expect(useAppStore.getState().selectedTagIds).toEqual([]);
+    expect(useAppStore.getState().showFavorites).toBe(false);
+  });
+
+  it("setSidebarTab('tags') 会清空文件柜与收藏筛选", () => {
+    useAppStore.setState({ sidebarTab: "cabinets", selectedCabinetId: 2, showFavorites: true });
+
+    useAppStore.getState().setSidebarTab("tags");
+
+    expect(useAppStore.getState().sidebarTab).toBe("tags");
+    expect(useAppStore.getState().selectedCabinetId).toBeNull();
+    expect(useAppStore.getState().showFavorites).toBe(false);
+  });
+
   it("setSearchQuery 更新搜索词", () => {
     useAppStore.getState().setSearchQuery("忍者神龟");
     expect(useAppStore.getState().searchQuery).toBe("忍者神龟");

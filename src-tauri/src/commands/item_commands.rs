@@ -80,14 +80,19 @@ pub fn get_items(app: AppHandle, db: State<Database>) -> Result<Vec<ItemWithTags
     let writes = item_service::plan_reconcile(snapshot);
     let mut items = {
         let conn = db.get_conn();
-        let _ = item_service::apply_reconcile(&conn, &writes);
+        // 对账失败不阻断列表加载（可用性优先，返回未对账数据），但必须留日志便于排查
+        if let Err(e) = item_service::apply_reconcile(&conn, &writes) {
+            eprintln!("[get_items] apply_reconcile 失败（本次返回未对账数据）: {}", e);
+        }
         item_service::get_items(&conn)?
     };
     item_service::fill_visuals(&app, &mut items);
     Ok(items)
 }
 
-#[tauri::command]
+// fill_visuals 在图标未缓存时会跑 PowerShell/文件 IO，同步命令会在主线程执行而冻结 UI，
+// 与 get_items 一致用 (async) 放到工作线程。函数体全同步（无 await），无跨 await 持锁。
+#[tauri::command(async)]
 pub fn get_item(
     app: AppHandle,
     db: State<Database>,
@@ -102,7 +107,8 @@ pub fn get_item(
     Ok(item)
 }
 
-#[tauri::command]
+// 同 get_item：锁外补图标的重 IO 不能跑在主线程，用 (async) 放到工作线程。
+#[tauri::command(async)]
 pub fn get_items_by_ids(
     app: AppHandle,
     db: State<Database>,

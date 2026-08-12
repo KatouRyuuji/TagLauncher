@@ -183,6 +183,13 @@ export function ItemGrid({
     rowMetricsRef.current.clear();
   }, [lanes]);
 
+  // lanes/items 变化后，同一行索引对应的内容与高度已失效，但虚拟化器按索引缓存测量值、
+  // 且 key 相同不会重新触发 measureElement：必须主动清空测量缓存强制重测，
+  // 否则滚动总高度与行位置按旧高度计算，出现滚动条长度不符、快速滚动空白/跳变。
+  useLayoutEffect(() => {
+    virtualizer.measure();
+  }, [virtualizer, lanes, items]);
+
   // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
   // 已渲染行使用真实测量值，未渲染行用 estimateSize 估算，从而支持跨屏框选。
   // 注意：此 Hook 必须位于所有条件返回之前，否则违反 Rules of Hooks。

@@ -72,6 +72,18 @@ function App() {
     notifySelectionChanged(selectedItemIds);
   }, [selectedItemIds]);
 
+  // 可见列表（items）变化时清理失效选中项。SelectionCanvas 内部有同样逻辑，但
+  // 空列表分支会将其卸载、清理不再执行——此处兜底，避免筛选/删除为空后工具栏
+  // 仍显示旧计数、且能对不可见项执行批量操作。
+  useEffect(() => {
+    setSelectedItemIds((current) => {
+      if (current.length === 0) return current;
+      const visible = new Set(items.map((item) => item.id));
+      const next = current.filter((id) => visible.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [items]);
+
   // 桥接 Mod 数据变更到主 UI：mod 调用 api.addTag/removeTag/setItemTags/removeItem 等写操作后，
   // 主界面自动刷新对应数据，避免界面陈旧到重启。
   useEffect(() => {

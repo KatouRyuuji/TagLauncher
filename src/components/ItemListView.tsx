@@ -142,6 +142,13 @@ export function ItemListView({
     }
   }, [virtualItems]);
 
+  // items 变化后同一行索引对应的内容/高度已失效，但虚拟化器按索引缓存测量值、
+  // 且 key 相同不会重新触发 measureElement：必须主动清空测量缓存强制重测，
+  // 否则滚动总高度与行位置按旧高度计算（滚动错乱、未渲染区域尺寸错误）。
+  useLayoutEffect(() => {
+    virtualizer.measure();
+  }, [virtualizer, items]);
+
   // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
   // 注意：vRow.start 相对于行容器（position:relative 的 div），而行容器位于 sticky
   // 表头之下，因此必须用行容器的实际 DOM 位置校正，否则框选矩形整体上移一个表头高度。

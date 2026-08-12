@@ -162,7 +162,24 @@ function tokenize(query: string): Token[] {
     if (/\s/.test(char)) {
       pushTerm(tokens, buffer);
       buffer = "";
-      if (tokens.length > 0 && tokens[tokens.length - 1].type !== "or") {
+      // 预读跳过连续空白：若下一个非空白处是显式操作符（&&/||/!!）或右括号，
+      // 不插入隐式 or。否则隐式 or 与紧随的显式 || 会形成连续两个 or，被末尾
+      // 过滤逻辑一并删除，导致查询后半段丢失（如 "tag || 忍者" 只剩 "tag"）。
+      let nextNonSpace = i;
+      while (nextNonSpace + 1 < query.length && /\s/.test(query[nextNonSpace + 1])) {
+        nextNonSpace += 1;
+      }
+      const upcoming = query.slice(nextNonSpace + 1);
+      const nextIsExplicitOp =
+        upcoming.startsWith("&&") ||
+        upcoming.startsWith("||") ||
+        upcoming.startsWith("!!") ||
+        upcoming.startsWith(")");
+      if (
+        !nextIsExplicitOp &&
+        tokens.length > 0 &&
+        tokens[tokens.length - 1].type !== "or"
+      ) {
         tokens.push({ type: "or" });
       }
       continue;
@@ -244,6 +261,16 @@ class Parser {
   private parsePrimary(): Expr | null {
     const token = this.current();
     if (!token) return null;
+
+    // 一元排除：!! 可出现在 ||/&& 的操作数位置（如 A||!!B 表示 A 与「全集减 B」的并集）。
+    // 缺了这一层，parseOr/parseAnd 拿到 not token 会返回 null，直接丢掉右侧整个分支。
+    if (token.type === "not") {
+      this.index += 1;
+      const right = this.parsePrimary();
+      return right
+        ? { type: "exclude", left: { type: "term", value: "", strict: false }, right }
+        : null;
+    }
 
     if (token.type === "term") {
       this.index += 1;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ItemWithTags, Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { showToast } from "../lib/toast";
 
 interface ItemTagsEditorProps {
   item: ItemWithTags;
@@ -68,9 +69,14 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
     const name = newTagName.trim();
     if (!name) return;
 
-    const nextIds = await onAddNewTag(name, selectedIds);
-    setSelectedIds(nextIds);
-    setNewTagName("");
+    try {
+      const nextIds = await onAddNewTag(name, selectedIds);
+      setSelectedIds(nextIds);
+      setNewTagName("");
+    } catch (err) {
+      // 失败时保留输入便于修正重试（此前是静默的未处理 rejection）
+      showToast(`新建标签失败：${err instanceof Error ? err.message : String(err)}`, "error");
+    }
   };
 
   return createPortal(

@@ -79,6 +79,11 @@ pub fn list_object_directory(path: &str) -> Result<Vec<ObjectDirectoryEntry>, St
         let entry = entry.map_err(|e| e.to_string())?;
         let path_buf = entry.path();
         let meta = entry.metadata().map_err(|e| e.to_string())?;
+        // 跳过符号链接/重解析点（如系统 junction）：它们在列表中既非文件也非目录，
+        // 点击导航无意义，且可能指向用户预期之外的系统目录
+        if meta.file_type().is_symlink() {
+            continue;
+        }
         entries.push(ObjectDirectoryEntry {
             name: entry.file_name().to_string_lossy().to_string(),
             path: path_buf.to_string_lossy().to_string(),

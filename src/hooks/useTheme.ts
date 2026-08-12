@@ -68,6 +68,9 @@ export function useTheme() {
   const [activeVariant, setActiveVariantState] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const desiredThemeIdRef = useRef(getDefaultTheme().id);
+  // 外部显式意图标记：init 完成前若已有 setTheme（含测试/快捷键等程序化调用），
+  // 持久化值不得覆盖该意图——desiredThemeIdRef 是唯一意图来源。
+  const hasExternalIntentRef = useRef(false);
   const customThemesRef = useRef<ThemeDefinition[]>([]);
   const loadErrorSignatureRef = useRef("");
   // 以下 ref 用于让 applyAndBroadcast 保持稳定引用的同时读取最新的目录信息与变体
@@ -121,6 +124,7 @@ export function useTheme() {
 
   const syncCurrentTheme = useCallback(
     async (nextThemeId: string, persist = false) => {
+      hasExternalIntentRef.current = true;
       desiredThemeIdRef.current = nextThemeId;
       const theme = findTheme(nextThemeId) ?? getDefaultTheme();
       // 切换主题时重置变体（不同主题的变体名互不通用）
@@ -228,10 +232,14 @@ export function useTheme() {
           setThemeDirectoryInfo(directoryInfo);
         }
 
-        desiredThemeIdRef.current = themeId;
+        // 已有外部意图时以意图为准，持久化值只用于初始化无主意图的场景
+        if (!hasExternalIntentRef.current) {
+          desiredThemeIdRef.current = themeId;
+        }
+        const desired = desiredThemeIdRef.current;
         const theme =
-          presetThemes.find((preset) => preset.id === themeId) ??
-          customs.find((custom) => custom.id === themeId) ??
+          presetThemes.find((preset) => preset.id === desired) ??
+          customs.find((custom) => custom.id === desired) ??
           getDefaultTheme();
         setCurrentThemeId(theme.id);
         applyAndBroadcast(theme);

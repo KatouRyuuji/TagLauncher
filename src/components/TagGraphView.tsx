@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { computeLayers, orderLayersByBarycenter } from "../lib/tagGraph";
@@ -27,8 +27,10 @@ interface TagGraphViewProps {
 export function TagGraphView({ allItems }: TagGraphViewProps) {
   const tags = useAppStore((s) => s.tags);
   const relations = useAppStore((s) => s.tagRelations);
-  const toggleTagSelection = useAppStore((s) => s.toggleTagSelection);
+  const setSelectedTagIds = useAppStore((s) => s.setSelectedTagIds);
   const setTagGraphOpen = useAppStore((s) => s.setTagGraphOpen);
+  // SVG marker id 实例唯一化：多实例共存（未来弹窗+预览）时硬编码 id 会互相覆盖
+  const arrowMarkerId = useId();
 
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
   // 右侧关联对象列表分页：热门标签可能关联数千对象，避免一次性全量渲染卡顿。
@@ -126,7 +128,9 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
     : validRelations.filter((r) => r.parentId === selectedNodeId).map((r) => tagById.get(r.childId)).filter(Boolean);
 
   const applyFilter = (tagId: number) => {
-    toggleTagSelection(tagId);
+    // 双击=明确筛选意图：强制选中该标签。不能用 toggleTagSelection——
+    // 若该标签已在筛选中，toggle 会变成取消筛选，与双击意图相反。
+    setSelectedTagIds([tagId]);
     setTagGraphOpen(false);
   };
 
@@ -163,7 +167,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                 {/* 连线层 */}
                 <svg className="pointer-events-none absolute inset-0 h-full w-full" style={{ overflow: "visible" }}>
                   <defs>
-                    <marker id="tl-graph-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <marker id={arrowMarkerId} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
                       <path d="M0,0 L6,3 L0,6 Z" fill="var(--border-default)" />
                     </marker>
                   </defs>
@@ -184,7 +188,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                         fill="none"
                         stroke={active ? "var(--accent-primary)" : "var(--border-default)"}
                         strokeWidth={active ? 2 : 1.5}
-                        markerEnd="url(#tl-graph-arrow)"
+                        markerEnd={`url(#${arrowMarkerId})`}
                       />
                     );
                   })}

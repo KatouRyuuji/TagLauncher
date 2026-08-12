@@ -367,9 +367,9 @@ function checkApiVersionCompatibility(modId: string): string | null {
 
 // ── 生命周期回调注册表 ─────────────────────────────────────────────────────
 
-const modLifecycleRegistry = new Map<string, Map<LifecycleType, () => void | Promise<void>>>();
+const modLifecycleRegistry = new Map<string, Map<LifecycleType, Set<() => void | Promise<void>>>>();
 
-/** 注册 mod 生命周期回调（enable / disable / uninstall） */
+/** 注册 mod 生命周期回调（enable / disable / uninstall）。同一类型可注册多个回调，全部生效。 */
 export function registerModLifecycle(
   modId: string,
   type: LifecycleType,
@@ -378,27 +378,31 @@ export function registerModLifecycle(
   if (!modLifecycleRegistry.has(modId)) {
     modLifecycleRegistry.set(modId, new Map());
   }
-  modLifecycleRegistry.get(modId)!.set(type, cb);
+  const map = modLifecycleRegistry.get(modId)!;
+  if (!map.has(type)) map.set(type, new Set());
+  map.get(type)!.add(cb);
 }
 
 /**
  * 执行 mod 生命周期回调。返回是否存在回调。
- * 支持异步回调，超过 500ms 则强制继续并打印警告。
+ * 同一类型的多个回调按注册顺序逐个执行；支持异步回调，单个超过 500ms 则强制继续并打印警告。
  */
 export async function callModLifecycle(modId: string, type: LifecycleType): Promise<boolean> {
   const map = modLifecycleRegistry.get(modId);
-  const cb = map?.get(type);
-  if (cb && map) {
-    const timeout = new Promise<void>((_, reject) =>
-      setTimeout(() => reject(new Error("timeout")), 500),
-    );
-    try {
-      await Promise.race([Promise.resolve(cb()), timeout]);
-    } catch (e) {
-      if (e instanceof Error && e.message === "timeout") {
-        console.warn(`[modApi] Mod "${modId}" 的 ${type} 回调超过 500ms，已强制继续`);
+  const callbacks = map?.get(type);
+  if (map && callbacks && callbacks.size > 0) {
+    for (const cb of Array.from(callbacks)) {
+      const timeout = new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 500),
+      );
+      try {
+        await Promise.race([Promise.resolve(cb()), timeout]);
+      } catch (e) {
+        if (e instanceof Error && e.message === "timeout") {
+          console.warn(`[modApi] Mod "${modId}" 的 ${type} 回调超过 500ms，已强制继续`);
+        }
+        // 其他异常静默忽略
       }
-      // 其他异常静默忽略
     }
     map.delete(type);
     return true;
@@ -424,6 +428,10 @@ function trackUnsubscriber(modId: string, unsub: () => void): void {
   const state = modTrackedStateMap.get(modId);
   if (state) {
     state.unsubscribers.push(unsub);
+  } else {
+    // 追踪状态已不存在（mod 禁用/重载后异步回调里迟到的注册）：
+    // 不追踪就会永久泄漏进全局监听集合，立即回退这次注册。
+    unsub();
   }
 }
 
@@ -533,6 +541,9 @@ async function notifyItemsRefreshed(): Promise<void> {
 async function notifyTagsRefreshed(): Promise<void> {
   try { notifyTagsChanged(await db.getTags()); } catch { /* ignore */ }
 }
+async function notifyCabinetsRefreshed(): Promise<void> {
+  try { notifyCabinetsChanged(await db.getCabinets()); } catch { /* ignore */ }
+}
 
 // 数据写入：db 操作成功后派发对应变更事件
 async function addItem(path: string): Promise<Item> { const r = await db.addItem(path); await notifyItemsRefreshed(); return r; }
@@ -543,9 +554,9 @@ async function removeTag(id: number): Promise<void> { await db.removeTag(id); aw
 async function setItemTags(itemId: number, tagIds: number[]): Promise<void> { await db.setItemTags(itemId, tagIds); await notifyItemsRefreshed(); }
 function launchItem(id: number):                           Promise<void>    { return db.launchItem(id); }
 async function toggleFavorite(id: number): Promise<boolean> { const r = await db.toggleFavorite(id); await notifyItemsRefreshed(); return r; }
-function addCabinet(name: string, color: string):          Promise<Cabinet> { return db.addCabinet(name, color); }
-function updateCabinet(id: number, n: string, c: string):  Promise<void>    { return db.updateCabinet(id, n, c); }
-function removeCabinet(id: number):                        Promise<void>    { return db.removeCabinet(id); }
+async function addCabinet(name: string, color: string): Promise<Cabinet> { const r = await db.addCabinet(name, color); await notifyCabinetsRefreshed(); return r; }
+async function updateCabinet(id: number, n: string, c: string): Promise<void> { await db.updateCabinet(id, n, c); await notifyCabinetsRefreshed(); }
+async function removeCabinet(id: number): Promise<void> { await db.removeCabinet(id); await notifyCabinetsRefreshed(); }
 async function addItemToCabinet(cId: number, iId: number): Promise<void> { await db.addItemToCabinet(cId, iId); notifyCabinetItemsChanged(cId, [iId]); }
 async function removeItemFromCabinet(cId: number, iId: number): Promise<void> { await db.removeItemFromCabinet(cId, iId); notifyCabinetItemsChanged(cId, [iId]); }
 
@@ -577,9 +588,13 @@ async function launchItems(ids: number[]): Promise<void> {
       failed.push(id);
     }
   }
-  // 复用单条启动事件逐个派发：一次批量查名后通知所有监听器
-  const items = await db.getItemsByIds(ids);
-  const nameById = new Map(items.map((i) => [i.id, i.name]));
+  // 复用单条启动事件逐个派发：一次批量查名后通知所有监听器。
+  // 查名失败不得掩盖启动结果本身——降级为按 id 展示。
+  let nameById = new Map<number, string>();
+  try {
+    const items = await db.getItemsByIds(ids);
+    nameById = new Map(items.map((i) => [i.id, i.name]));
+  } catch { /* 查名失败时按 #id 展示 */ }
   for (const id of ids) {
     if (!failed.includes(id)) notifyItemLaunched(id, nameById.get(id) ?? "");
   }

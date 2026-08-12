@@ -57,6 +57,8 @@ export interface ModManifest {
     theme?: string;
   };
   min_app_version?: string;
+  /** 最高兼容版本（exclusive）：App 版本高于此值时后端标记不兼容 */
+  max_app_version?: string;
   /** Mod 针对的 API 版本（如 "2.1.0"）；不声明则跳过版本协商 */
   api_version?: string;
   /** 权限声明列表：能力/意图标注 + 对 createScope 调用的误用防呆，非安全沙箱（详见 ModPermission） */

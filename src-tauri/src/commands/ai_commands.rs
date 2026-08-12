@@ -96,18 +96,22 @@ pub fn ai_set_config(db: State<Database>, config: AiConfig) -> Result<(), String
         );
     }
     let conn = db.get_conn();
-    set_setting(&conn, KEY_BASE_URL, config.base_url.trim())?;
+    // 七项配置写入包在一个事务里：中途失败（DB 锁/磁盘错误）整体回滚，
+    // 不留"地址已写但模型没写"之类的半截配置（用户无法分辨哪些键已落库）。
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    set_setting(&tx, KEY_BASE_URL, config.base_url.trim())?;
     // 密钥留空 = 不修改：前端不再持有明文，回存整份配置时不能把已存密钥清空。
     let new_key = config.api_key.trim();
     if !new_key.is_empty() {
-        set_setting(&conn, KEY_API_KEY, new_key)?;
+        set_setting(&tx, KEY_API_KEY, new_key)?;
     }
     // 模型由用户必填，无内置默认：原样写入（留空即空，由 is_configured/前端拦截）。
-    set_setting(&conn, KEY_MODEL, config.model.trim())?;
-    set_setting(&conn, KEY_AUTO_ON_ADD, if config.auto_tag_on_add { "1" } else { "0" })?;
-    set_setting(&conn, KEY_MAX_TAGS, &config.max_tags.clamp(1, 20).to_string())?;
-    set_setting(&conn, KEY_ALLOW_NEW, if config.allow_new_tags { "1" } else { "0" })?;
-    set_setting(&conn, KEY_EXTRA_PROMPT, config.extra_prompt.trim())?;
+    set_setting(&tx, KEY_MODEL, config.model.trim())?;
+    set_setting(&tx, KEY_AUTO_ON_ADD, if config.auto_tag_on_add { "1" } else { "0" })?;
+    set_setting(&tx, KEY_MAX_TAGS, &config.max_tags.clamp(1, 20).to_string())?;
+    set_setting(&tx, KEY_ALLOW_NEW, if config.allow_new_tags { "1" } else { "0" })?;
+    set_setting(&tx, KEY_EXTRA_PROMPT, config.extra_prompt.trim())?;
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -238,25 +242,21 @@ fn build_endpoint(base_url: &str) -> String {
 /// 判断 base_url 是否为「不安全的明文 http」：`http://` 且主机不是本机回环。
 /// 空串（未配置）与 `https://` 均视为安全（不拦截）。
 fn base_url_is_insecure(base_url: &str) -> bool {
-    let rest = match base_url.trim().strip_prefix("http://") {
+    // scheme 大小写不敏感（RFC 3986，HTTP 客户端会归一化为小写）：先统一小写再剥离，
+    // 防止 "HTTP://api.example.com" 绕过本机 http 白名单导致 API 密钥明文传输。
+    let lowered = base_url.trim().to_ascii_lowercase();
+    let rest = match lowered.strip_prefix("http://") {
         Some(r) => r,
         None => return false, // https / 空 / 其它前缀：此处不拦
     };
     // host 可能是 `[::1]` 形式的 IPv6 字面量：须先剥离方括号再比对，
     // 否则按 ':' 切分得到的是 "["，本机回环端点会被误拦。
     let host = if let Some(after_bracket) = rest.strip_prefix('[') {
-        after_bracket
-            .split(']')
-            .next()
-            .unwrap_or("")
-            .to_ascii_lowercase()
+        after_bracket.split(']').next().unwrap_or("")
     } else {
-        rest.split(['/', ':', '?', '#'])
-            .next()
-            .unwrap_or("")
-            .to_ascii_lowercase()
+        rest.split(['/', ':', '?', '#']).next().unwrap_or("")
     };
-    !matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1")
+    !matches!(host, "localhost" | "127.0.0.1" | "::1")
 }
 
 fn call_messages(config: &AiConfig, system: &str, user: &str, max_tokens: u32) -> Result<String, String> {
@@ -291,11 +291,18 @@ fn call_messages(config: &AiConfig, system: &str, user: &str, max_tokens: u32) -
                     status
                 ));
             }
+            // 上限 +1 字节探测：超过 4MB 明确报"响应过大"，而不是静默截断后
+            // 让用户面对莫名其妙的 JSON 解析错误（分不清是响应太大还是格式错误）
+            const MAX_RESPONSE_BYTES: u64 = 4 * 1_048_576;
             let mut buf = String::new();
-            resp.into_reader()
-                .take(4 * 1_048_576)
+            resp
+                .into_reader()
+                .take(MAX_RESPONSE_BYTES + 1)
                 .read_to_string(&mut buf)
                 .map_err(|e| format!("读取响应失败: {}", e))?;
+            if buf.len() as u64 > MAX_RESPONSE_BYTES {
+                return Err("AI 响应体超过 4MB 上限，已中止（可能是代理/网关返回异常内容）".to_string());
+            }
             extract_text(&buf)
         }
         Err(ureq::Error::Status(code, resp)) => {
@@ -342,9 +349,13 @@ fn extract_text(raw: &str) -> Result<String, String> {
 fn parse_tag_list(reply: &str, max: usize) -> Vec<String> {
     let cleaned = strip_code_fences(reply);
 
-    // 尝试提取第一个 JSON 数组
-    if let (Some(start), Some(end)) = (cleaned.find('['), cleaned.rfind(']')) {
-        if end > start {
+    // 尝试提取 JSON 数组：从首个 '[' 起逐个尝试每个 ']'（从小到大），
+    // 第一个能解析的数组胜出。rfind(']') 会把 "] 之后的说明文字"也圈进来导致必然解析失败。
+    if let Some(start) = cleaned.find('[') {
+        for (end, _) in cleaned.match_indices(']') {
+            if end <= start {
+                continue;
+            }
             if let Ok(arr) = serde_json::from_str::<Vec<String>>(&cleaned[start..=end]) {
                 return dedup_clean(arr, max);
             }

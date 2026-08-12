@@ -281,7 +281,13 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
         let entry = entry.map_err(|e| e.to_string())?;
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
+        // 不跟随符号链接/重解析点：主题包内的链接会把包外任意文件拖入主题目录，
+        // 随后可能被前端经 convertFileSrc 读取。遇到即跳过。
+        let meta = std::fs::symlink_metadata(&src_path).map_err(|e| e.to_string())?;
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
             copy_dir_all(&src_path, &dst_path)?;
         } else {
             std::fs::copy(&src_path, &dst_path).map_err(|e| e.to_string())?;

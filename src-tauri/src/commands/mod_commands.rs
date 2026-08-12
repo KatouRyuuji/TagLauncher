@@ -51,7 +51,14 @@ pub fn enable_mod(
         return Err(format!("Mod '{}' not found", mod_id));
     }
     let conn = db.get_conn();
-    let (mut enabled, _) = settings_service::get_enabled_mods(&conn);
+    let (mut enabled, parse_err) = settings_service::get_enabled_mods(&conn);
+    if let Some(err) = parse_err {
+        // 解析失败时 get_enabled_mods 返回空列表，若继续写回会把其它已启用 Mod 全部丢弃
+        return Err(format!(
+            "enabled_mods 配置已损坏，为避免覆盖已启用列表，本次启用未落库：{}",
+            err
+        ));
+    }
     if !enabled.contains(&mod_id) {
         enabled.push(mod_id);
     }
@@ -68,7 +75,14 @@ pub fn disable_mod(
         return Err(format!("Mod '{}' not found", mod_id));
     }
     let conn = db.get_conn();
-    let (mut enabled, _) = settings_service::get_enabled_mods(&conn);
+    let (mut enabled, parse_err) = settings_service::get_enabled_mods(&conn);
+    if let Some(err) = parse_err {
+        // 同上：损坏状态下写回空列表会误伤其它已启用 Mod
+        return Err(format!(
+            "enabled_mods 配置已损坏，为避免覆盖已启用列表，本次禁用未落库：{}",
+            err
+        ));
+    }
     enabled.retain(|id| id != &mod_id);
     settings_service::set_enabled_mods(&conn, &enabled)
 }
@@ -330,6 +344,22 @@ pub fn resolve_mod_file_path(
     }
 }
 
+/// Mod 文件读写大小上限（32 MiB）：mod 可读写自身目录文件（可信模型），
+/// 但不设限时一次误读/误写超大文件会把整个缓冲区灌进 IPC 与内存。
+const MAX_MOD_FILE_BYTES: u64 = 32 * 1024 * 1024;
+
+/// 读前检查文件大小，超限拒绝（避免一次性读入超大文件）。
+fn ensure_file_size_within_limit(path: &Path) -> Result<(), String> {
+    let len = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
+    if len > MAX_MOD_FILE_BYTES {
+        return Err(format!(
+            "文件过大（{} 字节），超过 mod 文件读写上限 {} 字节",
+            len, MAX_MOD_FILE_BYTES
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn read_mod_file(
     registry: State<ModRegistry>,
@@ -340,6 +370,7 @@ pub fn read_mod_file(
     if !path.is_file() {
         return Err("Path is not a file".to_string());
     }
+    ensure_file_size_within_limit(&path)?;
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
@@ -353,6 +384,7 @@ pub fn read_mod_file_bytes(
     if !path.is_file() {
         return Err("Path is not a file".to_string());
     }
+    ensure_file_size_within_limit(&path)?;
     std::fs::read(&path).map_err(|e| e.to_string())
 }
 
@@ -363,6 +395,13 @@ pub fn write_mod_file(
     relative_path: String,
     content: String,
 ) -> Result<(), String> {
+    if content.len() as u64 > MAX_MOD_FILE_BYTES {
+        return Err(format!(
+            "写入内容过大（{} 字节），超过 mod 文件写入上限 {} 字节",
+            content.len(),
+            MAX_MOD_FILE_BYTES
+        ));
+    }
     let path = resolve_mod_file_path(&registry, &mod_id, &relative_path)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -377,6 +416,13 @@ pub fn write_mod_file_bytes(
     relative_path: String,
     bytes: Vec<u8>,
 ) -> Result<(), String> {
+    if bytes.len() as u64 > MAX_MOD_FILE_BYTES {
+        return Err(format!(
+            "写入内容过大（{} 字节），超过 mod 文件写入上限 {} 字节",
+            bytes.len(),
+            MAX_MOD_FILE_BYTES
+        ));
+    }
     let path = resolve_mod_file_path(&registry, &mod_id, &relative_path)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -433,7 +479,12 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<(), Stri
         let entry = entry.map_err(|e| e.to_string())?;
         let src_path = entry.path();
         let dst_path = dst.as_ref().join(entry.file_name());
-        if src_path.is_dir() {
+        // 与 theme_loader 一致：不跟随符号链接，避免把包外文件拖入 mod 目录
+        let meta = std::fs::symlink_metadata(&src_path).map_err(|e| e.to_string())?;
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
             copy_dir_all(&src_path, &dst_path)?;
         } else {
             std::fs::copy(&src_path, &dst_path).map_err(|e| e.to_string())?;
@@ -461,6 +512,16 @@ pub fn import_mod(
 
     if manifest.id.trim().is_empty() {
         return Err("manifest.json 中缺少 id".to_string());
+    }
+
+    // 与启动发现路径同一 id 规则（含全点号排除）：非法 id 的 mod 导入后
+    // kv/record/file 命令会在调用期全被拒（故障面割裂）；且 id 直接拼接目标目录，
+    // ".."/"." 等形态会造成目录逃逸，必须在复制前拦截。
+    if !mod_loader::is_valid_mod_id(&manifest.id) {
+        return Err(format!(
+            "manifest.json 中的 id \"{}\" 非法：仅允许字母、数字及 . _ -，且 ≤128 字符",
+            manifest.id
+        ));
     }
 
     let mods_dir = path_service::resolve_app_paths(&app_handle).mods_dir;

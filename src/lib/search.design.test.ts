@@ -45,6 +45,16 @@ assert.deepEqual(searchWithIndex(allIndex, "tag 忍者").map((i) => i.id), [1, 2
 assert.deepEqual(searchWithIndex(allIndex, "tag&&2d").map((i) => i.id), [1]);
 assert.deepEqual(searchWithIndex(allIndex, "!!tag").map((i) => i.id), [2, 3]);
 assert.deepEqual(searchWithIndex(allIndex, "(tag||忍者)!!忍者").map((i) => i.id), [1]);
+// 回归：空格紧邻显式操作符时不得叠加隐式 or（曾产生连续两个 or 被过滤逻辑一并删除，
+// 导致 "tag || 忍者" 只剩 "tag" 前半段）
+assert.deepEqual(searchWithIndex(allIndex, "tag || 忍者").map((i) => i.id), [1, 2]);
+assert.deepEqual(searchWithIndex(allIndex, "tag || 2d游戏").map((i) => i.id), [1, 3]);
+// 回归：一元 !! 可出现在 || 操作数位置（A||!!B = A ∪ (全集−B)），
+// 曾因 parseOr 右侧不识别 not 而直接丢弃整个右分支
+assert.deepEqual(searchWithIndex(allIndex, "tag||!!tag").map((i) => i.id), [1, 2, 3]);
+assert.deepEqual(searchWithIndex(allIndex, "tag || !!tag").map((i) => i.id), [1, 2, 3]);
+// 空格分隔的 !! 与紧邻写法同义（排除语义）：tag !!2d游戏 = 命中 tag 但排除 2d游戏 → 空
+assert.deepEqual(searchWithIndex(allIndex, "tag !!2d游戏").map((i) => i.id), []);
 assert.deepEqual(searchWithIndex(allIndex, "@忍者神龟").map((i) => i.id), [2]);
 assert.deepEqual(searchWithIndex(allIndex, "@忍者").map((i) => i.id), []);
 

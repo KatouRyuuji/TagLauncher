@@ -112,17 +112,19 @@ function unescapeCss(css: string): string {
  * 主题 CSS 基本消毒（仅对非内置主题 custom / mod）。纵深防御，与 CSP 配合：
  *  - 先做 CSS 转义归一化，阻止 @\69mport / u\72l() 形式的绕过；
  *  - 移除 @import：阻止 mod/自定义主题拉取远程样式表或远程字体表；
- *  - 中和指向远程 http(s) 主机的 url()：阻止远程信标/追踪，替换为 url(about:blank)，
- *    但放行 Tauri asset 协议主机（asset.localhost / ipc.localhost）——主题本地字体/
- *    图片经 convertFileSrc 解析后即走该主机。
+ *  - 中和指向远程 http(s) 主机或协议相对（//host）地址的 url()：阻止远程信标/追踪，
+ *    替换为 url(about:blank)，但放行 Tauri asset 协议主机（asset.localhost /
+ *    ipc.localhost）——主题本地字体/图片经 convertFileSrc 解析后即走该主机。
  * 保留 data: / blob: / 相对路径 / var() / asset 协议等正常写法。
  */
 function sanitizeThemeCss(css: string): string {
   const normalized = unescapeCss(css);
   const withoutImport = normalized.replace(/@import\b[^;]*;?/gi, "");
   return withoutImport.replace(
-    /url\(\s*(['"]?)(https?:\/\/[^)'"]*)\1\s*\)/gi,
+    /url\(\s*(['"]?)((?:https?:\/\/|\/\/)[^)'"]*)\1\s*\)/gi,
     (match, _quote: string, rawUrl: string) => {
+      // 协议相对 URL 无 scheme 可解析，直接按远程处理
+      if (rawUrl.startsWith("//")) return "url(about:blank)";
       try {
         const host = new URL(rawUrl).hostname.toLowerCase();
         if (host === "asset.localhost" || host === "ipc.localhost") return match;
@@ -147,9 +149,15 @@ function sanitizeThemeVariableValue(value: string): string {
  * 消毒 asset 值（非内置主题）。与变量值分开处理：
  * 不做 unescape 输出（保留 Windows 路径中的反斜杠，如 C:\fonts\x.woff2），
  * 仅检测 unescape 后文本是否含威胁，命中则整体中和。
+ * 注意 url() 检查覆盖全部匹配：多 url 并列时只要一个指向非放行主机即整体中和，
+ * 避免"首个是 asset 主机就放行整个值"的夹带绕过。
  */
 function sanitizeThemeAssetValue(value: string): string {
   const normalized = unescapeCss(value).trim();
+  // 协议相对裸 URL（//host/...）：继承页面协议外联，一律中和
+  if (/^\/\//.test(normalized)) {
+    return "about:blank";
+  }
   // 裸远程 URL（asset 值直接写 https://...）
   if (/^https?:\/\//i.test(normalized)) {
     try {
@@ -160,16 +168,22 @@ function sanitizeThemeAssetValue(value: string): string {
     }
     return "about:blank";
   }
-  // url() 包裹的远程 URL
-  const remoteMatch = /url\(\s*(['"]?)(https?:\/\/[^)'"]*)\1\s*\)/i.exec(normalized);
-  if (remoteMatch) {
-    try {
-      const host = new URL(remoteMatch[2]).hostname.toLowerCase();
-      if (host === "asset.localhost" || host === "ipc.localhost") return value;
-    } catch {
-      /* 解析失败按威胁处理 */
+  // url() 包裹的远程/协议相对 URL：逐一检查所有匹配
+  const urlPattern = /url\(\s*(['"]?)((?:https?:\/\/|\/\/)[^)'"]*)\1\s*\)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = urlPattern.exec(normalized)) !== null) {
+    const rawUrl = match[2];
+    if (rawUrl.startsWith("//")) {
+      return "url(about:blank)";
     }
-    return "url(about:blank)";
+    try {
+      const host = new URL(rawUrl).hostname.toLowerCase();
+      if (host !== "asset.localhost" && host !== "ipc.localhost") {
+        return "url(about:blank)";
+      }
+    } catch {
+      return "url(about:blank)";
+    }
   }
   return value;
 }
@@ -309,9 +323,14 @@ function applyThemeFonts(theme: ThemeDefinition, themeRoot?: string) {
     styleEl.id = THEME_FONT_CSS_ID;
     document.head.appendChild(styleEl);
   }
+  // 非内置主题的字体源与 assets 同一消毒口径：阻止远程字体信标
+  // （@font-face 的 src 是会真实发起请求的 URL，不能绕过 sanitizeThemeAssetValue）
+  const sanitizeAsset = theme.isPreset
+    ? (v: string) => v
+    : sanitizeThemeAssetValue;
   styleEl.textContent = Object.entries(fonts)
     .map(([family, source]) => {
-      const src = resolveThemeAssetSrc(source, themeRoot);
+      const src = sanitizeAsset(resolveThemeAssetSrc(source, themeRoot));
       return `@font-face{font-family:${JSON.stringify(family)};src:url(${JSON.stringify(src)});font-display:swap;}`;
     })
     .join("\n");

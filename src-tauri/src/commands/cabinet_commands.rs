@@ -94,7 +94,10 @@ pub fn get_cabinet_items(
     let writes = item_service::plan_reconcile(snapshot);
     let mut items = {
         let conn = db.get_conn();
-        let _ = item_service::apply_reconcile(&conn, &writes);
+        // 对账失败不阻断列表加载（可用性优先，返回未对账数据），但必须留日志便于排查
+        if let Err(e) = item_service::apply_reconcile(&conn, &writes) {
+            eprintln!("[get_cabinet_items] apply_reconcile 失败（本次返回未对账数据）: {}", e);
+        }
         cabinet_service::get_cabinet_items(&conn, cabinet_id)?
     };
     item_service::fill_visuals(&app, &mut items);

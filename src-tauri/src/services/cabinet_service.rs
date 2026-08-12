@@ -107,7 +107,8 @@ pub fn add_items_to_cabinet(
     Ok(())
 }
 
-/// 批量从文件柜移除项目（单条 DELETE ... IN (...)，原子）。
+/// 批量从文件柜移除（按 500 分块、整批一个事务，原子）。
+/// 单条 IN (...) 在成员数超过 SQLite 变量上限（旧版 999）时会直接失败。
 pub fn remove_items_from_cabinet(
     conn: &Connection,
     cabinet_id: i64,
@@ -116,17 +117,21 @@ pub fn remove_items_from_cabinet(
     if item_ids.is_empty() {
         return Ok(());
     }
-    let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!(
-        "DELETE FROM cabinet_items WHERE cabinet_id = ? AND item_id IN ({})",
-        placeholders
-    );
-    let mut params: Vec<&dyn rusqlite::ToSql> = vec![&cabinet_id];
-    for id in item_ids {
-        params.push(id);
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    for chunk in item_ids.chunks(500) {
+        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "DELETE FROM cabinet_items WHERE cabinet_id = ? AND item_id IN ({})",
+            placeholders
+        );
+        let mut params: Vec<&dyn rusqlite::ToSql> = vec![&cabinet_id];
+        for id in chunk {
+            params.push(id);
+        }
+        tx.execute(&sql, params.as_slice())
+            .map_err(|e| e.to_string())?;
     }
-    conn.execute(&sql, params.as_slice())
-        .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 

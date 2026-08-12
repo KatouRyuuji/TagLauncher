@@ -45,7 +45,9 @@ pub struct ThemeDefinition {
     #[serde(default)]
     pub variants: HashMap<String, ThemeVariant>,
     /// 是否为内置预设主题
-    #[serde(default, alias = "isPreset")]
+    // rename：序列化输出与前端 TS 类型（isPreset）一致；alias 保留 snake_case 输入兼容。
+    // 此前仅 alias，序列化下发的是 is_preset，前端读 isPreset 永远 undefined。
+    #[serde(default, rename = "isPreset", alias = "is_preset")]
     pub is_preset: bool,
     /// 原始 CSS 注入字符串（用于变量无法覆盖的深度定制）
     #[serde(default)]
@@ -54,7 +56,8 @@ pub struct ThemeDefinition {
     #[serde(default)]
     pub source: Option<String>,
     /// 对应文件名（仅自定义主题有值）
-    #[serde(default, alias = "fileName")]
+    // 同上：序列化下发 fileName，前端 deriveThemeRoot 依赖它判断目录型主题包。
+    #[serde(default, rename = "fileName", alias = "file_name")]
     pub file_name: Option<String>,
 }
 

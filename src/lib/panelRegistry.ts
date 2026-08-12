@@ -28,6 +28,7 @@ export const PANEL_TITLE   = "taglauncher-panel-settitle";
 
 /** 等待 React 挂载容器的队列 */
 const pendingMap = new Map<string, {
+  promise: Promise<PanelHandle>;
   resolve: (handle: PanelHandle) => void;
   reject:  (reason: Error) => void;
   timerId: number;
@@ -94,6 +95,11 @@ export function requestPanel(
   const existing = activePanels.get(fullId);
   if (existing) return Promise.resolve(existing);
 
+  // 并发防护：同 id 的创建仍在等待 React 挂载时，共享同一个 Promise，
+  // 避免第二次调用覆盖 pending 记录导致首个调用方悬挂、旧定时器误清理新记录
+  const pendingExisting = pendingMap.get(fullId);
+  if (pendingExisting) return pendingExisting.promise;
+
   // 记录 mod → panels 映射
   if (!modPanelsMap.has(modId)) modPanelsMap.set(modId, new Set());
   modPanelsMap.get(modId)!.add(fullId);
@@ -101,22 +107,29 @@ export function requestPanel(
   // 初始化事件监听器 map
   panelListeners.set(fullId, new Map());
 
-  return new Promise<PanelHandle>((resolve, reject) => {
-    const timerId = window.setTimeout(() => {
-      pendingMap.delete(fullId);
-      // 超时后同步清理登记，避免 React 延迟挂载时面板成为无法销毁的孤儿
-      panelListeners.delete(fullId);
-      modPanelsMap.get(modId)?.delete(fullId);
-      window.dispatchEvent(new CustomEvent<string>(PANEL_DESTROY, { detail: fullId }));
-      reject(new Error(`Panel "${fullId}" 创建超时（5s 内 React 未挂载容器）`));
-    }, 5000);
-
-    pendingMap.set(fullId, { resolve, reject, timerId });
-
-    // 通知 React 渲染容器
-    const desc = buildDescriptor(fullId, modId, opts);
-    window.dispatchEvent(new CustomEvent<PanelDescriptor>(PANEL_CREATE, { detail: desc }));
+  let resolveFn!: (handle: PanelHandle) => void;
+  let rejectFn!: (reason: Error) => void;
+  const promise = new Promise<PanelHandle>((resolve, reject) => {
+    resolveFn = resolve;
+    rejectFn = reject;
   });
+
+  const timerId = window.setTimeout(() => {
+    pendingMap.delete(fullId);
+    // 超时后同步清理登记，避免 React 延迟挂载时面板成为无法销毁的孤儿
+    panelListeners.delete(fullId);
+    modPanelsMap.get(modId)?.delete(fullId);
+    window.dispatchEvent(new CustomEvent<string>(PANEL_DESTROY, { detail: fullId }));
+    rejectFn(new Error(`Panel "${fullId}" 创建超时（5s 内 React 未挂载容器）`));
+  }, 5000);
+
+  pendingMap.set(fullId, { promise, resolve: resolveFn, reject: rejectFn, timerId });
+
+  // 通知 React 渲染容器
+  const desc = buildDescriptor(fullId, modId, opts);
+  window.dispatchEvent(new CustomEvent<PanelDescriptor>(PANEL_CREATE, { detail: desc }));
+
+  return promise;
 }
 
 /**
@@ -145,7 +158,8 @@ export function resolvePanel(fullId: string, contentEl: HTMLElement): void {
 /**
  * 销毁指定 Panel（handle.close() 或外部调用）。
  * 触发 React 卸载容器，清理内部状态。
- * 注意：先清理注册表再派发 close 事件，避免 mod 在 close 监听内调 close() 造成无限递归。
+ * 注意：先对监听器取快照、再清理注册表、最后派发 close——
+ * 既保证已注册的 close 监听能被调用，又让监听内重入 close() 被上方守卫拦截。
  */
 export function destroyPanel(fullId: string): void {
   const { modId } = splitId(fullId);
@@ -160,13 +174,18 @@ export function destroyPanel(fullId: string): void {
     pendingMap.delete(fullId);
   }
 
-  // 先清理内部状态，防止 close 事件回调重入
+  // 快照 close 监听器，然后清理内部状态（防止 close 回调重入）
+  const closeListeners = panelListeners.get(fullId)?.get("close");
   activePanels.delete(fullId);
   panelListeners.delete(fullId);
   modPanelsMap.get(modId)?.delete(fullId);
 
-  // 触发 "close" 事件
-  firePanelEvent(fullId, "close");
+  // 向快照派发 "close" 事件（注册表已清理，回调里再 close() 是 no-op）
+  if (closeListeners) {
+    for (const cb of Array.from(closeListeners)) {
+      try { cb(); } catch { /* 静默忽略 mod 事件回调中的异常 */ }
+    }
+  }
 
   // 通知 React 卸载容器
   window.dispatchEvent(new CustomEvent<string>(PANEL_DESTROY, { detail: fullId }));

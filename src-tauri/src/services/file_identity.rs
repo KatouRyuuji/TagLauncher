@@ -278,12 +278,9 @@ pub fn compute_signature(path: &str) -> Option<FileSignature> {
     }
     let size = meta.len();
     if size == 0 {
-        let empty = fnv1a_64(&[]);
-        return Some(FileSignature {
-            size: 0,
-            head_hash: empty,
-            tail_hash: empty,
-        });
+        // 空文件无内容可区分：所有空文件签名必然相同，按签名找回会把对象误重定位到
+        // 任意一个空文件。返回 None 使其不参与内容签名找回（空文件无需按内容识别）。
+        return None;
     }
 
     let mut file = std::fs::File::open(Path::new(path)).ok()?;

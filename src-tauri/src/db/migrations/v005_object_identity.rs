@@ -65,6 +65,11 @@ fn rebuild_items_with_identity(conn: &Connection) -> Result<(), rusqlite::Error>
         CREATE UNIQUE INDEX IF NOT EXISTS idx_items_identity
             ON items(volume_serial, file_id) WHERE file_id IS NOT NULL;
 
+        -- 升级路径同样补齐 path 全索引（schema.rs 的 has_column 分支在重建前的老表上
+        -- 会跳过创建，若此处不补，升级后首个会话的 path 去重查询退化为全表扫描，
+        -- 要等下次启动才自愈）。
+        CREATE INDEX IF NOT EXISTS idx_items_path ON items(path);
+
         DROP TABLE IF EXISTS items_fts;
         CREATE VIRTUAL TABLE items_fts USING fts5(
             name, path, content=items, content_rowid=id

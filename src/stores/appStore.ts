@@ -126,9 +126,9 @@ export const useAppStore = create<AppState>((set) => ({
         ? state.sidebarTab === tab && state.selectedCabinetId === null && !state.showFavorites
           ? state
           : { sidebarTab: tab, selectedCabinetId: null, showFavorites: false }
-        : state.sidebarTab === tab && state.selectedTagIds.length === 0
+        : state.sidebarTab === tab && state.selectedTagIds.length === 0 && !state.showFavorites
           ? state
-          : { sidebarTab: tab, selectedTagIds: [] },
+          : { sidebarTab: tab, selectedTagIds: [], showFavorites: false },
     ),
 
   // 切换收藏夹（互斥：清空文件柜和标签）

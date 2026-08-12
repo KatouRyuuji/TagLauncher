@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Tag, ItemWithTags } from "../types";
 import { useAppStore } from "../stores/appStore";
@@ -24,6 +24,13 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
   const [focusedId, setFocusedId] = useState<number | null>(tags[0]?.id ?? null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // tags 在编辑器打开期间变化时校正焦点：当前焦点标签失效（含从空列表变为非空、
+  // 焦点标签被删除）时回退到第一个标签，否则右侧详情区会一直保持空白。
+  useEffect(() => {
+    if (focusedId != null && tags.some((t) => t.id === focusedId)) return;
+    setFocusedId(tags[0]?.id ?? null);
+  }, [tags, focusedId]);
 
   useEscapeKey(onClose);
   const contentRef = useFocusTrap<HTMLDivElement>({ active: true });

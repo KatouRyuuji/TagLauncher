@@ -91,6 +91,19 @@ export function useItemRemoval({
     const itemIds = pendingBatchRemoveItemIds ?? (pendingRemoveItemId === null ? [] : [pendingRemoveItemId]);
     if (itemIds.length === 0) return;
 
+    // 乐观关闭对话框；失败提示由 removeItems 内部 withErrorToast 统一弹出，
+    // 这里捕获 rejection 只是为了不产生未处理的 Promise 拒绝。
+    setPendingRemoveItemId(null);
+    setPendingBatchRemoveItemIds(null);
+    try {
+      await removeItems(itemIds);
+    } catch {
+      // 移除失败：不写入"下次跳过"偏好、不清选中集，便于用户修正后重试
+      setSkipRemoveItemConfirm(false);
+      return;
+    }
+
+    // 移除成功后才持久化"本次不再确认"偏好，避免失败操作污染偏好
     try {
       if (skipRemoveItemConfirm) {
         localStorage.setItem(SKIP_REMOVE_ITEM_CONFIRM_KEY, "1");
@@ -99,10 +112,7 @@ export function useItemRemoval({
       // ignore storage failures
     }
 
-    setPendingRemoveItemId(null);
-    setPendingBatchRemoveItemIds(null);
     setSkipRemoveItemConfirm(false);
-    await removeItems(itemIds);
     setSelectedItemIds((current) => current.filter((itemId) => !itemIds.includes(itemId)));
   }, [pendingBatchRemoveItemIds, pendingRemoveItemId, removeItems, skipRemoveItemConfirm, setSelectedItemIds]);
 

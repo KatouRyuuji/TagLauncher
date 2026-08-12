@@ -16,20 +16,53 @@ import {
 
 /**
  * 面板 × 按钮/遮罩的统一关闭行为：
- * 先派发 close 事件让 mod 有机会拦截处理；若 mod 未监听（面板仍存在），
- * 宿主侧兜底销毁，避免 × 按钮对不监听 close 的 mod 完全无效。
+ * destroyPanel 内部统一派发 close 事件并清理/卸载，mod 若在 close 监听里
+ * 已自行 close()，这里的调用因重入守卫成为 no-op，不会重复派发。
  */
 function requestClosePanel(fullId: string): void {
-  firePanelEvent(fullId, "close");
-  // destroyPanel 有重入守卫：mod 已在 close 监听中自行 close() 时此处为 no-op
   destroyPanel(fullId);
+}
+
+/** z 序号归一化阈值：超过后把现存序号按相对顺序重排回小区间 */
+const Z_NORMALIZE_THRESHOLD = 1000;
+
+/**
+ * 给目标面板分配最高 z 序号。纯函数（供 setState updater 使用）：
+ * 直接取现存最大值 +1，不依赖 ref 计数器；超过阈值时按相对顺序归一化重排，
+ * 避免序号无限增长后被渲染端 min(serial, 49) 钳制成同一 z-index、置顶失效。
+ */
+function assignTopZ(prev: Record<string, number>, id: string): Record<string, number> {
+  const values = Object.values(prev);
+  const next = (values.length > 0 ? Math.max(...values) : 0) + 1;
+  if (next <= Z_NORMALIZE_THRESHOLD) {
+    return { ...prev, [id]: next };
+  }
+  const sorted = Object.entries(prev)
+    .filter(([key]) => key !== id)
+    .sort((a, b) => a[1] - b[1]);
+  const normalized: Record<string, number> = {};
+  sorted.forEach(([key], index) => {
+    normalized[key] = index + 1;
+  });
+  normalized[id] = sorted.length + 1;
+  return normalized;
+}
+
+/**
+ * 解析 px 单位的 CSS 变量为数值。非 px 单位（rem/% 等）或非法值回退默认值——
+ * parseInt("10rem") 会得到 10，把最小宽度错当成 10px。
+ */
+function parsePxCssVar(name: string, fallback: number): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  if (!/^\d+(\.\d+)?(px)?$/.test(raw)) return fallback;
+  const value = parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 export function FloatingPanels() {
   const [panels, setPanels] = useState<PanelDescriptor[]>([]);
   // 点击置顶：panelId → 序号（越大越靠前）
   const [zOrder, setZOrder] = useState<Record<string, number>>({});
-  const zCounter = useRef(0);
 
   // ── 事件监听 ────────────────────────────────────────────────────────────
 
@@ -41,7 +74,7 @@ export function FloatingPanels() {
         if (prev.some((p) => p.id === desc.id)) return prev;
         return [...prev, desc];
       });
-      setZOrder((prev) => ({ ...prev, [desc.id]: ++zCounter.current }));
+      setZOrder((prev) => assignTopZ(prev, desc.id));
     };
 
     const onPanelDestroy = (e: Event) => {
@@ -81,7 +114,7 @@ export function FloatingPanels() {
   }, []);
 
   const bringToFront = useCallback((id: string) => {
-    setZOrder((prev) => ({ ...prev, [id]: ++zCounter.current }));
+    setZOrder((prev) => assignTopZ(prev, id));
   }, []);
 
   if (panels.length === 0) return null;
@@ -175,8 +208,8 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
     const startW = el.offsetWidth;
     const startH = el.offsetHeight;
 
-    const minW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-floating-min-width")) || 200;
-    const minH = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-floating-min-height")) || 150;
+    const minW = parsePxCssVar("--panel-floating-min-width", 200);
+    const minH = parsePxCssVar("--panel-floating-min-height", 150);
 
     const onMove = (ev: MouseEvent) => {
       const w = Math.max(minW, startW + ev.clientX - startX);

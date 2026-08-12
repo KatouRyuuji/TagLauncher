@@ -59,6 +59,8 @@ export function ModManagerPanel() {
       } else {
         await enableModRuntime(mod);
       }
+    } catch {
+      // 失败提示已由 modRuntime 统一 toast，这里只吞掉 rejection 避免未处理拒绝噪音
     } finally {
       setReloading(null);
     }

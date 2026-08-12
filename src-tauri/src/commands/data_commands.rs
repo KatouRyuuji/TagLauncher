@@ -65,10 +65,17 @@ pub fn set_data_directory(
     migrate: bool,
 ) -> Result<(), String> {
     let paths = path_service::resolve_app_paths(&app);
-    let new_dir = PathBuf::from(new_dir.trim());
-    if new_dir.as_os_str().is_empty() {
+    let raw_dir = PathBuf::from(new_dir.trim());
+    if raw_dir.as_os_str().is_empty() {
         return Err("目标目录不能为空".to_string());
     }
+    // 相对路径一律锚定到应用根目录：否则创建目录按当前 CWD 解析、重启后
+    // read_data_dir_redirect 又按新 CWD 解析，数据目录随启动方式漂移。
+    let new_dir = if raw_dir.is_absolute() {
+        raw_dir
+    } else {
+        paths.root_dir.join(raw_dir)
+    };
     if new_dir == paths.save_dir {
         return Err("目标目录与当前数据目录相同".to_string());
     }
@@ -89,6 +96,17 @@ pub fn set_data_directory(
             );
         }
         snapshot_live_db(&db, &target_db)?;
+    } else if target_db.exists() {
+        // 采用目标目录已有库：先校验它是合法的 TagLauncher 库，
+        // 否则重定向后下次启动会因损坏/不兼容库直接起不来。
+        let source_version = validate_importable_db(&target_db)?;
+        let current_version = live_schema_version(&db);
+        if current_version > 0 && source_version > current_version {
+            return Err(format!(
+                "目标目录中的数据库 schema 版本(v{})高于当前应用支持的版本(v{})，请升级 TagLauncher 后再使用该目录",
+                source_version, current_version
+            ));
+        }
     }
 
     // 默认目录则清除重定向文件，否则写入
@@ -292,23 +310,26 @@ pub fn validate_importable_db(source: &Path) -> Result<u32, String> {
     Ok(version)
 }
 
-/// UTC 时间戳（YYYYMMDD_HHMMSS），无第三方依赖的民用历法换算。
+/// UTC 时间戳（YYYYMMDD_HHMMSS_mmm，毫秒后缀避免同秒多次备份互相覆盖），无第三方依赖的民用历法换算。
 fn utc_timestamp_compact() -> String {
-    let secs = std::time::SystemTime::now()
+    let millis = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_millis())
         .unwrap_or(0);
+    let secs = (millis / 1000) as u64;
+    let ms = millis % 1000;
     let days = (secs / 86_400) as i64;
     let (year, month, day) = civil_from_days(days);
     let rem = secs % 86_400;
     format!(
-        "{:04}{:02}{:02}_{:02}{:02}{:02}",
+        "{:04}{:02}{:02}_{:02}{:02}{:02}_{:03}",
         year,
         month,
         day,
         rem / 3600,
         (rem % 3600) / 60,
-        rem % 60
+        rem % 60,
+        ms
     )
 }
 

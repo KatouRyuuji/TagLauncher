@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TagEditor } from "./TagEditor";
 import { TagRelationsEditor } from "./TagRelationsEditor";
-import { resolvePanel, firePanelEvent, destroyPanel } from "../lib/panelRegistry";
+import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
 import {
   beginInternalPointerDrag,
   findClosestNumberDataAttribute,
@@ -607,8 +607,8 @@ function SidebarPanelSlot({ panel }: { panel: PanelDescriptor }) {
             type="button"
             className="inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             onClick={() => {
-              // 先派发 close 事件让 mod 拦截；未拦截时宿主兜底销毁（destroyPanel 有重入守卫）
-              firePanelEvent(panel.id, "close");
+              // destroyPanel 内部统一派发 close 事件并清理（有重入守卫），
+              // 不要先手动 fire 一次否则 close 监听会被调用两次
               destroyPanel(panel.id);
             }}
             title="关闭"

@@ -72,12 +72,15 @@ pub fn discover_mods(mods_dir: &Path) -> (Vec<(ModManifest, PathBuf)>, Vec<ModLo
 }
 
 /// mod id 合法性：与 mod_commands::ensure_valid_mod_id 同一规则（载入期与命令期一致）。
-fn is_valid_mod_id(id: &str) -> bool {
+/// 追加排除全点号 id（"." / ".." / "..."）：字符集允许 '.'，但这类 id 直接拼目录即路径逃逸。
+/// pub 供 mod_commands::import_mod 在导入期复用同一规则。
+pub fn is_valid_mod_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
         && id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+        && id.chars().any(|c| c != '.')
 }
 
 /// 简单语义版本比较：current >= required

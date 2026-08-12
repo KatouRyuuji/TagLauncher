@@ -58,6 +58,7 @@ struct DataRedirect {
 }
 
 /// 读取数据目录重定向配置。文件缺失、解析失败或指向空字符串时返回 None（回退默认目录）。
+/// 相对路径（如手工编辑的 datapath.json）锚定到 root_dir，避免随进程 CWD 漂移。
 pub fn read_data_dir_redirect(root_dir: &std::path::Path) -> Option<PathBuf> {
     let content = std::fs::read_to_string(root_dir.join(DATA_REDIRECT_FILE)).ok()?;
     let redirect: DataRedirect = serde_json::from_str(&content).ok()?;
@@ -65,7 +66,12 @@ pub fn read_data_dir_redirect(root_dir: &std::path::Path) -> Option<PathBuf> {
     if trimmed.is_empty() {
         return None;
     }
-    Some(PathBuf::from(trimmed))
+    let path = PathBuf::from(trimmed);
+    Some(if path.is_absolute() {
+        path
+    } else {
+        root_dir.join(path)
+    })
 }
 
 /// 写入或清除数据目录重定向配置（原子写：先写临时文件再重命名）。

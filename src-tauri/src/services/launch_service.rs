@@ -42,8 +42,12 @@ pub fn launch_item(conn: &Connection, id: i64) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     shell_open(&path)?;
 
+    // 非 Windows 平台没有打开动作：直接报错，而不是什么都不做却更新 last_used_at
     #[cfg(not(target_os = "windows"))]
-    let _ = &path;
+    {
+        let _ = &path;
+        return Err("当前平台暂不支持启动对象".to_string());
+    }
 
     conn.execute(
         "UPDATE items SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?1",
