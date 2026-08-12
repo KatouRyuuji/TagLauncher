@@ -5,6 +5,8 @@ import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { ModManagerPanel } from "./ModManagerPanel";
 import { AiSettingsSection } from "./AiSettingsSection";
 import { DataSettingsSection } from "./DataSettingsSection";
+import { SyncSettingsSection } from "./SyncSettingsSection";
+import { UpdateSettingsSection } from "./UpdateSettingsSection";
 import { useThemeContext } from "./ThemeProvider";
 import { showToast } from "../lib/toast";
 import type { ThemeDefinition, ThemeSource, ThemeVariant } from "../types/theme";
@@ -165,6 +167,10 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             <AiSettingsSection />
 
             <DataSettingsSection />
+
+            <SyncSettingsSection />
+
+            <UpdateSettingsSection />
 
             <section className="mt-6">
               <div className="mb-3">

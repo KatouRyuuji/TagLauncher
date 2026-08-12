@@ -97,7 +97,9 @@ fn open_metadata_handle(path: &str) -> Option<HANDLE> {
 /// 避免不同卷上恰好相同文件ID造成误判。找不到返回 None。
 pub fn resolve_path(identity: FileIdentity, hint_path: &str) -> Option<String> {
     let mut roots: Vec<String> = Vec::new();
-    if let Some(root) = drive_root_of(hint_path) {
+    // 盘符根（本地盘/映射网络盘）或 UNC 共享根（NAS：\\server\share\）都可作卷句柄；
+    // OpenFileById 经 SMB2+ 同样支持按文件ID打开，失败则自然回退 None。
+    if let Some(root) = drive_root_of(hint_path).or_else(|| unc_root_of(hint_path)) {
         roots.push(root);
     }
     for root in logical_drive_roots() {
@@ -119,14 +121,35 @@ pub fn resolve_path(identity: FileIdentity, hint_path: &str) -> Option<String> {
     None
 }
 
-/// 从绝对路径取盘符根，如 `D:\dir\file` → `D:\`。
+/// 从绝对路径取盘符根，如 `D:\dir\file` → `D:\`。兼容扩展前缀形态 `\\?\D:\x`。
 fn drive_root_of(path: &str) -> Option<String> {
-    let bytes = path.as_bytes();
+    let normalized = path.strip_prefix(r"\\?\").unwrap_or(path);
+    let bytes = normalized.as_bytes();
     if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
         Some(format!("{}:\\", bytes[0] as char))
     } else {
         None
     }
+}
+
+/// 从 UNC 路径取共享根：`\\server\share\dir\file` → `\\server\share\`。
+/// 兼容扩展前缀形态 `\\?\UNC\server\share\x`。非 UNC / 缺共享段时返回 None。
+fn unc_root_of(path: &str) -> Option<String> {
+    let body = if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        rest
+    } else if path.starts_with(r"\\?\") {
+        // \\?\C:\ 盘符形态交给 drive_root_of
+        return None;
+    } else {
+        path.strip_prefix(r"\\")?
+    };
+    let mut parts = body.splitn(3, '\\');
+    let server = parts.next()?;
+    let share = parts.next()?;
+    if server.is_empty() || share.is_empty() {
+        return None;
+    }
+    Some(format!(r"\\{}\{}\", server, share))
 }
 
 /// 枚举所有逻辑盘符根（如 `C:\`、`D:\`）。
@@ -384,6 +407,33 @@ mod tests {
         assert!(resolved.to_lowercase().ends_with("renamed_folder"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn root_extraction_handles_drive_unc_and_extended_prefixes() {
+        // 盘符形态（含扩展前缀）
+        assert_eq!(drive_root_of(r"D:\dir\file.txt"), Some(r"D:\".to_string()));
+        assert_eq!(drive_root_of(r"\\?\D:\dir\file.txt"), Some(r"D:\".to_string()));
+        assert_eq!(drive_root_of(r"\\server\share\x"), None);
+
+        // UNC 形态（NAS 共享）：提取共享根供 OpenFileById 卷句柄使用
+        assert_eq!(
+            unc_root_of(r"\\nas\media\videos\a.mp4"),
+            Some(r"\\nas\media\".to_string())
+        );
+        assert_eq!(
+            unc_root_of(r"\\?\UNC\nas\media\videos\a.mp4"),
+            Some(r"\\nas\media\".to_string())
+        );
+        // 盘符/不完整 UNC 不产生根
+        assert_eq!(unc_root_of(r"D:\dir\file.txt"), None);
+        assert_eq!(unc_root_of(r"\\?\D:\dir\file.txt"), None);
+        assert_eq!(unc_root_of(r"\\serveronly"), None);
+
+        // 扩展前缀剥离（GetFinalPathNameByHandle 返回形态 → 存储形态）
+        assert_eq!(strip_extended_prefix(r"\\?\C:\a\b"), r"C:\a\b");
+        assert_eq!(strip_extended_prefix(r"\\?\UNC\nas\share\f"), r"\\nas\share\f");
+        assert_eq!(strip_extended_prefix(r"C:\plain"), r"C:\plain");
     }
 
     #[test]

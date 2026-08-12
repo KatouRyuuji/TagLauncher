@@ -290,6 +290,16 @@ pub fn run() {
             export_data,
             import_data,
             restart_app,
+            // WebDAV 云同步
+            sync_get_config,
+            sync_set_config,
+            sync_clear_password,
+            sync_test_connection,
+            sync_list_backups,
+            sync_backup_now,
+            sync_restore,
+            // 在线更新检查
+            update_check,
             // AI 自动打标
             ai_get_config,
             ai_set_config,

@@ -366,6 +366,80 @@ export async function restartApp(): Promise<void> {
   return invokeCmd("restart_app");
 }
 
+// ---- WebDAV 云同步 ----
+
+export interface SyncConfig {
+  url: string;
+  username: string;
+  /** 写入时的新密码（留空 = 不修改已存密码）；读取时恒为空串 */
+  password: string;
+  /** 仅读取时返回：后端是否已存有密码 */
+  hasPassword?: boolean;
+  remoteDir: string;
+  autoSync: boolean;
+  /** 仅读取时返回：上次成功同步的 epoch 秒（0 = 从未同步） */
+  lastSyncTs?: number;
+}
+
+export interface RemoteBackup {
+  name: string;
+  sizeBytes: number;
+  /** 服务器返回的最后修改时间原文（RFC 1123） */
+  modified: string;
+}
+
+/** 读取云同步配置（不含明文密码，是否已配置见 hasPassword） */
+export async function syncGetConfig(): Promise<SyncConfig> {
+  return invokeCmd("sync_get_config");
+}
+
+/** 写入云同步配置（password 留空表示不修改已存密码） */
+export async function syncSetConfig(config: SyncConfig): Promise<void> {
+  return invokeCmd("sync_set_config", { config });
+}
+
+/** 显式清除已保存的 WebDAV 密码 */
+export async function syncClearPassword(): Promise<void> {
+  return invokeCmd("sync_clear_password");
+}
+
+/** 测试 WebDAV 连接并确保远端备份目录就绪 */
+export async function syncTestConnection(): Promise<string> {
+  return invokeCmd("sync_test_connection");
+}
+
+/** 列出远端备份（按时间新到旧） */
+export async function syncListBackups(): Promise<RemoteBackup[]> {
+  return invokeCmd("sync_list_backups");
+}
+
+/** 立即备份到云端，返回云端文件名 */
+export async function syncBackupNow(): Promise<string> {
+  return invokeCmd("sync_backup_now");
+}
+
+/** 从云端恢复指定备份（成功后需重启应用），返回本地安全备份路径 */
+export async function syncRestore(fileName: string): Promise<string> {
+  return invokeCmd("sync_restore", { fileName });
+}
+
+// ---- 在线更新检查 ----
+
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  releaseUrl: string;
+  releaseNotes: string;
+  installerUrl: string;
+  installerSize: number;
+}
+
+/** 检查 GitHub Releases 上是否有新版本 */
+export async function updateCheck(): Promise<UpdateInfo> {
+  return invokeCmd("update_check");
+}
+
 // ---- AI 自动打标 ----
 
 export interface AiConfig {

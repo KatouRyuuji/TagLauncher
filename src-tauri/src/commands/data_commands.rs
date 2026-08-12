@@ -311,7 +311,8 @@ pub fn validate_importable_db(source: &Path) -> Result<u32, String> {
 }
 
 /// UTC 时间戳（YYYYMMDD_HHMMSS_mmm，毫秒后缀避免同秒多次备份互相覆盖），无第三方依赖的民用历法换算。
-fn utc_timestamp_compact() -> String {
+/// pub(crate) 供 sync_commands 命名云端备份文件（同一时间戳格式，本地/云端备份可互相对照）。
+pub(crate) fn utc_timestamp_compact() -> String {
     let millis = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())

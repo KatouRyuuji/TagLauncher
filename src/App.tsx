@@ -27,6 +27,7 @@ import { useAppStore } from "./stores/appStore";
 import { useInternalDragStore } from "./stores/internalDragStore";
 import { loadSynonyms } from "./lib/synonyms";
 import { useVersionCheck } from "./hooks/useVersionCheck";
+import { useStartupMaintenance } from "./hooks/useStartupMaintenance";
 import { initModApi, notifySelectionChanged, onTagsChanged, onCabinetsChanged, onItemsChanged } from "./lib/modApi";
 import { initModRuntime } from "./lib/modRuntime";
 import { ToastContainer } from "./components/ToastContainer";
@@ -106,6 +107,8 @@ function App() {
   const recentLaunchRef = useRef<Map<number, number>>(new Map());
   const [showSettings, setShowSettings] = useState(false);
   const { migration, dismissMigration } = useVersionCheck();
+  // 启动期后台维护：在线更新检查（24h 节流）+ 自动云备份（需在设置中开启）
+  useStartupMaintenance();
   const [showWelcomeModal, setShowWelcomeModal] = useState<boolean>(() => {
     try {
       return localStorage.getItem(WELCOME_HIDE_KEY) !== "1";
