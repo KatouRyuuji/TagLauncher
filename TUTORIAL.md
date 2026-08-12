@@ -31,7 +31,7 @@ src/
 └─ assets/          # 前端静态资源
 
 src-tauri/src/
-├─ commands/        # Tauri 命令（按域分模块：item/tag/cabinet/mod/net/ai/data/settings/synonym/launch/object_preview/search）
+├─ commands/        # Tauri 命令（按域分模块：item/tag/cabinet/mod/net/ai/data/sync/update/settings/synonym/launch/object_preview/search）
 ├─ db/              # SQLite 连接、schema 与迁移（migrations/v00x）
 ├─ services/        # 业务服务（item/tag/search/icon/object_preview/launch/file_identity/path/settings + net）
 ├─ extensions/      # Mod 与主题加载（mod_loader/mod_registry/theme_loader）
@@ -106,7 +106,7 @@ src-tauri/src/
 
 ## 4.2 `commands/`（命令实现，按域分模块）
 
-实际约 81 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/net/ai/data/settings/synonym/launch/object_preview/search），命令体一般转调 `services/` 下的业务服务。主要命令组：
+实际约 89 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/net/ai/data/sync/update/settings/synonym/launch/object_preview/search），命令体一般转调 `services/` 下的业务服务。主要命令组：
 
 - 对象：`add_item` / `add_items` / `remove_item` / `get_items` / `launch_item` / `update_item_icon`
 - 标签：`get_tags` / `add_tag` / `update_tag` / `remove_tag` / `set_item_tags` / `get_tag_relations` / `add_tag_relation` / `remove_tag_relation`
@@ -117,6 +117,8 @@ src-tauri/src/
 - 网络原语：`net_fetch`（Mod 用，经后端 ureq 代理）
 - AI 打标：`ai_get_config` / `ai_set_config` / `ai_is_configured` / `ai_test_connection` / `ai_suggest_tags`
 - 数据管理：`get_data_directory_info` / `set_data_directory` / `reset_data_directory` / `backup_data` / `export_data` / `import_data` / `restart_app`
+- 云同步：`sync_get_config` / `sync_set_config` / `sync_clear_password` / `sync_test_connection` / `sync_list_backups` / `sync_backup_now` / `sync_restore`
+- 在线更新：`update_check`
 - 对象预览：`get_object_file_info` / `list_object_directory` / `get_audio_preview`
 
 ### 4.2.1 关键修复说明
@@ -159,6 +161,20 @@ src-tauri/src/
 - 数据目录「指针」不能存于数据库自身，放在 exe 旁 `datapath.json`：`path_service` 的 `read_data_dir_redirect` / `write_data_dir_redirect` / `default_save_dir`；**仅重定向 `Save/`**，Builtin/Plugins 仍固定 exe 同级。
 - `import_data`：`validate_importable_db` 校验来源库（`app_meta.schema_version > 0`）→ 自动把当前库备份到 `Save/Backups/`（可回退）→ 用 Backup API 灌入当前连接。
 - 切换目录 / 导入后需 `restart_app`（`app.restart()`）生效。
+
+## 4.6 `sync_commands.rs`（WebDAV 云同步，v1.4.0）
+
+- 复用 `data_commands` 的快照/校验/覆盖原语（`snapshot_live_db` / `validate_importable_db` / `overwrite_live_from`）+ `ureq` 阻塞 HTTP。
+- 上传前 `strip_cloud_secrets`（删 `ai.*`/`sync.*` + VACUUM）；恢复时 `read_local_secrets` → 覆盖 → `reapply_local_secrets`（本机凭据优先）。
+- PROPFIND multistatus 解析为手写扫描（`split_xml_blocks` / `extract_first_tag_text`，命名空间前缀与大小写不敏感），带 Apache/Nextcloud/无前缀三种形态的单测。
+- 远端文件名 `taglauncher_<UTC时间戳>.db`（字典序即时间序），上传后按 `REMOTE_KEEP_COUNT=10` 清理旧份。
+- 前端编排：`SyncSettingsSection`（设置区）+ `useStartupMaintenance`（启动自动备份，24h 节流）。
+
+## 4.7 `update_commands.rs`（在线更新检查，v1.4.0）
+
+- `update_check` → GitHub `/releases/latest` → `parse_release_response`（纯函数，可单测）→ `semver_gte` 版本比较（复用 `mod_loader`）→ `pick_installer_asset` 按编译期架构匹配 `_x64-setup.exe`/`_arm64-setup.exe`。
+- 只检查 + 引导浏览器下载，不做静默自更新；仓库迁移须改 `GITHUB_REPO` 常量。
+- 前端编排：`UpdateSettingsSection`（设置区手动检查）+ `useStartupMaintenance`（启动自动检查，localStorage 节流 24h、同版本只提示一次）。
 
 ## 5. 数据模型速览
 
@@ -211,7 +227,7 @@ npm run tauri build
 
 产物：
 
-- `src-tauri/target/release/bundle/nsis/TagLauncher_1.3.0_x64-setup.exe`
+- `src-tauri/target/release/bundle/nsis/TagLauncher_1.4.0_x64-setup.exe`
 
 ARM64 构建用 `build-arm64.bat`（`aarch64-pc-windows-msvc`，脚本会自动 `rustup target add`），产物为 `..._arm64-setup.exe`；`build.bat` 亦支持传入可选 target 参数。
 
@@ -258,11 +274,13 @@ v1.3.0 起欢迎弹窗改为 标题+简介 + 特性列表 + 右侧扫码赞助�
 首次准备开发环境可运行 `setup.bat`（一键检测并安装 Node / Rust / VS C++ BuildTools / WebView2 并 `npm install`）。常用命令：
 
 ```bash
-npm run test:design
+npm run test:all     # 全量测试（tsc + 前端逻辑 + vitest + cargo 单元/集成）
 npm run build
 cd src-tauri && cargo test
 npm run tauri build
 ```
+
+CI（`.github/workflows/ci.yml`）会在 push/PR 时自动跑 `npm run test:all`，发版流程见 `MAINTENANCE.md`。
 
 建议至少覆盖：
 
@@ -272,3 +290,4 @@ npm run tauri build
 - 搜索（中文/拼音/同义词）
 - 缩略图设置与回退
 - 欢迎弹窗“下次不再显示”与“关于我”复弹
+- 云同步配置/备份/恢复（需真实 WebDAV 端点实测）与设置页检查更新

@@ -19,6 +19,9 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - Mod 扩展系统：支持 `css` / `css+js` / `theme` 三类 Mod，提供权限声明（能力/意图标注 + API 误用防呆，**非安全沙箱**——Mod 属可信扩展，JS 以完全权限运行于主 realm，启用前须确认来源可信）、生命周期回调、工具栏按钮、侧栏/浮动面板、卡片与列表行对等插槽、Mod 数据存储、文件读写、受约束的网络请求原语（`net.fetch` 经 Rust 后端代理）、只读标签关系等接口（API 版本 3.2.0）。
 - AI 自动打标：兼容 Anthropic Messages API（官方或第三方兼容地址），在设置中填写 base URL / API key / 模型后，可为全部或未打标对象批量打标，支持「新对象自动打标」「允许创建新标签」「每对象最多标签数」等选项；后端仅提供无状态「建议标签」原语，批量遍历/并发/进度/取消由前端编排。
 - 数据管理：数据目录可自定义（exe 旁 `datapath.json` 记录重定向，仅重定向 `Save/`）；支持一键备份、导出、导入，统一走 SQLite Online Backup API（页级一致快照），导入前自动安全备份、可回退；切换目录或导入后自动重启生效。
+- 云同步（WebDAV，v1.4.0）：备份/恢复到任意 WebDAV 服务（NAS/Nextcloud/坚果云），云端副本剔除敏感配置（`ai.*`/`sync.*`），恢复保留本机凭据；远端保留最近 10 份；可选启动时自动备份（24h 节流）。详见 §十一。
+- 在线更新（GitHub Releases，v1.4.0）：`update_check` 拉取 latest release，语义版本比较 + 按架构匹配安装包资产；设置页手动检查 + 启动后台自动检查（24h 节流、同版本只提示一次）。详见 §十一。
+- NAS/UNC/软链接场景：对象身份重定位支持 UNC 共享根与扩展前缀路径形态（`\\server\share\`、`\\?\C:\`、`\\?\UNC\`）作为卷句柄候选；网络文件系统无文件 ID 时优雅回退按路径管理。
 
 ---
 
@@ -121,7 +124,7 @@ tag-launcher/
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── commands/             # Tauri 命令（按业务域分模块，约 81 个）
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，约 89 个）
 │   │   │   ├── item_commands.rs
 │   │   │   ├── cabinet_commands.rs
 │   │   │   ├── tag_commands.rs
@@ -129,6 +132,8 @@ tag-launcher/
 │   │   │   ├── net_commands.rs
 │   │   │   ├── ai_commands.rs           # AI 自动打标（Anthropic 协议）
 │   │   │   ├── data_commands.rs         # 数据目录/导入/导出/备份
+│   │   │   ├── sync_commands.rs         # WebDAV 云同步（v1.4.0）
+│   │   │   ├── update_commands.rs       # 在线更新检查（v1.4.0）
 │   │   │   ├── settings_commands.rs
 │   │   │   ├── synonym_commands.rs
 │   │   │   ├── launch_commands.rs
@@ -227,8 +232,10 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ## 五、Tauri 命令清单
 
-后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 81 个 `#[tauri::command]`，按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
+后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 89 个 `#[tauri::command]`，按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
 
+> v1.4.0 新增命令：云同步 `sync_get_config` / `sync_set_config` / `sync_clear_password` / `sync_test_connection` / `sync_list_backups` / `sync_backup_now` / `sync_restore`（7 个）；在线更新 `update_check`（1 个）。
+>
 > v1.3.0 新增命令：AI 自动打标 `ai_get_config` / `ai_set_config` / `ai_is_configured` / `ai_test_connection` / `ai_suggest_tags`（5 个）；数据管理 `get_data_directory_info` / `set_data_directory` / `reset_data_directory` / `backup_data` / `export_data` / `import_data` / `restart_app`（7 个）。
 >
 > v1.2.0 新增命令：`relocate_missing`（跨盘签名找回）、`get_tag_relations` / `add_tag_relation` / `remove_tag_relation`（标签 DAG）、`net_fetch`（Mod 网络原语）。
@@ -415,7 +422,42 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 
 ---
 
-## 十一、构建与部署
+## 十一、云同步与在线更新（v1.4.0）
+
+### 11.1 云同步（WebDAV）
+
+后端模块 `commands/sync_commands.rs`。协议选 WebDAV：NAS（群晖/威联通）、Nextcloud、坚果云等主流个人云原生支持、无厂商锁定，契合「全部本地化 + 可自建」定位。HTTP 用 `ureq`（与 `net_fetch`/AI 一致），PROPFIND multistatus 解析为手写实现（命名空间前缀/大小写不敏感，免第三方 XML 依赖）。
+
+| 命令名 | 参数 | 返回值 | 说明 |
+|--------|------|--------|------|
+| `sync_get_config` | - | SyncConfig | 读取配置（**不含明文密码**，仅回传 `hasPassword`；含 `lastSyncTs`） |
+| `sync_set_config` | config | () | 写入配置（事务化；密码留空=不修改） |
+| `sync_clear_password` | - | () | 显式清除已存密码 |
+| `sync_test_connection` | - | String | PROPFIND 根验证凭据 → 逐级 MKCOL 确保远端目录 |
+| `sync_list_backups` | - | Vec\<RemoteBackup\> | PROPFIND Depth:1 列出远端 `taglauncher_*.db`（新到旧） |
+| `sync_backup_now` | - | String | 快照 → 剔除敏感配置 → PUT 上传 → 清理旧份（保留 10）→ 记录时间 |
+| `sync_restore` | file_name | String | GET 下载 → 校验 schema → 本地安全备份 → 覆盖（失败自动回滚）→ 回填本机凭据 |
+
+设计要点：
+
+- **云端副本剔除敏感配置**：`strip_cloud_secrets` 删除 `ai.*` 与 `sync.*` 后 VACUUM 重写（明文不残留空闲页）——第三方 WebDAV 服务不应拿到密钥。
+- **恢复保留本机凭据**：覆盖前 `read_local_secrets` 快照本机 `ai.*`/`sync.*`，覆盖后 `reapply_local_secrets` 回填（本机值优先于副本内嵌值）——恢复操作不得让云同步配置自身失效。
+- **允许 `http://`**（局域网 NAS 常无 TLS；凭据只发往用户自己填的服务器，UI 明示风险）；不启用 Mod `net_fetch` 的 SSRF 拦截——那是针对不可信 Mod 的防线，云同步目标本就常在内网。
+- 配置存 `app_meta`（键前缀 `sync.`）：`webdav_url` / `username` / `password` / `remote_dir` / `auto` / `last_ts`。
+- 前端：设置页 `SyncSettingsSection`（配置/测试/立即备份/云端列表内联恢复确认）；`useStartupMaintenance` 启动 15s 后检查自动备份（`sync.auto=1` 且距上次 >24h）。
+
+### 11.2 在线更新（GitHub Releases）
+
+后端模块 `commands/update_commands.rs`：
+
+- `update_check`：GET `https://api.github.com/repos/KatouRyuuji/TagLauncher/releases/latest`（需 User-Agent 头；10s 超时、2MB 上限）→ `parse_release_response` 解析 tag（兼容 `v` 前缀）→ `semver_gte` 比较 → `pick_installer_asset` 按编译期架构（x86_64→`_x64-setup.exe`、aarch64→`_arm64-setup.exe`）匹配资产，未命中回退 Release 页链接。
+- 只做「检查 + 引导下载」，不做静默自更新：规避更新签名密钥管理与后台替换二进制的攻击面（轻量定位）。
+- 前端：设置页 `UpdateSettingsSection`（当前版本/检查/发布说明/下载）；`useStartupMaintenance` 启动 8s 后自动检查（localStorage 节流 24h，同版本只 toast 一次）。
+- 仓库迁移时须同步改 `GITHUB_REPO` 常量（见 MAINTENANCE.md §3）。
+
+---
+
+## 十二、构建与部署
 
 ### 环境准备（v1.3.0 新增）
 
@@ -434,9 +476,14 @@ npm run tauri dev    # 启动 Tauri 开发窗口
 npm run tauri build  # 编译 + 打包 NSIS 安装包（x64）
 ```
 
-产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.3.0_x64-setup.exe`
+产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.4.0_x64-setup.exe`
 
 ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `..._arm64-setup.exe`。
+
+### CI 与发版（v1.4.0 新增）
+
+- `.github/workflows/ci.yml`：push/PR 自动跑 `npm run test:all` + 前端生产构建校验（windows-latest，与本地同一套测试脚本）。
+- `.github/workflows/release.yml`：推送版本 tag 自动构建 x64 + ARM64 双架构安装包并生成草稿 Release；发版流程清单见 `MAINTENANCE.md`。
 
 ### 部署
 - 安装包部署：运行 NSIS `-setup.exe` 完成安装（安装语言可选 English / SimpChinese）。
@@ -447,7 +494,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `...
 
 ---
 
-## 十二、关键依赖
+## 十三、关键依赖
 
 ### 前端
 | 包名 | 版本 | 用途 |
@@ -465,12 +512,12 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `...
 |-------|------|------|
 | tauri | 2.x | 应用框架 |
 | rusqlite | 0.31 | SQLite 驱动（`bundled` + `backup` feature：Online Backup 用于导入/导出/备份） |
-| ureq | 2.x | 阻塞式 HTTP（Mod `net_fetch` 与 AI 打标 Anthropic 请求） |
+| ureq | 2.x | 阻塞式 HTTP（Mod `net_fetch`、AI 打标、WebDAV 云同步、更新检查） |
 | serde / serde_json | 1.x | 序列化/反序列化 |
 
 ---
 
-## 十三、安全模型与性能要点（v1.3.0 硬化）
+## 十四、安全模型与性能要点（v1.3.0 硬化，v1.4.0 增补）
 
 ### 安全
 
@@ -479,6 +526,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `...
 - **Mod `net.fetch` SSRF 防御**：自定义 DNS 解析器（`SsrfGuardResolver`）在解析层拦截环回 / 私网 / 链路本地 / 保留地址，fail-closed，重定向每一跳重新校验；仅 http/https、默认 30s（上限 120s）超时、10MB 体积上限。见 `commands/net_commands.rs`。
 - **WebView CSP**：`tauri.conf.json` 配置 `csp` / `devCsp`（`default-src 'self'`、`connect-src` 限本机 IPC/asset、`object-src 'none'`、`frame-src 'none'` 等），收敛脚本 / 网络 / 框架来源，作为纵深防御。
 - **Mod / 主题为「可信扩展」**：其 `permissions` 是能力声明（运行时由 JS 宿主据此约束可调用的 API 面），**并非操作系统级安全沙箱边界**——Mod 与应用同处一个 WebView，请仅安装可信来源的扩展。
+- **云同步凭据最小暴露面（v1.4.0）**：WebDAV 密码只存后端 `app_meta`，`sync_get_config` 不下发明文（仅 `hasPassword`）；云端副本剔除 `ai.*`/`sync.*` 并 VACUUM；恢复回填本机凭据。Mod 文件读写有 32MiB 上限，目录复制跳过符号链接，`import_mod` 校验 id 合法性防目录逃逸（v1.3.x 硬化随审阅并入）。
 
 ### 性能
 

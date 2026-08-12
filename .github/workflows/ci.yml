@@ -1,0 +1,47 @@
+# CI 流水线：push / PR 自动运行完整测试（前端类型检查 + 逻辑/交互测试 + 后端单元/集成测试）
+# 与本地 `npm run test:all` 完全同一套脚本，保证本地绿 = CI 绿。
+# 用 windows-latest：后端含 Windows 专属代码（NTFS 文件ID FFI、ShellExecuteW），
+# 其测试只在 Windows 上有意义。安装包构建由 release.yml 负责，此处不打包。
+
+name: CI
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+
+# 同一分支的旧运行自动取消，节省 runner 时间
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run full test suite
+        run: npm run test:all
+
+      - name: Verify frontend production build
+        run: npm run build

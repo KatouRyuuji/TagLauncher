@@ -2,6 +2,8 @@
 
 TagLauncher 是一个基于 **Tauri 2 + React + TypeScript + Rust + SQLite** 的 Windows 桌面标签式启动器与本地对象管理工具。它用于把本地文件、文件夹、脚本、程序和图片资源按「标签 + 文件柜 + 收藏」组织起来，并提供快速搜索、拖拽归类、缩略图和一键启动能力。
 
+文档导航：[使用手册](./USER_GUIDE.md) · [开发手册](./PROJECT_MANUAL.md) · [源码开发指南](./TUTORIAL.md) · [维护手册](./MAINTENANCE.md)
+
 ## 功能特性
 
 - 对象管理：添加文件、文件夹、脚本、程序和图片，支持批量导入、删除管理记录、启动对象、打开所在文件夹。
@@ -16,6 +18,9 @@ TagLauncher 是一个基于 **Tauri 2 + React + TypeScript + Rust + SQLite** 的
 - 扩展系统：支持 CSS、CSS+JS、Theme Mod，提供权限、生命周期、工具栏按钮、侧栏/浮动面板、**卡片与列表行对等插槽**、Mod 数据存储、文件读写、**受约束的网络请求原语（net.fetch，经 Rust 后端代理绕 CORS）**、只读标签关系等接口。
 - **AI 自动打标**：在设置中填写兼容 Anthropic 协议的 API 地址、密钥与模型（三项均需自行填写，无内置默认模型），即可一键为全部（或仅未打标）对象智能打标；可开启「新对象自动打标」，导入新对象时后台自动调用 AI；支持限制标签数量、是否允许创建新标签、自定义打标偏好。密钥仅存本机、不下发前端。
 - **数据管理**：支持自定义数据存放目录（exe 旁 `datapath.json` 重定向），以及一键备份、导出、导入应用数据；导出/备份走 SQLite 在线备份 API 生成页级一致快照，导入前自动备份当前库可回退。
+- **云同步（WebDAV）**：把数据备份到 NAS（群晖/威联通）、Nextcloud、坚果云等任意 WebDAV 服务，支持测试连接、立即备份、云端备份列表与一键恢复；可开启「自动云备份」（启动时距上次超 24 小时自动备份）。云端副本自动剔除 AI 密钥与同步凭据，远端保留最近 10 份。数据仍全部本地化，云端只是你自己的存储。
+- **在线更新（GitHub Releases）**：设置页一键检查更新，展示最新版本与发布说明，按当前架构（x64/ARM64）直达安装包下载；启动时后台自动检查（24 小时节流、同版本只提醒一次）。
+- **NAS / 网络路径 / 软链接**：支持 UNC 路径（`\\server\share\...`）与映射网络盘上的对象；NTFS 文件 ID 追踪在网络盘不可用时自动回退按路径管理；符号链接对象按目标语义处理。
 - 欢迎与反馈：支持首次欢迎弹窗（简介 + 特性 + 扫码赞助）、关于弹窗、Toast 和版本迁移提示。
 
 ## 交互概览
@@ -92,7 +97,7 @@ cd src-tauri && cargo test
 
 ## 打包
 
-当前应用版本为 `1.3.0`。双击 `build.bat` 一键打包（会自动 `npm install` 并预检工具链），或执行：
+当前应用版本为 `1.4.0`。双击 `build.bat` 一键打包（会自动 `npm install` 并预检工具链），或执行：
 
 ```bash
 npm run tauri build
@@ -101,7 +106,7 @@ npm run tauri build
 Windows Release 默认生成 NSIS 安装包：
 
 ```text
-src-tauri/target/release/bundle/nsis/TagLauncher_1.3.0_x64-setup.exe
+src-tauri/target/release/bundle/nsis/TagLauncher_1.4.0_x64-setup.exe
 ```
 
 安装包安装时会创建开始菜单快捷方式，并在功能选择页提供桌面快捷方式可选项；安装语言可在 English / SimpChinese 之间选择。项目 MIT 许可证会显示在安装程序许可页面中。
@@ -115,6 +120,13 @@ build-arm64.bat
 ```
 
 该脚本等价于 `build.bat aarch64-pc-windows-msvc`，会自动执行 `rustup target add aarch64-pc-windows-msvc` 并按目标架构打包，输出位于 `src-tauri/target/aarch64-pc-windows-msvc/release/bundle/`。如链接器提示缺少 ARM64 工具集，请在 Visual Studio Installer 中补装「MSVC v143 - ARM64 build tools」组件。
+
+## 持续集成与发版
+
+- **CI（`.github/workflows/ci.yml`）**：push / PR 自动运行完整测试（前端类型检查 + 逻辑/交互测试 + 后端单元/集成测试 + 前端生产构建校验），与本地 `npm run test:all` 同一套脚本。
+- **发版（`.github/workflows/release.yml`）**：推送版本 tag（如 `1.4.0`）自动构建 Windows x64 + ARM64 双架构安装包并生成**草稿 Release**，人工检查后发布；Actions 页也可手动触发构建产出测试用 artifact。
+- **应用内更新**：客户端「设置 → 软件更新」从 GitHub Releases 检查新版本并引导下载安装。
+- 完整发版流程见 [MAINTENANCE.md](./MAINTENANCE.md)（维护手册）。
 
 ## 数据目录
 
