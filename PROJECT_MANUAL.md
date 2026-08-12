@@ -63,7 +63,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands/  ← 约 81 个 Tauri 命令       │  │
+│  │  commands/  ← 90 个 Tauri 命令         │  │
 │  │             (按 item/cabinet/tag/mod/   │  │
 │  │              net/ai/data/settings/      │  │
 │  │              synonym/launch/            │  │
@@ -124,7 +124,7 @@ tag-launcher/
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── commands/             # Tauri 命令（按业务域分模块，约 89 个）
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，90 个）
 │   │   │   ├── item_commands.rs
 │   │   │   ├── cabinet_commands.rs
 │   │   │   ├── tag_commands.rs
@@ -232,11 +232,11 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ## 五、Tauri 命令清单
 
-后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 89 个 `#[tauri::command]`，按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
+后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 90 个 `#[tauri::command]`（含 `#[tauri::command(async)]` 变体），按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
 
 > v1.4.0 新增命令：云同步 `sync_get_config` / `sync_set_config` / `sync_clear_password` / `sync_test_connection` / `sync_list_backups` / `sync_backup_now` / `sync_restore`（7 个）；在线更新 `update_check`（1 个）。
 >
-> v1.3.0 新增命令：AI 自动打标 `ai_get_config` / `ai_set_config` / `ai_is_configured` / `ai_test_connection` / `ai_suggest_tags`（5 个）；数据管理 `get_data_directory_info` / `set_data_directory` / `reset_data_directory` / `backup_data` / `export_data` / `import_data` / `restart_app`（7 个）。
+> v1.3.0 新增命令：AI 自动打标 `ai_get_config` / `ai_set_config` / `ai_is_configured` / `ai_clear_api_key` / `ai_test_connection` / `ai_suggest_tags`（6 个）；数据管理 `get_data_directory_info` / `set_data_directory` / `reset_data_directory` / `backup_data` / `export_data` / `import_data` / `restart_app`（7 个）。
 >
 > v1.2.0 新增命令：`relocate_missing`（跨盘签名找回）、`get_tag_relations` / `add_tag_relation` / `remove_tag_relation`（标签 DAG）、`net_fetch`（Mod 网络原语）。
 
@@ -379,6 +379,7 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 | `ai_get_config` | - | AiConfig | 读取 AI 配置（**不含明文密钥**，仅回传 `hasApiKey` 是否已配置；明文密钥只在后端内部使用） |
 | `ai_set_config` | config: AiConfig | () | 写入 AI 配置 |
 | `ai_is_configured` | - | bool | 是否已配置（不泄露 key，供前端判断是否自动打标） |
+| `ai_clear_api_key` | - | () | 仅清除已保存的 API 密钥（保留 base URL / 模型等其余配置） |
 | `ai_test_connection` | - | String | 发一条极简消息测试连通性，返回模型回显 |
 | `ai_suggest_tags` | name, path, item_type, existing_tags | Vec\<String\> | 为单个对象建议标签（去重并按配置裁剪数量） |
 
