@@ -1,7 +1,8 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ItemViewProps } from "../types";
 import { ItemRow } from "./ItemRow";
+import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
 import { SelectionCanvas, type Rect } from "./SelectionCanvas";
 
 /** 列表行初始估算高度（py-3 × 2 + icon 44px ≈ 68px）；真实高度由 measureElement 动态校正 */
@@ -87,6 +88,8 @@ export function ItemListView({
   onUpdateThumbnail,
   selectedItemIds,
   onSelectItems,
+  libraryEmpty,
+  onClearFilters,
 }: ItemViewProps) {
   const viewProps = useMemo(() => ({
     tags,
@@ -149,6 +152,19 @@ export function ItemListView({
     virtualizer.measure();
   }, [virtualizer, items]);
 
+  const lastSelectedId = selectedItemIds[selectedItemIds.length - 1];
+  const skipScrollRef = useRef(true);
+  useEffect(() => {
+    if (skipScrollRef.current) {
+      skipScrollRef.current = false;
+      return;
+    }
+    if (lastSelectedId == null) return;
+    const index = items.findIndex((item) => item.id === lastSelectedId);
+    if (index < 0) return;
+    virtualizer.scrollToIndex(index, { align: "auto" });
+  }, [lastSelectedId, items, virtualizer]);
+
   // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
   // 注意：vRow.start 相对于行容器（position:relative 的 div），而行容器位于 sticky
   // 表头之下，因此必须用行容器的实际 DOM 位置校正，否则框选矩形整体上移一个表头高度。
@@ -195,23 +211,7 @@ export function ItemListView({
   }
 
   if (items.length === 0) {
-    return (
-      <div className="flex-1 overflow-auto">
-        <div className="empty-state-panel">
-          <div className="flex h-16 w-16 items-center justify-center rounded-[calc(var(--radius-xl)+4px)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-            <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7.75A2.75 2.75 0 0 1 6.75 5h3.4a1.5 1.5 0 0 1 1.06.44l1.35 1.35c.28.28.66.44 1.06.44h3.63A2.75 2.75 0 0 1 20 10v6.25A2.75 2.75 0 0 1 17.25 19H6.75A2.75 2.75 0 0 1 4 16.25V7.75Z" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-lg font-semibold text-[var(--text-primary)]">暂无项目</p>
-            <p className="mt-2 text-sm text-[var(--text-muted)]">
-              将文件或文件夹拖拽到主区域，或使用顶部按钮开始导入。
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+    return <WorkspaceEmptyState kind={libraryEmpty ? "library" : "filter"} onClearFilters={onClearFilters} />;
   }
 
   return (

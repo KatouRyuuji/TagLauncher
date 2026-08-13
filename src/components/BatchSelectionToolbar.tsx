@@ -50,7 +50,7 @@ export function BatchSelectionToolbar({
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-5 bottom-8 z-50 flex justify-center"
+      className="pointer-events-none absolute inset-x-5 bottom-12 z-50 flex justify-center"
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="surface-card pointer-events-auto flex max-w-[calc(100vw-var(--sidebar-width)-40px)] items-center gap-2 px-3 py-2 shadow-[var(--shadow-dropdown)]">

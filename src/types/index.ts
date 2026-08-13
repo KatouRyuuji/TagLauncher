@@ -58,4 +58,7 @@ export interface ItemViewProps {
   onUpdateThumbnail: (itemId: number, iconPath: string | null) => Promise<void>;
   selectedItemIds: number[];
   onSelectItems: (itemIds: number[]) => void;
+  /** 整个对象库为空（非筛选导致的空） */
+  libraryEmpty?: boolean;
+  onClearFilters?: () => void;
 }

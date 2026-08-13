@@ -11,6 +11,7 @@ import {
 } from "../lib/internalPointerDrag";
 import { getFileSuffix, getTypeLabel } from "../lib/itemUtils";
 import { useInternalDragStore } from "../stores/internalDragStore";
+import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
 import type { Cabinet, ItemWithTags, Tag } from "../types";
 import type { ItemSlotDescriptor } from "../lib/modItemSlotRegistry";
@@ -159,6 +160,7 @@ function ItemCardComponent({
     onRequestRemoveFromApp,
   );
   const fileSuffix = getFileSuffix(item);
+  const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
 
   // Mod ItemCard 插槽
   const modSlots = useModItemSlots();
@@ -306,6 +308,7 @@ function ItemCardComponent({
           onRemove={() => void onRequestRemoveFromApp(item.id)}
           onEditTags={() => setShowTagEditor(true)}
           onToggleFavorite={onToggleFavorite}
+          onPreview={() => setPreviewItemId(item.id)}
           onAddItemToCabinet={onAddItemToCabinet}
           onRemoveItemFromCabinet={onRemoveItemFromCabinet}
           onUpdateThumbnail={onUpdateThumbnail}

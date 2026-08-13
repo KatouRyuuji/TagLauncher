@@ -2,11 +2,18 @@
 // stores/appStore.ts — Zustand 全局状态管理
 // ============================================================================
 // 使用 Zustand 管理应用的全局状态，包括数据缓存、筛选条件和 UI 状态。
-// 核心设计：标签筛选、文件柜筛选、收藏夹三种模式互斥。
+// 核心设计：标签筛选、文件柜筛选、收藏夹、最近使用 四种模式互斥。
+// 视图偏好（视图/搜索模式/排序/类型筛选）持久化到 localStorage。
 // ============================================================================
 
 import { create } from "zustand";
 import type { Tag, Cabinet, TagRelation } from "../types";
+import {
+  isSortMode,
+  isTypeFilter,
+  type SortMode,
+  type TypeFilter,
+} from "../lib/itemQuery";
 
 function sameTags(a: Tag[], b: Tag[]): boolean {
   return a.length === b.length && a.every((tag, index) =>
@@ -41,23 +48,68 @@ export type SearchMode = "all" | "name" | "tag";
 /** 侧边栏页签：标签 / 文件柜 */
 export type SidebarTab = "tags" | "cabinets";
 
+export type { SortMode, TypeFilter };
+
+const PREFS_KEY = "taglauncher.workspace_prefs";
+
+interface WorkspacePrefs {
+  viewMode?: "grid" | "list";
+  searchMode?: SearchMode;
+  sortMode?: SortMode;
+  typeFilter?: TypeFilter;
+}
+
+function loadWorkspacePrefs(): WorkspacePrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      viewMode: parsed.viewMode === "list" || parsed.viewMode === "grid" ? parsed.viewMode : undefined,
+      searchMode: parsed.searchMode === "all" || parsed.searchMode === "name" || parsed.searchMode === "tag"
+        ? parsed.searchMode
+        : undefined,
+      sortMode: isSortMode(parsed.sortMode) ? parsed.sortMode : undefined,
+      typeFilter: isTypeFilter(parsed.typeFilter) ? parsed.typeFilter : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function persistWorkspacePrefs(prefs: Required<WorkspacePrefs>): void {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // 隐私模式或配额不足时忽略
+  }
+}
+
+const initialPrefs = loadWorkspacePrefs();
+
 interface AppState {
   // ---- 数据缓存 ----
-  tags: Tag[];                 // 所有标签
-  tagRelations: TagRelation[]; // 标签父子关系边（DAG，多继承）
-  cabinets: Cabinet[];         // 所有文件柜
+  tags: Tag[];
+  tagRelations: TagRelation[];
+  cabinets: Cabinet[];
 
-  // ---- 筛选状态（三者互斥） ----
-  selectedTagIds: number[];    // 选中的标签 ID 列表（支持多选）
-  selectedCabinetId: number | null;  // 选中的文件柜 ID（单选）
-  showFavorites: boolean;      // 是否显示收藏夹
+  // ---- 筛选状态（四者互斥） ----
+  selectedTagIds: number[];
+  selectedCabinetId: number | null;
+  showFavorites: boolean;
+  showRecent: boolean;
 
   // ---- UI 状态 ----
-  sidebarTab: SidebarTab;      // 侧边栏当前页签
-  searchQuery: string;         // 搜索关键词
-  searchMode: SearchMode;      // 搜索模式
-  viewMode: "grid" | "list";   // 视图模式：网格 / 列表
-  tagGraphOpen: boolean;       // 是否打开独立标签关系图视图（单独模式）
+  sidebarTab: SidebarTab;
+  searchQuery: string;
+  searchMode: SearchMode;
+  viewMode: "grid" | "list";
+  sortMode: SortMode;
+  typeFilter: TypeFilter;
+  tagGraphOpen: boolean;
+  commandPaletteOpen: boolean;
+  shortcutsHelpOpen: boolean;
+  previewItemId: number | null;
 
   // ---- Actions ----
   setTags: (tags: Tag[]) => void;
@@ -68,14 +120,31 @@ interface AppState {
   setSelectedCabinetId: (id: number | null) => void;
   setSidebarTab: (tab: SidebarTab) => void;
   setShowFavorites: (v: boolean) => void;
+  setShowRecent: (v: boolean) => void;
   setSearchQuery: (query: string) => void;
   setSearchMode: (mode: SearchMode) => void;
   setViewMode: (mode: "grid" | "list") => void;
+  setSortMode: (mode: SortMode) => void;
+  setTypeFilter: (filter: TypeFilter) => void;
   setTagGraphOpen: (open: boolean) => void;
+  setCommandPaletteOpen: (open: boolean) => void;
+  setShortcutsHelpOpen: (open: boolean) => void;
+  setPreviewItemId: (id: number | null) => void;
+  clearWorkspaceFilters: () => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
-  // 初始状态
+export const useAppStore = create<AppState>((set, get) => {
+  const persistNow = () => {
+    const state = get();
+    persistWorkspacePrefs({
+      viewMode: state.viewMode,
+      searchMode: state.searchMode,
+      sortMode: state.sortMode,
+      typeFilter: state.typeFilter,
+    });
+  };
+
+  return {
   tags: [],
   tagRelations: [],
   cabinets: [],
@@ -83,65 +152,112 @@ export const useAppStore = create<AppState>((set) => ({
   selectedCabinetId: null,
   sidebarTab: "tags",
   showFavorites: false,
+  showRecent: false,
   searchQuery: "",
-  searchMode: "all",
-  viewMode: "grid",
+  searchMode: initialPrefs.searchMode ?? "all",
+  viewMode: initialPrefs.viewMode ?? "grid",
+  sortMode: initialPrefs.sortMode ?? "smart",
+  typeFilter: initialPrefs.typeFilter ?? "all",
   tagGraphOpen: false,
+  commandPaletteOpen: false,
+  shortcutsHelpOpen: false,
+  previewItemId: null,
 
-  // 简单 setter
   setTags: (tags) => set((state) => sameTags(state.tags, tags) ? state : { tags }),
   setTagRelations: (relations) => set((state) => sameRelations(state.tagRelations, relations) ? state : { tagRelations: relations }),
   setCabinets: (cabinets) => set((state) => sameCabinets(state.cabinets, cabinets) ? state : { cabinets }),
   setSelectedTagIds: (ids) => set((state) =>
     sameNumberArray(state.selectedTagIds, ids) &&
     state.selectedCabinetId === null &&
-    !state.showFavorites
+    !state.showFavorites &&
+    !state.showRecent
       ? state
-      : { selectedTagIds: ids, selectedCabinetId: null, showFavorites: false },
+      : { selectedTagIds: ids, selectedCabinetId: null, showFavorites: false, showRecent: false },
   ),
 
-  // 切换标签选中状态（支持多选）
-  // 关键：切换标签时自动清空文件柜和收藏夹，保证三种筛选模式互斥
   toggleTagSelection: (id) =>
     set((state) => ({
       selectedTagIds: state.selectedTagIds.includes(id)
-        ? state.selectedTagIds.filter((i) => i !== id)  // 已选中 → 取消选中
-        : [...state.selectedTagIds, id],                 // 未选中 → 添加选中
-      selectedCabinetId: null,   // 互斥：清空文件柜选择
-      showFavorites: false,      // 互斥：关闭收藏夹
+        ? state.selectedTagIds.filter((i) => i !== id)
+        : [...state.selectedTagIds, id],
+      selectedCabinetId: null,
+      showFavorites: false,
+      showRecent: false,
     })),
 
-  // 选择文件柜（互斥：清空标签和收藏夹）
   setSelectedCabinetId: (id) => set((state) =>
     state.selectedCabinetId === id &&
     state.selectedTagIds.length === 0 &&
-    !state.showFavorites
+    !state.showFavorites &&
+    !state.showRecent
       ? state
-      : { selectedCabinetId: id, selectedTagIds: [], showFavorites: false },
+      : { selectedCabinetId: id, selectedTagIds: [], showFavorites: false, showRecent: false },
   ),
 
   setSidebarTab: (tab) =>
     set((state) =>
       tab === "tags"
-        ? state.sidebarTab === tab && state.selectedCabinetId === null && !state.showFavorites
+        ? state.sidebarTab === tab && state.selectedCabinetId === null && !state.showFavorites && !state.showRecent
           ? state
-          : { sidebarTab: tab, selectedCabinetId: null, showFavorites: false }
-        : state.sidebarTab === tab && state.selectedTagIds.length === 0 && !state.showFavorites
+          : { sidebarTab: tab, selectedCabinetId: null, showFavorites: false, showRecent: false }
+        : state.sidebarTab === tab && state.selectedTagIds.length === 0 && !state.showFavorites && !state.showRecent
           ? state
-          : { sidebarTab: tab, selectedTagIds: [], showFavorites: false },
+          : { sidebarTab: tab, selectedTagIds: [], showFavorites: false, showRecent: false },
     ),
 
-  // 切换收藏夹（互斥：清空文件柜和标签）
   setShowFavorites: (v) => set((state) =>
     state.showFavorites === v &&
     state.selectedCabinetId === null &&
-    state.selectedTagIds.length === 0
+    state.selectedTagIds.length === 0 &&
+    !state.showRecent
       ? state
-      : { showFavorites: v, selectedCabinetId: null, selectedTagIds: [] },
+      : { showFavorites: v, selectedCabinetId: null, selectedTagIds: [], showRecent: false },
+  ),
+
+  setShowRecent: (v) => set((state) =>
+    state.showRecent === v &&
+    state.selectedCabinetId === null &&
+    state.selectedTagIds.length === 0 &&
+    !state.showFavorites
+      ? state
+      : { showRecent: v, selectedCabinetId: null, selectedTagIds: [], showFavorites: false },
   ),
 
   setSearchQuery: (query) => set((state) => state.searchQuery === query ? state : { searchQuery: query }),
-  setSearchMode: (mode) => set((state) => state.searchMode === mode ? state : { searchMode: mode }),
-  setViewMode: (mode) => set((state) => state.viewMode === mode ? state : { viewMode: mode }),
+  setSearchMode: (mode) => {
+    if (get().searchMode === mode) return;
+    set({ searchMode: mode });
+    persistNow();
+  },
+  setViewMode: (mode) => {
+    if (get().viewMode === mode) return;
+    set({ viewMode: mode });
+    persistNow();
+  },
+  setSortMode: (mode) => {
+    if (get().sortMode === mode) return;
+    set({ sortMode: mode });
+    persistNow();
+  },
+  setTypeFilter: (filter) => {
+    if (get().typeFilter === filter) return;
+    set({ typeFilter: filter });
+    persistNow();
+  },
   setTagGraphOpen: (open) => set((state) => state.tagGraphOpen === open ? state : { tagGraphOpen: open }),
-}));
+  setCommandPaletteOpen: (open) => set((state) => state.commandPaletteOpen === open ? state : { commandPaletteOpen: open }),
+  setShortcutsHelpOpen: (open) => set((state) => state.shortcutsHelpOpen === open ? state : { shortcutsHelpOpen: open }),
+  setPreviewItemId: (id) => set((state) => state.previewItemId === id ? state : { previewItemId: id }),
+  clearWorkspaceFilters: () => {
+    set({
+      selectedTagIds: [],
+      selectedCabinetId: null,
+      showFavorites: false,
+      showRecent: false,
+      typeFilter: "all",
+      searchQuery: "",
+    });
+    persistNow();
+  },
+  };
+});

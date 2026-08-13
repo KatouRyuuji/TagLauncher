@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import * as db from "../lib/db";
 import { showToast } from "../lib/toast";
+import { copyText } from "../lib/clipboard";
 import type { Cabinet, ItemWithTags } from "../types";
 
 interface ContextMenuProps {
@@ -17,6 +18,7 @@ interface ContextMenuProps {
   onRemove: () => void;
   onEditTags: () => void;
   onToggleFavorite: () => void;
+  onPreview?: () => void;
   onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onRemoveItemFromCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onUpdateThumbnail: (itemId: number, iconPath: string | null) => Promise<void>;
@@ -33,6 +35,7 @@ export function ContextMenu({
   onRemove,
   onEditTags,
   onToggleFavorite,
+  onPreview,
   onAddItemToCabinet,
   onRemoveItemFromCabinet,
   onUpdateThumbnail,
@@ -230,7 +233,9 @@ export function ContextMenu({
         className="modal-surface w-[196px] max-h-[72vh] max-w-[46vw] overflow-y-auto p-2"
       >
         <MenuItem label="打开" onClick={() => { onLaunch(); onClose(); }} />
+        {onPreview && <MenuItem label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
         <MenuItem label="打开所在文件夹" onClick={() => void handleOpenFolder()} />
+        <MenuItem label="复制路径" onClick={() => { void copyText(item.path, "已复制路径"); onClose(); }} />
         <MenuItem label={item.icon_path ? "更换缩略图" : "设置缩略图"} onClick={() => void handleChangeThumbnail()} />
         {item.icon_path && <MenuItem label="清除缩略图" onClick={() => void handleClearThumbnail()} />}
         <MenuDivider />

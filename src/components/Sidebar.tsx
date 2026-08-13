@@ -56,6 +56,8 @@ export function Sidebar({
   const setSidebarTab = useAppStore((state) => state.setSidebarTab);
   const showFavorites = useAppStore((state) => state.showFavorites);
   const setShowFavorites = useAppStore((state) => state.setShowFavorites);
+  const showRecent = useAppStore((state) => state.showRecent);
+  const setShowRecent = useAppStore((state) => state.setShowRecent);
   const activeDragKind = useInternalDragStore((state) => state.drag?.kind ?? null);
   const hoveredCabinetId = useInternalDragStore((state) =>
     state.drag?.kind === "item" && state.hoverTarget?.kind === "item-cabinet"
@@ -165,14 +167,23 @@ export function Sidebar({
         {visibleSection === "tags" && (
           <div className="space-y-4">
             <FilterNavButton
-              active={selectedTagIds.length === 0 && selectedCabinetId === null && !showFavorites}
+              active={selectedTagIds.length === 0 && selectedCabinetId === null && !showFavorites && !showRecent}
               title="全部项目"
               subtitle="查看所有可启动项"
               onClick={() => {
                 setSelectedTagIds([]);
                 setSelectedCabinetId(null);
                 setShowFavorites(false);
+                setShowRecent(false);
               }}
+            />
+
+            <FilterNavButton
+              active={showRecent}
+              title="最近使用"
+              subtitle="按上次启动时间浏览"
+              icon="recent"
+              onClick={() => setShowRecent(!showRecent)}
             />
 
             <section>
@@ -290,8 +301,17 @@ export function Sidebar({
               title="收藏夹"
               subtitle="优先展示常用项目"
               accent={hoveredFavorites ? "favorite" : undefined}
+              icon="favorite"
               onClick={() => setShowFavorites(!showFavorites)}
               data-drop-item-favorite={1}
+            />
+
+            <FilterNavButton
+              active={showRecent}
+              title="最近使用"
+              subtitle="启动过的项目"
+              icon="recent"
+              onClick={() => setShowRecent(!showRecent)}
             />
 
             <section>
@@ -527,12 +547,14 @@ function FilterNavButton({
   subtitle,
   onClick,
   accent,
+  icon = "library",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   active?: boolean;
   title: string;
   subtitle: string;
   accent?: "favorite";
+  icon?: "library" | "favorite" | "recent";
 }) {
   const accentStyle = accent === "favorite"
     ? {
@@ -561,9 +583,13 @@ function FilterNavButton({
             : "bg-[var(--bg-hover)]"
         }`}
       >
-        {accent === "favorite" ? (
+        {icon === "favorite" || accent === "favorite" ? (
           <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 2.75 14.84 8.5l6.35.92-4.6 4.48 1.09 6.33L12 17.26l-5.68 2.97 1.09-6.33-4.6-4.48 6.35-.92L12 2.75Z" />
+          </svg>
+        ) : icon === "recent" ? (
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l3.5 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
           </svg>
         ) : (
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>

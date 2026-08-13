@@ -17,10 +17,16 @@ describe("appStore", () => {
       selectedTagIds: [],
       selectedCabinetId: null,
       showFavorites: false,
+      showRecent: false,
       searchQuery: "",
       searchMode: "all",
       viewMode: "grid",
+      sortMode: "smart",
+      typeFilter: "all",
       tagGraphOpen: false,
+      commandPaletteOpen: false,
+      shortcutsHelpOpen: false,
+      previewItemId: null,
     });
   });
 
@@ -82,5 +88,50 @@ describe("appStore", () => {
   it("setTagGraphOpen 切换图谱开关", () => {
     useAppStore.getState().setTagGraphOpen(true);
     expect(useAppStore.getState().tagGraphOpen).toBe(true);
+  });
+
+  it("setShowRecent(true) 会清空标签、文件柜与收藏筛选", () => {
+    useAppStore.setState({ selectedTagIds: [10], selectedCabinetId: 2, showFavorites: true });
+
+    useAppStore.getState().setShowRecent(true);
+
+    expect(useAppStore.getState().showRecent).toBe(true);
+    expect(useAppStore.getState().selectedTagIds).toEqual([]);
+    expect(useAppStore.getState().selectedCabinetId).toBeNull();
+    expect(useAppStore.getState().showFavorites).toBe(false);
+  });
+
+  it("setShowFavorites(true) 会清空最近使用筛选", () => {
+    useAppStore.setState({ showRecent: true });
+    useAppStore.getState().setShowFavorites(true);
+    expect(useAppStore.getState().showFavorites).toBe(true);
+    expect(useAppStore.getState().showRecent).toBe(false);
+  });
+
+  it("clearWorkspaceFilters 重置互斥筛选、类型筛选与搜索词", () => {
+    useAppStore.setState({
+      selectedTagIds: [1],
+      showFavorites: true,
+      showRecent: true,
+      typeFilter: "image",
+      searchQuery: "游戏",
+      sortMode: "name",
+    });
+
+    useAppStore.getState().clearWorkspaceFilters();
+
+    expect(useAppStore.getState().selectedTagIds).toEqual([]);
+    expect(useAppStore.getState().showFavorites).toBe(false);
+    expect(useAppStore.getState().showRecent).toBe(false);
+    expect(useAppStore.getState().typeFilter).toBe("all");
+    expect(useAppStore.getState().searchQuery).toBe("");
+    expect(useAppStore.getState().sortMode).toBe("name");
+  });
+
+  it("setSortMode / setTypeFilter 更新工作台偏好", () => {
+    useAppStore.getState().setSortMode("recent");
+    useAppStore.getState().setTypeFilter("script");
+    expect(useAppStore.getState().sortMode).toBe("recent");
+    expect(useAppStore.getState().typeFilter).toBe("script");
   });
 });

@@ -63,6 +63,9 @@
     --z-drag-ghost: 120;
     --z-welcome-modal: 120;
     --z-floating-panel: 150;
+    --z-quick-preview: 205;
+    --z-command-palette: 210;
+    --z-shortcuts-help: 215;
     --z-settings-overlay: 200;
     --z-settings-panel: 201;
     --z-mod-confirm-overlay: 250;
@@ -277,6 +280,21 @@
     border-color: var(--accent-primary);
     background: var(--accent-primary);
     color: var(--text-invert);
+  }
+
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    padding: 0 6px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    background: var(--bg-input);
+    color: var(--text-faint);
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.02em;
   }
 
   .icon-button {

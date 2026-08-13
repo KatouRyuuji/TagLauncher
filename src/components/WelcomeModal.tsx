@@ -23,6 +23,16 @@ const featureIconClass = "h-5 w-5";
 
 const FEATURES: FeatureEntry[] = [
   {
+    title: "命令面板与快捷键",
+    description: "Ctrl+K 命令面板，空格快速预览，键盘即可搜索、筛选与启动",
+    isNew: true,
+    icon: (
+      <svg className={featureIconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+      </svg>
+    ),
+  },
+  {
     title: "标签化组织",
     description: "标签、文件柜、收藏三个维度组织文件与程序，多标签交集筛选",
     icon: (

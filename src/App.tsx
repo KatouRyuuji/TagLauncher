@@ -12,6 +12,10 @@ import { InternalDragGhost, ItemDropActions } from "./components/InternalDragOve
 import { BatchSelectionToolbar } from "./components/BatchSelectionToolbar";
 import { RemoveFromAppConfirmDialog } from "./components/RemoveFromAppConfirmDialog";
 import { AiTaggingModal } from "./components/AiTaggingModal";
+import { CommandPalette } from "./components/CommandPalette";
+import { QuickPreview } from "./components/QuickPreview";
+import { ShortcutsHelp } from "./components/ShortcutsHelp";
+import { StatusBar } from "./components/StatusBar";
 import { useItems } from "./hooks/useItems";
 import { useTags } from "./hooks/useTags";
 import { useCabinets } from "./hooks/useCabinets";
@@ -28,6 +32,8 @@ import { useInternalDragStore } from "./stores/internalDragStore";
 import { loadSynonyms } from "./lib/synonyms";
 import { useVersionCheck } from "./hooks/useVersionCheck";
 import { useStartupMaintenance } from "./hooks/useStartupMaintenance";
+import { useWorkspaceHotkeys } from "./hooks/useWorkspaceHotkeys";
+import { resetWorkspaceSearchInput } from "./lib/workspaceChrome";
 import { initModApi, notifySelectionChanged, onTagsChanged, onCabinetsChanged, onItemsChanged } from "./lib/modApi";
 import { initModRuntime } from "./lib/modRuntime";
 import { ToastContainer } from "./components/ToastContainer";
@@ -61,6 +67,9 @@ function App() {
   const { addRelation: addTagRelation, removeRelation: removeTagRelation } = useTagRelations();
   const viewMode = useAppStore((state) => state.viewMode);
   const tagGraphOpen = useAppStore((state) => state.tagGraphOpen);
+  const commandPaletteOpen = useAppStore((state) => state.commandPaletteOpen);
+  const shortcutsHelpOpen = useAppStore((state) => state.shortcutsHelpOpen);
+  const clearWorkspaceFilters = useAppStore((state) => state.clearWorkspaceFilters);
   const cabinets = useAppStore((state) => state.cabinets);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
@@ -222,11 +231,37 @@ function App() {
     setShowWelcomeModal(true);
   }, []);
 
+  const handleClearFilters = useCallback(() => {
+    clearWorkspaceFilters();
+    resetWorkspaceSearchInput();
+  }, [clearWorkspaceFilters]);
+
   // AI 自动打标编排（一键打标 + 新对象后台自动打标）
   const { state: aiTagState, cancel: aiTagCancel, reset: aiTagReset } = useAiTagOrchestration({
     allItems,
     addTag,
     setItemTags,
+  });
+
+  const aiModalOpen = (aiTagState.running || aiTagState.done > 0) && !aiTagState.silent;
+  const overlaysBlocked =
+    showSettings ||
+    showWelcomeModal ||
+    tagGraphOpen ||
+    removeDialog.open ||
+    migration.show ||
+    aiModalOpen ||
+    commandPaletteOpen ||
+    shortcutsHelpOpen;
+
+  useWorkspaceHotkeys({
+    blocked: overlaysBlocked,
+    items,
+    selectedItemIds,
+    setSelectedItemIds,
+    onLaunch: (id) => { void handleLaunchItem(id); },
+    onRemoveSelected: () => { void requestBatchRemoveFromApp(); },
+    onOpenSettings: () => setShowSettings(true),
   });
 
   // 回收标签编辑器取消时未落库的新建空标签（逐个删除，removeTag 内部已同步清理筛选状态）
@@ -262,6 +297,8 @@ function App() {
     onUpdateThumbnail: updateItemIcon,
     selectedItemIds,
     onSelectItems: handleSelectItems,
+    libraryEmpty: allItems.length === 0,
+    onClearFilters: handleClearFilters,
   };
 
   return (
@@ -310,6 +347,11 @@ function App() {
           onSelectAll={() => setSelectedItemIds(items.map((item) => item.id))}
           onClearSelection={() => setSelectedItemIds([])}
         />
+        <StatusBar
+          visibleCount={items.length}
+          selectedCount={selectedItemIds.length}
+          libraryCount={allItems.length}
+        />
         <ItemDropActions
           visible={isDraggingItem}
           mode={selectedTagIds.length > 0 ? "tags" : "cabinet"}
@@ -331,6 +373,16 @@ function App() {
         <InternalDragGhost />
       </main>
       <WelcomeModal open={showWelcomeModal} onClose={handleCloseWelcome} />
+      <CommandPalette
+        items={allItems}
+        onLaunch={(id) => { void handleLaunchItem(id); }}
+        onAddItems={addItems}
+        onRefresh={refresh}
+        onOpenSettings={() => setShowSettings(true)}
+        onOpenAbout={handleOpenAbout}
+      />
+      <QuickPreview items={allItems} onLaunch={(id) => { void handleLaunchItem(id); }} />
+      <ShortcutsHelp />
       <RemoveFromAppConfirmDialog {...removeDialog} />
       <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
       <AiTaggingModal progress={aiTagState} onCancel={aiTagCancel} onClose={aiTagReset} />

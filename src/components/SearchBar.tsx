@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useSearch } from "../hooks/useSearch";
 import { notifySearchInput } from "../lib/modApi";
 import { useAppStore, type SearchMode } from "../stores/appStore";
+import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
+import { SORT_OPTIONS, type SortMode } from "../lib/itemQuery";
+import { SEARCH_RESET_EVENT, WORKSPACE_SEARCH_ID } from "../lib/workspaceChrome";
 import {
   getToolbarButtons,
   subscribeToolbarButtons,
@@ -34,6 +36,9 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
   const setViewMode = useAppStore((state) => state.setViewMode);
   const searchMode = useAppStore((state) => state.searchMode);
   const setSearchMode = useAppStore((state) => state.setSearchMode);
+  const sortMode = useAppStore((state) => state.sortMode);
+  const setSortMode = useAppStore((state) => state.setSortMode);
+  const setCommandPaletteOpen = useAppStore((state) => state.setCommandPaletteOpen);
   const [inputValue, setInputValue] = useState("");
   const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
 
@@ -43,28 +48,24 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
     return subscribeToolbarButtons(update);
   }, []);
 
+  useEffect(() => {
+    const reset = () => {
+      setInputValue("");
+      handleSearch("");
+      notifySearchInput("");
+    };
+    window.addEventListener(SEARCH_RESET_EVENT, reset);
+    return () => window.removeEventListener(SEARCH_RESET_EVENT, reset);
+  }, [handleSearch]);
+
   const handleBrowse = async () => {
-    const selected = await open({
-      multiple: true,
-      filters: [
-        { name: "可执行文件", extensions: ["exe", "bat", "ps1"] },
-        { name: "图片文件", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif", "ico", "svg", "tif", "tiff", "avif", "heic", "heif"] },
-        { name: "所有文件", extensions: ["*"] },
-      ],
-    });
-
-    if (!selected) return;
-
-    const paths = Array.isArray(selected) ? selected : [selected];
-    await onAddItems(paths);
+    const paths = await pickFilesToAdd();
+    if (paths) await onAddItems(paths);
   };
 
   const handleBrowseFolder = async () => {
-    const selected = await open({ directory: true, multiple: true });
-    if (!selected) return;
-
-    const paths = Array.isArray(selected) ? selected : [selected];
-    await onAddItems(paths);
+    const paths = await pickFoldersToAdd();
+    if (paths) await onAddItems(paths);
   };
 
   return (
@@ -106,7 +107,6 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
             关于
           </button>
 
-          {/* Mod Toolbar 按钮 */}
           {modButtons.map((btn) => (
             <button
               key={`${btn.modId}::${btn.id}`}
@@ -156,6 +156,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
           </svg>
 
           <input
+            id={WORKSPACE_SEARCH_ID}
             type="text"
             placeholder={PLACEHOLDERS[searchMode]}
             value={inputValue}
@@ -165,8 +166,17 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
               handleSearch(value);
               notifySearchInput(value);
             }}
-            className="w-full border-0 bg-transparent pl-7 pr-10 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none"
+            className="w-full border-0 bg-transparent pl-7 pr-24 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none"
           />
+
+          <button
+            type="button"
+            onClick={() => setCommandPaletteOpen(true)}
+            className={`absolute top-1/2 inline-flex -translate-y-1/2 items-center ${inputValue ? "right-11" : "right-3"}`}
+            title="命令面板 (Ctrl+K)"
+          >
+            <kbd className="kbd">Ctrl+K</kbd>
+          </button>
 
           {inputValue && (
             <button
@@ -185,6 +195,22 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
             </button>
           )}
         </div>
+
+        <label className="control-chip min-h-[34px] gap-2 px-3 text-xs font-medium">
+          <span className="text-[var(--text-faint)]">排序</span>
+          <select
+            value={sortMode}
+            onChange={(event) => setSortMode(event.target.value as SortMode)}
+            className="bg-transparent text-xs text-current outline-none"
+            title="排序方式"
+          >
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <div className="flex items-center gap-1 p-1">
           <button

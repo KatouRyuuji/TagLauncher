@@ -11,6 +11,7 @@ import {
 } from "../lib/internalPointerDrag";
 import { getFileSuffix, getTypeLabel } from "../lib/itemUtils";
 import { useInternalDragStore } from "../stores/internalDragStore";
+import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
 import { useSlotContainer } from "./ItemCard";
 import type { ItemCardProps } from "./ItemCard";
@@ -48,6 +49,7 @@ function ItemRowComponent({
   );
   const currentCabinetName =
     currentCabinetId === null ? null : cabinets.find((cabinet) => cabinet.id === currentCabinetId)?.name ?? null;
+  const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
 
   const handleItemHandlePointerDown = (event: React.PointerEvent<HTMLSpanElement>) => {
     beginInternalPointerDrag({
@@ -197,6 +199,7 @@ function ItemRowComponent({
           onRemove={() => void onRequestRemoveFromApp(item.id)}
           onEditTags={() => setShowTagEditor(true)}
           onToggleFavorite={onToggleFavorite}
+          onPreview={() => setPreviewItemId(item.id)}
           onAddItemToCabinet={onAddItemToCabinet}
           onRemoveItemFromCabinet={onRemoveItemFromCabinet}
           onUpdateThumbnail={onUpdateThumbnail}

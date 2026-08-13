@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } f
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
+import { applyTypeFilter, applyWorkspaceQuery } from "../lib/itemQuery";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
@@ -72,6 +73,9 @@ export function useItems() {
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const showFavorites = useAppStore((state) => state.showFavorites);
+  const showRecent = useAppStore((state) => state.showRecent);
+  const sortMode = useAppStore((state) => state.sortMode);
+  const typeFilter = useAppStore((state) => state.typeFilter);
   const tagRelations = useAppStore((state) => state.tagRelations);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
@@ -203,13 +207,16 @@ export function useItems() {
     if (showFavorites) {
       return allItems.filter((item) => item.is_favorite);
     }
+    if (showRecent) {
+      return allItems.filter((item) => Boolean(item.last_used_at));
+    }
     if (selectedCabinetId !== null) {
       // 仅当 cabinetItems 已归属当前选中柜时采用，否则回退空集（等待本柜数据到达），
       // 避免切柜瞬间闪现上一个柜子的内容。
       return cabinetItemsOwner === selectedCabinetId ? cabinetItems : EMPTY_ITEMS;
     }
     return allItems;
-  }, [allItems, cabinetItems, cabinetItemsOwner, selectedCabinetId, showFavorites]);
+  }, [allItems, cabinetItems, cabinetItemsOwner, selectedCabinetId, showFavorites, showRecent]);
 
   // 标签后代闭包：选中父标签时并入其所有后代标签的对象（图状层级筛选）。
   const descendantsMap = useMemo(() => buildDescendantsMap(tagRelations), [tagRelations]);
@@ -225,10 +232,14 @@ export function useItems() {
     [tagFiltered, searchMode],
   );
 
-  const filtered = useMemo(
-    () => searchWithIndex(searchIndex, deferredSearchQuery),
-    [searchIndex, deferredSearchQuery],
-  );
+  const filtered = useMemo(() => {
+    const searched = searchWithIndex(searchIndex, deferredSearchQuery);
+    // 有搜索词时保留检索命中顺序；空查询才套用工作台排序。
+    if (deferredSearchQuery.trim()) {
+      return applyTypeFilter(searched, typeFilter);
+    }
+    return applyWorkspaceQuery(searched, { typeFilter, sortMode });
+  }, [searchIndex, deferredSearchQuery, typeFilter, sortMode]);
 
   const addItems = useCallback(async (paths: string[]) => {
     await withErrorToast("批量导入", async () => {
