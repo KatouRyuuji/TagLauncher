@@ -26,7 +26,7 @@ src/
 ├─ components/      # 视图与交互组件
 ├─ hooks/           # 数据组织与业务流程
 ├─ stores/          # 全局状态（Zustand）
-├─ lib/             # db 调用、搜索、同义词
+├─ lib/             # db 调用、搜索、同义词、工作台查询
 ├─ data/            # 默认同义词库
 └─ assets/          # 前端静态资源
 
@@ -227,7 +227,7 @@ npm run tauri build
 
 产物：
 
-- `src-tauri/target/release/bundle/nsis/TagLauncher_1.4.0_x64-setup.exe`
+- `src-tauri/target/release/bundle/nsis/TagLauncher_1.5.0_x64-setup.exe`
 
 ARM64 构建用 `build-arm64.bat`（`aarch64-pc-windows-msvc`，脚本会自动 `rustup target add`），产物为 `..._arm64-setup.exe`；`build.bat` 亦支持传入可选 target 参数。
 
@@ -268,6 +268,13 @@ v1.3.0 起欢迎弹窗改为 标题+简介 + 特性列表 + 右侧扫码赞助�
 - 赞助二维码：`src/assets/QRCode.png`；B 站链接常量 `BILIBILI_URL`。
 - 版本号：通过 `getAppVersion()` 动态获取展示。
 - 「下次不再显示」使用 `localStorage` 键 `taglauncher.hide_welcome_modal`。
+
+## 8.4 工作台排序 / 筛选 / 快捷键（v1.5.0）
+
+- 纯函数：`src/lib/itemQuery.ts`（排序、类型筛选、键盘选中下标），单测 `itemQuery.test.ts`。
+- 状态：`appStore` 的 `sortMode` / `typeFilter` / `showRecent`；四者互斥筛选与收藏/标签/文件柜并列。
+- 视图偏好键：`localStorage` `taglauncher.workspace_prefs`。
+- 快捷键入口：`src/hooks/useWorkspaceHotkeys.ts`；命令面板 `CommandPalette.tsx`；预览 `QuickPreview.tsx`。
 
 ## 9. 构建与回归建议
 

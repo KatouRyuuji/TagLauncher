@@ -10,7 +10,9 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 
 - 对象类型：`folder` / `image` / `audio` / `exe` / `bat` / `ps1`，未知文件按可启动对象归入 `exe`。
 - 对象身份：以「NTFS 卷序列号 + 文件ID」为唯一标识，跨重命名/同盘移动稳定；`path` 降级为可更新的「最近已知位置」。跨盘符移动（卷序列号变化）时，以内容签名（文件大小 + 首/尾 16KB 的 FNV-1a 哈希）兜底重定位自动找回，详见 `file_identity.rs`。
-- 标签系统（图状层级，DAG）：标签是集合、可多父继承构成有向无环图；选中父标签筛选时并入其所有后代标签的对象。三类筛选（标签/文件柜/收藏夹）互斥；标签多选取交集；提供关系编辑器与独立图谱视图。
+- 标签系统（图状层级，DAG）：标签是集合、可多父继承构成有向无环图；选中父标签筛选时并入其所有后代标签的对象。四类筛选（标签/文件柜/收藏夹/最近使用）互斥；标签多选取交集；提供关系编辑器与独立图谱视图。
+- 工作台查询：类型筛选与五种排序在 `src/lib/itemQuery.ts` 纯函数完成，搜索命中顺序不被排序打乱；视图偏好（网格/列表、搜索模式、排序、类型）写入 localStorage。
+- 键盘优先：`/` 聚焦搜索，Ctrl+K 命令面板，空格预览（方向键切换），Enter 启动；无新依赖。
 - 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量删除。
 - 视图虚拟化：网格与列表视图均经 `@tanstack/react-virtual` 虚拟化（measureElement 动态测高），仅渲染可见项，大库滚动流畅、内存可控。
 - 缩略图：支持手动设置/更换/清除；图片对象直接用图片，非图片对象提取系统图标缓存为 PNG，其余回退到类型 Emoji 图标。
@@ -103,15 +105,21 @@ tag-launcher/
 │   │   ├── useItems.ts           # 项目数据管理 + 客户端搜索
 │   │   ├── useTags.ts            # 标签 CRUD
 │   │   ├── useCabinets.ts        # 文件柜 CRUD
-│   │   └── useSearch.ts          # 搜索防抖
+│   │   ├── useSearch.ts          # 搜索防抖
+│   │   └── useWorkspaceHotkeys.ts # 键盘优先（v1.5.0）
 │   ├── lib/
 │   │   ├── db.ts                 # Tauri invoke 封装层
 │   │   ├── search.ts             # 自研搜索引擎（前缀/拼音/低容错/同义词/表达式）
+│   │   ├── itemQuery.ts          # 排序 / 类型筛选 / 键盘选择（v1.5.0）
 │   │   └── synonyms.ts           # 同义词字典加载
 │   ├── components/
-│   │   ├── Sidebar.tsx           # 左侧导航（标签/文件柜）
-│   │   ├── SearchBar.tsx         # 顶部搜索栏
-│   │   ├── TagFilterBar.tsx      # 标签快速筛选条
+│   │   ├── Sidebar.tsx           # 左侧导航（标签/文件柜/最近使用）
+│   │   ├── SearchBar.tsx         # 顶部搜索栏（排序 / Ctrl+K）
+│   │   ├── TagFilterBar.tsx      # 类型 chip + 标签筛选
+│   │   ├── CommandPalette.tsx    # Ctrl+K 命令面板
+│   │   ├── QuickPreview.tsx      # 空格快速预览
+│   │   ├── StatusBar.tsx         # 底部状态栏
+│   │   ├── ShortcutsHelp.tsx     # 快捷键一览
 │   │   ├── ItemGrid.tsx          # 网格视图容器
 │   │   ├── ItemListView.tsx      # 列表视图容器
 │   │   ├── ItemCard.tsx          # 项目卡片/行 + 右键菜单 + 拖拽标签
@@ -477,7 +485,7 @@ npm run tauri dev    # 启动 Tauri 开发窗口
 npm run tauri build  # 编译 + 打包 NSIS 安装包（x64）
 ```
 
-产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.4.0_x64-setup.exe`
+产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.5.0_x64-setup.exe`
 
 ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `..._arm64-setup.exe`。
 
