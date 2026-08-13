@@ -154,12 +154,19 @@ export function ItemListView({
 
   const lastSelectedId = selectedItemIds[selectedItemIds.length - 1];
   const skipScrollRef = useRef(true);
+  const lastScrolledIdRef = useRef<number | null>(null);
   useEffect(() => {
     if (skipScrollRef.current) {
       skipScrollRef.current = false;
+      lastScrolledIdRef.current = lastSelectedId ?? null;
       return;
     }
-    if (lastSelectedId == null) return;
+    if (lastSelectedId == null) {
+      lastScrolledIdRef.current = null;
+      return;
+    }
+    if (lastScrolledIdRef.current === lastSelectedId) return;
+    lastScrolledIdRef.current = lastSelectedId;
     const index = items.findIndex((item) => item.id === lastSelectedId);
     if (index < 0) return;
     virtualizer.scrollToIndex(index, { align: "auto" });

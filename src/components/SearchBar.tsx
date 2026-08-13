@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearch } from "../hooks/useSearch";
 import { notifySearchInput } from "../lib/modApi";
 import { useAppStore, type SearchMode } from "../stores/appStore";
@@ -41,6 +41,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
   const setCommandPaletteOpen = useAppStore((state) => state.setCommandPaletteOpen);
   const [inputValue, setInputValue] = useState("");
   const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
+  const composingRef = useRef(false);
 
   useEffect(() => {
     const update = () => setModButtons(getToolbarButtons());
@@ -138,6 +139,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
               className={`control-chip min-h-[34px] px-4 text-xs font-medium ${
                 searchMode === mode.value ? "control-chip-active" : ""
               }`}
+              aria-pressed={searchMode === mode.value}
             >
               {mode.label}
             </button>
@@ -160,9 +162,20 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
             type="text"
             placeholder={PLACEHOLDERS[searchMode]}
             value={inputValue}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={(event) => {
+              composingRef.current = false;
+              const value = event.currentTarget.value;
+              setInputValue(value);
+              handleSearch(value);
+              notifySearchInput(value);
+            }}
             onChange={(event) => {
               const value = event.target.value;
               setInputValue(value);
+              if (composingRef.current) return;
               handleSearch(value);
               notifySearchInput(value);
             }}

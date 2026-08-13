@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ItemWithTags, Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
+import { isImeKeyboardEvent } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
 
 interface ItemTagsEditorProps {
@@ -22,6 +24,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
   // 进入编辑器时快照已有 id，之后 diff 出的新 id 即为新建。
   const knownTagIdsRef = useRef<Set<number>>(new Set(tags.map((t) => t.id)));
   const createdTagIdsRef = useRef<number[]>([]);
+  const trapRef = useFocusTrap<HTMLDivElement>({ active: true });
 
   useEffect(() => {
     for (const tag of tags) {
@@ -81,12 +84,17 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
 
   return createPortal(
     <div
+      data-workspace-overlay=""
       className="fixed inset-0 flex items-center justify-center p-4"
       style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-panel)" as unknown as number }}
       onClick={handleClose}
     >
       <div
+        ref={trapRef}
         className="modal-surface w-[520px] max-w-[calc(100vw-2rem)] p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-label="管理项目标签"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -149,9 +157,10 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
               value={newTagName}
               onChange={(event) => setNewTagName(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  void handleAddNewTag();
-                }
+                if (event.key !== "Enter") return;
+                if (isImeKeyboardEvent(event)) return;
+                event.preventDefault();
+                void handleAddNewTag();
               }}
               placeholder="输入新标签名"
               className="flex-1 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:border-[var(--accent-primary)] focus:outline-none"

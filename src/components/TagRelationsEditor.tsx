@@ -81,6 +81,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
   // sidebar 内而非相对视口（"关系视图布局错乱"的根因）——portal 到 body 免疫此陷阱。
   return createPortal(
     <div
+      data-workspace-overlay=""
       className="fixed inset-0 flex items-center justify-center p-4"
       style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-panel)" as unknown as number }}
       onClick={onClose}
@@ -88,6 +89,9 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
       <div
         ref={contentRef}
         className="modal-surface w-[560px] max-w-[calc(100vw-2rem)] p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-label="标签关系"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">

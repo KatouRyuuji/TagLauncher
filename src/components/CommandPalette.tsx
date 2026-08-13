@@ -1,13 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
-import { filterCommandsByQuery } from "../lib/itemQuery";
+import { filterCommandsByQuery, isImeKeyboardEvent, SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter } from "../lib/itemQuery";
 import { buildSearchIndex, searchWithIndex } from "../lib/search";
 import { focusWorkspaceSearch, resetWorkspaceSearchInput } from "../lib/workspaceChrome";
 import { useAppStore } from "../stores/appStore";
 import { getTypeLabel } from "../lib/itemUtils";
 import type { ItemWithTags } from "../types";
+
+const PALETTE_PRIMARY = new Set([
+  "search",
+  "grid",
+  "list",
+  "favorites",
+  "recent",
+  "clear",
+  "add-files",
+  "add-folders",
+  "settings",
+  "shortcuts",
+]);
 
 interface CommandDef {
   id: string;
@@ -38,31 +52,44 @@ export function CommandPalette({
   const setOpen = useAppStore((state) => state.setCommandPaletteOpen);
   const setViewMode = useAppStore((state) => state.setViewMode);
   const setShowFavorites = useAppStore((state) => state.setShowFavorites);
+  const showFavorites = useAppStore((state) => state.showFavorites);
   const setShowRecent = useAppStore((state) => state.setShowRecent);
+  const showRecent = useAppStore((state) => state.showRecent);
   const setSortMode = useAppStore((state) => state.setSortMode);
   const setTypeFilter = useAppStore((state) => state.setTypeFilter);
+  const typeFilter = useAppStore((state) => state.typeFilter);
   const setTagGraphOpen = useAppStore((state) => state.setTagGraphOpen);
   const setShortcutsHelpOpen = useAppStore((state) => state.setShortcutsHelpOpen);
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
   const clearWorkspaceFilters = useAppStore((state) => state.clearWorkspaceFilters);
 
   const [query, setQuery] = useState("");
+  const [filterQuery, setFilterQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const composingRef = useRef(false);
+  const trapRef = useFocusTrap<HTMLDivElement>({ active: open, autoFocus: false });
 
   const commands = useMemo<CommandDef[]>(() => [
     { id: "search", title: "聚焦搜索", hint: "/", keywords: "search 搜索 find", run: () => focusWorkspaceSearch() },
     { id: "grid", title: "网格视图", hint: "G", keywords: "grid 网格", run: () => setViewMode("grid") },
     { id: "list", title: "列表视图", hint: "L", keywords: "list 列表", run: () => setViewMode("list") },
-    { id: "favorites", title: "打开收藏夹", keywords: "favorite 收藏 星标", run: () => setShowFavorites(true) },
-    { id: "recent", title: "最近使用", keywords: "recent 最近 历史", run: () => setShowRecent(true) },
+    { id: "favorites", title: showFavorites ? "退出收藏夹" : "打开收藏夹", keywords: "favorite 收藏 星标", run: () => setShowFavorites(!showFavorites) },
+    { id: "recent", title: showRecent ? "退出最近使用" : "最近使用", keywords: "recent 最近 历史", run: () => setShowRecent(!showRecent) },
     { id: "clear", title: "清空筛选", keywords: "clear 重置 筛选", run: () => { clearWorkspaceFilters(); resetWorkspaceSearchInput(); } },
-    { id: "sort-smart", title: "排序：智能", keywords: "sort 排序", run: () => setSortMode("smart") },
-    { id: "sort-name", title: "排序：名称", keywords: "sort 名称", run: () => setSortMode("name") },
-    { id: "sort-recent", title: "排序：最近使用", keywords: "sort 最近", run: () => setSortMode("recent") },
-    { id: "type-image", title: "筛选图片", keywords: "filter 图片 image", run: () => setTypeFilter("image") },
-    { id: "type-audio", title: "筛选音频", keywords: "filter 音频 audio", run: () => setTypeFilter("audio") },
-    { id: "type-exe", title: "筛选程序", keywords: "filter 程序 exe", run: () => setTypeFilter("exe") },
+    ...SORT_OPTIONS.map((option) => ({
+      id: `sort-${option.value}`,
+      title: `排序：${option.label}`,
+      keywords: `sort 排序 ${option.label} ${option.value}`,
+      run: () => setSortMode(option.value),
+    })),
+    ...TYPE_FILTERS.map((filter) => ({
+      id: `type-${filter.value}`,
+      title: filter.value === "all" ? "取消类型筛选" : `筛选${filter.label}`,
+      keywords: `filter 类型 ${filter.label} ${filter.value}`,
+      run: () => setTypeFilter(nextTypeFilter(typeFilter, filter.value)),
+    })),
     { id: "add-files", title: "添加文件", keywords: "import 导入 添加 文件", run: () => { void pickFilesToAdd().then((paths) => { if (paths) void onAddItems(paths); }); } },
     { id: "add-folders", title: "添加文件夹", keywords: "import 导入 添加 文件夹", run: () => { void pickFoldersToAdd().then((paths) => { if (paths) void onAddItems(paths); }); } },
     { id: "refresh", title: "刷新", keywords: "refresh 刷新 reload", run: () => { void onRefresh(); } },
@@ -78,19 +105,29 @@ export function CommandPalette({
     onRefresh,
     setShowFavorites,
     setShowRecent,
+    showFavorites,
+    showRecent,
     setSortMode,
     setTagGraphOpen,
     setTypeFilter,
+    typeFilter,
     setShortcutsHelpOpen,
     setViewMode,
   ]);
 
-  const matchedCommands = useMemo(() => filterCommandsByQuery(commands, query), [commands, query]);
-  const searchIndex = useMemo(() => buildSearchIndex(items, "all"), [items]);
+  const matchedCommands = useMemo(() => {
+    const q = filterQuery.trim();
+    if (!q) return commands.filter((command) => PALETTE_PRIMARY.has(command.id));
+    return filterCommandsByQuery(commands, q);
+  }, [commands, filterQuery]);
+  const searchIndex = useMemo(
+    () => (open ? buildSearchIndex(items, "all") : { entries: [], mode: "all" as const }),
+    [open, items],
+  );
   const matchedItems = useMemo(() => {
-    if (!query.trim()) return [];
-    return searchWithIndex(searchIndex, query).slice(0, 8);
-  }, [searchIndex, query]);
+    if (!filterQuery.trim()) return [];
+    return searchWithIndex(searchIndex, filterQuery).slice(0, 8);
+  }, [searchIndex, filterQuery]);
 
   type Row = { kind: "command"; command: CommandDef } | { kind: "item"; item: ItemWithTags };
   const rows = useMemo<Row[]>(() => {
@@ -101,7 +138,9 @@ export function CommandPalette({
 
   useEffect(() => {
     if (!open) return;
+    composingRef.current = false;
     setQuery("");
+    setFilterQuery("");
     setActive(0);
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
@@ -109,11 +148,21 @@ export function CommandPalette({
 
   useEffect(() => {
     setActive(0);
-  }, [query]);
+  }, [filterQuery]);
+
+  useEffect(() => {
+    if (!open) return;
+    const row = listRef.current?.querySelector("[data-active-row]");
+    if (row instanceof HTMLElement) {
+      row.scrollIntoView({ block: "nearest" });
+    }
+  }, [open, active, rows]);
 
   useEscapeKey(() => setOpen(false), open);
 
   if (!open) return null;
+
+  const safeActive = rows.length === 0 ? 0 : Math.min(active, rows.length - 1);
 
   const runRow = (row: Row | undefined) => {
     if (!row) return;
@@ -126,17 +175,20 @@ export function CommandPalette({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isImeKeyboardEvent(event)) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActive((current) => Math.min(rows.length - 1, current + 1));
+      if (rows.length === 0) return;
+      setActive((current) => (Math.min(current, rows.length - 1) + 1) % rows.length);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActive((current) => Math.max(0, current - 1));
+      if (rows.length === 0) return;
+      setActive((current) => (Math.min(current, rows.length - 1) - 1 + rows.length) % rows.length);
     } else if (event.key === "Enter") {
       event.preventDefault();
-      runRow(rows[active]);
+      runRow(rows[safeActive]);
     } else if (event.key === "Tab") {
-      const row = rows[active];
+      const row = rows[safeActive];
       if (row?.kind === "item") {
         event.preventDefault();
         setOpen(false);
@@ -147,6 +199,11 @@ export function CommandPalette({
 
   return createPortal(
     <div
+      data-command-palette=""
+      data-workspace-overlay=""
+      role="dialog"
+      aria-modal="true"
+      aria-label="命令面板"
       className="fixed inset-0 flex items-start justify-center px-4 pt-[12vh]"
       style={{ zIndex: "var(--z-command-palette)" as unknown as number }}
       onMouseDown={(event) => {
@@ -154,6 +211,7 @@ export function CommandPalette({
       }}
     >
       <div
+        ref={trapRef}
         className="modal-surface flex w-full max-w-[560px] flex-col overflow-hidden shadow-[var(--shadow-dropdown)]"
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -161,23 +219,38 @@ export function CommandPalette({
           <input
             ref={inputRef}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={(event) => {
+              composingRef.current = false;
+              const value = event.currentTarget.value;
+              setQuery(value);
+              setFilterQuery(value);
+            }}
+            onChange={(event) => {
+              const value = event.target.value;
+              setQuery(value);
+              if (composingRef.current) return;
+              setFilterQuery(value);
+            }}
             onKeyDown={handleKeyDown}
             placeholder="搜索命令或项目…"
             className="w-full bg-transparent text-[15px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none"
           />
         </div>
-        <div className="max-h-[min(52vh,420px)] overflow-y-auto p-2">
+        <div ref={listRef} className="max-h-[min(52vh,420px)] overflow-y-auto p-2">
           {rows.length === 0 && (
             <p className="px-3 py-6 text-center text-sm text-[var(--text-muted)]">没有匹配的命令或项目</p>
           )}
           {rows.map((row, index) => {
-            const selected = index === active;
+            const selected = index === safeActive;
             if (row.kind === "command") {
               return (
                 <button
                   key={row.command.id}
                   type="button"
+                  data-active-row={selected ? "" : undefined}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => runRow(row)}
                   className={`flex w-full items-center justify-between rounded-[var(--radius-md)] px-3 py-2 text-left text-sm ${
@@ -193,6 +266,7 @@ export function CommandPalette({
               <button
                 key={`item-${row.item.id}`}
                 type="button"
+                data-active-row={selected ? "" : undefined}
                 onMouseEnter={() => setActive(index)}
                 onClick={() => runRow(row)}
                 className={`flex w-full items-center justify-between gap-3 rounded-[var(--radius-md)] px-3 py-2 text-left text-sm ${

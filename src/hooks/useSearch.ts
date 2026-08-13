@@ -6,7 +6,7 @@
 // searchQuery 的变化会触发 useItems 中的 useMemo 重新计算搜索结果。
 // ============================================================================
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 
 export function useSearch() {
@@ -17,18 +17,21 @@ export function useSearch() {
 
   /**
    * 处理搜索输入（带 150ms 防抖）
-   * 由 SearchBar 的 onChange 调用
+   * 由 SearchBar 的 onChange 调用。清空时立即生效，避免 Escape 后待处理的防抖把词写回去。
    */
-  const handleSearch = (value: string) => {
-    // 清除上一次的定时器
+  const handleSearch = useCallback((value: string) => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
+      debounceRef.current = undefined;
     }
-    // 150ms 后才真正更新搜索词
+    if (value === "") {
+      setSearchQuery("");
+      return;
+    }
     debounceRef.current = setTimeout(() => {
       setSearchQuery(value);
     }, 150);
-  };
+  }, [setSearchQuery]);
 
   // 组件卸载时清理定时器，防止内存泄漏
   useEffect(() => {

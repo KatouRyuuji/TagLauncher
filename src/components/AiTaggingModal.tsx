@@ -1,4 +1,5 @@
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import type { AiTagProgress } from "../hooks/useAiTagging";
 
 interface AiTaggingModalProps {
@@ -14,6 +15,7 @@ interface AiTaggingModalProps {
 export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalProps) {
   const visible = (progress.running || progress.done > 0) && !progress.silent;
   const finished = !progress.running && progress.done > 0;
+  const trapRef = useFocusTrap<HTMLElement>({ active: visible });
 
   useEscapeKey(() => {
     if (finished) onClose();
@@ -26,6 +28,7 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
   return (
     <>
       <div
+        data-workspace-overlay=""
         className="fixed inset-0"
         style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-migration-overlay)" as unknown as number }}
       />
@@ -34,6 +37,7 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
         style={{ zIndex: "var(--z-migration-panel)" as unknown as number }}
       >
         <section
+          ref={trapRef}
           className="modal-surface flex w-[460px] max-w-[94vw] flex-col overflow-hidden"
           role="dialog"
           aria-modal="true"

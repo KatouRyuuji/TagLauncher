@@ -19,3 +19,70 @@ export function scrollItemIntoView(itemId: number): void {
     el.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 }
+
+/**
+ * 会抢走键盘的宿主遮罩。所有全屏弹层须带 data-workspace-overlay。
+ * 查询串须与 ExampleMod/preview/preview.js 保持一致。
+ */
+export const WORKSPACE_KEY_BLOCKING_OVERLAYS = "[data-workspace-overlay]";
+
+/** 示例 Mod 等 createPanel({ position: "modal" }) 打开时，工作台快捷键应让路。 */
+export function isModModalOpen(): boolean {
+  return Boolean(document.querySelector("[data-mod-modal]"));
+}
+
+export function isContextMenuOpen(): boolean {
+  return Boolean(document.querySelector("[data-context-menu]"));
+}
+
+/** 右键菜单或批量工具条下拉打开时，工作台方向键 / Delete / G 应让路。 */
+export function isTransientMenuOpen(): boolean {
+  return isContextMenuOpen() || Boolean(document.querySelector("[data-floating-menu]"));
+}
+
+/** 在指定对象上打开右键菜单（虚拟化未挂载时先滚入视口再派发）。 */
+export function openItemContextMenu(itemId: number): void {
+  const fire = (): boolean => {
+    const el = document.querySelector(`[data-selectable-item-id="${itemId}"]`);
+    if (!(el instanceof HTMLElement)) return false;
+    const rect = el.getBoundingClientRect();
+    el.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: Math.round(rect.left + Math.min(16, rect.width / 2)),
+        clientY: Math.round(rect.top + Math.min(16, rect.height / 2)),
+        button: 2,
+      }),
+    );
+    return true;
+  };
+
+  scrollItemIntoView(itemId);
+  if (fire()) return;
+  requestAnimationFrame(() => {
+    if (!fire()) requestAnimationFrame(() => { fire(); });
+  });
+}
+
+let workspaceGridLanes = 1;
+
+/** ItemGrid 测量列数后写入，供键盘上下键按列跳转；列表视图卸载时复位为 1。 */
+export function setWorkspaceGridLanes(lanes: number): void {
+  workspaceGridLanes = Math.max(1, Math.floor(lanes) || 1);
+}
+
+export function getWorkspaceGridLanes(): number {
+  return workspaceGridLanes;
+}
+
+let selectionAnchorId: number | null = null;
+
+/** 键盘与鼠标点选共用的范围选择锚点。 */
+export function setWorkspaceSelectionAnchor(id: number | null): void {
+  selectionAnchorId = id;
+}
+
+export function getWorkspaceSelectionAnchor(): number | null {
+  return selectionAnchorId;
+}

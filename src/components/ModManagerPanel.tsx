@@ -252,6 +252,7 @@ export function ModManagerPanel() {
         return (
           <>
             <div
+              data-workspace-overlay=""
               className="fixed inset-0"
               style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-mod-confirm-overlay)" as unknown as number }}
               onClick={() => setConfirmJsMod(null)}

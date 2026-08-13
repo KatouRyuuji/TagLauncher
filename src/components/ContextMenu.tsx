@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
+import { stepMenuIndex } from "../lib/itemQuery";
 import * as db from "../lib/db";
 import { showToast } from "../lib/toast";
 import { copyText } from "../lib/clipboard";
@@ -42,7 +44,7 @@ export function ContextMenu({
 }: ContextMenuProps) {
   const [showCabinetSub, setShowCabinetSub] = useState(false);
   const [submenuToLeft, setSubmenuToLeft] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useFocusTrap<HTMLDivElement>({ active: true });
   const cabinetTriggerRef = useRef<HTMLButtonElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
   const submenuHideTimerRef = useRef<number | null>(null);
@@ -178,7 +180,67 @@ export function ContextMenu({
 
   useEffect(() => () => clearSubmenuHideTimer(), [clearSubmenuHideTimer]);
 
-  useEscapeKey(onClose);
+  const showCabinetSubRef = useRef(showCabinetSub);
+  showCabinetSubRef.current = showCabinetSub;
+  const focusSubmenuOnOpenRef = useRef(false);
+
+  const handleEscape = useCallback(() => {
+    if (showCabinetSubRef.current) {
+      setShowCabinetSub(false);
+      cabinetTriggerRef.current?.focus();
+      return;
+    }
+    onClose();
+  }, [onClose]);
+
+  useEscapeKey(handleEscape);
+
+  useEffect(() => {
+    if (!showCabinetSub || !focusSubmenuOnOpenRef.current) return;
+    focusSubmenuOnOpenRef.current = false;
+    submenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [showCabinetSub]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+      const menu = menuRef.current;
+      if (!menu) return;
+
+      const submenu = submenuRef.current;
+      const active = event.target instanceof HTMLElement ? event.target : null;
+      const inSubmenu = Boolean(submenu && active && submenu.contains(active));
+      const container = inSubmenu && submenu ? submenu : menu;
+
+      if (event.key === "ArrowRight" && !inSubmenu && cabinetTriggerRef.current) {
+        const trigger = cabinetTriggerRef.current;
+        if (active === trigger || (active !== null && trigger.contains(active))) {
+          event.preventDefault();
+          focusSubmenuOnOpenRef.current = true;
+          openCabinetSubmenu();
+          return;
+        }
+      }
+
+      if (event.key === "ArrowLeft" && inSubmenu) {
+        event.preventDefault();
+        setShowCabinetSub(false);
+        cabinetTriggerRef.current?.focus();
+        return;
+      }
+
+      const items = Array.from(container.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+      const current = items.findIndex((el) => el === active || (active !== null && el.contains(active)));
+      const next = stepMenuIndex(items.length, current, event.key);
+      if (next == null) return;
+      event.preventDefault();
+      items[next]?.focus();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [openCabinetSubmenu]);
 
   const handleOpenFolder = async () => {
     // 按 id 打开：后端会先按文件ID重定位到当前真实路径，避免对象被移动后打开失败
@@ -218,17 +280,37 @@ export function ContextMenu({
   return createPortal(
     <>
       <div
+        data-context-menu=""
+        data-workspace-overlay=""
         className="fixed inset-0"
         style={{ zIndex: "var(--z-context-overlay)" as unknown as number }}
         onClick={onClose}
         onContextMenu={(event) => {
           event.preventDefault();
+          const x = event.clientX;
+          const y = event.clientY;
           onClose();
+          // 遮罩关掉后把右键转发给下层对象，才能直接在另一项上打开新菜单。
+          requestAnimationFrame(() => {
+            const under = document.elementFromPoint(x, y);
+            if (!(under instanceof Element) || under.closest("[data-context-menu]")) return;
+            under.dispatchEvent(
+              new MouseEvent("contextmenu", {
+                bubbles: true,
+                cancelable: true,
+                clientX: x,
+                clientY: y,
+                button: 2,
+              }),
+            );
+          });
         }}
       />
 
       <div
         ref={menuRef}
+        data-context-menu=""
+        role="menu"
         style={{ ...style, boxShadow: "var(--shadow-dropdown)" }}
         className="modal-surface w-[196px] max-h-[72vh] max-w-[46vw] overflow-y-auto p-2"
       >
@@ -252,6 +334,7 @@ export function ContextMenu({
             <button
               ref={cabinetTriggerRef}
               type="button"
+              role="menuitem"
               className="flex w-full items-center justify-between rounded-[var(--radius-md)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
               添加到文件柜
@@ -295,6 +378,7 @@ export function ContextMenu({
             <button
               key={cabinet.id}
               type="button"
+              role="menuitem"
               onClick={async () => {
                 await onAddItemToCabinet(cabinet.id, item.id);
                 onClose();
@@ -341,6 +425,7 @@ function MenuItem({
   return (
     <button
       type="button"
+      role="menuitem"
       onClick={() => void onClick()}
       className="w-full rounded-[var(--radius-md)] px-3 py-2 text-left text-sm hover:text-[var(--text-primary)]"
       style={{

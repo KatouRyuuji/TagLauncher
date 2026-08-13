@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { computeLayers, orderLayersByBarycenter } from "../lib/tagGraph";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import type { ItemWithTags } from "../types";
@@ -35,6 +36,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
   // 右侧关联对象列表分页：热门标签可能关联数千对象，避免一次性全量渲染卡顿。
   const [visibleCount, setVisibleCount] = useState(RIGHT_PANEL_PAGE_SIZE);
+  const trapRef = useFocusTrap<HTMLDivElement>({ active: true });
 
   useEscapeKey(() => setTagGraphOpen(false));
 
@@ -136,8 +138,13 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
 
   return (
     <div
+      ref={trapRef}
+      data-workspace-overlay=""
       className="fixed inset-0 flex flex-col"
       style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-panel)" as unknown as number }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="标签关系图"
     >
       <div className="m-4 flex min-h-0 flex-1 flex-col overflow-hidden modal-surface">
         <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] px-6 py-4">

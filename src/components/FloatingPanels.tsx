@@ -13,6 +13,9 @@ import {
   PANEL_CREATE, PANEL_DESTROY, PANEL_SHOW, PANEL_HIDE, PANEL_TITLE,
   resolvePanel, firePanelEvent, destroyPanel,
 } from "../lib/panelRegistry";
+import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useAppStore } from "../stores/appStore";
 
 /**
  * 面板 × 按钮/遮罩的统一关闭行为：
@@ -296,21 +299,28 @@ interface ModalPanelProps {
 }
 
 function ModalPanel({ panel }: ModalPanelProps) {
-  const contentRef = useRef<HTMLDivElement>(null);
+  if (!panel.visible) return null;
+  return <VisibleModalPanel panel={panel} />;
+}
 
-  // visible=false 时下方 return null 会卸载容器 div，再次 show 时挂载的是全新 div。
-  // 因此不能只在首次挂载 resolve 一次：每次渲染后都幂等调用 resolvePanel——
-  // 对已 resolve 的面板它只更新 handle.container 引用（见 panelRegistry），
-  // 保证 mod 的 hide→show 循环后 handle.container 始终指向当前真实 DOM。
+function VisibleModalPanel({ panel }: ModalPanelProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>({ active: true });
+  const onEscape = useCallback(() => requestClosePanel(panel.id), [panel.id]);
+  useEscapeKey(onEscape, true);
+
+  useEffect(() => {
+    useAppStore.getState().setPreviewItemId(null);
+  }, []);
+
+  // visible=false 时本组件卸载；再次 show 时挂载全新 div，因此每次渲染后幂等 resolve。
   useEffect(() => {
     if (contentRef.current) {
       resolvePanel(panel.id, contentRef.current);
     }
   });
 
-  if (!panel.visible) return null;
-
-  // modal 使用 settings-overlay 之下（-5），避免覆盖系统模态
+  // modal 使用 settings-overlay 之下（-5），避免覆盖系统模态；高于内置空格预览（160）
   const overlayZ = `calc(var(--z-settings-overlay) - 5)` as unknown as number;
   const panelZ   = `calc(var(--z-settings-panel) - 5)` as unknown as number;
 
@@ -318,6 +328,8 @@ function ModalPanel({ panel }: ModalPanelProps) {
     <>
       {/* 遮罩 */}
       <div
+        data-mod-modal=""
+        data-workspace-overlay=""
         className="fixed inset-0"
         style={{ backgroundColor: "var(--overlay-bg)", zIndex: overlayZ }}
         onClick={() => requestClosePanel(panel.id)}
@@ -328,6 +340,10 @@ function ModalPanel({ panel }: ModalPanelProps) {
         style={{ zIndex: panelZ }}
       >
         <div
+          ref={trapRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={panel.title}
           className="modal-surface pointer-events-auto overflow-hidden flex flex-col"
           style={{
             width:  panel.width  || 480,

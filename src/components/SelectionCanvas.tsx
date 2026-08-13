@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { applyContextSelection, applyPointerSelection } from "../lib/itemQuery";
+import { getWorkspaceSelectionAnchor, setWorkspaceSelectionAnchor } from "../lib/workspaceChrome";
+import { shouldSuppressInternalDragClick } from "../stores/internalDragStore";
 
 interface SelectionCanvasProps {
   itemIds: number[];
@@ -108,14 +111,20 @@ export function SelectionCanvas({
     selected: Set<number>;
   } | null>(null);
   const selectedItemIdsRef = useRef(selectedItemIds);
+  const itemIdsRef = useRef(itemIds);
   const prevItemIdsRef = useRef<number[] | null>(null);
   const onSelectItemsRef = useRef(onSelectItems);
   const autoScrollRafRef = useRef<number | null>(null);
+  const ignoreClickRef = useRef(false);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
 
   useEffect(() => {
     selectedItemIdsRef.current = selectedItemIds;
   }, [selectedItemIds]);
+
+  useEffect(() => {
+    itemIdsRef.current = itemIds;
+  }, [itemIds]);
 
   useEffect(() => {
     onSelectItemsRef.current = onSelectItems;
@@ -275,6 +284,11 @@ export function SelectionCanvas({
       if (selectedItemIdsRef.current.length > 0) {
         onSelectItemsRef.current([]);
       }
+      setWorkspaceSelectionAnchor(null);
+    } else {
+      ignoreClickRef.current = true;
+      const ordered = itemIdsRef.current.filter((id) => drag.selected.has(id));
+      if (ordered.length > 0) setWorkspaceSelectionAnchor(ordered[0]);
     }
 
     endDrag();
@@ -289,7 +303,59 @@ export function SelectionCanvas({
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
-  // 卸载时确保停止残留的自动滚动帧
+  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (ignoreClickRef.current) {
+      ignoreClickRef.current = false;
+      return;
+    }
+    // 内部拖拽（标签重排、拖到文件柜）结束后的残留 click 不应改选中。
+    if (shouldSuppressInternalDragClick()) return;
+    if (event.button !== 0) return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.closest("button,a,input,select,textarea,[role='button'],[data-item-drag],[data-tag-drag]")) return;
+    const node = target.closest("[data-selectable-item-id]");
+    if (!(node instanceof HTMLElement) || !event.currentTarget.contains(node)) return;
+    const clickedId = Number(node.dataset.selectableItemId);
+    if (!Number.isFinite(clickedId)) return;
+
+    const result = applyPointerSelection(
+      itemIdsRef.current,
+      selectedItemIdsRef.current,
+      clickedId,
+      {
+        shift: event.shiftKey,
+        additive: event.ctrlKey || event.metaKey,
+        anchorId: getWorkspaceSelectionAnchor(),
+      },
+    );
+    setWorkspaceSelectionAnchor(result.anchorId);
+    if (!sameNumberArray(result.ids, selectedItemIdsRef.current)) {
+      selectedItemIdsRef.current = result.ids;
+      onSelectItemsRef.current(result.ids);
+    }
+  };
+
+  const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const node = target.closest("[data-selectable-item-id]");
+    if (!(node instanceof HTMLElement) || !event.currentTarget.contains(node)) return;
+    const targetId = Number(node.dataset.selectableItemId);
+    if (!Number.isFinite(targetId)) return;
+
+    const result = applyContextSelection(
+      selectedItemIdsRef.current,
+      targetId,
+      getWorkspaceSelectionAnchor(),
+    );
+    setWorkspaceSelectionAnchor(result.anchorId);
+    if (!sameNumberArray(result.ids, selectedItemIdsRef.current)) {
+      selectedItemIdsRef.current = result.ids;
+      onSelectItemsRef.current(result.ids);
+    }
+  };
+
   useEffect(() => stopAutoScroll, [stopAutoScroll]);
 
   return (
@@ -304,6 +370,8 @@ export function SelectionCanvas({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
+      onClick={handleClick}
+      onContextMenu={handleContextMenu}
     >
       {children}
       {selectionBox && (

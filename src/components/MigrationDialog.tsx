@@ -1,4 +1,5 @@
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface MigrationDialogProps {
   open: boolean;
@@ -15,12 +16,15 @@ export function MigrationDialog({
   toVersion,
   onClose,
 }: MigrationDialogProps) {
+  const trapRef = useFocusTrap<HTMLDivElement>({ active: open });
   useEscapeKey(onClose, open);
   if (!open) return null;
 
   return (
     <>
       <div
+        data-migration-overlay=""
+        data-workspace-overlay=""
         className="fixed inset-0"
         style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-migration-overlay)" as unknown as number }}
         onClick={onClose}
@@ -29,7 +33,13 @@ export function MigrationDialog({
         className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
         style={{ zIndex: "var(--z-migration-panel)" as unknown as number }}
       >
-        <div className="modal-surface pointer-events-auto w-[460px] max-w-[92vw] p-6">
+        <div
+          ref={trapRef}
+          className="modal-surface pointer-events-auto w-[460px] max-w-[92vw] p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="软件已更新"
+        >
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>

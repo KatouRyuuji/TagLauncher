@@ -187,9 +187,11 @@ function ItemCardComponent({
           setMenuPos({ x: event.clientX, y: event.clientY });
         }}
         onKeyDown={(event) => {
-          // 仅当事件源自卡片本身时响应 Enter 启动；
-          // 子元素（标签删除按钮、Mod 插槽按钮等）上的 Enter 应触发其自身行为，不冒泡为启动。
-          if (event.key === "Enter" && event.target === event.currentTarget) onLaunch();
+          // 仅当事件源自卡片本身时响应 Enter；stopPropagation 避免与 window 热键重复启动。
+          if (event.key !== "Enter" || event.target !== event.currentTarget) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onLaunch();
         }}
         tabIndex={0}
       >

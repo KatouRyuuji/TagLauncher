@@ -1,4 +1,5 @@
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 /** 拖拽对象到"从应用移除"区时的确认弹窗（带"下次不再确认"） */
 export function RemoveFromAppConfirmDialog({
@@ -16,6 +17,7 @@ export function RemoveFromAppConfirmDialog({
   onConfirm: () => Promise<void>;
   onCancel: () => void;
 }) {
+  const trapRef = useFocusTrap<HTMLDivElement>({ active: open });
   useEscapeKey(onCancel, open);
 
   if (!open) return null;
@@ -23,6 +25,7 @@ export function RemoveFromAppConfirmDialog({
   return (
     <>
       <div
+        data-workspace-overlay=""
         className="fixed inset-0"
         style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-overlay)" as unknown as number }}
         onClick={onCancel}
@@ -31,7 +34,13 @@ export function RemoveFromAppConfirmDialog({
         className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
         style={{ zIndex: "var(--z-settings-panel)" as unknown as number }}
       >
-        <div className="modal-surface pointer-events-auto w-[420px] max-w-[92vw] p-6" role="dialog" aria-modal="true" aria-label="移除对象确认">
+        <div
+          ref={trapRef}
+          className="modal-surface pointer-events-auto w-[420px] max-w-[92vw] p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="移除对象确认"
+        >
           <div className="flex items-start gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -63,7 +72,7 @@ export function RemoveFromAppConfirmDialog({
           </button>
 
           <div className="mt-6 flex justify-end gap-2">
-            <button type="button" onClick={onCancel} className="action-button">
+            <button type="button" autoFocus onClick={onCancel} className="action-button">
               no
             </button>
             <button type="button" onClick={() => void onConfirm()} className="action-button action-button-primary">

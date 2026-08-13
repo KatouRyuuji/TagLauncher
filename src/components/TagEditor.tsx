@@ -4,6 +4,7 @@ import { getThemeTagPresetColors } from "../lib/tagColors";
 import type { Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { isImeKeyboardEvent } from "../lib/itemQuery";
 
 interface TagEditorProps {
   tag: Tag | null;
@@ -40,11 +41,19 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
   // 与 ContextMenu 同款处理，免疫任何主题的区域滤镜。
   return createPortal(
     <div
+      data-workspace-overlay=""
       className="fixed inset-0 flex items-center justify-center p-4"
       style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-panel)" as unknown as number }}
       onClick={onClose}
     >
-      <div ref={contentRef} className="modal-surface w-[420px] max-w-[calc(100vw-2rem)] p-6" onClick={(event) => event.stopPropagation()}>
+      <div
+        ref={contentRef}
+        className="modal-surface w-[420px] max-w-[calc(100vw-2rem)] p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-label="编辑标签"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-label">{label}</div>
@@ -69,6 +78,11 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
               type="text"
               value={name}
               onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && isImeKeyboardEvent(event)) {
+                  event.preventDefault();
+                }
+              }}
               placeholder={`${label}名称`}
               autoFocus
               className="mt-2 w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-3 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:border-[var(--accent-primary)] focus:outline-none"

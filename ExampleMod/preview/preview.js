@@ -84,8 +84,11 @@ function isEditableTarget(target) {
 }
 
 async function onKeyDown(event) {
+  if (event.isComposing || event.key === "Process") return;
   if (event.key.toLowerCase() !== "p" || event.ctrlKey || event.metaKey || event.altKey) return;
   if (isEditableTarget(event.target)) return;
+  // 与 src/lib/workspaceChrome.ts 的 WORKSPACE_KEY_BLOCKING_OVERLAYS 保持一致。
+  if (document.querySelector("[data-workspace-overlay]")) return;
 
   // 优先按光标实际位置重新命中，回退到上次悬停项，再回退到焦点项。
   const focusedId = itemIdFromElement(document.activeElement);
@@ -198,7 +201,9 @@ async function renderFolder(container, item, serial) {
   const entries = await api.preview.listDirectory(item.path);
   if (serial !== renderSerial) return;
 
-  const rows = entries.map((entry) => `
+  const MAX_ROWS = 48;
+  const shown = entries.slice(0, MAX_ROWS);
+  const rows = shown.map((entry) => `
     <div class="object-preview-row" title="${escapeHtml(entry.path)}">
       <span class="object-preview-icon">${escapeHtml(TYPE_ICONS[entry.item_type] || "□")}</span>
       <span class="object-preview-name">${escapeHtml(entry.name)}</span>
@@ -207,13 +212,17 @@ async function renderFolder(container, item, serial) {
     </div>
   `).join("");
 
+  const countLabel = entries.length > MAX_ROWS
+    ? `显示 ${shown.length} / ${entries.length}`
+    : `${entries.length}`;
+
   container.innerHTML = `
     <div class="object-preview-root">
       ${metaHtml([
         ["路径", item.path],
-        ["项目数", `${entries.length}`],
+        ["项目数", countLabel],
       ])}
-      ${entries.length > 0
+      ${shown.length > 0
         ? `<div class="object-preview-list">${rows}</div>`
         : `<div class="object-preview-empty">文件夹为空</div>`}
     </div>

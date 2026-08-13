@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import qrCodeImage from "../assets/QRCode.png";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { getAppVersion } from "../lib/db";
 
 interface WelcomeModalProps {
@@ -127,6 +128,7 @@ const FEATURES: FeatureEntry[] = [
 export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
   const [hideNextTime, setHideNextTime] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
+  const trapRef = useFocusTrap<HTMLElement>({ active: open });
 
   useEffect(() => {
     if (open) setHideNextTime(false);
@@ -154,6 +156,8 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
 
   return (
     <div
+      data-welcome-overlay=""
+      data-workspace-overlay=""
       className="fixed inset-0 flex items-center justify-center p-5"
       style={{ zIndex: "var(--z-welcome-modal)" as unknown as number }}
     >
@@ -164,6 +168,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
       />
 
       <section
+        ref={trapRef}
         className="modal-surface relative isolate flex max-h-[90vh] w-[min(920px,94vw)] flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"

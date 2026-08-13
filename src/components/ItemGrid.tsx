@@ -4,6 +4,7 @@ import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
 import { SelectionCanvas, type Rect } from "./SelectionCanvas";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { setWorkspaceGridLanes } from "../lib/workspaceChrome";
 
 /** 网格参数：与 index.css --grid-col-min + gap-4 对齐 */
 const GRID_COL_MIN = 238;
@@ -165,6 +166,11 @@ export function ItemGrid({
     return () => ro.disconnect();
   }, [computeLanes]);
 
+  useEffect(() => {
+    setWorkspaceGridLanes(lanes);
+    return () => setWorkspaceGridLanes(1);
+  }, [lanes]);
+
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
@@ -195,12 +201,19 @@ export function ItemGrid({
 
   const lastSelectedId = selectedItemIds[selectedItemIds.length - 1];
   const skipScrollRef = useRef(true);
+  const lastScrolledIdRef = useRef<number | null>(null);
   useEffect(() => {
     if (skipScrollRef.current) {
       skipScrollRef.current = false;
+      lastScrolledIdRef.current = lastSelectedId ?? null;
       return;
     }
-    if (lastSelectedId == null) return;
+    if (lastSelectedId == null) {
+      lastScrolledIdRef.current = null;
+      return;
+    }
+    if (lastScrolledIdRef.current === lastSelectedId) return;
+    lastScrolledIdRef.current = lastSelectedId;
     const index = items.findIndex((item) => item.id === lastSelectedId);
     if (index < 0) return;
     virtualizer.scrollToIndex(Math.floor(index / Math.max(1, lanes)), { align: "auto" });

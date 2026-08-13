@@ -9,8 +9,19 @@ import {
   formatTimestamp,
   isSortMode,
   isTypeFilter,
+  isTypingTarget,
+  formatPathCopy,
+  isImeKeyboardEvent,
+  nextTypeFilter,
+  idsNeedingFavoriteToggle,
   itemMatchesType,
   nextSelectionIndex,
+  previewNavigationItems,
+  rangeSelectionIds,
+  applyPointerSelection,
+  applyContextSelection,
+  selectionStep,
+  stepMenuIndex,
   sortItemsByMode,
 } from "./itemQuery";
 import type { ItemWithTags } from "../types";
@@ -105,6 +116,49 @@ test("nextSelectionIndex：空列表 / 无当前项 / 夹紧", () => {
   assert.equal(nextSelectionIndex(5, 0, -1), 0);
   assert.equal(nextSelectionIndex(5, 4, 1), 4);
   assert.equal(nextSelectionIndex(5, 2, 1), 3);
+  assert.equal(nextSelectionIndex(8, 1, 4), 5);
+});
+
+test("selectionStep：网格按列跳转，列表按行", () => {
+  assert.equal(selectionStep("list", 4, "ArrowDown"), 1);
+  assert.equal(selectionStep("list", 4, "ArrowUp"), -1);
+  assert.equal(selectionStep("grid", 4, "ArrowDown"), 4);
+  assert.equal(selectionStep("grid", 4, "ArrowUp"), -4);
+  assert.equal(selectionStep("grid", 4, "ArrowRight"), 1);
+  assert.equal(selectionStep("grid", 4, "PageDown"), 16);
+  assert.equal(selectionStep("list", 4, "PageUp"), -4);
+  assert.equal(selectionStep("grid", 3, "Escape"), null);
+});
+
+test("previewNavigationItems：可见则走可见列表，否则走全库", () => {
+  const visible = [item({ id: 2, name: "b" }), item({ id: 3, name: "c" })];
+  const all = [item({ id: 1, name: "a" }), ...visible];
+  assert.deepEqual(previewNavigationItems(visible, all, 3).map((entry) => entry.id), [2, 3]);
+  assert.deepEqual(previewNavigationItems(visible, all, 1).map((entry) => entry.id), [1, 2, 3]);
+});
+
+test("rangeSelectionIds：锚点与焦点闭区间，焦点在末尾以便继续向外扩", () => {
+  const items = [item({ id: 1, name: "a" }), item({ id: 2, name: "b" }), item({ id: 3, name: "c" }), item({ id: 4, name: "d" })];
+  assert.deepEqual(rangeSelectionIds(items, 2, 4), [2, 3, 4]);
+  assert.deepEqual(rangeSelectionIds(items, 4, 2), [3, 4, 2]);
+  assert.deepEqual(rangeSelectionIds(items, null, 3), [3]);
+  assert.deepEqual(rangeSelectionIds(items, 99, 1), [1]);
+  assert.deepEqual(rangeSelectionIds(items, 1, 99), []);
+});
+
+test("applyPointerSelection：单击替换、Ctrl 切换、Shift 范围", () => {
+  const ordered = [1, 2, 3, 4];
+  assert.deepEqual(applyPointerSelection(ordered, [2], 4, { shift: false, additive: false, anchorId: 2 }), { ids: [4], anchorId: 4 });
+  assert.deepEqual(applyPointerSelection(ordered, [2], 4, { shift: false, additive: true, anchorId: 2 }), { ids: [2, 4], anchorId: 4 });
+  assert.deepEqual(applyPointerSelection(ordered, [2, 4], 4, { shift: false, additive: true, anchorId: 4 }), { ids: [2], anchorId: 4 });
+  assert.deepEqual(applyPointerSelection(ordered, [2], 4, { shift: true, additive: false, anchorId: 2 }), { ids: [2, 3, 4], anchorId: 2 });
+});
+
+test("applyContextSelection：未选中则单选，已在多选中则保持并把该项放到末尾", () => {
+  assert.deepEqual(applyContextSelection([], 3, null), { ids: [3], anchorId: 3 });
+  assert.deepEqual(applyContextSelection([2], 4, 2), { ids: [4], anchorId: 4 });
+  assert.deepEqual(applyContextSelection([2, 3, 4], 3, 2), { ids: [2, 4, 3], anchorId: 2 });
+  assert.deepEqual(applyContextSelection([2, 3, 4], 4, 2), { ids: [2, 3, 4], anchorId: 2 });
 });
 
 test("filterCommandsByQuery：标题与 keywords 命中，空查询返回全部", () => {
@@ -117,11 +171,67 @@ test("filterCommandsByQuery：标题与 keywords 命中，空查询返回全部"
   assert.deepEqual(filterCommandsByQuery(commands, "GRID").map((c) => c.title), ["网格视图"]);
 });
 
+test("stepMenuIndex：循环、Home/End、空菜单", () => {
+  assert.equal(stepMenuIndex(4, 0, "ArrowDown"), 1);
+  assert.equal(stepMenuIndex(4, 3, "ArrowDown"), 0);
+  assert.equal(stepMenuIndex(4, 0, "ArrowUp"), 3);
+  assert.equal(stepMenuIndex(4, -1, "ArrowDown"), 0);
+  assert.equal(stepMenuIndex(4, -1, "ArrowUp"), 3);
+  assert.equal(stepMenuIndex(4, 2, "Home"), 0);
+  assert.equal(stepMenuIndex(4, 2, "End"), 3);
+  assert.equal(stepMenuIndex(0, 0, "ArrowDown"), null);
+  assert.equal(stepMenuIndex(3, 1, "Enter"), null);
+});
+
+test("idsNeedingFavoriteToggle：有未收藏则只补收藏，全已收藏则全部取消", () => {
+  assert.deepEqual(idsNeedingFavoriteToggle([]), []);
+  assert.deepEqual(idsNeedingFavoriteToggle([{ id: 1, is_favorite: false }]), [1]);
+  assert.deepEqual(idsNeedingFavoriteToggle([{ id: 1, is_favorite: true }]), [1]);
+  assert.deepEqual(
+    idsNeedingFavoriteToggle([
+      { id: 1, is_favorite: true },
+      { id: 2, is_favorite: false },
+      { id: 3, is_favorite: true },
+    ]),
+    [2],
+  );
+  assert.deepEqual(
+    idsNeedingFavoriteToggle([
+      { id: 1, is_favorite: true },
+      { id: 2, is_favorite: true },
+    ]),
+    [1, 2],
+  );
+});
+
+test("nextTypeFilter：再点当前类型回到全部", () => {
+  assert.equal(nextTypeFilter("all", "image"), "image");
+  assert.equal(nextTypeFilter("image", "image"), "all");
+  assert.equal(nextTypeFilter("image", "audio"), "audio");
+  assert.equal(nextTypeFilter("script", "all"), "all");
+});
+
 test("isSortMode / isTypeFilter 守卫", () => {
   assert.equal(isSortMode("smart"), true);
   assert.equal(isSortMode("nope"), false);
   assert.equal(isTypeFilter("script"), true);
   assert.equal(isTypeFilter("bat"), false);
+});
+
+test("formatPathCopy：空路径忽略，多项换行", () => {
+  assert.equal(formatPathCopy([]), null);
+  assert.equal(formatPathCopy(["  ", ""]), null);
+  assert.deepEqual(formatPathCopy(["D:\\a.exe"]), { text: "D:\\a.exe", message: "已复制路径" });
+  assert.deepEqual(formatPathCopy(["D:\\a.exe", "  ", "D:\\b.png"]), {
+    text: "D:\\a.exe\nD:\\b.png",
+    message: "已复制 2 条路径",
+  });
+});
+
+test("isImeKeyboardEvent：组合输入与 Process 键", () => {
+  assert.equal(isImeKeyboardEvent({ key: "Enter", nativeEvent: { isComposing: true } }), true);
+  assert.equal(isImeKeyboardEvent({ key: "Process", nativeEvent: {} }), true);
+  assert.equal(isImeKeyboardEvent({ key: "Enter", nativeEvent: { isComposing: false } }), false);
 });
 
 await run("itemQuery");

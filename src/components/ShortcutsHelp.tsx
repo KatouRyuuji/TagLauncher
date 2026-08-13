@@ -1,5 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useAppStore } from "../stores/appStore";
 
 const GROUPS: { title: string; items: { keys: string; action: string }[] }[] = [
@@ -8,7 +9,9 @@ const GROUPS: { title: string; items: { keys: string; action: string }[] }[] = [
     items: [
       { keys: "/ 或 Ctrl+F", action: "聚焦搜索" },
       { keys: "Ctrl+K", action: "命令面板" },
-      { keys: "↑ ↓", action: "移动选中项" },
+      { keys: "↑ ↓", action: "移动选中项（网格按列）" },
+      { keys: "Home / End", action: "跳到首项 / 末项" },
+      { keys: "PageUp / PageDown", action: "翻页选择" },
       { keys: "Enter", action: "启动选中项" },
       { keys: "Space", action: "快速预览" },
       { keys: "Esc", action: "关闭浮层 / 清空搜索" },
@@ -18,8 +21,12 @@ const GROUPS: { title: string; items: { keys: string; action: string }[] }[] = [
     title: "选择与整理",
     items: [
       { keys: "Ctrl+A", action: "全选当前结果" },
+      { keys: "单击 / Ctrl / Shift+单击", action: "选择 / 加选 / 范围" },
+      { keys: "Shift + 方向键", action: "范围选择" },
+      { keys: "Shift+F10 / 菜单键", action: "打开选中项菜单" },
       { keys: "Delete", action: "从应用移除" },
-      { keys: "Ctrl+C", action: "复制路径" },
+      { keys: "Ctrl+C", action: "复制选中路径（多项换行）" },
+      { keys: "Ctrl+D", action: "收藏 / 取消收藏" },
       { keys: "G / L", action: "网格 / 列表" },
     ],
   },
@@ -35,18 +42,27 @@ const GROUPS: { title: string; items: { keys: string; action: string }[] }[] = [
 export function ShortcutsHelp() {
   const open = useAppStore((state) => state.shortcutsHelpOpen);
   const setOpen = useAppStore((state) => state.setShortcutsHelpOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>({ active: open });
   useEscapeKey(() => setOpen(false), open);
   if (!open) return null;
 
   return createPortal(
     <div
+      data-shortcuts-help=""
+      data-workspace-overlay=""
       className="fixed inset-0 flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-base)_62%,transparent)] px-4"
       style={{ zIndex: "var(--z-shortcuts-help)" as unknown as number }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) setOpen(false);
       }}
     >
-      <div className="modal-surface w-full max-w-[560px] p-5">
+      <div
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="键盘快捷键"
+        className="modal-surface w-full max-w-[560px] p-5"
+      >
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-semibold text-[var(--text-primary)]">键盘快捷键</h3>
           <button type="button" className="icon-button" onClick={() => setOpen(false)} title="关闭">

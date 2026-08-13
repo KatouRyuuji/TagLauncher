@@ -1,5 +1,5 @@
 import { useAppStore } from "../stores/appStore";
-import { TYPE_FILTERS } from "../lib/itemQuery";
+import { TYPE_FILTERS, nextTypeFilter } from "../lib/itemQuery";
 
 export function TagFilterBar() {
   const tags = useAppStore((state) => state.tags);
@@ -19,10 +19,12 @@ export function TagFilterBar() {
           <button
             key={filter.value}
             type="button"
-            onClick={() => setTypeFilter(filter.value)}
+            onClick={() => setTypeFilter(nextTypeFilter(typeFilter, filter.value))}
+            aria-pressed={typeFilter === filter.value}
             className={`control-chip shrink-0 min-h-[30px] px-3 text-[11px] font-medium ${
               typeFilter === filter.value ? "control-chip-active" : ""
             }`}
+            title={typeFilter === filter.value && filter.value !== "all" ? "再次点击取消筛选" : filter.label}
           >
             {filter.label}
           </button>
@@ -50,6 +52,7 @@ export function TagFilterBar() {
               type="button"
               onClick={() => toggleTagSelection(tag.id)}
               className="inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-full)] border px-3 py-1.5 text-[11px] font-medium"
+              aria-pressed={active}
               style={{
                 borderColor: active
                   ? `color-mix(in srgb, ${tag.color} 42%, transparent)`

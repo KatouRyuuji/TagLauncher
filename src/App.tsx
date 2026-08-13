@@ -30,6 +30,8 @@ import { TagGraphView } from "./components/TagGraphView";
 import { useAppStore } from "./stores/appStore";
 import { useInternalDragStore } from "./stores/internalDragStore";
 import { loadSynonyms } from "./lib/synonyms";
+import { copyText } from "./lib/clipboard";
+import { formatPathCopy, idsNeedingFavoriteToggle } from "./lib/itemQuery";
 import { useVersionCheck } from "./hooks/useVersionCheck";
 import { useStartupMaintenance } from "./hooks/useStartupMaintenance";
 import { useWorkspaceHotkeys } from "./hooks/useWorkspaceHotkeys";
@@ -257,10 +259,20 @@ function App() {
   useWorkspaceHotkeys({
     blocked: overlaysBlocked,
     items,
+    allItems,
     selectedItemIds,
     setSelectedItemIds,
     onLaunch: (id) => { void handleLaunchItem(id); },
     onRemoveSelected: () => { void requestBatchRemoveFromApp(); },
+    onToggleSelectedFavorite: () => {
+      const selected = items.filter((item) => selectedItemIds.includes(item.id));
+      const ids = idsNeedingFavoriteToggle(selected);
+      void (async () => {
+        for (const id of ids) {
+          await toggleFavorite(id).catch(() => {});
+        }
+      })();
+    },
     onOpenSettings: () => setShowSettings(true),
   });
 
@@ -344,6 +356,13 @@ function App() {
           onAddToCabinet={batchAddToCabinet}
           onRemoveFromCabinet={batchRemoveFromCabinet}
           onRemoveFromApp={requestBatchRemoveFromApp}
+          onCopyPaths={() => {
+            const idSet = new Set(selectedItemIds);
+            const payload = formatPathCopy(
+              items.filter((item) => idSet.has(item.id)).map((item) => item.path),
+            );
+            if (payload) void copyText(payload.text, payload.message);
+          }}
           onSelectAll={() => setSelectedItemIds(items.map((item) => item.id))}
           onClearSelection={() => setSelectedItemIds([])}
         />

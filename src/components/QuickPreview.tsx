@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { copyText } from "../lib/clipboard";
 import * as db from "../lib/db";
 import { formatBytes, formatTimestamp } from "../lib/itemQuery";
@@ -18,13 +19,23 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
   const previewItemId = useAppStore((state) => state.previewItemId);
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
   const item = previewItemId == null ? null : items.find((entry) => entry.id === previewItemId) ?? null;
+  const trapRef = useFocusTrap<HTMLDivElement>({ active: item !== null });
 
   useEscapeKey(() => setPreviewItemId(null), item !== null);
+
+  useEffect(() => {
+    if (previewItemId == null) return;
+    if (!items.some((entry) => entry.id === previewItemId)) {
+      setPreviewItemId(null);
+    }
+  }, [items, previewItemId, setPreviewItemId]);
 
   if (!item) return null;
 
   return createPortal(
     <div
+      data-quick-preview=""
+      data-workspace-overlay=""
       className="fixed inset-0 flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-base)_72%,transparent)] px-6 py-8"
       style={{ zIndex: "var(--z-quick-preview)" as unknown as number }}
       onMouseDown={(event) => {
@@ -32,6 +43,10 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
       }}
     >
       <div
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="快速预览"
         className="modal-surface flex max-h-[86vh] w-full max-w-[760px] flex-col overflow-hidden"
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -61,7 +76,7 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
         </div>
 
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-subtle)] px-5 py-3">
-          <p className="text-[11px] text-[var(--text-faint)]">空格 / Esc 关闭 · ← → 切换</p>
+          <p className="text-[11px] text-[var(--text-faint)]">空格 / Esc 关闭 · ← → 切换 · Home / End 首尾</p>
           <div className="flex items-center gap-2">
             <button type="button" className="action-button" onClick={() => void copyText(item.path, "已复制路径")}>
               复制路径
@@ -89,10 +104,14 @@ function PreviewBody({ item }: { item: ItemWithTags }) {
   const [entries, setEntries] = useState<db.ObjectDirectoryEntry[]>([]);
   const [audio, setAudio] = useState<db.AudioPreviewInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [imageFailed, setImageFailed] = useState(false);
+  const [coverFailed, setCoverFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
+    setImageFailed(false);
+    setCoverFailed(false);
     setInfo(null);
     setEntries([]);
     setAudio(null);
@@ -124,23 +143,32 @@ function PreviewBody({ item }: { item: ItemWithTags }) {
   return (
     <div className="space-y-4">
       {item.type === "image" && (
-        <div className="flex max-h-[48vh] items-center justify-center overflow-hidden rounded-[var(--radius-md)] bg-[var(--bg-hover)]">
-          <img
-            src={toAssetUrl(item.path) ?? undefined}
-            alt={item.name}
-            className="max-h-[48vh] max-w-full object-contain"
-          />
+        <div className="flex max-h-[48vh] min-h-[120px] items-center justify-center overflow-hidden rounded-[var(--radius-md)] bg-[var(--bg-hover)]">
+          {imageFailed ? (
+            <p className="px-4 py-8 text-sm text-[var(--text-muted)]">无法加载图片预览</p>
+          ) : (
+            <img
+              src={toAssetUrl(item.path) ?? undefined}
+              alt={item.name}
+              decoding="async"
+              className="max-h-[48vh] max-w-full object-contain"
+              onError={() => setImageFailed(true)}
+            />
+          )}
         </div>
       )}
 
       {item.type === "audio" && (
         <div className="space-y-3">
           {audio?.album_cover_data_url || assetUrl ? (
+            coverFailed ? null : (
             <img
               src={audio?.album_cover_data_url ?? assetUrl ?? undefined}
               alt=""
               className="mx-auto h-40 w-40 rounded-[var(--radius-md)] object-cover"
+              onError={() => setCoverFailed(true)}
             />
+            )
           ) : null}
           <div className="text-center text-sm text-[var(--text-secondary)]">
             <p className="font-medium text-[var(--text-primary)]">{audio?.title || item.name}</p>
@@ -148,7 +176,13 @@ function PreviewBody({ item }: { item: ItemWithTags }) {
               {[audio?.artist, audio?.album].filter(Boolean).join(" · ") || "音频对象"}
             </p>
           </div>
-          <audio controls src={toAssetUrl(item.path) ?? undefined} className="w-full" />
+          <audio
+            controls
+            preload="metadata"
+            src={toAssetUrl(item.path) ?? undefined}
+            className="w-full"
+            onError={() => setError("无法加载音频预览")}
+          />
         </div>
       )}
 
@@ -159,7 +193,7 @@ function PreviewBody({ item }: { item: ItemWithTags }) {
         <dd className="text-[var(--text-secondary)]">{formatBytes(info?.size)}</dd>
         <dt className="text-[var(--text-faint)]">修改时间</dt>
         <dd className="text-[var(--text-secondary)]">
-          {info?.modified_at_secs ? formatTimestamp(new Date(info.modified_at_secs * 1000).toISOString()) : "未知"}
+          {info?.modified_at_secs ? formatLocalDateTime(info.modified_at_secs) : "未知"}
         </dd>
         <dt className="text-[var(--text-faint)]">最近使用</dt>
         <dd className="text-[var(--text-secondary)]">{formatTimestamp(item.last_used_at)}</dd>
@@ -204,4 +238,11 @@ function PreviewBody({ item }: { item: ItemWithTags }) {
 function toAssetUrl(path: string | null | undefined): string | null {
   if (!path) return null;
   return convertFileSrc(path.replace(/\\/g, "/"));
+}
+
+function formatLocalDateTime(epochSeconds: number): string {
+  const date = new Date(epochSeconds * 1000);
+  if (Number.isNaN(date.getTime())) return "未知";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }

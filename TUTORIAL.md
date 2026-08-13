@@ -271,10 +271,14 @@ v1.3.0 起欢迎弹窗改为 标题+简介 + 特性列表 + 右侧扫码赞助�
 
 ## 8.4 工作台排序 / 筛选 / 快捷键（v1.5.0）
 
-- 纯函数：`src/lib/itemQuery.ts`（排序、类型筛选、键盘选中下标），单测 `itemQuery.test.ts`。
+- 纯函数：`src/lib/itemQuery.ts`（排序、类型筛选、键盘步进、点选/右键选择、路径复制格式、IME 判断），单测 `itemQuery.test.ts`。
 - 状态：`appStore` 的 `sortMode` / `typeFilter` / `showRecent`；四者互斥筛选与收藏/标签/文件柜并列。
 - 视图偏好键：`localStorage` `taglauncher.workspace_prefs`。
-- 快捷键入口：`src/hooks/useWorkspaceHotkeys.ts`；命令面板 `CommandPalette.tsx`；预览 `QuickPreview.tsx`。
+- 快捷键入口：`src/hooks/useWorkspaceHotkeys.ts`（listener 用 ref 固定，避免搜索刷新反复解绑；IME `isComposing`/`Process` 跳过；Delete 不含 Backspace；Enter/空格需已选中）。
+- 遮罩与层级：`src/lib/workspaceChrome.ts`；全屏弹层带 `data-workspace-overlay`；Mod 模态 `data-mod-modal`。内置空格预览 `--z-quick-preview: 160`，不得盖住 Mod 模态。**不要**把新 z-index 变量写入 Rust `REQUIRED_VARIABLES`（会破坏旧自定义主题）。
+- 命令面板：`CommandPalette.tsx`（仅打开时建拼音索引；组字过程不参与过滤）。
+- 预览：`QuickPreview.tsx`；对象删除后自动清掉残留 `previewItemId`。
+- 选择：`SelectionCanvas.tsx` 单击替换 / Ctrl 加选 / Shift 范围；可见列表变化时修剪已选 id，避免对筛出项误删。
 
 ## 9. 构建与回归建议
 
@@ -294,7 +298,9 @@ CI（`.github/workflows/ci.yml`）会在 push/PR 时自动跑 `npm run test:all`
 - 对象新增/删除/启动
 - 标签与文件柜 CRUD
 - 拖拽流程（打标、归档、移出当前筛选、从应用移除）
-- 搜索（中文/拼音/同义词）
+- 搜索（中文/拼音/同义词；输入法组字不误筛）
+- 快捷键：方向键/Home/End、Ctrl+C 多选路径、Ctrl+D 收藏、Mod 模态下不穿透
+- 点选 / Ctrl / Shift、右键菜单键盘、批量工具条 Esc 先关下拉
 - 缩略图设置与回退
 - 欢迎弹窗“下次不再显示”与“关于我”复弹
 - 云同步配置/备份/恢复（需真实 WebDAV 端点实测）与设置页检查更新

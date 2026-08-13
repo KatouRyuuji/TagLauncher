@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useEscapeKey } from "../hooks/useEscapeKey";
+import { stepMenuIndex } from "../lib/itemQuery";
 
 /** 主内容区底部的批量操作工具条（选中对象时出现） */
 export function BatchSelectionToolbar({
@@ -13,6 +15,7 @@ export function BatchSelectionToolbar({
   onAddToCabinet,
   onRemoveFromCabinet,
   onRemoveFromApp,
+  onCopyPaths,
   onSelectAll,
   onClearSelection,
 }: {
@@ -28,10 +31,17 @@ export function BatchSelectionToolbar({
   onAddToCabinet: (cabinetId: number) => Promise<void>;
   onRemoveFromCabinet: () => Promise<void>;
   onRemoveFromApp: () => Promise<void>;
+  onCopyPaths: () => void;
   onSelectAll: () => void;
   onClearSelection: () => void;
 }) {
   const [openMenu, setOpenMenu] = useState<"add-tag" | "remove-tag" | "cabinet" | null>(null);
+
+  useEscapeKey(() => setOpenMenu(null), openMenu !== null);
+
+  useEffect(() => {
+    if (selectedCount === 0 && openMenu !== null) setOpenMenu(null);
+  }, [selectedCount, openMenu]);
 
   useEffect(() => {
     if (!openMenu) return;
@@ -39,6 +49,27 @@ export function BatchSelectionToolbar({
     const close = () => setOpenMenu(null);
     window.addEventListener("pointerdown", close);
     return () => window.removeEventListener("pointerdown", close);
+  }, [openMenu]);
+
+  useEffect(() => {
+    if (!openMenu) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      const root = document.querySelector("[data-floating-menu]");
+      if (!(root instanceof HTMLElement)) return;
+      const items = Array.from(root.querySelectorAll<HTMLElement>('button:not([disabled])'));
+      if (items.length === 0) return;
+      const active = event.target instanceof HTMLElement ? event.target : null;
+      const current = items.findIndex((el) => el === active || (active !== null && el.contains(active)));
+      const next = stepMenuIndex(items.length, current, event.key);
+      if (next == null) return;
+      event.preventDefault();
+      items[next]?.focus();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [openMenu]);
 
   if (selectedCount === 0) return null;
@@ -103,6 +134,7 @@ export function BatchSelectionToolbar({
           )}
           <button
             type="button"
+            role="menuitem"
             disabled={!canRemoveFromCabinet}
             onClick={() => runAction(onRemoveFromCabinet)}
             className="mt-1 flex w-full items-center justify-between rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:text-[var(--text-faint)] disabled:hover:bg-transparent"
@@ -121,6 +153,14 @@ export function BatchSelectionToolbar({
             全选 {totalCount}
           </button>
         )}
+        <button
+          type="button"
+          onClick={onCopyPaths}
+          className="action-button"
+          title="复制选中路径（Ctrl+C，多项换行）"
+        >
+          复制路径
+        </button>
         <button
           type="button"
           onClick={() => void onRemoveFromApp()}
@@ -149,11 +189,22 @@ function ToolbarMenuButton({
 }) {
   return (
     <div className="relative">
-      <button type="button" onClick={onClick} className={`action-button ${open ? "border-[var(--accent-primary)] text-[var(--accent-primary)]" : ""}`}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={onClick}
+        className={`action-button ${open ? "border-[var(--accent-primary)] text-[var(--accent-primary)]" : ""}`}
+      >
         {label}
       </button>
       {open && (
-        <div className="absolute bottom-[calc(100%+8px)] left-0 max-h-[260px] min-w-[190px] overflow-auto rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1 shadow-[var(--shadow-dropdown)]">
+        <div
+          data-floating-menu=""
+          data-workspace-overlay=""
+          role="menu"
+          className="absolute bottom-[calc(100%+8px)] left-0 max-h-[260px] min-w-[190px] overflow-auto rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1 shadow-[var(--shadow-dropdown)]"
+        >
           {children}
         </div>
       )}
@@ -173,6 +224,7 @@ function MenuOption({
   return (
     <button
       type="button"
+      role="menuitem"
       onClick={onClick}
       className="flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
     >
