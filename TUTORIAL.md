@@ -227,7 +227,7 @@ npm run tauri build
 
 产物：
 
-- `src-tauri/target/release/bundle/nsis/TagLauncher_1.5.0_x64-setup.exe`
+- `src-tauri/target/release/bundle/nsis/TagLauncher_1.5.1_x64-setup.exe`
 
 ARM64 构建用 `build-arm64.bat`（`aarch64-pc-windows-msvc`，脚本会自动 `rustup target add`），产物为 `..._arm64-setup.exe`；`build.bat` 亦支持传入可选 target 参数。
 

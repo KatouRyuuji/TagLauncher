@@ -102,7 +102,7 @@ cd src-tauri && cargo test
 
 ## 打包
 
-当前应用版本为 `1.5.0`。双击 `build.bat` 一键打包（会自动 `npm install` 并预检工具链），或执行：
+当前应用版本为 `1.5.1`。双击 `build.bat` 一键打包（会自动 `npm install` 并预检工具链），或执行：
 
 ```bash
 npm run tauri build
@@ -111,7 +111,7 @@ npm run tauri build
 Windows Release 默认生成 NSIS 安装包：
 
 ```text
-src-tauri/target/release/bundle/nsis/TagLauncher_1.5.0_x64-setup.exe
+src-tauri/target/release/bundle/nsis/TagLauncher_1.5.1_x64-setup.exe
 ```
 
 安装包安装时会创建开始菜单快捷方式，并在功能选择页提供桌面快捷方式可选项；安装语言可在 English / SimpChinese 之间选择。项目 MIT 许可证会显示在安装程序许可页面中。

@@ -486,7 +486,7 @@ npm run tauri dev    # 启动 Tauri 开发窗口
 npm run tauri build  # 编译 + 打包 NSIS 安装包（x64）
 ```
 
-产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.5.0_x64-setup.exe`
+产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.5.1_x64-setup.exe`
 
 ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `..._arm64-setup.exe`。
 
@@ -537,7 +537,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `...
 - **WebView CSP**：`tauri.conf.json` 配置 `csp` / `devCsp`（`default-src 'self'`、`connect-src` 限本机 IPC/asset、`object-src 'none'`、`frame-src 'none'` 等），收敛脚本 / 网络 / 框架来源，作为纵深防御。
 - **Mod / 主题为「可信扩展」**：其 `permissions` 是能力声明（运行时由 JS 宿主据此约束可调用的 API 面），**并非操作系统级安全沙箱边界**——Mod 与应用同处一个 WebView，请仅安装可信来源的扩展。
 - **云同步凭据最小暴露面（v1.4.0）**：WebDAV 密码只存后端 `app_meta`，`sync_get_config` 不下发明文（仅 `hasPassword`）；云端副本剔除 `ai.*`/`sync.*` 并 VACUUM；恢复回填本机凭据。Mod 文件读写有 32MiB 上限，目录复制跳过符号链接，`import_mod` 校验 id 合法性防目录逃逸（v1.3.x 硬化随审阅并入）。
-- **通用 KV 命令收紧（v1.5.0 审阅硬化）**：`get_setting` / `set_setting` 拒绝读写 `ai.*` / `sync.*` 前缀——这两类凭据只能走各自的专用脱敏通道（`ai_get_config` / `sync_get_config` 均不下发明文），通用原语不再是绕过脱敏的旁路；读敏感键按「键不存在」处理（不泄露存在性），写敏感键明确报错并引导至专用入口。
+- **通用 KV 命令收紧（v1.5.1 审阅硬化）**：`get_setting` / `set_setting` 拒绝读写 `ai.*` / `sync.*` 前缀——这两类凭据只能走各自的专用脱敏通道（`ai_get_config` / `sync_get_config` 均不下发明文），通用原语不再是绕过脱敏的旁路；读敏感键按「键不存在」处理（不泄露存在性），写敏感键明确报错并引导至专用入口。
 
 ### 性能
 
