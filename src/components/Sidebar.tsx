@@ -7,6 +7,7 @@ import {
   findClosestNumberDataAttribute,
 } from "../lib/internalPointerDrag";
 import { useAppStore } from "../stores/appStore";
+import { showToast } from "../lib/toast";
 import {
   shouldSuppressInternalDragClick,
   useInternalDragStore,
@@ -415,7 +416,9 @@ export function Sidebar({
             setShowAddTag(false);
           }}
           onDelete={editingTag ? () => {
-            void onRemoveTag(editingTag.id);
+            void onRemoveTag(editingTag.id).catch((err: unknown) =>
+              showToast(`删除标签失败：${err instanceof Error ? err.message : String(err)}`, "error"),
+            );
             setEditingTag(null);
           } : undefined}
           onClose={() => {
@@ -439,7 +442,9 @@ export function Sidebar({
             setShowAddCabinet(false);
           }}
           onDelete={editingCabinet ? () => {
-            void onRemoveCabinet(editingCabinet.id);
+            void onRemoveCabinet(editingCabinet.id).catch((err: unknown) =>
+              showToast(`删除文件柜失败：${err instanceof Error ? err.message : String(err)}`, "error"),
+            );
             setEditingCabinet(null);
           } : undefined}
           onClose={() => {

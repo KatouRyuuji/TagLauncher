@@ -113,12 +113,14 @@ export function useWorkspaceHotkeys({
         return;
       }
 
+      // 尊重内层组件已消费的按键（preventDefault），避免双重响应；
+      // 位于 Ctrl+K 之后：命令面板开关保持全局可用（面板打开时也需 Ctrl+K 关闭）。
+      if (event.defaultPrevented) return;
       if (ctx.commandPaletteOpen || ctx.shortcutsHelpOpen) return;
       if (composing) return;
       if (isModModalOpen()) return;
       if (isTransientMenuOpen()) return;
       if (ctx.blocked) return;
-      if (event.defaultPrevented) return;
 
       if (ctrl && event.key.toLowerCase() === "f") {
         event.preventDefault();

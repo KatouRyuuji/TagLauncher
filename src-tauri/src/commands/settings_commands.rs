@@ -70,14 +70,46 @@ pub fn export_theme_file(
     theme_loader::export_theme_file(theme, &target)
 }
 
+/// 通用 KV 命令的敏感前缀：ai.*/sync.* 凭据有专属脱敏通道（ai_get_config /
+/// sync_get_config 均不下发明文），通用原语不得成为绕过脱敏的旁路（纵深防御）。
+/// 前端当前仅用本命令读写 last_known_version 等非敏感键，收紧不影响既有功能。
+fn is_sensitive_setting_key(key: &str) -> bool {
+    key.starts_with("ai.") || key.starts_with("sync.")
+}
+
 #[tauri::command]
 pub fn get_setting(db: State<Database>, key: String) -> Option<String> {
+    // 敏感键按"不存在"处理：既不泄露值，也不泄露存在性
+    if is_sensitive_setting_key(&key) {
+        return None;
+    }
     let conn = db.get_conn();
     settings_service::get_setting(&conn, &key)
 }
 
 #[tauri::command]
 pub fn set_setting(db: State<Database>, key: String, value: String) -> Result<(), String> {
+    if is_sensitive_setting_key(&key) {
+        return Err("该配置项受保护，请使用对应的专用设置入口".to_string());
+    }
     let conn = db.get_conn();
     settings_service::set_setting(&conn, &key, &value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sensitive_prefixes_are_blocked() {
+        assert!(is_sensitive_setting_key("ai.api_key"));
+        assert!(is_sensitive_setting_key("ai.base_url"));
+        assert!(is_sensitive_setting_key("sync.password"));
+        assert!(is_sensitive_setting_key("sync.webdav_url"));
+        assert!(!is_sensitive_setting_key("last_known_version"));
+        assert!(!is_sensitive_setting_key("theme"));
+        assert!(!is_sensitive_setting_key("enabled_mods"));
+        // 注意大小写敏感：配置键约定为小写，大写变体落不到敏感键上，无需拦
+        assert!(!is_sensitive_setting_key("AI.api_key"));
+    }
 }

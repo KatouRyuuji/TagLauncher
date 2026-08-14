@@ -121,7 +121,11 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
           {tag.name}
           <button
             onPointerDown={(event) => event.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); void onRemoveTag(item.id, tag.id); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              // 失败提示已由 onRemoveTag 链路（withErrorToast）统一弹出，吞掉 rejection 避免噪音
+              void onRemoveTag(item.id, tag.id).catch(() => {});
+            }}
             className="opacity-0 pointer-events-none group-hover/tag:opacity-100 group-hover/tag:pointer-events-auto hover:text-[var(--text-primary)] transition-opacity"
           >
             ×

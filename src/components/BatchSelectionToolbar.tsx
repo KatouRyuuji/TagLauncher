@@ -76,7 +76,8 @@ export function BatchSelectionToolbar({
 
   const runAction = (action: () => Promise<void>) => {
     setOpenMenu(null);
-    void action();
+    // 失败提示已由批量动作链路（withErrorToast）统一弹出，吞掉 rejection 避免噪音
+    void action().catch(() => {});
   };
 
   return (

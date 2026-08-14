@@ -380,8 +380,12 @@ export function ContextMenu({
               type="button"
               role="menuitem"
               onClick={async () => {
-                await onAddItemToCabinet(cabinet.id, item.id);
-                onClose();
+                try {
+                  await onAddItemToCabinet(cabinet.id, item.id);
+                  onClose();
+                } catch {
+                  // 失败提示已由 withErrorToast 统一弹出；菜单保持打开便于重试
+                }
               }}
               className="flex w-full items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
@@ -426,7 +430,9 @@ function MenuItem({
     <button
       type="button"
       role="menuitem"
-      onClick={() => void onClick()}
+      // 菜单动作多为 async（启动/缩略图/文件柜操作），其底层链路（withErrorToast）
+      // 已统一 toast 反馈；这里吞掉 rejection 避免未处理拒绝噪音（Promise.resolve 兼容同步返回）。
+      onClick={() => void Promise.resolve(onClick()).catch(() => {})}
       className="w-full rounded-[var(--radius-md)] px-3 py-2 text-left text-sm hover:text-[var(--text-primary)]"
       style={{
         color: accentStyle?.color ?? "var(--text-secondary)",

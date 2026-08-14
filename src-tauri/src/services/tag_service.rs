@@ -116,13 +116,24 @@ pub fn get_tags(conn: &Connection) -> Result<Vec<Tag>, String> {
     Ok(tags)
 }
 
+/// 把 SQLite 错误映射为用户可读文案：UNIQUE 冲突（tags.name 唯一）转为明确提示，
+/// 其余错误保留原始消息。add/update 共用，避免前端拿到 "UNIQUE constraint failed" 原文。
+fn friendly_name_err(e: rusqlite::Error) -> String {
+    let msg = e.to_string();
+    if msg.contains("UNIQUE constraint failed") {
+        "已存在同名标签，请换一个名称".to_string()
+    } else {
+        msg
+    }
+}
+
 /// 新建标签
 pub fn add_tag(conn: &Connection, name: &str, color: &str) -> Result<Tag, String> {
     conn.execute(
         "INSERT INTO tags (name, color) VALUES (?1, ?2)",
         params![name, color],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(friendly_name_err)?;
 
     let id = conn.last_insert_rowid();
     Ok(Tag {
@@ -138,7 +149,7 @@ pub fn update_tag(conn: &Connection, id: i64, name: &str, color: &str) -> Result
         "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
         params![name, color, id],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(friendly_name_err)?;
     Ok(())
 }
 
@@ -349,6 +360,19 @@ mod tests {
     fn tag_id(conn: &Connection, name: &str) -> i64 {
         conn.query_row("SELECT id FROM tags WHERE name=?1", params![name], |r| r.get(0))
             .unwrap()
+    }
+
+    #[test]
+    fn duplicate_tag_name_returns_friendly_error() {
+        let conn = setup_conn();
+        add_tag(&conn, "工具", "#fff").expect("first add");
+        let err = add_tag(&conn, "工具", "#000").expect_err("duplicate should fail");
+        assert_eq!(err, "已存在同名标签，请换一个名称", "UNIQUE 冲突应映射为友好文案");
+
+        // 改名撞已有名同样友好
+        let other = add_tag(&conn, "游戏", "#fff").expect("second add");
+        let err = update_tag(&conn, other.id, "工具", "#fff").expect_err("rename clash");
+        assert_eq!(err, "已存在同名标签，请换一个名称");
     }
 
     #[test]

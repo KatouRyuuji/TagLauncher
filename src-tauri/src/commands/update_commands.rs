@@ -57,11 +57,16 @@ pub fn update_check() -> Result<UpdateInfo, String> {
             other => format!("检查更新失败: {}", other),
         })?;
 
+    // 上限 +1 字节探测：超过上限明确报"响应过大"，而不是静默截断后让 JSON 解析报
+    // "格式错误"（用户分不清是响应太大还是内容异常），与 ai_commands 的读取口径一致。
     let mut body = String::new();
     resp.into_reader()
-        .take(MAX_API_RESPONSE_BYTES)
+        .take(MAX_API_RESPONSE_BYTES + 1)
         .read_to_string(&mut body)
         .map_err(|e| format!("读取更新信息失败: {}", e))?;
+    if body.len() as u64 > MAX_API_RESPONSE_BYTES {
+        return Err("更新信息响应超过大小上限（2MB），已中止".to_string());
+    }
 
     parse_release_response(&body, settings_service::get_app_version())
 }

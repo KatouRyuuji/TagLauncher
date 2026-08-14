@@ -49,6 +49,10 @@ export function ModManagerPanel() {
     }
   };
 
+  // useMods 的 enable/disable 内部已 toast 并刷新列表，这里只吞掉 rejection 避免未处理拒绝噪音
+  const runQuietly = (action: () => Promise<void>) => {
+    void action().catch(() => {});
+  };
   const handleReload = async (modId: string) => {
     setReloading(modId);
     try {
@@ -207,7 +211,7 @@ export function ModManagerPanel() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleToggle(mod.id, mod.type, mod.enabled)}
+                  onClick={() => runQuietly(() => handleToggle(mod.id, mod.type, mod.enabled))}
                   className={mod.enabled ? "action-button min-h-[36px] px-3 text-xs" : "action-button action-button-primary min-h-[36px] px-3 text-xs"}
                   style={mod.enabled ? {
                     color: "var(--color-danger)",
@@ -305,7 +309,7 @@ export function ModManagerPanel() {
                   <button type="button" onClick={() => setConfirmJsMod(null)} className="action-button">
                     取消
                   </button>
-                  <button type="button" onClick={() => void handleConfirmEnable()} className="action-button action-button-primary">
+                  <button type="button" onClick={() => runQuietly(handleConfirmEnable)} className="action-button action-button-primary">
                     我信任此扩展
                   </button>
                 </div>

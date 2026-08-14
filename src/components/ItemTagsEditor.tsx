@@ -63,6 +63,9 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
       await onSave([...kept, ...added]);
       // 保存成功：新建标签已随保存落库，清空回收清单
       createdTagIdsRef.current = [];
+    } catch {
+      // 失败提示已由 onSave 链路（useItems.withErrorToast）统一弹出，
+      // 这里只吞掉 rejection，避免未处理拒绝噪音；弹窗保持打开便于重试。
     } finally {
       setSaving(false);
     }

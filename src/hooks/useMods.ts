@@ -113,9 +113,15 @@ export function useMods() {
     async (modId: string) => {
       const mod = mods.find((m) => m.id === modId);
       if (!mod) return;
-      await reloadModRuntime(mod);
+      try {
+        await reloadModRuntime(mod);
+      } catch (error) {
+        // 与 enable/disable 同一策略：toast 明示 + 刷新列表到最新状态
+        showToast(`Mod "${mod.name}" 重载失败：${error instanceof Error ? error.message : String(error)}`, "error");
+        await loadMods();
+      }
     },
-    [mods],
+    [mods, loadMods],
   );
 
   const uninstallMod = useCallback(
@@ -123,30 +129,36 @@ export function useMods() {
       const mod = mods.find((m) => m.id === modId);
       if (!mod) return;
 
-      // 1. 如果已启用，先禁用（保留生命周期注册表，以便执行 uninstall 回调）
-      if (mod.enabled) {
-        await db.disableMod(modId);
-        await disableModRuntime(mod, true);
+      try {
+        // 1. 如果已启用，先禁用（保留生命周期注册表，以便执行 uninstall 回调）
+        if (mod.enabled) {
+          await db.disableMod(modId);
+          await disableModRuntime(mod, true);
+        }
+
+        // 2. 执行 uninstall 生命周期回调
+        await callModLifecycle(modId, "uninstall");
+
+        // 3. 清理生命周期注册表
+        clearModLifecycle(modId);
+
+        // 4. 清理该 mod 的 storage 数据
+        const prefix = `__mod::${modId}::`;
+        Object.keys(localStorage)
+          .filter((k) => k.startsWith(prefix))
+          .forEach((k) => localStorage.removeItem(k));
+
+        // 5. 后端删除目录和注册表记录
+        await db.deleteMod(modId);
+
+        showToast(`Mod "${mod.name}" 已卸载`, "success");
+      } catch (error) {
+        // 中途失败时状态可能半成品（runtime 已清理但目录未删）：明示错误并刷新列表，
+        // 让用户看到真实的剩余状态，而不是停留在卸载前的假象。
+        showToast(`Mod "${mod.name}" 卸载失败：${error instanceof Error ? error.message : String(error)}`, "error");
+      } finally {
+        await loadMods();
       }
-
-      // 2. 执行 uninstall 生命周期回调
-      await callModLifecycle(modId, "uninstall");
-
-      // 3. 清理生命周期注册表
-      clearModLifecycle(modId);
-
-      // 4. 清理该 mod 的 storage 数据
-      const prefix = `__mod::${modId}::`;
-      Object.keys(localStorage)
-        .filter((k) => k.startsWith(prefix))
-        .forEach((k) => localStorage.removeItem(k));
-
-      // 5. 后端删除目录和注册表记录
-      await db.deleteMod(modId);
-
-      // 6. 刷新列表
-      showToast(`Mod "${mod.name}" 已卸载`, "success");
-      await loadMods();
     },
     [mods, loadMods],
   );

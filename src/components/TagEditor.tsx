@@ -5,6 +5,7 @@ import type { Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { isImeKeyboardEvent } from "../lib/itemQuery";
+import { showToast } from "../lib/toast";
 
 interface TagEditorProps {
   tag: Tag | null;
@@ -31,6 +32,10 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
     setSaving(true);
     try {
       await onSave(name.trim(), color);
+    } catch (err) {
+      // 保存失败（如重名 UNIQUE 冲突）：明示原因、保留输入与弹窗，便于修正重试；
+      // 同时吞掉 rejection，避免 form onSubmit 的 promise 成为未处理拒绝。
+      showToast(`保存失败：${err instanceof Error ? err.message : String(err)}`, "error");
     } finally {
       setSaving(false);
     }

@@ -244,8 +244,15 @@ pub fn sync_restore(
             };
         }
 
-        // 6. 回填本机凭据
-        reapply_local_secrets(&db, &local_secrets)?;
+        // 6. 回填本机凭据。失败时不回滚恢复本身（数据已就位，回滚反而丢掉用户想恢复的
+        // 内容），但错误消息须说清现状：恢复已成功、仅本机凭据需重新配置。
+        if let Err(e) = reapply_local_secrets(&db, &local_secrets) {
+            return Err(format!(
+                "数据已恢复，但回填本机 AI/云同步凭据失败（{}）。请在设置中重新配置这些凭据。安全备份：{}",
+                e,
+                safety.to_string_lossy()
+            ));
+        }
 
         Ok(safety.to_string_lossy().to_string())
     })();

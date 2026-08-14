@@ -25,13 +25,24 @@ pub fn get_cabinets(conn: &Connection) -> Result<Vec<Cabinet>, String> {
     Ok(cabinets)
 }
 
+/// 把 SQLite 错误映射为用户可读文案：UNIQUE 冲突（cabinets.name 唯一）转为明确提示，
+/// 其余错误保留原始消息。add/update 共用，避免前端拿到 "UNIQUE constraint failed" 原文。
+fn friendly_name_err(e: rusqlite::Error) -> String {
+    let msg = e.to_string();
+    if msg.contains("UNIQUE constraint failed") {
+        "已存在同名文件柜，请换一个名称".to_string()
+    } else {
+        msg
+    }
+}
+
 /// 新建文件柜
 pub fn add_cabinet(conn: &Connection, name: &str, color: &str) -> Result<Cabinet, String> {
     conn.execute(
         "INSERT INTO cabinets (name, color) VALUES (?1, ?2)",
         params![name, color],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(friendly_name_err)?;
 
     let id = conn.last_insert_rowid();
     let created_at: String = conn
@@ -54,7 +65,7 @@ pub fn update_cabinet(conn: &Connection, id: i64, name: &str, color: &str) -> Re
         "UPDATE cabinets SET name = ?1, color = ?2 WHERE id = ?3",
         params![name, color, id],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(friendly_name_err)?;
     Ok(())
 }
 
@@ -171,6 +182,14 @@ mod tests {
         conn.execute_batch("PRAGMA foreign_keys = ON;").expect("fk");
         schema::create_tables(&conn).expect("schema");
         conn
+    }
+
+    #[test]
+    fn duplicate_cabinet_name_returns_friendly_error() {
+        let conn = setup();
+        add_cabinet(&conn, "Games", "#fff").expect("first add");
+        let err = add_cabinet(&conn, "Games", "#000").expect_err("duplicate should fail");
+        assert_eq!(err, "已存在同名文件柜，请换一个名称", "UNIQUE 冲突应映射为友好文案");
     }
 
     #[test]
