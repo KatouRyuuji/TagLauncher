@@ -261,7 +261,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `remove_tag` | id: i64 | () | 删除标签 |
 | `set_item_tags` | item_id, tag_ids | () | 设置项目的标签列表 |
 | `search_items` | query, tag_ids | Vec\<ItemWithTags\> | 后端辅助搜索（FTS5 + LIKE 回退）；前端主搜索使用自研 search.ts，不经过此命令 |
-| `launch_item` | id: i64 | () | 启动项目（cmd /C start） |
+| `launch_item` | id: i64 | () | 启动项目（`ShellExecuteW` "open" 动词，不经 cmd.exe，防 shell 元字符注入） |
 | `open_in_explorer` | path: String | () | 在资源管理器中打开 |
 | `read_synonyms` | - | Vec\<Vec\<String\>\> | 读取同义词字典 |
 | `get_cabinets` | - | Vec\<Cabinet\> | 获取所有文件柜 |
@@ -537,6 +537,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `...
 - **WebView CSP**：`tauri.conf.json` 配置 `csp` / `devCsp`（`default-src 'self'`、`connect-src` 限本机 IPC/asset、`object-src 'none'`、`frame-src 'none'` 等），收敛脚本 / 网络 / 框架来源，作为纵深防御。
 - **Mod / 主题为「可信扩展」**：其 `permissions` 是能力声明（运行时由 JS 宿主据此约束可调用的 API 面），**并非操作系统级安全沙箱边界**——Mod 与应用同处一个 WebView，请仅安装可信来源的扩展。
 - **云同步凭据最小暴露面（v1.4.0）**：WebDAV 密码只存后端 `app_meta`，`sync_get_config` 不下发明文（仅 `hasPassword`）；云端副本剔除 `ai.*`/`sync.*` 并 VACUUM；恢复回填本机凭据。Mod 文件读写有 32MiB 上限，目录复制跳过符号链接，`import_mod` 校验 id 合法性防目录逃逸（v1.3.x 硬化随审阅并入）。
+- **通用 KV 命令收紧（v1.5.0 审阅硬化）**：`get_setting` / `set_setting` 拒绝读写 `ai.*` / `sync.*` 前缀——这两类凭据只能走各自的专用脱敏通道（`ai_get_config` / `sync_get_config` 均不下发明文），通用原语不再是绕过脱敏的旁路；读敏感键按「键不存在」处理（不泄露存在性），写敏感键明确报错并引导至专用入口。
 
 ### 性能
 
