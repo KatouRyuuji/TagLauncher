@@ -306,6 +306,27 @@ export function formatPathCopy(paths: string[]): { text: string; message: string
   };
 }
 
+// ── 列表表头点击排序 ────────────────────────────────────────────────────────
+
+/** 列表视图中可点击切换排序的表头列。 */
+export type ListHeaderColumn = "name" | "type";
+
+const HEADER_SORT_TARGET: Record<ListHeaderColumn, SortMode> = {
+  name: "name",
+  type: "type",
+};
+
+/** 点击表头列：切到该列排序；已按该列排序则再点一次回到智能排序。 */
+export function toggleHeaderSort(current: SortMode, column: ListHeaderColumn): SortMode {
+  const target = HEADER_SORT_TARGET[column];
+  return current === target ? "smart" : target;
+}
+
+/** 该表头列的排序当前是否生效（用于渲染排序指示箭头）。 */
+export function isHeaderSortActive(current: SortMode, column: ListHeaderColumn): boolean {
+  return current === HEADER_SORT_TARGET[column];
+}
+
 export function sortModeLabel(mode: SortMode): string {
   return SORT_OPTIONS.find((option) => option.value === mode)?.label ?? mode;
 }

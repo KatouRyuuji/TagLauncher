@@ -23,6 +23,8 @@ import {
   selectionStep,
   stepMenuIndex,
   sortItemsByMode,
+  toggleHeaderSort,
+  isHeaderSortActive,
 } from "./itemQuery";
 import type { ItemWithTags } from "../types";
 
@@ -233,6 +235,29 @@ test("isImeKeyboardEvent：组合输入与 Process 键", () => {
   assert.equal(isImeKeyboardEvent({ key: "Enter", nativeEvent: { isComposing: true } }), true);
   assert.equal(isImeKeyboardEvent({ key: "Process", nativeEvent: {} }), true);
   assert.equal(isImeKeyboardEvent({ key: "Enter", nativeEvent: { isComposing: false } }), false);
+});
+
+test("toggleHeaderSort：点击表头切到该列排序", () => {
+  assert.equal(toggleHeaderSort("smart", "name"), "name");
+  assert.equal(toggleHeaderSort("recent", "name"), "name");
+  assert.equal(toggleHeaderSort("smart", "type"), "type");
+});
+
+test("toggleHeaderSort：已按该列排序时再点一次回到智能排序", () => {
+  assert.equal(toggleHeaderSort("name", "name"), "smart");
+  assert.equal(toggleHeaderSort("type", "type"), "smart");
+});
+
+test("toggleHeaderSort：在两列之间直接切换，无须先回智能", () => {
+  assert.equal(toggleHeaderSort("name", "type"), "type");
+  assert.equal(toggleHeaderSort("type", "name"), "name");
+});
+
+test("isHeaderSortActive：仅当前列排序生效时为 true", () => {
+  assert.equal(isHeaderSortActive("name", "name"), true);
+  assert.equal(isHeaderSortActive("name", "type"), false);
+  assert.equal(isHeaderSortActive("smart", "name"), false);
+  assert.equal(isHeaderSortActive("type", "type"), true);
 });
 
 await run("itemQuery");
