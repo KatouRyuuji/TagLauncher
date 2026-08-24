@@ -18,6 +18,8 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - 缩略图：支持手动设置/更换/清除；图片对象直接用图片，非图片对象提取系统图标缓存为 PNG，其余回退到类型 Emoji 图标。
 - 音频：提供 `get_audio_preview` 等对象预览命令。
 - 主题系统：内置主题 + 自定义 JSON 主题 + Mod 主题，支持变量/分层 token/组件 token/资源/字体/变体/自定义 CSS，以及导入、导出、刷新；启动时等待主题就绪再显示主窗口，避免闪烁。
+- 自定义窗口栏：`decorations: false` 隐藏 Windows 原生标题栏，`TitleBar.tsx` 自绘窗口栏（`data-tauri-drag-region` 拖拽 + 双击最大化 + 最小化/最大化/关闭按钮），配色全部取主题 token 随主题联动；窗口权限见 `src-tauri/capabilities/default.json`。
+- 顶层错误边界：`AppErrorBoundary.tsx` 捕获渲染期崩溃，替代白屏为可操作错误页（复制错误详情/重新加载）；崩溃早于主题就绪时强制移除 FOUC 门控并显示窗口，避免进程挂死不可见。列表加载失败时工作台呈现可重试错误面板而非"暂无项目"假象。
 - Mod 扩展系统：支持 `css` / `css+js` / `theme` 三类 Mod，提供权限声明（能力/意图标注 + API 误用防呆，**非安全沙箱**——Mod 属可信扩展，JS 以完全权限运行于主 realm，启用前须确认来源可信）、生命周期回调、工具栏按钮、侧栏/浮动面板、卡片与列表行对等插槽、Mod 数据存储、文件读写、受约束的网络请求原语（`net.fetch` 经 Rust 后端代理）、只读标签关系等接口（API 版本 3.2.0）。
 - AI 自动打标：兼容 Anthropic Messages API（官方或第三方兼容地址），在设置中填写 base URL / API key / 模型后，可为全部或未打标对象批量打标，支持「新对象自动打标」「允许创建新标签」「每对象最多标签数」等选项；后端仅提供无状态「建议标签」原语，批量遍历/并发/进度/取消由前端编排。
 - 数据管理：数据目录可自定义（exe 旁 `datapath.json` 记录重定向，仅重定向 `Save/`）；支持一键备份、导出、导入，统一走 SQLite Online Backup API（页级一致快照），导入前自动安全备份、可回退；切换目录或导入后自动重启生效。
@@ -114,6 +116,8 @@ tag-launcher/
 │   │   ├── workspaceChrome.ts    # 工作台遮罩、选中锚点、网格列数
 │   │   └── synonyms.ts           # 同义词字典加载
 │   ├── components/
+│   │   ├── TitleBar.tsx          # 自绘窗口栏（decorations: false，拖拽/最小化/最大化/关闭）
+│   │   ├── AppErrorBoundary.tsx  # 顶层错误边界（崩溃时强制显示窗口 + 可复制错误详情）
 │   │   ├── Sidebar.tsx           # 左侧导航（标签/文件柜/最近使用）
 │   │   ├── SearchBar.tsx         # 顶部搜索栏（排序 / Ctrl+K）
 │   │   ├── TagFilterBar.tsx      # 类型 chip + 标签筛选
