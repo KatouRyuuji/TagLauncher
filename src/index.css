@@ -55,6 +55,7 @@
     --sidebar-width: 252px;
     --grid-col-min: 238px;
     --header-height: 84px;
+    --titlebar-height: 34px;
 
     --z-bg-decoration: 0;
     --z-context-overlay: 99;
@@ -73,6 +74,9 @@
     --z-migration-overlay: 300;
     --z-migration-panel: 301;
     --z-toast: 500;
+    /* 窗口栏永远置顶：全屏遮罩弹层打开时窗口仍可拖动/最小化/关闭
+       （原生标题栏的等价行为，自绘后必须显式保证） */
+    --z-titlebar: 600;
 
     --drag-ghost-offset-x: 14px;
     --drag-ghost-offset-y: 14px;
@@ -380,10 +384,67 @@
   [data-region="root"] {
     position: relative;
     display: flex;
+    flex-direction: column;
     height: 100vh;
     width: 100vw;
     background: var(--bg-base);
     color: var(--text-primary);
+  }
+
+  /* 自绘窗口栏下方的工作区行（Sidebar + 主区域） */
+  [data-region="app-body"] {
+    display: flex;
+    flex: 1 1 0;
+    min-height: 0;
+    width: 100%;
+  }
+
+  [data-region="titlebar"] {
+    position: relative;
+    z-index: var(--z-titlebar);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--titlebar-height);
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .titlebar-control {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 100%;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 0;
+  }
+
+  .titlebar-control:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .titlebar-control:active {
+    background: var(--bg-active);
+  }
+
+  .titlebar-control:focus-visible {
+    outline-offset: -2px;
+  }
+
+  .titlebar-control-close:hover {
+    background: var(--color-danger);
+    color: var(--text-invert);
+  }
+
+  .titlebar-control-close:active {
+    background: var(--color-danger-hover);
+    color: var(--text-invert);
   }
 
   [data-region="bg-decoration"] {
