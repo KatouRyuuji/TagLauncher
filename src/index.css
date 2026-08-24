@@ -74,6 +74,9 @@
     --z-migration-overlay: 300;
     --z-migration-panel: 301;
     --z-toast: 500;
+    /* 窗口栏永远置顶：全屏遮罩弹层打开时窗口仍可拖动/最小化/关闭
+       （原生标题栏的等价行为，自绘后必须显式保证） */
+    --z-titlebar: 600;
 
     --drag-ghost-offset-x: 14px;
     --drag-ghost-offset-y: 14px;
@@ -398,6 +401,7 @@
 
   [data-region="titlebar"] {
     position: relative;
+    z-index: var(--z-titlebar);
     display: flex;
     align-items: center;
     justify-content: space-between;
