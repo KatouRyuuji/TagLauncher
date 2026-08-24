@@ -7,7 +7,7 @@ import { filterCommandsByQuery, isImeKeyboardEvent, SORT_OPTIONS, TYPE_FILTERS, 
 import { buildSearchIndex, searchWithIndex } from "../lib/search";
 import { focusWorkspaceSearch, resetWorkspaceSearchInput } from "../lib/workspaceChrome";
 import { useAppStore } from "../stores/appStore";
-import { getTypeLabel } from "../lib/itemUtils";
+import { getTypeLabel, truncatePathMiddle } from "../lib/itemUtils";
 import type { ItemWithTags } from "../types";
 
 const PALETTE_PRIMARY = new Set([
@@ -294,8 +294,15 @@ export function CommandPalette({
                 className={`flex w-full items-center justify-between gap-3 rounded-[var(--radius-md)] px-3 py-2 text-left text-sm ${
                   selected ? "bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]" : "text-[var(--text-secondary)]"
                 }`}
+                title={row.item.path}
               >
-                <span className="min-w-0 truncate">{row.item.name}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{row.item.name}</span>
+                  {/* 第二行展示中段折叠的路径：同名对象靠位置区分（盘符 + 文件名信息量最高） */}
+                  <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--text-faint)]">
+                    {truncatePathMiddle(row.item.path)}
+                  </span>
+                </span>
                 <span className="shrink-0 text-[11px] text-[var(--text-faint)]">{getTypeLabel(row.item.type)}</span>
               </button>
             );
