@@ -102,6 +102,11 @@ interface AppState {
   // ---- UI 状态 ----
   sidebarTab: SidebarTab;
   searchQuery: string;
+  /**
+   * 搜索框中的即时输入值（未经防抖）。与 searchQuery 不一致时表示
+   * 防抖窗口内还有待生效的搜索输入，StatusBar 据此显示"搜索中"指示。
+   */
+  searchInputValue: string;
   searchMode: SearchMode;
   viewMode: "grid" | "list";
   sortMode: SortMode;
@@ -122,6 +127,7 @@ interface AppState {
   setShowFavorites: (v: boolean) => void;
   setShowRecent: (v: boolean) => void;
   setSearchQuery: (query: string) => void;
+  setSearchInputValue: (value: string) => void;
   setSearchMode: (mode: SearchMode) => void;
   setViewMode: (mode: "grid" | "list") => void;
   setSortMode: (mode: SortMode) => void;
@@ -154,6 +160,7 @@ export const useAppStore = create<AppState>((set, get) => {
   showFavorites: false,
   showRecent: false,
   searchQuery: "",
+  searchInputValue: "",
   searchMode: initialPrefs.searchMode ?? "all",
   viewMode: initialPrefs.viewMode ?? "grid",
   sortMode: initialPrefs.sortMode ?? "smart",
@@ -223,7 +230,14 @@ export const useAppStore = create<AppState>((set, get) => {
       : { showRecent: v, selectedCabinetId: null, selectedTagIds: [], showFavorites: false },
   ),
 
-  setSearchQuery: (query) => set((state) => state.searchQuery === query ? state : { searchQuery: query }),
+  // 直接设置搜索词（跳过防抖）时同步即时输入值，保证"防抖待生效"指示不会误亮。
+  // 防抖路径（useSearch）会先单独写 searchInputValue，等定时器到期再走这里收敛。
+  setSearchQuery: (query) => set((state) =>
+    state.searchQuery === query && state.searchInputValue === query
+      ? state
+      : { searchQuery: query, searchInputValue: query },
+  ),
+  setSearchInputValue: (value) => set((state) => state.searchInputValue === value ? state : { searchInputValue: value }),
   setSearchMode: (mode) => {
     if (get().searchMode === mode) return;
     set({ searchMode: mode });
@@ -256,6 +270,7 @@ export const useAppStore = create<AppState>((set, get) => {
       showRecent: false,
       typeFilter: "all",
       searchQuery: "",
+      searchInputValue: "",
     });
     persistNow();
   },

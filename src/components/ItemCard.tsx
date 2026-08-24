@@ -175,7 +175,7 @@ function ItemCardComponent({
       <article
         data-drop-tag-item-id={item.id}
         data-selectable-item-id={item.id}
-        className={`card-hover-lift item-card-render-scope group relative flex min-h-[156px] cursor-pointer flex-col overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--bg-card)] p-3 ${
+        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex min-h-[156px] cursor-pointer flex-col overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--bg-card)] p-3 ${
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
             : selected

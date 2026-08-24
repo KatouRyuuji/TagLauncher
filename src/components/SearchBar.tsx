@@ -18,10 +18,10 @@ interface SearchBarProps {
   onOpenSettings?: () => void;
 }
 
-const MODES: { value: SearchMode; label: string }[] = [
-  { value: "all", label: "全部" },
-  { value: "name", label: "名称" },
-  { value: "tag", label: "标签" },
+const MODES: { value: SearchMode; label: string; hint: string }[] = [
+  { value: "all", label: "全部", hint: "搜索范围：名称、路径与标签" },
+  { value: "name", label: "名称", hint: "搜索范围：仅名称与路径" },
+  { value: "tag", label: "标签", hint: "搜索范围：仅标签" },
 ];
 
 const PLACEHOLDERS: Record<SearchMode, string> = {
@@ -140,6 +140,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
                 searchMode === mode.value ? "control-chip-active" : ""
               }`}
               aria-pressed={searchMode === mode.value}
+              title={mode.hint}
             >
               {mode.label}
             </button>
@@ -179,34 +180,58 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
               handleSearch(value);
               notifySearchInput(value);
             }}
-            className="w-full border-0 bg-transparent pl-7 pr-24 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none"
+            className={`w-full border-0 bg-transparent pl-7 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none ${
+              searchMode !== "all" ? "pr-44" : "pr-28"
+            }`}
           />
 
-          <button
-            type="button"
-            onClick={() => setCommandPaletteOpen(true)}
-            className={`absolute top-1/2 inline-flex -translate-y-1/2 items-center ${inputValue ? "right-11" : "right-3"}`}
-            title="命令面板 (Ctrl+K)"
-          >
-            <kbd className="kbd">Ctrl+K</kbd>
-          </button>
+          <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
+            {/* 当前搜索范围徽章：非"全部"时提醒用户搜索被收窄，点击一键恢复 */}
+            {searchMode !== "all" && (
+              <button
+                type="button"
+                data-testid="search-mode-badge"
+                onClick={() => setSearchMode("all")}
+                className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-full)] border border-[color-mix(in_srgb,var(--accent-primary)_28%,transparent)] bg-[var(--accent-primary-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-primary)] hover:border-[var(--accent-primary)]"
+                title={`当前只搜${MODES.find((m) => m.value === searchMode)?.label}；点击恢复为“全部”`}
+              >
+                仅{MODES.find((m) => m.value === searchMode)?.label}
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            )}
 
-          {inputValue && (
+            {!inputValue && (
+              <kbd className="kbd" title="按 / 聚焦搜索框（Ctrl+F 亦可）">/</kbd>
+            )}
+
             <button
               type="button"
-              onClick={() => {
-                setInputValue("");
-                handleSearch("");
-                notifySearchInput("");
-              }}
-              className="absolute right-3 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius-full)] text-[var(--text-faint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
-              title="清空搜索"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="inline-flex items-center"
+              title="命令面板 (Ctrl+K)"
             >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
-              </svg>
+              <kbd className="kbd">Ctrl+K</kbd>
             </button>
-          )}
+
+            {inputValue && (
+              <button
+                type="button"
+                onClick={() => {
+                  setInputValue("");
+                  handleSearch("");
+                  notifySearchInput("");
+                }}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-full)] text-[var(--text-faint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+                title="清空搜索 (Esc)"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
 
         <label className="control-chip min-h-[34px] gap-2 px-3 text-xs font-medium">

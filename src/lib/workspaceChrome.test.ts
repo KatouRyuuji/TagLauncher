@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { assert, test, run } from "./__testutil";
-import { WORKSPACE_KEY_BLOCKING_OVERLAYS } from "./workspaceChrome";
+import { WORKSPACE_KEY_BLOCKING_OVERLAYS, gridOverscanRows } from "./workspaceChrome";
 
 const OVERLAY_FILES = [
   "src/components/AiTaggingModal.tsx",
@@ -35,6 +35,21 @@ test("全屏弹层带 data-workspace-overlay，避免漏标后 P 键穿透", () 
     const source = readFileSync(resolve(process.cwd(), file), "utf-8");
     assert.ok(source.includes("data-workspace-overlay"), `${file} 缺少 data-workspace-overlay`);
   }
+});
+
+test("gridOverscanRows：列数越多 overscan 行数越少，且始终 ≥2", () => {
+  assert.equal(gridOverscanRows(1), 6);
+  assert.equal(gridOverscanRows(2), 4);
+  assert.equal(gridOverscanRows(3), 3);
+  assert.equal(gridOverscanRows(4), 3);
+  assert.equal(gridOverscanRows(6), 2);
+  assert.equal(gridOverscanRows(12), 2);
+});
+
+test("gridOverscanRows：非法输入（0/负数/NaN）按单列兜底", () => {
+  assert.equal(gridOverscanRows(0), 6);
+  assert.equal(gridOverscanRows(-3), 6);
+  assert.equal(gridOverscanRows(Number.NaN), 6);
 });
 
 await run("workspaceChrome");

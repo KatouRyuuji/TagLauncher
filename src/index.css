@@ -457,6 +457,13 @@
 }
 
 @layer utilities {
+  /* 可聚焦对象卡片/行的键盘焦点环：与全局 button/input 焦点环共用同一 token 色。
+     内缩 2px 避免被虚拟化滚动容器的 overflow 裁剪（行与行、卡片与容器边缘紧邻）。 */
+  .item-focus-ring:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent-primary) 54%, transparent);
+    outline-offset: -2px;
+  }
+
   .drag-over-highlight {
     outline: 2px dashed color-mix(in srgb, var(--accent-primary) 65%, transparent);
     outline-offset: -2px;

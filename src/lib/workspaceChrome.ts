@@ -76,6 +76,18 @@ export function getWorkspaceGridLanes(): number {
   return workspaceGridLanes;
 }
 
+/**
+ * 虚拟化网格的 overscan 行数：一行渲染 lanes 张卡片，列数越多预渲染一行越贵，
+ * 相应减少行数；窄窗口单列时行很便宜，多预渲染几行让滚动更顺滑。
+ */
+export function gridOverscanRows(lanes: number): number {
+  const n = Math.max(1, Math.floor(lanes) || 1);
+  if (n <= 1) return 6;
+  if (n <= 2) return 4;
+  if (n <= 4) return 3;
+  return 2;
+}
+
 let selectionAnchorId: number | null = null;
 
 /** 键盘与鼠标点选共用的范围选择锚点。 */
