@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 import { TYPE_FILTERS, nextTypeFilter } from "../lib/itemQuery";
 
@@ -8,13 +9,29 @@ export function TagFilterBar() {
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
   const typeFilter = useAppStore((state) => state.typeFilter);
   const setTypeFilter = useAppStore((state) => state.setTypeFilter);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 筛选条是水平滚动容器：把纵向滚轮转为横向滚动，标签多时不用拖动滚动条。
+  // React 的 onWheel 在根节点以 passive 注册、无法 preventDefault，须手动挂非 passive 监听。
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY === 0 || event.deltaX !== 0 || event.shiftKey) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      el.scrollLeft += event.deltaY;
+      event.preventDefault();
+    };
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
 
   return (
     <div
       data-region="filterbar"
       className="border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_72%,transparent)] px-5 py-3"
     >
-      <div className="flex items-center gap-2 overflow-x-auto">
+      <div ref={scrollRef} className="flex items-center gap-2 overflow-x-auto">
         {TYPE_FILTERS.map((filter) => (
           <button
             key={filter.value}
