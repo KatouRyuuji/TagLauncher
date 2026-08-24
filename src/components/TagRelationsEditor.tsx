@@ -110,8 +110,16 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
         </div>
 
         {tags.length === 0 ? (
-          <div className="surface-card-soft mt-5 px-4 py-6 text-center text-sm text-[var(--text-muted)]">
-            暂无标签，先创建标签后再来建立层级关系。
+          <div className="surface-card-soft mt-5 flex flex-col items-center px-6 py-10 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-full)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm-6 11a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm12 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4ZM12 8.5v3m0 0-4.5 3.6M12 11.5l4.5 3.6" />
+              </svg>
+            </div>
+            <h3 className="mt-3 text-sm font-semibold text-[var(--text-primary)]">还没有标签</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]">
+              层级关系建立在标签之上——先在侧栏「标签」区新建标签，再回来把它们组织成父子层级。
+            </p>
           </div>
         ) : (
           <>
