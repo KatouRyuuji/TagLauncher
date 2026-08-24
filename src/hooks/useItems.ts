@@ -85,6 +85,9 @@ export function useItems() {
   // 当前选中柜，避免短暂显示上一个柜子的内容（竞态视觉错位）。
   const [cabinetItemsOwner, setCabinetItemsOwner] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  // 最近一次列表加载失败的可读错误（成功后清空）：供 UI 在库为空时渲染
+  // 可重试的错误面板，而不是把后端故障静默呈现为「暂无项目」。
+  const [loadError, setLoadError] = useState<string | null>(null);
   const allItemsRef = useRef<ItemWithTags[]>([]);
   const cabinetItemsRef = useRef<ItemWithTags[]>([]);
   const relocatingRef = useRef(false);
@@ -92,6 +95,9 @@ export function useItems() {
   // 仅首屏加载显示整屏 loading；后台刷新（刷新按钮/跨盘找回后）保留旧列表原地更新，
   // 不清空、不闪 spinner、不丢滚动位置。
   const initialLoadRef = useRef(true);
+  // 进行中的加载 Promise：并发触发 refresh（刷新按钮 + Mod 桥接 + 跨盘找回等）
+  // 时共享同一次请求，避免多次全量 IO 与响应交错互相覆盖。
+  const loadInFlightRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     allItemsRef.current = allItems;
@@ -102,36 +108,49 @@ export function useItems() {
     cabinetItemsRef.current = cabinetItems;
   }, [cabinetItems]);
 
-  const loadAll = useCallback(async () => {
-    if (initialLoadRef.current) setLoading(true);
-    try {
-      // 记录刷新前的失效态，用于检测"本次新变为失效"的对象并主动提示
-      const prev = new Map(allItemsRef.current.map((i) => [i.id, i]));
-      const data = await db.getItems();
-      setAllItems(data);
+  const loadAll = useCallback((): Promise<void> => {
+    if (loadInFlightRef.current) return loadInFlightRef.current;
 
-      const newlyMissing = data.filter(
-        (i) => i.is_missing && prev.has(i.id) && !prev.get(i.id)?.is_missing,
-      );
-      if (newlyMissing.length > 0) {
-        const names = newlyMissing
-          .slice(0, 3)
-          .map((i) => i.name)
-          .join("、");
-        const suffix = newlyMissing.length > 3 ? ` 等 ${newlyMissing.length} 个` : "";
-        showToast(
-          `${newlyMissing.length} 个对象的文件已丢失或移动到其他磁盘：${names}${suffix}（归类已保留，文件恢复后会自动重新关联）`,
-          "warning",
+    const task = (async () => {
+      if (initialLoadRef.current) setLoading(true);
+      try {
+        // 记录刷新前的失效态，用于检测"本次新变为失效"的对象并主动提示
+        const prev = new Map(allItemsRef.current.map((i) => [i.id, i]));
+        const data = await db.getItems();
+        setAllItems(data);
+        setLoadError(null);
+
+        const newlyMissing = data.filter(
+          (i) => i.is_missing && prev.has(i.id) && !prev.get(i.id)?.is_missing,
         );
-        // 兜底：后台按内容签名尝试跨盘找回（扫描在后端 DB 锁外执行，不阻塞）。
-        relocateMissingRef.current();
+        if (newlyMissing.length > 0) {
+          const names = newlyMissing
+            .slice(0, 3)
+            .map((i) => i.name)
+            .join("、");
+          const suffix = newlyMissing.length > 3 ? ` 等 ${newlyMissing.length} 个` : "";
+          showToast(
+            `${newlyMissing.length} 个对象的文件已丢失或移动到其他磁盘：${names}${suffix}（归类已保留，文件恢复后会自动重新关联）`,
+            "warning",
+          );
+          // 兜底：后台按内容签名尝试跨盘找回（扫描在后端 DB 锁外执行，不阻塞）。
+          relocateMissingRef.current();
+        }
+      } catch (e) {
+        console.error("Failed to load items:", e);
+        const detail = e instanceof Error ? e.message : String(e);
+        setLoadError(detail);
+        showToast(`加载对象列表失败：${detail}`, "error");
+      } finally {
+        initialLoadRef.current = false;
+        setLoading(false);
       }
-    } catch (e) {
-      console.error("Failed to load items:", e);
-    } finally {
-      initialLoadRef.current = false;
-      setLoading(false);
-    }
+    })().finally(() => {
+      loadInFlightRef.current = null;
+    });
+
+    loadInFlightRef.current = task;
+    return task;
   }, []);
 
   // 跨盘符兜底找回：对失效对象按内容签名扫描候选盘，命中则刷新并提示。
@@ -177,7 +196,13 @@ export function useItems() {
           setCabinetItemsOwner(selectedCabinetId);
         }
       })
-      .catch(console.error);
+      .catch((e) => {
+        console.error(e);
+        // 失败时柜内容停留在空集（owner 未更新），须让用户可感知而非呈现"空柜"假象
+        if (!cancelled) {
+          showToast(`加载文件柜内容失败：${e instanceof Error ? e.message : String(e)}`, "error");
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -201,6 +226,20 @@ export function useItems() {
   const removeLocalItem = useCallback((itemId: number) => {
     setAllItems((current) => removeItemFromList(current, itemId));
     setCabinetItems((current) => removeItemFromList(current, itemId));
+  }, []);
+
+  // 把一批已变更对象并入本地缓存：全量列表直接 upsert；柜内列表只更新已在柜中的
+  // 对象（不新增成员——柜的成员关系变化由 add/removeItemsToCabinet 专门维护）。
+  const applyChangedItems = useCallback((changedItems: ItemWithTags[]) => {
+    if (changedItems.length === 0) return;
+    setAllItems((current) => upsertItems(current, changedItems));
+    setCabinetItems((current) => {
+      const currentIds = new Set(current.map((item) => item.id));
+      return upsertItems(
+        current,
+        changedItems.filter((item) => currentIds.has(item.id)),
+      );
+    });
   }, []);
 
   const source = useMemo(() => {
@@ -251,14 +290,7 @@ export function useItems() {
       if (result.items.length === 0) return;
 
       const changedItems = await db.getItemsByIds(result.items.map((item) => item.id));
-      setAllItems((current) => upsertItems(current, changedItems));
-      setCabinetItems((current) => {
-        const currentIds = new Set(current.map((item) => item.id));
-        return upsertItems(
-          current,
-          changedItems.filter((item) => currentIds.has(item.id)),
-        );
-      });
+      applyChangedItems(changedItems);
 
       // 通知新对象已加入（供 AI 自动打标等后台监听）。携带完整对象，
       // 避免监听方读到尚未 flush 的列表状态。
@@ -268,7 +300,7 @@ export function useItems() {
         );
       }
     });
-  }, []);
+  }, [applyChangedItems]);
 
   const removeItem = useCallback(async (id: number) => {
     await withErrorToast("删除项目", async () => {
@@ -310,16 +342,9 @@ export function useItems() {
       await db.setManyItemTags(changes);
 
       const changedItems = await db.getItemsByIds(changes.map((change) => change.itemId));
-      setAllItems((current) => upsertItems(current, changedItems));
-      setCabinetItems((current) => {
-        const currentIds = new Set(current.map((item) => item.id));
-        return upsertItems(
-          current,
-          changedItems.filter((item) => currentIds.has(item.id)),
-        );
-      });
+      applyChangedItems(changedItems);
     });
-  }, []);
+  }, [applyChangedItems]);
 
   const launchItem = useCallback(async (id: number) => {
     try {
@@ -405,6 +430,7 @@ export function useItems() {
     items: filtered,
     allItems,
     loading,
+    loadError,
     refresh: loadAll,
     addItems,
     removeItem,

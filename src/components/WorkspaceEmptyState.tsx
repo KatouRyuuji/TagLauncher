@@ -1,3 +1,31 @@
+/** 对象列表加载失败且本地无缓存时的错误面板：给出可读原因与重试入口。 */
+export function WorkspaceLoadError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="empty-state-panel">
+        <div className="flex h-16 w-16 items-center justify-center rounded-[calc(var(--radius-xl)+4px)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]">
+          <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-lg font-semibold text-[var(--text-primary)]">对象列表加载失败</p>
+          <p className="mx-auto mt-2 max-w-[420px] break-all text-sm text-[var(--text-muted)]">{message}</p>
+          <button type="button" className="action-button mt-4" onClick={onRetry}>
+            重试
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function WorkspaceEmptyState({
   kind,
   onClearFilters,
