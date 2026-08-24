@@ -41,6 +41,9 @@ export function BatchSelectionToolbar({
   onClearSelection: () => void;
 }) {
   const [openMenu, setOpenMenu] = useState<"add-tag" | "remove-tag" | "cabinet" | null>(null);
+  // 批量操作进行中：禁用全部操作入口防止重复提交（大批量写库有可感知耗时），
+  // 并以 aria-busy + spinner 让用户知道操作正在执行而非无响应。
+  const [busy, setBusy] = useState(false);
 
   useEscapeKey(() => setOpenMenu(null), openMenu !== null);
 
@@ -80,9 +83,13 @@ export function BatchSelectionToolbar({
   if (selectedCount === 0) return null;
 
   const runAction = (action: () => Promise<void>) => {
+    if (busy) return;
     setOpenMenu(null);
+    setBusy(true);
     // 失败提示已由批量动作链路（withErrorToast）统一弹出，吞掉 rejection 避免噪音
-    void action().catch(() => {});
+    void action()
+      .catch(() => {})
+      .finally(() => setBusy(false));
   };
 
   return (
@@ -90,16 +97,34 @@ export function BatchSelectionToolbar({
       className="pointer-events-none absolute inset-x-5 bottom-12 z-50 flex justify-center"
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <div className="surface-card pointer-events-auto flex max-w-[calc(100vw-var(--sidebar-width)-40px)] items-center gap-2 px-3 py-2 shadow-[var(--shadow-dropdown)]">
+      <div
+        data-testid="batch-toolbar"
+        aria-busy={busy}
+        className="surface-card pointer-events-auto flex max-w-[calc(100vw-var(--sidebar-width)-40px)] items-center gap-2 px-3 py-2 shadow-[var(--shadow-dropdown)]"
+      >
         <div className="flex items-center gap-2 border-r border-[var(--border-subtle)] pr-3 text-sm font-semibold text-[var(--text-primary)]">
           <span className="flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-full)] bg-[var(--accent-primary)] px-2 text-xs text-[var(--text-invert)]">
-            {selectedCount}
+            {busy ? (
+              <svg
+                data-testid="batch-busy-spinner"
+                className="h-3.5 w-3.5 animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.4}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3a9 9 0 1 0 9 9" />
+              </svg>
+            ) : (
+              selectedCount
+            )}
           </span>
-          已选中
+          {busy ? "处理中…" : "已选中"}
         </div>
 
         <ToolbarMenuButton
           label="加入标签"
+          disabled={busy}
           open={openMenu === "add-tag"}
           onClick={() => setOpenMenu(openMenu === "add-tag" ? null : "add-tag")}
         >
@@ -114,6 +139,7 @@ export function BatchSelectionToolbar({
 
         <ToolbarMenuButton
           label="移除标签"
+          disabled={busy}
           open={openMenu === "remove-tag"}
           onClick={() => setOpenMenu(openMenu === "remove-tag" ? null : "remove-tag")}
         >
@@ -128,6 +154,7 @@ export function BatchSelectionToolbar({
 
         <ToolbarMenuButton
           label="文件夹"
+          disabled={busy}
           open={openMenu === "cabinet"}
           onClick={() => setOpenMenu(openMenu === "cabinet" ? null : "cabinet")}
         >
@@ -153,6 +180,7 @@ export function BatchSelectionToolbar({
           <button
             type="button"
             onClick={onSelectAll}
+            disabled={busy}
             className="action-button"
             title="选中当前筛选结果的全部对象（含虚拟化未渲染的条目）"
           >
@@ -162,6 +190,7 @@ export function BatchSelectionToolbar({
         <button
           type="button"
           onClick={onToggleFavorite}
+          disabled={busy}
           className="action-button"
           title={`${favoriteLabel}选中对象（Ctrl+D）`}
         >
@@ -173,6 +202,7 @@ export function BatchSelectionToolbar({
         <button
           type="button"
           onClick={onCopyPaths}
+          disabled={busy}
           className="action-button"
           title="复制选中路径（Ctrl+C，多项换行）"
         >
@@ -180,12 +210,13 @@ export function BatchSelectionToolbar({
         </button>
         <button
           type="button"
-          onClick={() => void onRemoveFromApp()}
+          onClick={() => runAction(onRemoveFromApp)}
+          disabled={busy}
           className="action-button text-[var(--color-danger)] hover:text-[var(--color-danger-hover)]"
         >
           批量删除
         </button>
-        <button type="button" onClick={onClearSelection} className="action-button">
+        <button type="button" onClick={onClearSelection} disabled={busy} className="action-button">
           取消选择
         </button>
       </div>
@@ -196,11 +227,13 @@ export function BatchSelectionToolbar({
 function ToolbarMenuButton({
   label,
   open,
+  disabled,
   onClick,
   children,
 }: {
   label: string;
   open: boolean;
+  disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -210,6 +243,7 @@ function ToolbarMenuButton({
         type="button"
         aria-expanded={open}
         aria-haspopup="menu"
+        disabled={disabled}
         onClick={onClick}
         className={`action-button ${open ? "border-[var(--accent-primary)] text-[var(--accent-primary)]" : ""}`}
       >
