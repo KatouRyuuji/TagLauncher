@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TagEditor } from "./TagEditor";
 import { TagRelationsEditor } from "./TagRelationsEditor";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
+import * as db from "../lib/db";
 import {
   beginInternalPointerDrag,
   findClosestNumberDataAttribute,
@@ -87,6 +88,43 @@ export function Sidebar({
     for (const r of tagRelations) m.set(r.childId, (m.get(r.childId) ?? 0) + 1);
     return m;
   }, [tagRelations]);
+
+  const itemCountByTag = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const item of allItems) {
+      for (const tag of item.tags) {
+        m.set(tag.id, (m.get(tag.id) ?? 0) + 1);
+      }
+    }
+    return m;
+  }, [allItems]);
+
+  const [itemCountByCabinet, setItemCountByCabinet] = useState<Map<number, number>>(() => new Map());
+
+  useEffect(() => {
+    if (cabinets.length === 0) {
+      setItemCountByCabinet(new Map());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const pairs = await Promise.all(
+        cabinets.map(async (cabinet) => {
+          try {
+            const items = await db.getCabinetItems(cabinet.id);
+            return [cabinet.id, items.length] as const;
+          } catch {
+            return [cabinet.id, 0] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setItemCountByCabinet(new Map(pairs));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cabinets, allItems.length]);
 
   const handleTagPointerDown = (event: React.PointerEvent<HTMLElement>, tag: Tag) => {
     beginInternalPointerDrag({
@@ -248,6 +286,11 @@ export function Sidebar({
                         }}
                       />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">{tag.name}</span>
+                      {!active && (itemCountByTag.get(tag.id) ?? 0) > 0 ? (
+                        <span className="shrink-0 rounded-[var(--radius-full)] bg-[var(--bg-hover)] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[var(--text-faint)]">
+                          {itemCountByTag.get(tag.id)}
+                        </span>
+                      ) : null}
                       {!active && (parentCountByTag.get(tag.id) || childCountByTag.get(tag.id)) ? (
                         <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-[var(--text-faint)]">
                           {parentCountByTag.get(tag.id) ? (
@@ -356,6 +399,11 @@ export function Sidebar({
                         style={{ backgroundColor: cabinet.color }}
                       />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">{cabinet.name}</span>
+                      {(itemCountByCabinet.get(cabinet.id) ?? 0) > 0 ? (
+                        <span className="shrink-0 rounded-[var(--radius-full)] bg-[var(--bg-hover)] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[var(--text-faint)]">
+                          {itemCountByCabinet.get(cabinet.id)}
+                        </span>
+                      ) : null}
                     </button>
                   );
                 })}

@@ -69,6 +69,7 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open, autoFocus: false });
 
   const commands = useMemo<CommandDef[]>(() => [
@@ -142,9 +143,30 @@ export function CommandPalette({
     setQuery("");
     setFilterQuery("");
     setActive(0);
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = undefined;
+    }
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [open]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const scheduleFilterQuery = (value: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value === "") {
+      setFilterQuery("");
+      return;
+    }
+    debounceRef.current = setTimeout(() => {
+      setFilterQuery(value);
+    }, 150);
+  };
 
   useEffect(() => {
     setActive(0);
@@ -226,13 +248,13 @@ export function CommandPalette({
               composingRef.current = false;
               const value = event.currentTarget.value;
               setQuery(value);
-              setFilterQuery(value);
+              scheduleFilterQuery(value);
             }}
             onChange={(event) => {
               const value = event.target.value;
               setQuery(value);
               if (composingRef.current) return;
-              setFilterQuery(value);
+              scheduleFilterQuery(value);
             }}
             onKeyDown={handleKeyDown}
             placeholder="搜索命令或项目…"

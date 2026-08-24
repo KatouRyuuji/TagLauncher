@@ -268,15 +268,21 @@ export function stepMenuIndex(length: number, current: number, key: string): num
   return null;
 }
 
+import { pinyin } from "pinyin-pro";
+
+function commandSearchHaystack(title: string, keywords: string): string {
+  const pinyinTitle = pinyin(title, { toneType: "none", type: "array" }).join("");
+  const pinyinInitials = pinyin(title, { pattern: "first", toneType: "none", type: "array" }).join("");
+  return `${title} ${keywords} ${pinyinTitle} ${pinyinInitials}`.toLowerCase();
+}
+
 export function filterCommandsByQuery<T extends { title: string; keywords: string }>(
   commands: T[],
   query: string,
 ): T[] {
   const q = query.trim().toLowerCase();
   if (!q) return commands;
-  return commands.filter(
-    (command) => command.title.toLowerCase().includes(q) || command.keywords.toLowerCase().includes(q),
-  );
+  return commands.filter((command) => commandSearchHaystack(command.title, command.keywords).includes(q));
 }
 
 export function isTypingTarget(target: EventTarget | null): boolean {

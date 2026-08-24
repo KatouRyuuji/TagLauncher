@@ -18,6 +18,7 @@ interface QuickPreviewProps {
 export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
   const previewItemId = useAppStore((state) => state.previewItemId);
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
+  const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
   const item = previewItemId == null ? null : items.find((entry) => entry.id === previewItemId) ?? null;
   const trapRef = useFocusTrap<HTMLDivElement>({ active: item !== null });
 
@@ -71,7 +72,13 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
           {item.is_missing ? (
             <p className="text-sm text-[var(--color-warning)]">对象已失效，无法预览当前文件。归类仍保留，文件恢复后会自动关联。</p>
           ) : (
-            <PreviewBody item={item} />
+            <PreviewBody
+              item={item}
+              onTagSelect={(tagId) => {
+                setSelectedTagIds([tagId]);
+                setPreviewItemId(null);
+              }}
+            />
           )}
         </div>
 
@@ -99,13 +106,14 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
   );
 }
 
-function PreviewBody({ item }: { item: ItemWithTags }) {
+function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (tagId: number) => void }) {
   const [info, setInfo] = useState<db.ObjectPreviewFileInfo | null>(null);
   const [entries, setEntries] = useState<db.ObjectDirectoryEntry[]>([]);
   const [audio, setAudio] = useState<db.AudioPreviewInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [imageFailed, setImageFailed] = useState(false);
   const [coverFailed, setCoverFailed] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,6 +123,7 @@ function PreviewBody({ item }: { item: ItemWithTags }) {
     setInfo(null);
     setEntries([]);
     setAudio(null);
+    setLoading(true);
 
     void (async () => {
       try {
@@ -130,6 +139,8 @@ function PreviewBody({ item }: { item: ItemWithTags }) {
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
 
@@ -139,6 +150,19 @@ function PreviewBody({ item }: { item: ItemWithTags }) {
   }, [item.id, item.path, item.type]);
 
   const assetUrl = toAssetUrl(item.icon_path || (item.type === "image" || item.type === "audio" ? item.path : null));
+
+  if (loading && !error) {
+    return (
+      <div className="space-y-4" aria-busy="true" aria-label="加载预览">
+        <div className="skeleton-block h-40 rounded-[var(--radius-md)]" />
+        <div className="space-y-2">
+          <div className="skeleton-block h-3 w-24 rounded" />
+          <div className="skeleton-block h-3 w-full rounded" />
+          <div className="skeleton-block h-3 w-2/3 rounded" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -202,13 +226,16 @@ function PreviewBody({ item }: { item: ItemWithTags }) {
             <dt className="text-[var(--text-faint)]">标签</dt>
             <dd className="flex flex-wrap gap-1.5">
               {item.tags.map((tag) => (
-                <span
+                <button
                   key={tag.id}
-                  className="rounded-[var(--radius-full)] px-2 py-0.5 text-[11px]"
+                  type="button"
+                  title={`按「${tag.name}」筛选`}
+                  onClick={() => onTagSelect(tag.id)}
+                  className="rounded-[var(--radius-full)] px-2 py-0.5 text-[11px] transition-opacity hover:opacity-80"
                   style={{ backgroundColor: `color-mix(in srgb, ${tag.color} 18%, transparent)`, color: tag.color }}
                 >
                   {tag.name}
-                </span>
+                </button>
               ))}
             </dd>
           </>
