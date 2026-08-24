@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Sidebar } from "./components/Sidebar";
+import { TitleBar } from "./components/TitleBar";
 import { SearchBar } from "./components/SearchBar";
 import { TagFilterBar } from "./components/TagFilterBar";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemListView } from "./components/ItemListView";
+import { WorkspaceLoadError } from "./components/WorkspaceEmptyState";
 import { WelcomeModal } from "./components/WelcomeModal";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -49,6 +51,7 @@ function App() {
     items,
     allItems,
     loading,
+    loadError,
     addItems,
     removeItem,
     removeItems,
@@ -321,6 +324,8 @@ function App() {
         className="fixed inset-0 pointer-events-none"
         style={{ background: "var(--bg-gradient)", zIndex: "var(--z-bg-decoration)" as unknown as number }}
       />
+      <TitleBar />
+      <div data-region="app-body">
       <Sidebar
         tags={tags}
         cabinets={cabinets}
@@ -343,7 +348,15 @@ function App() {
       >
         <SearchBar onAddItems={addItems} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} />
         <TagFilterBar />
-        {viewMode === "grid" ? <ItemGrid {...viewProps} /> : <ItemListView {...viewProps} />}
+        {/* 加载失败且本地无任何缓存时渲染可重试的错误面板；有缓存时保留旧列表，
+            失败已由 toast 提示，避免把可用数据替换成错误页。 */}
+        {loadError && !loading && allItems.length === 0 ? (
+          <WorkspaceLoadError message={loadError} onRetry={() => { void refresh(); }} />
+        ) : viewMode === "grid" ? (
+          <ItemGrid {...viewProps} />
+        ) : (
+          <ItemListView {...viewProps} />
+        )}
         <BatchSelectionToolbar
           selectedCount={isDraggingItem ? 0 : selectedItemIds.length}
           totalCount={items.length}
@@ -391,6 +404,7 @@ function App() {
         )}
         <InternalDragGhost />
       </main>
+      </div>
       <WelcomeModal open={showWelcomeModal} onClose={handleCloseWelcome} />
       <CommandPalette
         items={allItems}
