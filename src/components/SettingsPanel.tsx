@@ -10,6 +10,7 @@ import { SyncSettingsSection } from "./SyncSettingsSection";
 import { UpdateSettingsSection } from "./UpdateSettingsSection";
 import { useThemeContext } from "./ThemeProvider";
 import { showToast } from "../lib/toast";
+import { SETTINGS_SECTIONS, settingsSectionDomId } from "../lib/settingsSections";
 import type { ThemeDefinition, ThemeSource, ThemeVariant } from "../types/theme";
 
 interface SettingsPanelProps {
@@ -136,10 +137,27 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 </svg>
               </button>
             </div>
+            {/* 区块快速导航：设置内容已超一屏，chips 点击滚动到对应区块 */}
+            <nav aria-label="设置区块导航" className="mt-4 flex flex-wrap gap-1.5">
+              {SETTINGS_SECTIONS.map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => {
+                    document
+                      .getElementById(settingsSectionDomId(section.id))
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className="rounded-[var(--radius-full)] border border-[var(--border-subtle)] px-3 py-1 text-xs text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)]"
+                >
+                  {section.label}
+                </button>
+              ))}
+            </nav>
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-6">
-            <section className="surface-card-soft p-5">
+            <section id={settingsSectionDomId("theme")} className="surface-card-soft scroll-mt-2 p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <div className="text-label">Theme</div>
@@ -174,15 +192,23 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               )}
             </section>
 
-            <AiSettingsSection />
+            <div id={settingsSectionDomId("ai")} className="scroll-mt-2">
+              <AiSettingsSection />
+            </div>
 
-            <DataSettingsSection />
+            <div id={settingsSectionDomId("data")} className="scroll-mt-2">
+              <DataSettingsSection />
+            </div>
 
-            <SyncSettingsSection />
+            <div id={settingsSectionDomId("sync")} className="scroll-mt-2">
+              <SyncSettingsSection />
+            </div>
 
-            <UpdateSettingsSection />
+            <div id={settingsSectionDomId("update")} className="scroll-mt-2">
+              <UpdateSettingsSection />
+            </div>
 
-            <section className="mt-6">
+            <section id={settingsSectionDomId("mods")} className="mt-6 scroll-mt-2">
               <div className="mb-3">
                 <div className="text-label">Extensions</div>
                 <h3 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">扩展</h3>

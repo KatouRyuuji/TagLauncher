@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "re
 import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { computeLayers, orderLayersByBarycenter } from "../lib/tagGraph";
+import { computeLayers, orderLayersByBarycenter, resolveTagGraphEmptyState } from "../lib/tagGraph";
 import { compareNames } from "../lib/itemQuery";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import type { ItemWithTags } from "../types";
@@ -68,6 +68,9 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
     const ids = new Set(sortedTags.map((t) => t.id));
     return relations.filter((r) => ids.has(r.parentId) && ids.has(r.childId));
   }, [sortedTags, relations]);
+
+  // 空态语义：无标签（图无从谈起）与无关系（节点可画但没有层级）分开引导
+  const emptyState = resolveTagGraphEmptyState(tags.length, validRelations.length);
 
   // 按层级分组，层内用 barycenter 排序减少连线交叉
   const layers = useMemo(() => {
@@ -166,12 +169,39 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
         <div className="flex min-h-0 flex-1">
           {/* 左：层级图谱 */}
           <div className="min-h-0 min-w-0 flex-1 overflow-auto px-8 py-8">
-            {tags.length === 0 ? (
-              <div className="surface-card-soft px-6 py-10 text-center text-sm text-[var(--text-muted)]">
-                暂无标签。创建标签并在「标签关系」中建立父子层级后，这里会显示图谱。
+            {emptyState === "no-tags" ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="surface-card-soft flex max-w-[420px] flex-col items-center px-8 py-12 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-[var(--radius-full)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+                    <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm-6 11a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm12 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4ZM12 8.5v3m0 0-4.5 3.6M12 11.5l4.5 3.6" />
+                    </svg>
+                  </div>
+                  <h3 className="mt-4 text-base font-semibold text-[var(--text-primary)]">还没有标签</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">
+                    图谱以标签为节点、父子关系为连线。先在侧栏创建标签，再回来建立层级。
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setTagGraphOpen(false)}
+                    className="action-button action-button-primary mt-5"
+                  >
+                    返回工作台创建标签
+                  </button>
+                </div>
               </div>
             ) : (
               <div ref={contentRef} className="relative inline-block min-w-full">
+                {emptyState === "no-relations" && (
+                  <div className="mb-6 flex items-start gap-2.5 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--accent-primary)_28%,transparent)] bg-[var(--accent-primary-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+                    <svg className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+                    </svg>
+                    <span>
+                      尚未建立任何父子关系，所有标签都在同一层。到侧栏「标签关系」为标签设置父级后，这里会呈现层级连线。
+                    </span>
+                  </div>
+                )}
                 {/* 连线层 */}
                 <svg className="pointer-events-none absolute inset-0 h-full w-full" style={{ overflow: "visible" }}>
                   <defs>

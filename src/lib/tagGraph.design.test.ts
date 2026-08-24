@@ -1,5 +1,5 @@
 import { assert, test, run } from "./__testutil";
-import { buildChildrenMap, buildParentsMap, buildDescendantsMap, computeLayers, orderLayersByBarycenter } from "./tagGraph";
+import { buildChildrenMap, buildParentsMap, buildDescendantsMap, computeLayers, orderLayersByBarycenter, resolveTagGraphEmptyState } from "./tagGraph";
 import type { TagRelation } from "../types";
 
 function rel(parentId: number, childId: number): TagRelation {
@@ -146,6 +146,26 @@ test("orderLayersByBarycenter：交叉边会被重排以减少交叉", () => {
 test("orderLayersByBarycenter：孤立节点保持输入顺序", () => {
   const ordered = orderLayersByBarycenter([[1, 2, 3]], []);
   assert.deepEqual(ordered, [[1, 2, 3]]);
+});
+
+// ── resolveTagGraphEmptyState：图谱空态语义 ────────────────────────────────
+
+test("resolveTagGraphEmptyState：无标签时为 no-tags（关系数无关紧要）", () => {
+  assert.equal(resolveTagGraphEmptyState(0, 0), "no-tags");
+  assert.equal(resolveTagGraphEmptyState(0, 5), "no-tags");
+});
+
+test("resolveTagGraphEmptyState：有标签但无关系时为 no-relations", () => {
+  assert.equal(resolveTagGraphEmptyState(3, 0), "no-relations");
+});
+
+test("resolveTagGraphEmptyState：有标签且有关系时为 null（正常渲染图谱）", () => {
+  assert.equal(resolveTagGraphEmptyState(3, 2), null);
+});
+
+test("resolveTagGraphEmptyState：负数输入按空处理，不抛异常", () => {
+  assert.equal(resolveTagGraphEmptyState(-1, 2), "no-tags");
+  assert.equal(resolveTagGraphEmptyState(2, -1), "no-relations");
 });
 
 await run("tagGraph");

@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ItemViewProps } from "../types";
+import { useAppStore } from "../stores/appStore";
+import { isHeaderSortActive, toggleHeaderSort, type ListHeaderColumn } from "../lib/itemQuery";
 import { ItemRow } from "./ItemRow";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
@@ -69,6 +71,47 @@ const ItemListRow = memo(function ItemListRow({
     />
   );
 });
+
+/**
+ * 可点击排序的表头单元格：点击切到该列排序，再点回到智能排序（对齐资源管理器习惯）。
+ * 有搜索词时排序不套用（保留命中顺序），但设置仍生效——清空搜索后立即按所选排序。
+ */
+function SortableHeaderCell({
+  column,
+  label,
+  align,
+}: {
+  column: ListHeaderColumn;
+  label: string;
+  align?: "right";
+}) {
+  const sortMode = useAppStore((state) => state.sortMode);
+  const setSortMode = useAppStore((state) => state.setSortMode);
+  const active = isHeaderSortActive(sortMode, column);
+
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={() => setSortMode(toggleHeaderSort(sortMode, column))}
+      title={active ? "再点一次回到智能排序" : `按${label}排序`}
+      className={`group flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors ${
+        align === "right" ? "justify-end text-right" : "text-left"
+      } ${active ? "text-[var(--accent-primary)]" : "text-[var(--text-faint)] hover:text-[var(--text-secondary)]"}`}
+    >
+      {label}
+      <svg
+        className={`h-3 w-3 transition-opacity ${active ? "opacity-100" : "opacity-0 group-hover:opacity-50"}`}
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2.2}
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0-5 5m5-5 5 5" />
+      </svg>
+    </button>
+  );
+}
 
 export function ItemListView({
   items,
@@ -226,11 +269,11 @@ export function ItemListView({
       getItemRects={getItemRects}
     >
       <div className="surface-card overflow-hidden">
-        <div className="sticky top-0 z-10 grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_96%,transparent)] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+        <div className="sticky top-0 z-10 grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_96%,transparent)] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)] backdrop-blur-sm">
           <span />
-          <span>名称</span>
+          <SortableHeaderCell column="name" label="名称" />
           <span>标签</span>
-          <span className="text-right">类型</span>
+          <SortableHeaderCell column="type" label="类型" align="right" />
         </div>
 
         {/* 虚拟化列表：position:relative 撑开滚动高度；行用 top 定位（非 transform，

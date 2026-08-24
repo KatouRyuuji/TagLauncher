@@ -125,6 +125,21 @@ export function orderLayersByBarycenter(
 
   return ordered;
 }
+// ── 图谱空态语义 ────────────────────────────────────────────────────────────
+// 「没有标签」和「有标签但没建过关系」是两种语义不同的空态：
+//   no-tags      — 图谱无从谈起，引导先创建标签；
+//   no-relations — 节点可以画但没有层级信息，引导到「标签关系」建立父子关系；
+//   null         — 有节点也有边，正常渲染图谱。
+
+export type TagGraphEmptyState = "no-tags" | "no-relations" | null;
+
+/** 根据标签数与（端点均存在的）关系数解析图谱空态语义。 */
+export function resolveTagGraphEmptyState(tagCount: number, relationCount: number): TagGraphEmptyState {
+  if (tagCount <= 0) return "no-tags";
+  if (relationCount <= 0) return "no-relations";
+  return null;
+}
+
 export function computeLayers(nodeIds: number[], relations: TagRelation[]): Map<number, number> {
   const parents = buildParentsMap(relations);
   const layer = new Map<number, number>();
