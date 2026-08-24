@@ -1,6 +1,6 @@
 {
   "name": "tag-launcher",
-  "version": "1.5.1",
+  "version": "1.6.1-beta",
   "description": "标签式文件管理器",
   "type": "module",
   "scripts": {
@@ -11,7 +11,8 @@
     "test:design": "esbuild src/lib/search.design.test.ts --bundle --platform=node --format=esm --outfile=.tmp-test/search.design.test.mjs && node .tmp-test/search.design.test.mjs",
     "test": "node scripts/run-tests.mjs --frontend-only",
     "test:all": "node scripts/run-tests.mjs",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "icon": "node generate-icon.mjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.4",
