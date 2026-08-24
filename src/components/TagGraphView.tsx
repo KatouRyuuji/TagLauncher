@@ -3,6 +3,7 @@ import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { computeLayers, orderLayersByBarycenter } from "../lib/tagGraph";
+import { compareNames } from "../lib/itemQuery";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import type { ItemWithTags } from "../types";
 
@@ -46,7 +47,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
   }, [selectedNodeId]);
 
   // 标签按名称排序作为层内默认顺序，再经 barycenter 优化减少边交叉。
-  const sortedTags = useMemo(() => [...tags].sort((a, b) => a.name.localeCompare(b.name)), [tags]);
+  const sortedTags = useMemo(() => [...tags].sort((a, b) => compareNames(a.name, b.name)), [tags]);
   const tagById = useMemo(() => new Map(sortedTags.map((t) => [t.id, t])), [sortedTags]);
 
   // 每个标签直接关联的对象

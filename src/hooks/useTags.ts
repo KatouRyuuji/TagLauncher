@@ -9,11 +9,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { notifyTagsChanged } from "../lib/modApi";
+import { compareNames } from "../lib/itemQuery";
 import type { Tag } from "../types";
 
 /** 按名称排序，保持与后端 get_tags 的返回顺序一致 */
 function sortTags(list: Tag[]): Tag[] {
-  return [...list].sort((a, b) => a.name.localeCompare(b.name));
+  return [...list].sort((a, b) => compareNames(a.name, b.name));
 }
 
 export function useTags() {
