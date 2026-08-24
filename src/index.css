@@ -536,6 +536,14 @@
     cursor: se-resize;
   }
 
+  /* 搜索命中高亮 */
+  .search-highlight {
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--accent-primary) 28%, transparent);
+    color: inherit;
+    padding: 0 1px;
+  }
+
   /* 首屏骨架屏占位块：低对比底色 + 横向 shimmer 扫光（reduced-motion 下自动静止） */
   .skeleton-block {
     position: relative;

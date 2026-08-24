@@ -169,6 +169,7 @@ test("filterCommandsByQuery：标题与 keywords 命中，空查询返回全部"
   assert.equal(filterCommandsByQuery(commands, "").length, 2);
   assert.deepEqual(filterCommandsByQuery(commands, "设置").map((c) => c.title), ["打开设置"]);
   assert.deepEqual(filterCommandsByQuery(commands, "GRID").map((c) => c.title), ["网格视图"]);
+  assert.deepEqual(filterCommandsByQuery(commands, "sz").map((c) => c.title), ["打开设置"]);
 });
 
 test("stepMenuIndex：循环、Home/End、空菜单", () => {

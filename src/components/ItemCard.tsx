@@ -13,6 +13,7 @@ import { getFileSuffix, getTypeLabel } from "../lib/itemUtils";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
+import { SearchHighlightText } from "./SearchHighlightText";
 import type { Cabinet, ItemWithTags, Tag } from "../types";
 import type { ItemSlotDescriptor } from "../lib/modItemSlotRegistry";
 
@@ -161,6 +162,7 @@ function ItemCardComponent({
   );
   const fileSuffix = getFileSuffix(item);
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
+  const searchQuery = useAppStore((state) => state.searchQuery);
 
   // Mod ItemCard 插槽
   const modSlots = useModItemSlots();
@@ -218,7 +220,7 @@ function ItemCardComponent({
                 {getTypeLabel(item.type)}
               </p>
               <h3 className="mt-0.5 truncate text-[15px] font-semibold leading-tight text-[var(--text-primary)]" title={item.name}>
-                {item.name}
+                <SearchHighlightText text={item.name} query={searchQuery} />
               </h3>
             </div>
           </div>
@@ -226,7 +228,7 @@ function ItemCardComponent({
           <div className="flex shrink-0 items-center gap-1">
             <ItemDragHandle onPointerDown={handleItemHandlePointerDown} />
             <span className="inline-flex h-7 w-7 items-center justify-center">
-              <FavoriteStar active={item.is_favorite} />
+              <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
             </span>
             {/* Mod 插槽：header */}
             {modSlots.header.length > 0 && (

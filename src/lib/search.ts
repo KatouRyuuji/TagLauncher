@@ -105,6 +105,24 @@ export function buildSearchIndex(items: ItemWithTags[], mode: SearchMode): Searc
   };
 }
 
+/** 在已有索引上按对象 id 过滤，避免标签切换时重复计算拼音字段。 */
+export function filterSearchIndex(index: SearchIndex, allowedIds: Set<number>): SearchIndex {
+  if (allowedIds.size === index.entries.length) {
+    let allPresent = true;
+    for (const entry of index.entries) {
+      if (!allowedIds.has(entry.item.id)) {
+        allPresent = false;
+        break;
+      }
+    }
+    if (allPresent) return index;
+  }
+  return {
+    mode: index.mode,
+    entries: index.entries.filter((entry) => allowedIds.has(entry.item.id)),
+  };
+}
+
 function pushTerm(tokens: Token[], raw: string): void {
   const value = raw.trim();
   if (!value) return;

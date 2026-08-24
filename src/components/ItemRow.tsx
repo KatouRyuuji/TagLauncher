@@ -14,6 +14,7 @@ import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
 import { useSlotContainer } from "./ItemCard";
+import { SearchHighlightText } from "./SearchHighlightText";
 import type { ItemCardProps } from "./ItemCard";
 
 function ItemRowComponent({
@@ -50,6 +51,7 @@ function ItemRowComponent({
   const currentCabinetName =
     currentCabinetId === null ? null : cabinets.find((cabinet) => cabinet.id === currentCabinetId)?.name ?? null;
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
+  const searchQuery = useAppStore((state) => state.searchQuery);
 
   const handleItemHandlePointerDown = (event: React.PointerEvent<HTMLSpanElement>) => {
     beginInternalPointerDrag({
@@ -113,7 +115,7 @@ function ItemRowComponent({
       <div
         data-drop-tag-item-id={item.id}
         data-selectable-item-id={item.id}
-        className={`item-row-render-scope grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] px-4 py-3 ${
+        className={`item-row-render-scope group grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] px-4 py-3 ${
           tagDragOver
             ? "bg-[var(--accent-primary-bg-light)]"
             : selected
@@ -137,7 +139,7 @@ function ItemRowComponent({
         <div className="flex items-center gap-2">
           <ItemDragHandle onPointerDown={handleItemHandlePointerDown} className="h-8 w-8" />
           <span className="inline-flex h-7 w-7 items-center justify-center">
-            <FavoriteStar active={item.is_favorite} />
+            <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
           </span>
           {modSlots.header.length > 0 && <div ref={headerSlotRef} className="flex items-center" />}
         </div>
@@ -152,7 +154,9 @@ function ItemRowComponent({
           </div>
           <div className="min-w-0">
             <h3 className="flex items-center gap-1.5 truncate text-sm font-semibold text-[var(--text-primary)]" title={item.name}>
-              <span className="truncate">{item.name}</span>
+              <span className="truncate">
+                <SearchHighlightText text={item.name} query={searchQuery} />
+              </span>
               {item.is_missing && (
                 <span
                   className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-warning)] px-1 py-0.5 text-[9px] font-semibold leading-none text-[var(--color-warning)]"

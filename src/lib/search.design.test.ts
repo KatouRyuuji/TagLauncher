@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "./search";
+import { buildSearchIndex, filterItemsByTags, filterSearchIndex, searchWithIndex } from "./search";
 import { buildDescendantsMap } from "./tagGraph";
 import { setSynonymGroups } from "./synonyms";
 import type { ItemWithTags } from "../types";
@@ -149,5 +149,12 @@ assert.deepEqual(searchWithIndex(allIndex, "@四小王八").map((i) => i.id), []
 const multiLevelDescMap = buildDescendantsMap([{ parentId: 100, childId: 10 }, { parentId: 10, childId: 1 }]);
 const multiLevelExpand = (id: number) => multiLevelDescMap.get(id) ?? new Set([id]);
 assert.deepEqual(filterItemsByTags(items, [100], multiLevelExpand).map((i) => i.id), [1, 3]);
+
+const layeredIndex = buildSearchIndex(items, "all");
+const allowed = new Set([1, 2]);
+const filtered = filterSearchIndex(layeredIndex, allowed);
+assert.equal(filtered.entries.length, 2);
+assert.deepEqual(filtered.entries.map((entry) => entry.item.id), [1, 2]);
+assert.equal(filterSearchIndex(layeredIndex, new Set(items.map((i) => i.id))), layeredIndex);
 
 console.log("search design tests passed");

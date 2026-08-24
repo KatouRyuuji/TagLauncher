@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
-import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
+import { buildSearchIndex, filterItemsByTags, filterSearchIndex, searchWithIndex } from "../lib/search";
 import { applyTypeFilter, applyWorkspaceQuery, compareNames } from "../lib/itemQuery";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
@@ -267,9 +267,19 @@ export function useItems() {
     [source, selectedTagIds, descendantsMap],
   );
 
+  const sourceSearchIndex = useMemo(
+    () => buildSearchIndex(source, searchMode),
+    [source, searchMode],
+  );
+
+  const tagFilteredIds = useMemo(
+    () => new Set(tagFiltered.map((item) => item.id)),
+    [tagFiltered],
+  );
+
   const searchIndex = useMemo(
-    () => buildSearchIndex(tagFiltered, searchMode),
-    [tagFiltered, searchMode],
+    () => filterSearchIndex(sourceSearchIndex, tagFilteredIds),
+    [sourceSearchIndex, tagFilteredIds],
   );
 
   const filtered = useMemo(() => {
