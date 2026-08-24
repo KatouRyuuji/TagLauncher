@@ -135,7 +135,8 @@ export async function removeTagRelation(parentId: number, childId: number): Prom
 
 // ---- 搜索 ----
 
-/** 后端搜索（当前未使用，主界面使用前端内存搜索） */
+/** 后端搜索（保留路径：主界面使用前端内存搜索；此后端 FTS5 能力为有意保留的
+ *  声明边界，见功能清单「后端 FTS5（保留路径）」。契约测试据此保留本封装，勿删。） */
 export async function searchItems(query: string, tagIds: number[]): Promise<ItemWithTags[]> {
   return invokeCmd("search_items", { query, tagIds });
 }

@@ -26,12 +26,12 @@ export function MigrationDialog({
         data-migration-overlay=""
         data-workspace-overlay=""
         className="fixed inset-0"
-        style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-migration-overlay)" as unknown as number }}
+        style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-migration-overlay)" }}
         onClick={onClose}
       />
       <div
         className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
-        style={{ zIndex: "var(--z-migration-panel)" as unknown as number }}
+        style={{ zIndex: "var(--z-migration-panel)" }}
       >
         <div
           ref={trapRef}

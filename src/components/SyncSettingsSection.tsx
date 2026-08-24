@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import * as db from "../lib/db";
 import type { SyncConfig, RemoteBackup } from "../lib/db";
+import { formatBytes } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
+import { SettingsField, inputClass } from "./SettingsField";
 
 const EMPTY_CONFIG: SyncConfig = {
   url: "",
@@ -10,13 +12,6 @@ const EMPTY_CONFIG: SyncConfig = {
   remoteDir: "TagLauncher",
   autoSync: false,
 };
-
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
-  return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
 
 function formatLastSync(ts: number | undefined): string {
   if (!ts) return "从未同步";
@@ -175,7 +170,7 @@ export function SyncSettingsSection() {
       </div>
 
       <div className="mt-4 space-y-3">
-        <Field label="WebDAV 服务器地址">
+        <SettingsField label="WebDAV 服务器地址">
           <input
             type="text"
             value={config.url}
@@ -184,7 +179,7 @@ export function SyncSettingsSection() {
             spellCheck={false}
             className={inputClass}
           />
-        </Field>
+        </SettingsField>
         {insecureHttp && (
           <p className="text-xs text-[var(--color-warning)]">
             当前为 http 明文连接：凭据与数据不加密传输，仅建议在可信局域网（如家庭 NAS）使用。
@@ -192,7 +187,7 @@ export function SyncSettingsSection() {
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="用户名">
+          <SettingsField label="用户名">
             <input
               type="text"
               value={config.username}
@@ -202,8 +197,8 @@ export function SyncSettingsSection() {
               autoComplete="off"
               className={inputClass}
             />
-          </Field>
-          <Field label="密码">
+          </SettingsField>
+          <SettingsField label="密码">
             <div className="flex gap-2">
               <input
                 type={showPassword ? "text" : "password"}
@@ -218,10 +213,10 @@ export function SyncSettingsSection() {
                 {showPassword ? "隐藏" : "显示"}
               </button>
             </div>
-          </Field>
+          </SettingsField>
         </div>
 
-        <Field label="远端目录">
+        <SettingsField label="远端目录">
           <input
             type="text"
             value={config.remoteDir}
@@ -230,7 +225,7 @@ export function SyncSettingsSection() {
             spellCheck={false}
             className={inputClass}
           />
-        </Field>
+        </SettingsField>
 
         <button
           type="button"
@@ -337,17 +332,5 @@ export function SyncSettingsSection() {
         云端副本自动剔除 AI 密钥与同步凭据等敏感配置；远端保留最近 10 份备份，更早的自动清理。
       </p>
     </section>
-  );
-}
-
-const inputClass =
-  "w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] focus:border-[var(--accent-primary)] focus:outline-none";
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-semibold text-[var(--text-muted)]">{label}</span>
-      {children}
-    </label>
   );
 }

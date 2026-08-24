@@ -100,7 +100,7 @@ pub fn set_data_directory(
         // 采用目标目录已有库：先校验它是合法的 TagLauncher 库，
         // 否则重定向后下次启动会因损坏/不兼容库直接起不来。
         let source_version = validate_importable_db(&target_db)?;
-        let current_version = live_schema_version(&db);
+        let current_version = crate::db::live_schema_version(&db);
         if current_version > 0 && source_version > current_version {
             return Err(format!(
                 "目标目录中的数据库 schema 版本(v{})高于当前应用支持的版本(v{})，请升级 TagLauncher 后再使用该目录",
@@ -175,9 +175,16 @@ pub fn import_data(
     let source = PathBuf::from(source_path.trim());
     let source_version = validate_importable_db(&source)?;
 
+    // 防御：来源就是实库自身时，"先快照安全备份 → 再覆盖实库"会变成自己灌自己（no-op），
+    // 用户以为导入了数据其实什么都没发生（与 export 侧 :153 的自身防御同理）。
+    let live_path = path_service::resolve_app_paths(&app).save_dir.join(DB_FILE_NAME);
+    if source == live_path {
+        return Err("导入来源不能是当前正在使用的数据库文件".to_string());
+    }
+
     // 版本区间校验：来源库 schema 不得高于当前应用支持的版本（= 当前实库已迁移到的版本），
     // 否则导入后可能触发不兼容 / 破坏性迁移。
-    let current_version = live_schema_version(&db);
+    let current_version = crate::db::live_schema_version(&db);
     if current_version > 0 && source_version > current_version {
         return Err(format!(
             "来源库 schema 版本(v{})高于当前应用支持的版本(v{})，请升级 TagLauncher 后再导入",
@@ -254,28 +261,21 @@ fn run_backup_with_timeout(backup: &Backup) -> Result<(), String> {
     }
 }
 
-/// 从**对外导出**副本中剔除敏感配置（AI 密钥等），避免密钥随可分享的 .db 外泄。
+/// 从**对外导出**副本中剔除敏感配置（AI 密钥、WebDAV 凭据等），避免密钥随可分享的 .db 外泄。
+/// 剔除范围与 is_sensitive_setting_key / strip_cloud_secrets 保持一致（ai.* 与 sync.*）：
+/// sync.password 同为明文凭据，缺一即形成脱敏旁路。
 /// 仅 export_data（用户主动导出到任意路径，真正的分享出口）调用；
 /// backup_data（本机灾备）、import 的 safety_backup、数据目录迁移均保留密钥以支持完整恢复。
 /// DELETE 后立即 VACUUM 重写文件，确保密钥明文不残留在被释放的空闲页里（否则可被 strings/hex 还原）。
-/// pub 以便集成测试验证导出副本已剔除 ai.* 且明文不残留于文件字节。
+/// pub 以便集成测试验证导出副本已剔除 ai.*/sync.* 且明文不残留于文件字节。
 pub fn strip_sensitive_keys(db_file: &Path) -> Result<(), String> {
     let conn = Connection::open(db_file)
         .map_err(|e| format!("无法打开副本以清理敏感配置: {}", e))?;
-    conn.execute_batch("DELETE FROM app_meta WHERE key LIKE 'ai.%'; VACUUM;")
-        .map_err(|e| format!("清理敏感配置失败: {}", e))?;
-    Ok(())
-}
-
-/// 读取当前实库的 schema_version（= 本应用支持的最高版本，实库启动时已迁移到最新）。
-fn live_schema_version(db: &Database) -> u32 {
-    let conn = db.get_conn();
-    conn.query_row(
-        "SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='schema_version'",
-        [],
-        |r| r.get(0),
+    conn.execute_batch(
+        "DELETE FROM app_meta WHERE key LIKE 'ai.%' OR key LIKE 'sync.%'; VACUUM;",
     )
-    .unwrap_or(0)
+    .map_err(|e| format!("清理敏感配置失败: {}", e))?;
+    Ok(())
 }
 
 /// 用来源库内容覆盖当前打开的库（Backup API，页级一致）。用于导入及导入失败回滚。
@@ -391,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn strip_sensitive_keys_removes_ai_keys_only() {
+    fn strip_sensitive_keys_removes_ai_and_sync_keys() {
         let mut p = std::env::temp_dir();
         p.push(format!("tl_strip_{}.db", std::process::id()));
         let _ = std::fs::remove_file(&p);
@@ -401,6 +401,8 @@ mod tests {
                 "CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT);
                  INSERT INTO app_meta VALUES ('ai.api_key', 'sk-secret');
                  INSERT INTO app_meta VALUES ('ai.base_url', 'https://x');
+                 INSERT INTO app_meta VALUES ('sync.password', 'dav-secret');
+                 INSERT INTO app_meta VALUES ('sync.webdav_url', 'https://dav');
                  INSERT INTO app_meta VALUES ('theme', 'dark');",
             )
             .unwrap();
@@ -409,13 +411,17 @@ mod tests {
         strip_sensitive_keys(&p).expect("strip should succeed");
 
         let conn = Connection::open(&p).unwrap();
-        let ai_cnt: i64 = conn
-            .query_row("SELECT COUNT(*) FROM app_meta WHERE key LIKE 'ai.%'", [], |r| r.get(0))
+        let secret_cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM app_meta WHERE key LIKE 'ai.%' OR key LIKE 'sync.%'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         let theme_cnt: i64 = conn
             .query_row("SELECT COUNT(*) FROM app_meta WHERE key = 'theme'", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(ai_cnt, 0, "ai.* 敏感键应被清除");
+        assert_eq!(secret_cnt, 0, "ai.*/sync.* 敏感键应被清除");
         assert_eq!(theme_cnt, 1, "非敏感键应保留");
         drop(conn);
         let _ = std::fs::remove_file(&p);

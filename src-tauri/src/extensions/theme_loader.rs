@@ -50,7 +50,6 @@ const REQUIRED_VARIABLES: &[&str] = &[
     "tag-preset-colors",
     "sidebar-width",
     "grid-col-min",
-    "header-height",
     "bg-base",
     "bg-surface",
     "bg-card",
@@ -116,7 +115,9 @@ const REQUIRED_VARIABLES: &[&str] = &[
     "panel-border-color",
 ];
 
-const RESERVED_THEME_IDS: &[&str] = &["dark", "light", "sakura"];
+// "light" 为 v1.6.1 对调前的旧内置 id（现为亮色樱花的 "sakura"），继续保留防止
+// 自定义/mod 主题占用后与老配置迁移映射（"light"→"sakura"）产生歧义。
+const RESERVED_THEME_IDS: &[&str] = &["dark", "sakura", "cyber-cyan", "light"];
 
 /// 从目录加载自定义主题文件，返回成功列表与错误列表
 pub fn load_custom_themes(themes_dir: &Path) -> CustomThemesResult {
@@ -255,13 +256,53 @@ pub fn install_theme_file(
     theme.file_name = Some(file_name);
 
     if source_path.is_dir() {
-        if replaced {
-            std::fs::remove_dir_all(&target_path).map_err(|e| format!("无法替换主题包: {}", e))?;
+        // 「源即目标」防御：源与目标同路径时 remove_dir_all + copy_dir_all 会先把源删掉
+        // 再拷贝失败（主题被自删）。source 必然存在（manifest 已读取成功），可直接
+        // canonicalize；target 可能尚不存在，用其父目录（themes_dir 开头已创建）
+        // canonicalize 后拼文件名得到规范化目标。
+        let canonical_source = source_path
+            .canonicalize()
+            .map_err(|e| format!("无法解析源目录: {}", e))?;
+        let canonical_target = if target_path.exists() {
+            target_path.canonicalize()
+        } else {
+            target_path
+                .parent()
+                .ok_or_else(|| "目标路径无父目录".to_string())?
+                .canonicalize()
+                .map(|p| {
+                    p.join(
+                        target_path
+                            .file_name()
+                            .unwrap_or_else(|| std::ffi::OsStr::new("theme")),
+                    )
+                })
         }
-        copy_dir_all(source_path, &target_path)?;
-        let payload = theme_to_pretty_json(&theme)?;
-        std::fs::write(target_path.join("theme.json"), payload)
-            .map_err(|e| format!("无法写入主题文件: {}", e))?;
+        .map_err(|e| format!("无法解析目标目录: {}", e))?;
+
+        if canonical_source == canonical_target {
+            // 源即目标（对已安装的主题包再次导入）：跳过删除与拷贝，
+            // 直接重写 theme.json 完成再注册。
+            let payload = theme_to_pretty_json(&theme)?;
+            std::fs::write(target_path.join("theme.json"), payload)
+                .map_err(|e| format!("无法写入主题文件: {}", e))?;
+        } else if canonical_target.starts_with(&canonical_source) {
+            // 源是目标的祖先（如把主题根目录本身当主题包导入）：继续执行会把整个
+            // 主题目录搬进其子目录，明确拒绝。
+            return Err("不能把主题目录的父目录作为主题包导入".to_string());
+        } else if canonical_source.starts_with(&canonical_target) {
+            // 源在目标内（已安装主题包里的子目录）：替换式删除会连源一起删掉，明确拒绝。
+            return Err("不能把已安装主题目录内的子目录作为主题包导入".to_string());
+        } else {
+            if replaced {
+                std::fs::remove_dir_all(&target_path)
+                    .map_err(|e| format!("无法替换主题包: {}", e))?;
+            }
+            copy_dir_all(source_path, &target_path)?;
+            let payload = theme_to_pretty_json(&theme)?;
+            std::fs::write(target_path.join("theme.json"), payload)
+                .map_err(|e| format!("无法写入主题文件: {}", e))?;
+        }
     } else {
         let payload = theme_to_pretty_json(&theme)?;
         std::fs::write(&target_path, payload).map_err(|e| format!("无法写入主题文件: {}", e))?;

@@ -19,7 +19,7 @@ pub fn get_cabinets(conn: &Connection) -> Result<Vec<Cabinet>, String> {
             })
         })
         .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
+        .filter_map(crate::services::item_service::skip_err_with_log("get_cabinets"))
         .collect();
 
     Ok(cabinets)
@@ -164,7 +164,7 @@ pub fn get_cabinet_items(
     let items: Vec<Item> = stmt
         .query_map([cabinet_id], item_from_row)
         .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
+        .filter_map(crate::services::item_service::skip_err_with_log("get_cabinet_items"))
         .collect();
 
     // 图标在锁外由调用方 fill_visuals 补齐（见 cabinet_commands::get_cabinet_items）

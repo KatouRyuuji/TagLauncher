@@ -5,6 +5,7 @@
 // 组件中抽离，保证虚拟化列表只拿到已经排好的结果，避免每张卡片重算。
 // ============================================================================
 
+import { pinyin } from "pinyin-pro";
 import type { ItemWithTags } from "../types";
 
 /** 工作台排序：智能（收藏→最近使用→名称）/ 名称 / 最近使用 / 添加时间 / 类型 */
@@ -86,11 +87,6 @@ export function itemMatchesType(item: Pick<ItemWithTags, "type">, filter: TypeFi
 export function applyTypeFilter<T extends Pick<ItemWithTags, "type">>(items: T[], filter: TypeFilter): T[] {
   if (filter === "all") return items;
   return items.filter((item) => itemMatchesType(item, filter));
-}
-
-export function applyRecentFilter<T extends Pick<ItemWithTags, "last_used_at">>(items: T[], enabled: boolean): T[] {
-  if (!enabled) return items;
-  return items.filter((item) => Boolean(item.last_used_at));
 }
 
 export function compareItems(
@@ -267,8 +263,6 @@ export function stepMenuIndex(length: number, current: number, key: string): num
   if (key === "ArrowUp") return current < 0 ? length - 1 : (current - 1 + length) % length;
   return null;
 }
-
-import { pinyin } from "pinyin-pro";
 
 function commandSearchHaystack(title: string, keywords: string): string {
   const pinyinTitle = pinyin(title, { toneType: "none", type: "array" }).join("");

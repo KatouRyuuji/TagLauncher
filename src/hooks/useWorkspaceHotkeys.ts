@@ -14,6 +14,7 @@ import {
   getWorkspaceSelectionAnchor,
   isModModalOpen,
   isTransientMenuOpen,
+  isWorkspaceOverlayOpen,
   openItemContextMenu,
   resetWorkspaceSearchInput,
   scrollItemIntoView,
@@ -31,6 +32,7 @@ interface WorkspaceHotkeysOptions {
   onLaunch: (id: number) => void;
   onRemoveSelected: () => void;
   onToggleSelectedFavorite: () => void;
+  onToggleItemFavorite: (id: number) => void;
   onOpenSettings: () => void;
 }
 
@@ -42,6 +44,7 @@ export function useWorkspaceHotkeys({
   setSelectedItemIds,
   onLaunch,
   onRemoveSelected,
+  onToggleItemFavorite,
   onToggleSelectedFavorite,
   onOpenSettings,
 }: WorkspaceHotkeysOptions): void {
@@ -64,6 +67,7 @@ export function useWorkspaceHotkeys({
     onLaunch,
     onOpenSettings,
     onRemoveSelected,
+    onToggleItemFavorite,
     onToggleSelectedFavorite,
     previewItemId,
     searchQuery,
@@ -85,6 +89,7 @@ export function useWorkspaceHotkeys({
     onLaunch,
     onOpenSettings,
     onRemoveSelected,
+    onToggleItemFavorite,
     onToggleSelectedFavorite,
     previewItemId,
     searchQuery,
@@ -134,34 +139,29 @@ export function useWorkspaceHotkeys({
         return;
       }
 
-      if (ctrl && event.key.toLowerCase() === "a" && !typing) {
-        event.preventDefault();
-        ctx.setSelectedItemIds(ctx.items.map((item) => item.id));
-        setWorkspaceSelectionAnchor(ctx.items[0]?.id ?? null);
-        return;
-      }
-
-      if (ctrl && event.key.toLowerCase() === "c" && !typing) {
-        const idSet = new Set(ctx.selectedItemIds);
-        const payload = formatPathCopy(
-          ctx.items.filter((item) => idSet.has(item.id)).map((item) => item.path),
-        );
-        if (payload) {
-          event.preventDefault();
-          void copyText(payload.text, payload.message);
-        }
-        return;
-      }
-
-      if (ctrl && event.key.toLowerCase() === "d" && !typing) {
-        if (ctx.selectedItemIds.length > 0) {
-          event.preventDefault();
-          ctx.onToggleSelectedFavorite();
-        }
-        return;
-      }
-
+      // 快速预览分支必须位于遮罩守卫与背景组合键之前：QuickPreview 自身带
+      // data-workspace-overlay（会被守卫拦截），且预览打开时 Ctrl+A/C/D 应
+      // 作用于预览对象而非背景选中集。
       if (ctx.previewItemId !== null) {
+        if (ctrl && !typing) {
+          const previewItem = ctx.allItems.find((item) => item.id === ctx.previewItemId);
+          if (event.key.toLowerCase() === "a") {
+            // 预览期间全选背景列表只会造成困惑，明确吞掉
+            event.preventDefault();
+            return;
+          }
+          if (event.key.toLowerCase() === "c" && previewItem) {
+            event.preventDefault();
+            const payload = formatPathCopy([previewItem.path]);
+            if (payload) void copyText(payload.text, payload.message);
+            return;
+          }
+          if (event.key.toLowerCase() === "d" && previewItem) {
+            event.preventDefault();
+            ctx.onToggleItemFavorite(previewItem.id);
+            return;
+          }
+        }
         if (event.key === " " && !typing) {
           event.preventDefault();
           ctx.setPreviewItemId(null);
@@ -189,6 +189,38 @@ export function useWorkspaceHotkeys({
           ctx.setPreviewItemId(null);
           ctx.onLaunch(ctx.previewItemId);
           return;
+        }
+        return;
+      }
+
+      // 组件内弹窗（TagEditor / ItemTagsEditor / TagRelationsEditor 等带
+      // data-workspace-overlay 的宿主遮罩）打开时，背景热键整体让路：
+      // Delete / Ctrl+A / G / L / 方向键等不得穿透到工作台选中集。
+      if (isWorkspaceOverlayOpen()) return;
+
+      if (ctrl && event.key.toLowerCase() === "a" && !typing) {
+        event.preventDefault();
+        ctx.setSelectedItemIds(ctx.items.map((item) => item.id));
+        setWorkspaceSelectionAnchor(ctx.items[0]?.id ?? null);
+        return;
+      }
+
+      if (ctrl && event.key.toLowerCase() === "c" && !typing) {
+        const idSet = new Set(ctx.selectedItemIds);
+        const payload = formatPathCopy(
+          ctx.items.filter((item) => idSet.has(item.id)).map((item) => item.path),
+        );
+        if (payload) {
+          event.preventDefault();
+          void copyText(payload.text, payload.message);
+        }
+        return;
+      }
+
+      if (ctrl && event.key.toLowerCase() === "d" && !typing) {
+        if (ctx.selectedItemIds.length > 0) {
+          event.preventDefault();
+          ctx.onToggleSelectedFavorite();
         }
         return;
       }
@@ -222,7 +254,7 @@ export function useWorkspaceHotkeys({
         return;
       }
 
-      if (event.key === "?" || (event.key === "/" && event.shiftKey)) {
+      if (event.key === "?") {
         event.preventDefault();
         ctx.setShortcutsHelpOpen(true);
         return;

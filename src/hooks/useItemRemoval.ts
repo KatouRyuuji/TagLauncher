@@ -3,8 +3,8 @@
 // ============================================================================
 // 统一"从应用移除对象"的确认交互：读取 localStorage 的"本次跳过"标记，
 // 需要确认时挂起待删集合并交由 RemoveFromAppConfirmDialog 渲染，确认后落库
-// 并把被删 id 从选中集清除。单个走 removeItem、批量走 removeItems，行为与
-// 抽离前 App.tsx 完全一致。
+// 并把被删 id 从选中集清除。单个与批量统一走 removeItems 原子批量命令，
+// 不再单删/批量两条路径落到不同后端命令。
 // ============================================================================
 
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
@@ -12,7 +12,6 @@ import { useCallback, useState, type Dispatch, type SetStateAction } from "react
 const SKIP_REMOVE_ITEM_CONFIRM_KEY = "taglauncher.skip_remove_item_confirm";
 
 interface UseItemRemovalParams {
-  removeItem: (id: number) => Promise<void>;
   removeItems: (ids: number[]) => Promise<void>;
   selectedItemIds: number[];
   setSelectedItemIds: Dispatch<SetStateAction<number[]>>;
@@ -37,7 +36,6 @@ export interface UseItemRemovalResult {
 }
 
 export function useItemRemoval({
-  removeItem,
   removeItems,
   selectedItemIds,
   setSelectedItemIds,
@@ -56,7 +54,7 @@ export function useItemRemoval({
       }
 
       if (skipConfirm) {
-        await removeItem(itemId);
+        await removeItems([itemId]);
         setSelectedItemIds((current) => current.filter((id) => id !== itemId));
         return;
       }
@@ -64,7 +62,7 @@ export function useItemRemoval({
       setSkipRemoveItemConfirm(false);
       setPendingRemoveItemId(itemId);
     },
-    [removeItem, setSelectedItemIds],
+    [removeItems, setSelectedItemIds],
   );
 
   const requestBatchRemoveFromApp = useCallback(async () => {

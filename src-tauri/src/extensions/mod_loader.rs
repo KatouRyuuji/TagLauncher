@@ -106,6 +106,10 @@ pub fn semver_gte(current: &str, required: &str) -> bool {
 /// 注意：须与前端 `modRuntime.ts::semverSatisfies` 保持同款语义（二者算法一致）。
 /// 未改用 `semver` crate 是受本轮改动文件范围约束（不新增 Cargo.toml 依赖）；
 /// 若后续统一为库实现，请前后端一并替换。
+///
+/// 已知偏差（与标准 semver 不同，前后端一致的简化）：`^0.x.y` 只钉主版本号，
+/// 不钉 minor（标准 semver 中 ^0.9.0 等价 >=0.9.0 <0.10.0，此处会放行 0.10.0）；
+/// 预发布段在解析时被忽略（"1.2.0-beta" 按 "1.2.0" 参与比较）。
 pub fn semver_satisfies(version: &str, range: &str) -> bool {
     let parse = |s: &str| -> Vec<u32> {
         s.split('.')

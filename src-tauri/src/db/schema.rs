@@ -194,7 +194,8 @@ mod tests {
             .unwrap();
         assert_eq!(idx, 1, "身份唯一索引应存在");
 
-        // 无身份对象按 path 去重的部分索引应存在（避免全表扫描）。
+        // path 全索引应存在（按 path 去重的查询避免全表扫描；历史上误建过
+        // `WHERE file_id IS NULL` 部分索引，已被 schema 初始化自愈为全索引）。
         let path_idx: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_items_path'",
@@ -202,7 +203,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(path_idx, 1, "path 部分索引应存在");
+        assert_eq!(path_idx, 1, "path 全索引应存在");
     }
 
     /// 升级库路径：模拟 v4 老库（path UNIQUE、无身份列、schema_version=4），

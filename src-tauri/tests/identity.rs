@@ -65,6 +65,54 @@ fn add_after_rename_dedups_by_identity() {
     assert_eq!(is_missing, 0);
 }
 
+/// 去重盲区回归：先入了一条无身份记录（身份列 NULL，模拟当时取不到身份入库），
+/// 再拖入同路径且本次身份可取时，不得重复 INSERT——应归并到原记录并顺手回填身份与签名。
+#[test]
+fn add_with_identity_merges_null_identity_record_by_path() {
+    let t = common::temp_db();
+    let path = common::write_file(&t.dir, "backfill.exe", b"payload-backfill");
+    if file_identity::get_identity(&path).is_none() {
+        eprintln!("skip: 临时目录文件系统不支持文件ID");
+        return;
+    }
+    let conn = t.db.get_conn();
+
+    // 模拟历史记录：同路径、身份列为 NULL、已标记失效（验证合并时一并清除失效）。
+    conn.execute(
+        "INSERT INTO items (name, path, type, is_missing) VALUES ('backfill.exe', ?1, 'exe', 1)",
+        [&path],
+    )
+    .unwrap();
+    let old_id = conn.last_insert_rowid();
+
+    let item = item_service::add_item(&conn, &path).expect("add with identity");
+    assert_eq!(item.id, old_id, "应归并到既有无身份记录而非新建");
+
+    let (cnt, vol, fid, missing, sig): (i64, Option<i64>, Option<String>, i64, Option<i64>) = conn
+        .query_row(
+            "SELECT COUNT(*), \
+             (SELECT volume_serial FROM items WHERE id=?1), \
+             (SELECT file_id FROM items WHERE id=?1), \
+             (SELECT is_missing FROM items WHERE id=?1), \
+             (SELECT sig_size FROM items WHERE id=?1)",
+            [old_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .unwrap();
+    assert_eq!(cnt, 1, "同路径不得产生重复行");
+    assert!(vol.is_some() && fid.is_some(), "身份应被回填");
+    assert_eq!(missing, 0, "合并后应清除失效标记");
+    assert!(sig.is_some(), "内容签名应一并回填");
+
+    // 再次拖入仍去重（身份查询此时应命中）。
+    let again = item_service::add_item(&conn, &path).expect("add again");
+    assert_eq!(again.id, old_id);
+    let cnt2: i64 = conn
+        .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(cnt2, 1);
+}
+
 /// 惰性对账：文件在原路径→保持有效并回填签名；文件被删且无法重定位→标记失效。
 #[test]
 fn reconcile_clears_then_marks_missing_on_real_file() {

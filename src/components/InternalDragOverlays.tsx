@@ -9,12 +9,12 @@ export function InternalDragGhost() {
     <div
       className="fixed pointer-events-none"
       style={{
-        zIndex: "var(--z-drag-ghost)" as unknown as number,
+        zIndex: "var(--z-drag-ghost)",
         left: `calc(${activeInternalDrag.x}px + var(--drag-ghost-offset-x))`,
         top:  `calc(${activeInternalDrag.y}px + var(--drag-ghost-offset-y))`,
       }}
     >
-      <div className="inline-flex items-center gap-2 rounded-none px-3 py-1.5 text-xs shadow-2xl" style={{ backgroundColor: "var(--bg-elevated)", borderWidth: "var(--border-width)" as unknown as number, borderStyle: "var(--border-style)", borderColor: "var(--border-default)", color: "var(--text-primary)" }}>
+      <div className="inline-flex items-center gap-2 rounded-none px-3 py-1.5 text-xs shadow-2xl" style={{ backgroundColor: "var(--bg-elevated)", borderWidth: "var(--border-width)", borderStyle: "var(--border-style)", borderColor: "var(--border-default)", color: "var(--text-primary)" }}>
         {"color" in activeInternalDrag && (
           <span
             className="h-2.5 w-2.5 rounded-full shrink-0"

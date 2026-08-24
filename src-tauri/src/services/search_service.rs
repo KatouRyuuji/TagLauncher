@@ -29,7 +29,7 @@ fn query_all_items(conn: &Connection) -> Result<Vec<Item>, String> {
     let items = stmt
         .query_map([], item_from_row)
         .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
+        .filter_map(crate::services::item_service::skip_err_with_log("query_all_items"))
         .collect();
     Ok(items)
 }
@@ -70,7 +70,7 @@ fn query_items_by_text_like(conn: &Connection, query: &str) -> Result<Vec<Item>,
     let items = stmt
         .query_map([search_query], item_from_row)
         .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
+        .filter_map(crate::services::item_service::skip_err_with_log("query_items_by_text_like"))
         .collect();
     Ok(items)
 }
@@ -112,7 +112,7 @@ fn query_items_by_tags(conn: &Connection, tag_ids: &[i64]) -> Result<Vec<Item>, 
     let items = stmt
         .query_map(params.as_slice(), item_from_row)
         .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
+        .filter_map(crate::services::item_service::skip_err_with_log("query_items_by_tags"))
         .collect();
     Ok(items)
 }
@@ -183,7 +183,9 @@ fn query_items_by_text_and_tags_like(
     let items = stmt
         .query_map(params.as_slice(), item_from_row)
         .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
+        .filter_map(crate::services::item_service::skip_err_with_log(
+            "query_items_by_text_and_tags_like",
+        ))
         .collect();
     Ok(items)
 }

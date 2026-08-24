@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } f
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, filterItemsByTags, filterSearchIndex, searchWithIndex } from "../lib/search";
-import { applyTypeFilter, applyWorkspaceQuery, compareNames } from "../lib/itemQuery";
+import { applyTypeFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/itemQuery";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
@@ -26,17 +26,9 @@ function getPathDisplayName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
+// 与 itemQuery.compareItems 的 "smart" 模式同一实现：收藏 → 最近使用 → 名称。
 function sortItems(items: ItemWithTags[]): ItemWithTags[] {
-  return [...items].sort((a, b) => {
-    if (a.is_favorite !== b.is_favorite) return a.is_favorite ? -1 : 1;
-
-    const aUsed = a.last_used_at ?? "";
-    const bUsed = b.last_used_at ?? "";
-    // ISO 时间戳 ASCII 字典序可比，纯字符串比较即可
-    if (aUsed !== bUsed) return bUsed < aUsed ? -1 : 1;
-
-    return compareNames(a.name, b.name);
-  });
+  return sortItemsByMode(items, "smart");
 }
 
 function upsertItem(items: ItemWithTags[], item: ItemWithTags): ItemWithTags[] {

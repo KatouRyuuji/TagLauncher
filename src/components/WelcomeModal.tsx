@@ -159,7 +159,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
       data-welcome-overlay=""
       data-workspace-overlay=""
       className="fixed inset-0 flex items-center justify-center p-5"
-      style={{ zIndex: "var(--z-welcome-modal)" as unknown as number }}
+      style={{ zIndex: "var(--z-welcome-modal)" }}
     >
       <div
         className="absolute inset-0"

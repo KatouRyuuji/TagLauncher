@@ -27,12 +27,12 @@ export function RemoveFromAppConfirmDialog({
       <div
         data-workspace-overlay=""
         className="fixed inset-0"
-        style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-overlay)" as unknown as number }}
+        style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-editor-overlay)" }}
         onClick={onCancel}
       />
       <div
         className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
-        style={{ zIndex: "var(--z-settings-panel)" as unknown as number }}
+        style={{ zIndex: "var(--z-editor-panel)" }}
       >
         <div
           ref={trapRef}
@@ -73,10 +73,10 @@ export function RemoveFromAppConfirmDialog({
 
           <div className="mt-6 flex justify-end gap-2">
             <button type="button" autoFocus onClick={onCancel} className="action-button">
-              no
+              取消
             </button>
             <button type="button" onClick={() => void onConfirm()} className="action-button action-button-primary">
-              yes
+              确认移除
             </button>
           </div>
         </div>

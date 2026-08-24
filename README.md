@@ -15,6 +15,7 @@ TagLauncher 是一个基于 **Tauri 2 + React + TypeScript + Rust + SQLite** 的
 - 搜索增强：支持全部/名称/标签三种模式，覆盖名称、路径、标签、拼音、拼音首字母和同义词，支持表达式语法，输入带 150ms 防抖。
 - **类型筛选与排序**：顶栏按文件夹/图片/音频/程序/脚本筛选；排序偏好与网格/列表视图会记住。
 - 视图切换：支持网格卡片视图和列表视图，**两者均虚拟化渲染（@tanstack/react-virtual），大库滚动流畅、内存可控**。
+- **界面打磨（v1.6.1-beta）**：自定义主题化窗口栏（拖拽移动、双击最大化、最小化/最大化/关闭随主题联动）；搜索关键词在结果中高亮；首屏骨架屏加载；空态引导文案区分「空库 / 搜索无结果 / 筛选无结果」；批量工具条支持批量收藏；设置页顶部区块快速导航；命令面板同名对象以路径第二行区分。
 - **键盘优先**：`/` 聚焦搜索，Ctrl+K 命令面板，空格快速预览，方向键（网格按列）/ Home / End / 翻页选择，Enter 启动，Ctrl+C 复制路径，Ctrl+D 收藏。
 - 缩略图：支持手动设置、更换、清除缩略图，图片对象和系统类型图标作为默认视觉回退。
 - 主题系统：支持内置主题、自定义 JSON 主题、Mod 主题，以及主题导入、导出和刷新；应用会等待主题准备完成后再显示主窗口，避免启动闪烁。
@@ -89,6 +90,8 @@ npm run dev
 npm run build
 npm run tauri dev
 npm run tauri build
+npm test
+npm run test:all
 cd src-tauri && cargo test
 ```
 
@@ -98,11 +101,14 @@ cd src-tauri && cargo test
 - `npm run build`：执行 TypeScript 检查并构建前端。
 - `npm run tauri dev`：启动 Tauri 桌面开发模式。
 - `npm run tauri build`：构建桌面 Release。
+- `npm test`：前端快速测试（前端逻辑 + vitest 交互测试，不含 tsc/后端）。
+- `npm run test:all`：全量测试（tsc 类型检查 + 前端逻辑 + vitest + Rust 单元 + 集成测试）。
+- `npm run icon`：从 `src/assets/icon.png` 重新生成应用图标（备用脚本；推荐优先 `npm run tauri icon`）。
 - `cargo test`：运行 Rust 测试。
 
 ## 打包
 
-当前应用版本为 `1.5.1`。双击 `build.bat` 一键打包（会自动 `npm install` 并预检工具链），或执行：
+当前应用版本为 `1.6.1-beta`。双击 `build.bat` 一键打包（会自动 `npm install` 并预检工具链），或执行：
 
 ```bash
 npm run tauri build
@@ -111,7 +117,7 @@ npm run tauri build
 Windows Release 默认生成 NSIS 安装包：
 
 ```text
-src-tauri/target/release/bundle/nsis/TagLauncher_1.5.1_x64-setup.exe
+src-tauri/target/release/bundle/nsis/TagLauncher_<version>_x64-setup.exe
 ```
 
 安装包安装时会创建开始菜单快捷方式，并在功能选择页提供桌面快捷方式可选项；安装语言可在 English / SimpChinese 之间选择。项目 MIT 许可证会显示在安装程序许可页面中。

@@ -227,7 +227,7 @@ export function CommandPalette({
       aria-modal="true"
       aria-label="命令面板"
       className="fixed inset-0 flex items-start justify-center px-4 pt-[12vh]"
-      style={{ zIndex: "var(--z-command-palette)" as unknown as number }}
+      style={{ zIndex: "var(--z-command-palette)" }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) setOpen(false);
       }}

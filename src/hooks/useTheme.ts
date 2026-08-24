@@ -150,10 +150,14 @@ export function useTheme() {
         db.getThemeDirectoryInfo().catch(() => null),
       ]);
 
-      for (const err of result.errors) {
-        showToast(`自定义主题 "${err.file_name}" 加载失败：${err.error}`, "error");
+      // 同一批坏文件不重复弹错：签名（错误清单序列化）变化时才 toast
+      const errorSignature = JSON.stringify(result.errors);
+      if (result.errors.length > 0 && errorSignature !== loadErrorSignatureRef.current) {
+        for (const err of result.errors) {
+          showToast(`自定义主题 "${err.file_name}" 加载失败：${err.error}`, "error");
+        }
       }
-      loadErrorSignatureRef.current = JSON.stringify(result.errors);
+      loadErrorSignatureRef.current = errorSignature;
 
       const themes = result.themes.map((theme) => normalizeTheme(theme, "custom"));
       customThemesRef.current = themes;
@@ -219,10 +223,14 @@ export function useTheme() {
         // 已被超时兜底接管，不再覆盖
         if (settled) return;
 
-        for (const err of customResult.errors) {
-          showToast(`自定义主题 "${err.file_name}" 加载失败：${err.error}`, "error");
+        // 同一批坏文件不重复弹错：签名变化时才 toast
+        const errorSignature = JSON.stringify(customResult.errors);
+        if (customResult.errors.length > 0 && errorSignature !== loadErrorSignatureRef.current) {
+          for (const err of customResult.errors) {
+            showToast(`自定义主题 "${err.file_name}" 加载失败：${err.error}`, "error");
+          }
         }
-        loadErrorSignatureRef.current = JSON.stringify(customResult.errors);
+        loadErrorSignatureRef.current = errorSignature;
 
         const customs = customResult.themes.map((theme) => normalizeTheme(theme, "custom"));
         customThemesRef.current = customs;

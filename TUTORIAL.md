@@ -1,5 +1,7 @@
 # TagLauncher 源码开发指南
 
+> 适用版本：v1.6.1-beta
+
 本文档面向希望二次开发 TagLauncher 的开发者。
 内容基于当前代码实现（Tauri 2 + React + TypeScript + Rust）。
 
@@ -106,7 +108,7 @@ src-tauri/src/
 
 ## 4.2 `commands/`（命令实现，按域分模块）
 
-实际 90 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/net/ai/data/sync/update/settings/synonym/launch/object_preview/search），命令体一般转调 `services/` 下的业务服务。主要命令组：
+实际 90 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/net/ai/data/sync/update/settings/synonym/launch/object_preview/search），命令体一般转调 `services/` 下的业务服务。主要命令组（节选）：
 
 - 对象：`add_item` / `add_items` / `remove_item` / `get_items` / `launch_item` / `update_item_icon`
 - 标签：`get_tags` / `add_tag` / `update_tag` / `remove_tag` / `set_item_tags` / `get_tag_relations` / `add_tag_relation` / `remove_tag_relation`
@@ -115,7 +117,7 @@ src-tauri/src/
 - 同义词：`read_synonyms`
 - Mod/主题：`get_mods` / `get_mod_content` / `get_mod_dir` / `enable_mod` / `disable_mod` / `import_mod` / `delete_mod` / `get_theme_directory_info` / `install_theme_file` 等
 - 网络原语：`net_fetch`（Mod 用，经后端 ureq 代理）
-- AI 打标：`ai_get_config` / `ai_set_config` / `ai_is_configured` / `ai_test_connection` / `ai_suggest_tags`
+- AI 打标：`ai_get_config` / `ai_set_config` / `ai_is_configured` / `ai_clear_api_key` / `ai_test_connection` / `ai_suggest_tags`
 - 数据管理：`get_data_directory_info` / `set_data_directory` / `reset_data_directory` / `backup_data` / `export_data` / `import_data` / `restart_app`
 - 云同步：`sync_get_config` / `sync_set_config` / `sync_clear_password` / `sync_test_connection` / `sync_list_backups` / `sync_backup_now` / `sync_restore`
 - 在线更新：`update_check`
@@ -227,7 +229,7 @@ npm run tauri build
 
 产物：
 
-- `src-tauri/target/release/bundle/nsis/TagLauncher_1.5.1_x64-setup.exe`
+- `src-tauri/target/release/bundle/nsis/TagLauncher_<version>_x64-setup.exe`
 
 ARM64 构建用 `build-arm64.bat`（`aarch64-pc-windows-msvc`，脚本会自动 `rustup target add`），产物为 `..._arm64-setup.exe`；`build.bat` 亦支持传入可选 target 参数。
 

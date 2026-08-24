@@ -26,6 +26,17 @@ export function scrollItemIntoView(itemId: number): void {
  */
 export const WORKSPACE_KEY_BLOCKING_OVERLAYS = "[data-workspace-overlay]";
 
+/**
+ * 任一宿主遮罩（含组件内弹窗 TagEditor/ItemTagsEditor/TagRelationsEditor 等）
+ * 打开时为 true。工作台热键据此让路——state 驱动的 blocked 名单（App.tsx
+ * overlaysBlocked）覆盖不了组件内部弹窗，DOM 查询是兜底的统一拦截层。
+ * 调用方注意顺序：QuickPreview 也带 data-workspace-overlay，预览导航分支
+ * 必须先于此守卫执行。
+ */
+export function isWorkspaceOverlayOpen(): boolean {
+  return Boolean(document.querySelector(WORKSPACE_KEY_BLOCKING_OVERLAYS));
+}
+
 /** 示例 Mod 等 createPanel({ position: "modal" }) 打开时，工作台快捷键应让路。 */
 export function isModModalOpen(): boolean {
   return Boolean(document.querySelector("[data-mod-modal]"));

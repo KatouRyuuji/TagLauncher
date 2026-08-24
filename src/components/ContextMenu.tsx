@@ -52,13 +52,13 @@ export function ContextMenu({
     position: "fixed",
     left: position.x,
     top: position.y,
-    zIndex: "var(--z-context-menu)" as unknown as number,
+    zIndex: "var(--z-context-menu)",
   });
   const [submenuStyle, setSubmenuStyle] = useState<React.CSSProperties>({
     position: "fixed",
     left: -9999,
     top: -9999,
-    zIndex: "var(--z-context-submenu)" as unknown as number,
+    zIndex: "var(--z-context-submenu)",
   });
 
   const updateMenuPosition = useCallback(() => {
@@ -81,7 +81,7 @@ export function ContextMenu({
       position: "fixed",
       left: nextLeft,
       top: nextTop,
-      zIndex: "var(--z-context-menu)" as unknown as number,
+      zIndex: "var(--z-context-menu)",
     });
 
     const rightSpace = window.innerWidth - (nextLeft + rect.width);
@@ -138,7 +138,7 @@ export function ContextMenu({
       position: "fixed",
       left,
       top,
-      zIndex: "var(--z-context-submenu)" as unknown as number,
+      zIndex: "var(--z-context-submenu)",
     });
   }, [cabinets.length]);
 
@@ -147,7 +147,7 @@ export function ContextMenu({
       position: "fixed",
       left: position.x,
       top: position.y,
-      zIndex: "var(--z-context-menu)" as unknown as number,
+      zIndex: "var(--z-context-menu)",
     });
     const id = window.requestAnimationFrame(updateMenuPosition);
     return () => window.cancelAnimationFrame(id);
@@ -283,7 +283,7 @@ export function ContextMenu({
         data-context-menu=""
         data-workspace-overlay=""
         className="fixed inset-0"
-        style={{ zIndex: "var(--z-context-overlay)" as unknown as number }}
+        style={{ zIndex: "var(--z-context-overlay)" }}
         onClick={onClose}
         onContextMenu={(event) => {
           event.preventDefault();

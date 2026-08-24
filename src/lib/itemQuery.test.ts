@@ -1,6 +1,5 @@
 import { assert, test, run } from "./__testutil";
 import {
-  applyRecentFilter,
   applyTypeFilter,
   applyWorkspaceQuery,
   compareItems,
@@ -49,15 +48,6 @@ test("itemMatchesType：脚本合并 bat 与 ps1", () => {
 test("applyTypeFilter：all 返回原数组引用", () => {
   const items = [item({ id: 1, name: "a" })];
   assert.equal(applyTypeFilter(items, "all"), items);
-});
-
-test("applyRecentFilter：仅保留有 last_used_at 的项", () => {
-  const items = [
-    item({ id: 1, name: "used", last_used_at: "2026-08-01 12:00:00" }),
-    item({ id: 2, name: "never" }),
-  ];
-  assert.deepEqual(applyRecentFilter(items, true).map((entry) => entry.id), [1]);
-  assert.equal(applyRecentFilter(items, false), items);
 });
 
 test("smart 排序：收藏置顶，其次最近使用，再次名称", () => {

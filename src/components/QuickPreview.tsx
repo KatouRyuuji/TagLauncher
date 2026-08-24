@@ -38,7 +38,7 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
       data-quick-preview=""
       data-workspace-overlay=""
       className="fixed inset-0 flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-base)_72%,transparent)] px-6 py-8"
-      style={{ zIndex: "var(--z-quick-preview)" as unknown as number }}
+      style={{ zIndex: "var(--z-quick-preview)" }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) setPreviewItemId(null);
       }}
@@ -149,7 +149,9 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
     };
   }, [item.id, item.path, item.type]);
 
-  const assetUrl = toAssetUrl(item.icon_path || (item.type === "image" || item.type === "audio" ? item.path : null));
+  // 封面图源：图片对象回退到文件本身；音频不回退——把音频文件当 <img> src 必然 onError，
+  // 白发一次无效资源请求。音频封面只取系统缩略图（icon_path）或内嵌专辑封面。
+  const assetUrl = toAssetUrl(item.icon_path || (item.type === "image" ? item.path : null));
 
   if (loading && !error) {
     return (

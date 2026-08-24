@@ -54,25 +54,32 @@
 
     --sidebar-width: 252px;
     --grid-col-min: 238px;
-    --header-height: 84px;
     --titlebar-height: 34px;
 
+    /* 层级约定：100 以下保留给组件内局部层级，全局浮层从 100 起编排 */
     --z-bg-decoration: 0;
     --z-context-overlay: 99;
     --z-context-menu: 100;
     --z-context-submenu: 110;
+    /* 同值 120 可共存：欢迎弹窗仅首次启动出现，彼时不可能存在拖拽幽灵，二者不会同屏 */
     --z-drag-ghost: 120;
     --z-welcome-modal: 120;
     --z-floating-panel: 150;
     --z-quick-preview: 160;
     --z-settings-overlay: 200;
     --z-settings-panel: 201;
+    /* 编辑器/确认弹窗带：宿主内部层级常量，不入主题注册表；须低于 command-palette */
+    --z-editor-overlay: 202;
+    --z-editor-panel: 203;
     --z-command-palette: 210;
     --z-shortcuts-help: 215;
     --z-mod-confirm-overlay: 250;
     --z-mod-confirm-panel: 251;
     --z-migration-overlay: 300;
     --z-migration-panel: 301;
+    /* AI 打标进度带：宿主内部层级常量，不入主题注册表；恒高于 migration，不靠 DOM 顺序分层 */
+    --z-ai-tagging-overlay: 302;
+    --z-ai-tagging-panel: 303;
     --z-toast: 500;
     /* 窗口栏永远置顶：全屏遮罩弹层打开时窗口仍可拖动/最小化/关闭
        （原生标题栏的等价行为，自绘后必须显式保证） */
@@ -143,9 +150,8 @@
     height: 100%;
   }
 
-  html {
-    color-scheme: light;
-  }
+  /* color-scheme 不写死：由各主题 css 字段按自身明暗声明（内置 light=light、dark/sakura=dark），
+     使深色主题下滚动条/表单控件等 UA 默认配色跟随主题 */
 
   body {
     margin: 0;

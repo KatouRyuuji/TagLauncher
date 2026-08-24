@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as db from "../lib/db";
 import type { AiConfig } from "../lib/db";
 import { showToast } from "../lib/toast";
+import { SettingsField, inputClass } from "./SettingsField";
 
 /** 触发 App 层的批量打标编排 */
 export const AI_TAG_ALL_EVENT = "taglauncher-ai-tag-all";
@@ -125,7 +126,7 @@ export function AiSettingsSection() {
       </div>
 
       <div className="mt-4 space-y-3">
-        <Field label="API 地址（Base URL）">
+        <SettingsField label="API 地址（Base URL）">
           <input
             type="text"
             value={config.baseUrl}
@@ -134,9 +135,9 @@ export function AiSettingsSection() {
             spellCheck={false}
             className={inputClass}
           />
-        </Field>
+        </SettingsField>
 
-        <Field label="API 密钥">
+        <SettingsField label="API 密钥">
           <div className="flex gap-2">
             <input
               type={showKey ? "text" : "password"}
@@ -151,10 +152,10 @@ export function AiSettingsSection() {
               {showKey ? "隐藏" : "显示"}
             </button>
           </div>
-        </Field>
+        </SettingsField>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="模型">
+          <SettingsField label="模型">
             <input
               type="text"
               value={config.model}
@@ -163,8 +164,8 @@ export function AiSettingsSection() {
               spellCheck={false}
               className={inputClass}
             />
-          </Field>
-          <Field label={`每个对象最多标签数（${config.maxTags}）`}>
+          </SettingsField>
+          <SettingsField label={`每个对象最多标签数（${config.maxTags}）`}>
             <input
               type="range"
               min={1}
@@ -173,10 +174,10 @@ export function AiSettingsSection() {
               onChange={(e) => update("maxTags", Number(e.target.value))}
               className="mt-3 w-full accent-[var(--accent-primary)]"
             />
-          </Field>
+          </SettingsField>
         </div>
 
-        <Field label="补充打标偏好（可选）">
+        <SettingsField label="补充打标偏好（可选）">
           <input
             type="text"
             value={config.extraPrompt}
@@ -184,7 +185,7 @@ export function AiSettingsSection() {
             placeholder="例如：偏向按用途分类、使用中文标签"
             className={inputClass}
           />
-        </Field>
+        </SettingsField>
 
         <ToggleRow
           checked={config.allowNewTags}
@@ -221,18 +222,6 @@ export function AiSettingsSection() {
         </button>
       </div>
     </section>
-  );
-}
-
-const inputClass =
-  "w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] focus:border-[var(--accent-primary)] focus:outline-none";
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-semibold text-[var(--text-muted)]">{label}</span>
-      {children}
-    </label>
   );
 }
 

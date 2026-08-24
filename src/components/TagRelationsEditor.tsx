@@ -83,7 +83,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
     <div
       data-workspace-overlay=""
       className="fixed inset-0 flex items-center justify-center p-4"
-      style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-panel)" as unknown as number }}
+      style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-editor-panel)" }}
       onClick={onClose}
     >
       <div

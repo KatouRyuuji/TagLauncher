@@ -8,6 +8,10 @@ use tauri::{AppHandle, State};
 // DB 锁只在工作线程内的同步区间持有并随即释放，无跨 await 持锁。
 #[tauri::command(async)]
 pub fn add_item(db: State<Database>, path: String) -> Result<Item, String> {
+    // 与批量版（item_service::add_items）同一校验：空路径落库会产生无名无定位能力的垃圾行。
+    if path.trim().is_empty() {
+        return Err("路径不能为空".to_string());
+    }
     let conn = db.get_conn();
     item_service::add_item(&conn, &path)
 }

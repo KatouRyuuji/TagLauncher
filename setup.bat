@@ -184,7 +184,11 @@ if not errorlevel 1 (
     echo   winget install failed, falling back to rustup-init...
 )
 :: Fallback: download rustup-init.exe (curl ships with Windows 10 1803+)
-curl -fsSL -o "%TEMP%\rustup-init.exe" https://win.rustup.rs/x86_64
+:: Pick the rustup installer matching the CPU architecture (ARM64 or x86_64)
+set "RUSTUP_URL=https://win.rustup.rs/x86_64"
+if /i "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "RUSTUP_URL=https://win.rustup.rs/aarch64"
+if /i "%PROCESSOR_ARCHITEW6432%"=="ARM64" set "RUSTUP_URL=https://win.rustup.rs/aarch64"
+curl -fsSL -o "%TEMP%\rustup-init.exe" "%RUSTUP_URL%"
 if errorlevel 1 (
     echo   [ERROR] Could not download rustup. Install manually: https://rustup.rs/
     set "SETUP_FAILED=1"

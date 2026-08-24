@@ -58,7 +58,6 @@ export const darkTheme: ThemeDefinition = {
 
     "sidebar-width": "258px",
     "grid-col-min": "238px",
-    "header-height": "84px",
 
     "bg-base": "#282a36",
     "bg-surface": "rgba(33, 34, 44, 0.92)",

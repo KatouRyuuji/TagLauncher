@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { useMods } from "../hooks/useMods";
+import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { enableModRuntime, reloadModRuntime } from "../lib/modRuntime";
 import { importMod, exportMod } from "../lib/db";
 import type { ModPermission } from "../types/mod";
@@ -29,6 +31,9 @@ export function ModManagerPanel() {
   const { mods, enableMod, disableMod, refresh } = useMods();
   const [confirmJsMod, setConfirmJsMod] = useState<string | null>(null);
   const [reloading, setReloading] = useState<string | null>(null);
+  // 确认弹窗可访问性：焦点陷阱 + 栈式 Esc（后注册于 SettingsPanel，Esc 只关确认框不关设置）
+  const confirmTrapRef = useFocusTrap<HTMLDivElement>({ active: confirmJsMod !== null });
+  useEscapeKey(() => setConfirmJsMod(null), confirmJsMod !== null);
 
   const handleToggle = async (modId: string, modType: string, currentlyEnabled: boolean) => {
     if (currentlyEnabled) {
@@ -258,14 +263,20 @@ export function ModManagerPanel() {
             <div
               data-workspace-overlay=""
               className="fixed inset-0"
-              style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-mod-confirm-overlay)" as unknown as number }}
+              style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-mod-confirm-overlay)" }}
               onClick={() => setConfirmJsMod(null)}
             />
             <div
               className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
-              style={{ zIndex: "var(--z-mod-confirm-panel)" as unknown as number }}
+              style={{ zIndex: "var(--z-mod-confirm-panel)" }}
             >
-              <div className="modal-surface pointer-events-auto w-[420px] max-w-[92vw] p-6">
+              <div
+                ref={confirmTrapRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="启用脚本扩展"
+                className="modal-surface pointer-events-auto w-[420px] max-w-[92vw] p-6"
+              >
                 <div className="text-label">Security</div>
                 <h3 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">启用脚本扩展</h3>
                 <p className="mt-3 text-sm leading-7 text-[var(--text-secondary)]">

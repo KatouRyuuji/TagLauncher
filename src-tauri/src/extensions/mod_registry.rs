@@ -120,6 +120,16 @@ impl ModRegistry {
         }
     }
 
+    /// 恢复 mod 为兼容（与 mark_incompatible 对称）：
+    /// 运行期依赖被补齐（enable_mod 后重估通过）时即时恢复，无需重启。
+    pub fn mark_compatible(&self, mod_id: &str) {
+        let mut mods = self.mods.lock().unwrap();
+        if let Some(entry) = mods.get_mut(mod_id) {
+            entry.is_compatible = true;
+            entry.incompatible_reason = None;
+        }
+    }
+
     /// 从注册表中注销 mod（卸载时使用）
     pub fn unregister(&self, mod_id: &str) {
         let mut mods = self.mods.lock().unwrap();

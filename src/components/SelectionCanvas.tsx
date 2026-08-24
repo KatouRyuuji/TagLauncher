@@ -382,7 +382,7 @@ export function SelectionCanvas({
             top: selectionBox.top,
             width: selectionBox.width,
             height: selectionBox.height,
-            zIndex: "var(--z-context-overlay)" as unknown as number,
+            zIndex: "var(--z-context-overlay)",
           }}
         />
       )}

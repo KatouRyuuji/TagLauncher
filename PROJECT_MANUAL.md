@@ -1,5 +1,7 @@
 # TagLauncher 项目手册
 
+> 适用版本：v1.6.1-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
+
 ## 一、项目简介
 
 TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「标签」管理和快速启动本地文件夹、程序、脚本、图片与音频等对象（folder/image/audio/exe/bat/ps1）。
@@ -122,16 +124,43 @@ tag-launcher/
 │   │   ├── AppErrorBoundary.tsx  # 顶层错误边界（崩溃时强制显示窗口 + 可复制错误详情）
 │   │   ├── Sidebar.tsx           # 左侧导航（标签/文件柜/最近使用）
 │   │   ├── SearchBar.tsx         # 顶部搜索栏（排序 / Ctrl+K）
+│   │   ├── SearchHighlightText.tsx # 搜索关键词高亮渲染（v1.6.0）
 │   │   ├── TagFilterBar.tsx      # 类型 chip + 标签筛选
-│   │   ├── CommandPalette.tsx    # Ctrl+K 命令面板
+│   │   ├── CommandPalette.tsx    # Ctrl+K 命令面板（同名对象以路径第二行区分）
 │   │   ├── QuickPreview.tsx      # 空格快速预览
 │   │   ├── StatusBar.tsx         # 底部状态栏
 │   │   ├── ShortcutsHelp.tsx     # 快捷键一览
 │   │   ├── ItemGrid.tsx          # 网格视图容器
 │   │   ├── ItemListView.tsx      # 列表视图容器
-│   │   ├── ItemCard.tsx          # 项目卡片/行 + 右键菜单 + 拖拽标签
+│   │   ├── ItemCard.tsx          # 项目卡片 + 右键菜单 + 拖拽标签
+│   │   ├── ItemRow.tsx           # 列表行（与卡片对等的 Mod 插槽）
+│   │   ├── ItemTagsEditor.tsx    # 项目标签批量编辑弹窗
+│   │   ├── ItemVisualIcon.tsx    # 对象缩略图/类型图标渲染
+│   │   ├── ItemDragHandle.tsx    # 对象拖拽手柄
+│   │   ├── FavoriteStar.tsx      # 收藏星标
+│   │   ├── SelectionCanvas.tsx   # 框选画布（几何坐标全量命中）
+│   │   ├── BatchSelectionToolbar.tsx # 批量操作工具条（打标/入柜/收藏/复制路径/移除）
+│   │   ├── WorkspaceSkeleton.tsx # 首屏骨架屏（v1.6.0，与真实布局同构）
+│   │   ├── WorkspaceEmptyState.tsx # 空态引导（空库/搜索无结果/筛选无结果三态，v1.6.0）
+│   │   ├── InternalDragOverlays.tsx # 内部拖拽悬停落点提示层
+│   │   ├── ContextMenu.tsx       # 右键菜单（Portal 渲染，键盘可导航）
+│   │   ├── DraggableTagList.tsx  # 对象内标签重排列表
 │   │   ├── TagEditor.tsx         # 标签/文件柜编辑弹窗
-│   │   └── ItemTagsEditor.tsx    # 项目标签批量编辑弹窗
+│   │   ├── TagRelationsEditor.tsx # 标签父子关系编辑器（DAG 环冲突提示）
+│   │   ├── TagGraphView.tsx      # 标签图谱视图
+│   │   ├── SettingsPanel.tsx     # 设置面板（顶部区块快速导航，v1.6.0）
+│   │   ├── AiSettingsSection.tsx # 设置 · AI 打标区
+│   │   ├── DataSettingsSection.tsx # 设置 · 数据管理区
+│   │   ├── SyncSettingsSection.tsx # 设置 · 云同步区
+│   │   ├── UpdateSettingsSection.tsx # 设置 · 软件更新区
+│   │   ├── AiTaggingModal.tsx    # AI 批量打标进度弹窗
+│   │   ├── ModManagerPanel.tsx   # 设置 · 扩展（Mod 管理）区
+│   │   ├── FloatingPanels.tsx    # Mod 浮动面板宿主
+│   │   ├── ToastContainer.tsx    # Toast 通知容器
+│   │   ├── MigrationDialog.tsx   # 版本迁移提示弹窗
+│   │   ├── RemoveFromAppConfirmDialog.tsx # 移除对象确认弹窗
+│   │   ├── WelcomeModal.tsx      # 首次欢迎弹窗
+│   │   └── ThemeProvider.tsx     # 主题加载与 FOUC 门控
 │   └── data/
 │       └── synonyms.json         # 同义词默认数据（编译时嵌入 Rust）
 │
@@ -492,7 +521,7 @@ npm run tauri dev    # 启动 Tauri 开发窗口
 npm run tauri build  # 编译 + 打包 NSIS 安装包（x64）
 ```
 
-产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_1.5.1_x64-setup.exe`
+产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_<version>_x64-setup.exe`
 
 ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `..._arm64-setup.exe`。
 
@@ -551,5 +580,136 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `...
 - **批量拖拽导入（`add_item` / `add_items`）改用 async 工作线程**：文件ID FFI、内容签名读取、类型识别等重 IO 从 UI 主线程移到工作线程，导入期间界面不冻结。**注意**——其重 IO 仍在 DB 事务锁内串行执行（既有逻辑未改），async 化仅解决「不冻结主线程」，并不等于「移出 DB 锁」或「并发无阻塞」。
 - 其余重 IO 命令同样以 async 工作线程执行：跨盘找回 `relocate_missing`、数据 `backup_data` / `export_data` / `import_data` / `set_data_directory`、AI `ai_test_connection` / `ai_suggest_tags`、Mod `net_fetch`。
 - **前端排序热点用缓存 Collator**：`localeCompare` 每次调用隐式构造 `Intl.Collator`，大库排序（工作台五种排序、upsert 后重排、标签/文件柜列表）是可测热点；`itemQuery.compareNames` 模块级缓存一份 zh-CN Collator（`numeric: true` 自然数字排序，file2 < file10）供全应用复用，ISO 时间戳降级为纯字符串比较。
+
+---
+
+## 十五、Mod 与主题开发
+
+仓库内附完整可运行示例：Mod 示例 `ExampleMod/preview/`（对象预览弹窗）、主题示例 `ExampleTheme/SkyCloudTheme/`（蓝天白云）。本节以两者为实例说明开发要点；运行期行为以 `src/lib/modApi.ts` / `src/lib/modRuntime.ts` / `src/types/mod.ts` 为准。
+
+### 15.1 Mod manifest 字段
+
+每个 Mod 是 `Plugins_Mods/<id>/` 下的一个目录，必须含 `manifest.json`。实例（`ExampleMod/preview/manifest.json`）：
+
+```json
+{
+  "id": "example-object-preview",
+  "name": "对象预览示例",
+  "version": "1.1.0",
+  "author": "RyuuJi Soft",
+  "description": "悬浮在对象上按 P 打开按类型区分的预览弹窗（已适配虚拟化列表的光标命中）。",
+  "type": "css+js",
+  "api_version": "3.2.0",
+  "permissions": ["items:read", "dom", "objects:preview"],
+  "entrypoints": { "css": "preview.css", "js": "preview.js" }
+}
+```
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `id` | 是 | Mod 唯一标识（目录名须一致；仅限安全字符，导入时校验防目录逃逸） |
+| `name` | 是 | 显示名 |
+| `version` | 是 | Mod 自身版本 |
+| `author` | 是 | 作者 |
+| `description` | 是 | 一句话说明（启用确认弹窗展示） |
+| `type` | 是 | `css`（纯样式）/ `theme`（主题包）/ `css+js`（带脚本） |
+| `entrypoints` | 是 | 入口文件：`css?` / `js?` / `theme?`（按 type 提供对应入口） |
+| `api_version` | 否 | 针对的 Mod API 版本（当前 3.2.0）；不声明则跳过版本协商 |
+| `permissions` | 否 | 权限声明列表（见 §15.2）；未声明不限、空数组 `[]` 则经 createScope 的调用无任何权限 |
+| `min_app_version` / `max_app_version` | 否 | 兼容的宿主版本区间（max 为 exclusive，超出由后端标记不兼容） |
+| `events` | 否 | Mod 间通信事件约定：`exports`（会发出的事件名）/ `imports`（会监听的事件名） |
+| `dependencies` | 否 | 依赖的其他 mod（modId → 语义版本表达式），加载时校验已启用 mod 是否满足 |
+| `contributes` | 否 | 宿主 UI 贡献点声明：菜单、路由、状态栏、设置页、快捷键、后台任务等 |
+
+### 15.2 api_version 兼容规则（当前 3.2.0）
+
+协商在前端 `modApi.ts` 注入前完成，规则为**只告警、从不阻断**：
+
+- 未声明 `api_version`：跳过检查；
+- 主版本不一致：判定不兼容，toast 提示「API 主版本不兼容」；
+- 次版本高于宿主：提示「部分功能可能不可用」；
+- 其余（同主次或更低）：静默兼容（纯增量原则，如 3.1.0 Mod 在 3.2.0 宿主上完全可用）。
+
+### 15.3 权限清单（17 种）
+
+权限声明**不是安全沙箱边界**：Mod JS 运行于应用主 realm，与宿主能力相同，可绕过本层直接调后端命令。权限的作用是面向用户的能力/意图标注（启用前 UI 展示）+ 对 `createScope` 调用的 API 误用防呆。安装/启用 Mod 前须确认来源可信。定义见 `src/types/mod.ts`：
+
+| 权限 | 说明 |
+|---|---|
+| `items:read` | 调用 getItems() / onItemsChanged() |
+| `items:write` | addItem() / removeItem() / setItemTags() / toggleFavorite() |
+| `tags:read` | getTags() / onTagsChanged() |
+| `tags:write` | addTag() / updateTag() / removeTag() |
+| `cabinets:read` | getCabinets() / onCabinetsChanged() |
+| `cabinets:write` | addCabinet() / updateCabinet() / removeCabinet() / 对象入柜出柜 |
+| `launch` | launchItem() 启动对象 |
+| `storage` | mod 专属 localStorage 空间 |
+| `dom` | 操作 DOM 结构 |
+| `theme` | 读写 CSS 变量（setThemeVariable） |
+| `fs:read` | 读取 mod 自身目录内文件 |
+| `fs:write` | 写入 mod 自身目录内文件 |
+| `net` | 网络访问（net.fetch） |
+| `events:emit` | 发送 mod 间事件 |
+| `events:receive` | 接收 mod 间事件 |
+| `objects:preview` | 读取被管理对象的预览信息和资源 URL |
+| `data` | mod 专属数据库存储 |
+
+### 15.4 常用 API 概览
+
+Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_ID__` 由宿主注入）。常用面（完整定义见 `src/lib/modApi.ts`）：
+
+- **数据读写**：`getItems` / `getTags` / `getTagRelations` / `getCabinets`，及对应的写入与批量方法（`addItem` / `setItemTags` / `toggleFavorite` / 文件柜 CRUD 与批量入出柜等）；
+- **变更事件**：`onItemsChanged` / `onTagsChanged` / `onCabinetsChanged` / `onCabinetItemsChanged` / `onSelectionChanged` / `onSearchInput` / `onItemLaunched`，均返回取消订阅函数；
+- **UI 贡献**：`createPanel`（侧栏/浮动面板）、`createToolbarButton`（工具栏按钮）、`registerItemSlot`（卡片与列表行 header/actions/footer 三插槽）、`ui`（Mod UI Kit）、`notify`（Toast）；
+- **对象预览**：`preview.*`（读取预览信息与资源 URL，配合 `objects:preview` 权限）；
+- **网络**：`net.fetch(url, init?)`——经 Rust 后端代理绕开 WebView CORS，返回标准 Fetch Response；仅 http/https，SSRF 拦截（见 §十四）；
+- **文件与存储**：`fs.*`（限 mod 自身目录）、`storage`（KV）、`data`（数据库）；
+- **主题变量**：`getThemeVariable` / `setThemeVariable` / `getThemeId` / `onThemeChange`；
+- **生命周期**：`onLifecycle(type, cb)`（启用/禁用等回调）；
+- **Mod 间事件**：`events.*`（按 manifest `events` 约定收发）。
+
+### 15.5 data-region 全集（主题定位锚点）
+
+宿主在关键区域根节点上设置了稳定的 `data-region` 属性，主题 CSS 应以 `[data-region="..."]` 选择器定位，而非依赖类名或 DOM 层级：
+
+| data-region | 位置 | 说明 |
+|---|---|---|
+| `root` | 应用最外层容器 | 全局背景、字体基线 |
+| `titlebar` | 顶部自绘窗口栏 | **v1.6.0 新增**（`decorations: false` 后的主题化窗口栏） |
+| `app-body` | 窗口栏之下的主体容器 | 包覆侧栏与主区 |
+| `sidebar` | 左侧栏整体 | 标签/文件柜/最近使用 |
+| `sidebar-nav` | 侧栏导航区 | 集合入口列表 |
+| `sidebar-panels` | 侧栏面板区 | Mod 面板宿主 |
+| `searchbar` | 顶部搜索/工具栏 | 搜索框、排序、视图切换 |
+| `main` | 主视图区 | 对象网格/列表所在区域 |
+| `filterbar` | 类型筛选条 | 文件夹/图片/音频/程序/脚本 chips |
+| `statusbar` | 底部状态栏 | 可见数量/范围/已选/排序 |
+| `item-grid-inner` | 网格内部容器 | 虚拟化网格内容层 |
+| `bg-decoration` | 背景装饰层 | 主题背景动画/渐变挂点（z-index 最低） |
+| `workspace-skeleton` | 骨架屏 | v1.6.0 加载占位（reduced-motion 下静止） |
+
+### 15.6 主题 theme.json 结构
+
+主题是单个 JSON 文件（自定义主题放 `Plugins_Theme/`，或经设置页导入）。实例为 `ExampleTheme/SkyCloudTheme/theme.json`（版本 2.1.0）：
+
+| 字段 | 说明 |
+|---|---|
+| `id` / `name` / `author` / `version` | 主题标识与元信息；`id` 不得使用保留字 `dark` / `sakura` / `cyber-cyan` / `light`（与内置主题冲突会被拒绝；`light` 为 v1.6.1 对调前旧 id，继续保留防占用歧义） |
+| `isPreset` | 是否内置预设（自定义主题固定 `false`） |
+| `variables` | 扁平 CSS 变量表（颜色/字体/间距/圆角/阴影/z-index 等全量 token，缺省项由宿主默认值补齐） |
+| `tokens` | 分层 token：`primitive`（原始色板）→ `semantic`（语义层）→ `component`（组件层）→ `motion` / `layout` |
+| `components` | 组件级覆盖（如 `itemCard` / `searchBar` 的背景与边框） |
+| `variants` | 主题变体：每个变体可覆盖部分 `variables` 并附加 `css`（如 SkyCloud 的「静止云层」变体关闭动画） |
+| `css` | 自定义 CSS 文本；非内置主题会经消毒（去 `@import`、中和远程 `url()`、放行 asset/ipc 协议） |
+
+内置三主题（`src/themes/`）：`dark`（深色·赛博红）、`sakura`（亮色·樱花）、`cyber-cyan`（深色·赛博青）（v1.6.1 起 id 与主题身份对齐，老配置经迁移 v008 自动改写）。自定义主题建议以 `toExportableTheme` 导出格式为准，或直接从示例主题改起。
+
+### 15.7 安全说明：CSP 与 assetProtocol 的有意取舍
+
+`src-tauri/tauri.conf.json` 中两处看似宽松的配置是**有意取舍**，而非疏漏：
+
+- **CSP 保留 `script-src 'unsafe-inline'`**：Mod JS 经内联 `<script>` 注入执行（`src/lib/modRuntime.ts`），去掉 `unsafe-inline` 会破坏整个 Mod 体系。在「Mod 属可信扩展」的信任模型下（见 §十四），这是可接受的；CSP 其余条目（`default-src 'self'`、`object-src 'none'`、`frame-src 'none'` 等）仍作为纵深防御保留。
+- **`assetProtocol.scope: ["**"]`**：对象预览需要读取任意磁盘路径的图片/音频/图标（文件管理器核心功能），故 asset 协议不限定目录范围。该能力仅用于本地资源加载，不开放网络来源。
+
 
 

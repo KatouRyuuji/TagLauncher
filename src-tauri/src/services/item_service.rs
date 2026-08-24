@@ -31,6 +31,18 @@ pub fn item_from_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
     })
 }
 
+/// 列表查询的行映射失败处理：不静默吞掉（对象会从列表悄悄消失且无从排查），
+/// 记日志后跳过该行。供各列表/快照读取的 `.filter_map(...)` 统一使用。
+pub(crate) fn skip_err_with_log<T>(ctx: &str) -> impl Fn(rusqlite::Result<T>) -> Option<T> + '_ {
+    move |r| match r {
+        Ok(v) => Some(v),
+        Err(e) => {
+            eprintln!("[{}] 行读取失败，已跳过: {}", ctx, e);
+            None
+        }
+    }
+}
+
 /// 解析行中的文件身份（volume_serial + file_id 十六进制）。
 fn row_identity(volume_serial: Option<i64>, file_id_hex: Option<String>) -> Option<FileIdentity> {
     let vs = volume_serial?;
@@ -175,19 +187,48 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
         }
     }
 
-    if effective_identity.is_none() {
-        // 无文件身份（或身份冲突降级）→ 按 path 去重。去掉原 `AND file_id IS NULL` 过滤：
-        // 避免"曾以身份入库的文件被再次拖入、但此刻 get_identity 瞬时失败(文件被独占锁等)"时
-        // 重复插入同路径记录。命中则刷新名称并清除失效标记（不触碰其已有身份列）。
-        if let Some(existing_id) = conn
-            .query_row(
-                "SELECT id FROM items WHERE path = ?1",
-                [path],
-                |r| r.get::<_, i64>(0),
-            )
-            .optional()
-            .map_err(|e| e.to_string())?
-        {
+    // 身份查询未命中（含本次未取到身份、身份冲突降级）→ 按 path 去重。
+    // 不能只限 effective_identity.is_none() 才走这里：既有记录身份列为 NULL、本次却
+    // 取到身份时身份查询必然 miss，若跳过 path 去重会重复 INSERT 同路径行
+    // （v005 起 path 无唯一约束，数据库层面不再兜底）。
+    let existing_by_path: Option<(i64, Option<String>)> = conn
+        .query_row(
+            "SELECT id, file_id FROM items WHERE path = ?1",
+            [path],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    if let Some((existing_id, efid)) = existing_by_path {
+        // 既有记录带身份且本次也取到身份：身份查询刚 miss ⇒ 二者必不同——path 处文件
+        // 已被替换成另一个文件。此时不合并：落到下方为新文件 INSERT 新行，旧行留待对账
+        // 按身份重定位，避免新文件错挂到旧身份上（启动时会重定位到已移走的原文件）。
+        if !(efid.is_some() && effective_identity.is_some()) {
+            if efid.is_none() {
+                if let Some(idn) = effective_identity {
+                    // 既有记录无身份而本次取到身份 → 顺手回填身份与内容签名。
+                    // 身份查询刚 miss，回填必不撞身份唯一索引。
+                    conn.execute(
+                        "UPDATE items SET name = ?1, is_missing = 0, \
+                         volume_serial = ?2, file_id = ?3, sig_size = ?4, sig_head = ?5, sig_tail = ?6 \
+                         WHERE id = ?7",
+                        params![
+                            get_name(path),
+                            idn.volume_serial as i64,
+                            idn.file_id_hex(),
+                            sig.map(|s| s.size as i64),
+                            sig.map(|s| s.head_hash as i64),
+                            sig.map(|s| s.tail_hash as i64),
+                            existing_id
+                        ],
+                    )
+                    .map_err(|e| e.to_string())?;
+                    return select_item_by_id(conn, existing_id);
+                }
+            }
+            // 其余合并情形（本次无身份或身份冲突降级）：刷新名称并清除失效标记，
+            // 不触碰其已有身份列。
             conn.execute(
                 "UPDATE items SET name = ?1, is_missing = 0 WHERE id = ?2",
                 params![get_name(path), existing_id],
@@ -224,6 +265,11 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
 
 /// 添加项目
 pub fn add_item(conn: &Connection, path: &str) -> Result<Item, String> {
+    // 与 add_items 的单项校验同一口径：空路径不落库（单条命令入口此前无此防御，
+    // 空串会落成 name="" 的 exe 记录）
+    if path.trim().is_empty() {
+        return Err("路径不能为空".to_string());
+    }
     add_one(conn, path)
 }
 
@@ -366,7 +412,7 @@ pub fn get_items(conn: &Connection) -> Result<Vec<ItemWithTags>, String> {
     let items: Vec<Item> = stmt
         .query_map([], item_from_row)
         .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
+        .filter_map(skip_err_with_log("get_items"))
         .collect();
 
     tag_service::items_with_tags(conn, items)
@@ -439,7 +485,7 @@ pub fn get_items_by_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<ItemWithTa
         let chunk_items = stmt
             .query_map(params.as_slice(), item_from_row)
             .map_err(|e| e.to_string())?
-            .filter_map(|r| r.ok());
+            .filter_map(skip_err_with_log("get_items_by_ids"));
         items.extend(chunk_items);
     }
     sort_items_by_default_order(&mut items);
@@ -450,7 +496,7 @@ pub fn get_items_by_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<ItemWithTa
 /// 切换收藏状态
 pub fn toggle_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
     // UPDATE ... RETURNING 一次完成翻转并取回新值（省去二次 SELECT 往返）。
-    // id 不存在时 RETURNING 无行返回，query_row 返回错误（与原"翻转 0 行后 SELECT 取不到"一致）。
+    // id 不存在时 RETURNING 无行返回：映射为友好文案，不把裸 rusqlite 错误抛给前端。
     let new_val: i64 = conn
         .query_row(
             "UPDATE items SET is_favorite = CASE WHEN is_favorite = 0 THEN 1 ELSE 0 END \
@@ -458,7 +504,10 @@ pub fn toggle_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
             [id],
             |r| r.get(0),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("对象不存在（id {}），可能已被删除", id),
+            other => other.to_string(),
+        })?;
 
     Ok(new_val != 0)
 }
@@ -524,7 +573,9 @@ pub fn read_reconcile_snapshot(conn: &Connection) -> Result<Vec<ReconcileRow>, S
             })
         })
         .map_err(|e| e.to_string())?;
-    Ok(mapped.filter_map(|r| r.ok()).collect())
+    Ok(mapped
+        .filter_map(skip_err_with_log("read_reconcile_snapshot"))
+        .collect())
 }
 
 /// 【对账·第二段】不持 DB 锁：对每个对象做 exists()/get_identity(FFI)/compute_signature(读文件)/
@@ -692,7 +743,9 @@ pub fn read_missing_signatures(conn: &Connection) -> Result<Vec<MissingSignature
             })
         })
         .map_err(|e| e.to_string())?;
-    Ok(rows.filter_map(|r| r.ok()).collect())
+    Ok(rows
+        .filter_map(skip_err_with_log("read_missing_signatures"))
+        .collect())
 }
 
 /// 扫描时跳过的系统目录名与遍历上限（异常情况下防止无限扫描）。

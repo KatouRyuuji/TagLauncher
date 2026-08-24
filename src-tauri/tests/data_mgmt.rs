@@ -32,7 +32,7 @@ fn backup_snapshots_live_db_to_independent_file() {
     let ver: i64 = copy
         .query_row("SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='schema_version'", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(ver, 7);
+    assert_eq!(ver, 8);
 }
 
 /// 导出原语：快照后剔除 ai.* 敏感键并 VACUUM——非敏感键保留，且明文密钥不残留于文件字节。
@@ -73,6 +73,43 @@ fn export_strips_ai_keys_and_scrubs_plaintext() {
     );
 }
 
+/// 导出原语（sync.* 凭据）：WebDAV 密码与 AI 密钥同为明文凭据，导出副本必须一并剔除，
+/// 且 VACUUM 后密码明文不残留于文件字节（否则经分享出口外泄）。
+#[test]
+fn export_strips_sync_keys_and_scrubs_plaintext() {
+    let t = common::temp_db();
+    const NEEDLE: &str = "dav-SECRET-NEEDLE-P4ssw0rd";
+    {
+        let conn = t.db.get_conn();
+        settings_service::set_setting(&conn, "sync.webdav_url", "https://dav.example.com").unwrap();
+        settings_service::set_setting(&conn, "sync.username", "alice").unwrap();
+        settings_service::set_setting(&conn, "sync.password", NEEDLE).unwrap();
+        settings_service::set_setting(&conn, "theme", "dark").unwrap();
+    }
+    let target = t.dir.join("export_sync.db");
+    snapshot_live_db(&t.db, &target).expect("snapshot");
+    strip_sensitive_keys(&target).expect("strip");
+
+    {
+        let copy = rusqlite::Connection::open(&target).unwrap();
+        let sync_cnt: i64 = copy
+            .query_row("SELECT COUNT(*) FROM app_meta WHERE key LIKE 'sync.%'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(sync_cnt, 0, "sync.* 敏感键应被剔除");
+        let theme: String = copy
+            .query_row("SELECT value FROM app_meta WHERE key='theme'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(theme, "dark", "非敏感键应保留");
+    }
+
+    // VACUUM 重写文件后，WebDAV 密码明文不应残留在文件字节中。
+    let bytes = std::fs::read(&target).unwrap();
+    assert!(
+        !contains_subsequence(&bytes, NEEDLE.as_bytes()),
+        "VACUUM 后 WebDAV 密码明文不应残留于导出文件"
+    );
+}
+
 /// 导入版本校验：合法库返回其 schema_version；非 db / 缺 schema_version / 不存在均拒绝。
 #[test]
 fn validate_importable_db_accepts_valid_rejects_invalid() {
@@ -81,7 +118,7 @@ fn validate_importable_db_accepts_valid_rejects_invalid() {
     // 合法的 TagLauncher 库（本测试自身的库快照）→ 返回版本 7。
     let good = t.dir.join("good.db");
     snapshot_live_db(&t.db, &good).expect("snapshot");
-    assert_eq!(validate_importable_db(&good).unwrap(), 7);
+    assert_eq!(validate_importable_db(&good).unwrap(), 8);
 
     // 非 SQLite 文件 → 拒绝。
     let not_db = t.dir.join("not.db");

@@ -110,7 +110,7 @@ pub fn get_tags(conn: &Connection) -> Result<Vec<Tag>, String> {
             })
         })
         .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
+        .filter_map(crate::services::item_service::skip_err_with_log("get_tags"))
         .collect();
 
     Ok(tags)
@@ -162,6 +162,13 @@ pub fn remove_tag(conn: &Connection, id: i64) -> Result<(), String> {
 
 /// 全量替换单个对象标签的核心逻辑（不含事务，供 set_item_tags 与 set_many_item_tags 复用）。
 fn set_item_tags_core(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result<(), String> {
+    // 先校验对象与全部标签存在：否则 DELETE 之后 INSERT 才撞 FK，把裸约束错误抛给前端
+    // （事务保证回滚无脏数据，但报错文案用户看不懂）。UI 量级下单条 SELECT 开销可忽略。
+    ensure_exists(conn, "items", item_id, "对象")?;
+    for tag_id in tag_ids {
+        ensure_exists(conn, "tags", *tag_id, "标签")?;
+    }
+
     conn.execute("DELETE FROM item_tags WHERE item_id = ?1", [item_id])
         .map_err(|e| e.to_string())?;
 
@@ -211,7 +218,9 @@ pub fn get_tag_relations(conn: &Connection) -> Result<Vec<(i64, i64)>, String> {
     let rows = stmt
         .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))
         .map_err(|e| e.to_string())?;
-    Ok(rows.filter_map(|r| r.ok()).collect())
+    Ok(rows
+        .filter_map(crate::services::item_service::skip_err_with_log("get_tag_relations"))
+        .collect())
 }
 
 /// 某标签的所有后代集合（沿 child 边闭包，含传入节点自身）。
@@ -230,9 +239,27 @@ fn descendants_of(conn: &Connection, id: i64) -> Result<HashSet<i64>, String> {
     let seen = stmt
         .query_map([id], |r| r.get::<_, i64>(0))
         .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
+        .filter_map(crate::services::item_service::skip_err_with_log("descendants_of"))
         .collect();
     Ok(seen)
+}
+
+/// 校验标签/对象存在，给出友好文案：避免把裸 FOREIGN KEY constraint failed 抛给前端
+/// （与 add/update 的 friendly_name_err 同一取向：约束错误翻译为用户可读提示）。
+fn ensure_exists(conn: &Connection, table: &str, id: i64, label: &str) -> Result<(), String> {
+    // table 为代码内常量（"tags"/"items"），非用户输入，format! 拼接无注入风险
+    let exists: bool = conn
+        .query_row(
+            &format!("SELECT EXISTS(SELECT 1 FROM {} WHERE id = ?1)", table),
+            [id],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|v| v != 0)
+        .map_err(|e| e.to_string())?;
+    if !exists {
+        return Err(format!("{}不存在（id {}），可能已被删除", label, id));
+    }
+    Ok(())
 }
 
 /// 新增父子关系：禁止自环；禁止形成环（parent 已是 child 的后代时拒绝）；重复添加幂等。
@@ -240,6 +267,8 @@ pub fn add_tag_relation(conn: &Connection, parent_id: i64, child_id: i64) -> Res
     if parent_id == child_id {
         return Err("标签不能成为自己的父级".to_string());
     }
+    ensure_exists(conn, "tags", parent_id, "父标签")?;
+    ensure_exists(conn, "tags", child_id, "子标签")?;
     // 若 parent 已在 child 的后代集合中，新增 parent→child 会成环。
     if descendants_of(conn, child_id)?.contains(&parent_id) {
         return Err("该关系会形成循环（父标签已是子标签的后代）".to_string());
@@ -283,7 +312,7 @@ pub fn expand_with_descendants(conn: &Connection, ids: &[i64]) -> Result<Vec<i64
     let out = stmt
         .query_map(params.as_slice(), |r| r.get::<_, i64>(0))
         .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
+        .filter_map(crate::services::item_service::skip_err_with_log("expand_with_descendants"))
         .collect();
     Ok(out)
 }
@@ -407,6 +436,36 @@ mod tests {
         let mut want2 = vec![a, c];
         want2.sort();
         assert_eq!(exp2, want2);
+    }
+
+    #[test]
+    fn relation_and_set_tags_validate_existence_with_friendly_errors() {
+        let conn = setup_conn();
+        conn.execute(
+            "INSERT INTO items (name, path, type) VALUES ('i', 'D:\\i.exe', 'exe')",
+            [],
+        )
+        .unwrap();
+        let item_id = conn.last_insert_rowid();
+        conn.execute("INSERT INTO tags (name,color) VALUES ('a','#fff')", [])
+            .unwrap();
+        let a = tag_id(&conn, "a");
+
+        // 不存在的标签/对象 id → 友好文案而非裸 FK 错误
+        let err = add_tag_relation(&conn, a, 999_999).expect_err("missing child tag");
+        assert!(err.contains("不存在"), "应提示标签不存在: {}", err);
+        assert!(!err.contains("FOREIGN KEY"), "不应暴露裸约束错误: {}", err);
+
+        let err = set_item_tags(&conn, item_id, &[a, 999_999]).expect_err("missing tag");
+        assert!(err.contains("不存在"), "应提示标签不存在: {}", err);
+
+        let err = set_item_tags(&conn, 999_999, &[a]).expect_err("missing item");
+        assert!(err.contains("不存在"), "应提示对象不存在: {}", err);
+
+        // 校验失败不写半份：先设上合法标签，再触发失败，原标签应原样保留
+        set_item_tags(&conn, item_id, &[a]).expect("set legal tags");
+        let _ = set_item_tags(&conn, item_id, &[999_999]).expect_err("missing tag again");
+        assert_eq!(get_item_tags(&conn, item_id).unwrap().len(), 1, "失败不应清掉既有标签");
     }
 
     #[test]

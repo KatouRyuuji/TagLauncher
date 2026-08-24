@@ -87,8 +87,8 @@ pub fn parse_release_response(json: &str, current_version: &str) -> Result<Updat
     let release_url = value["html_url"].as_str().unwrap_or("").to_string();
     let release_notes = value["body"].as_str().unwrap_or("").to_string();
 
-    // has_update = current < latest
-    let has_update = !mod_loader::semver_gte(current_version, &latest);
+    // has_update = current 语义上早于 latest（beta 当前版本也会收到同号正式版提示）
+    let has_update = current_is_older(current_version, &latest);
 
     let (installer_url, installer_size) = pick_installer_asset(
         value["assets"].as_array().map(|v| v.as_slice()).unwrap_or(&[]),
@@ -104,6 +104,24 @@ pub fn parse_release_response(json: &str, current_version: &str) -> Result<Updat
         installer_url,
         installer_size,
     })
+}
+
+/// has_update 判定：current 语义上早于 latest 即视为有更新。
+/// 与裸 semver_gte 的差异：数字段相等时，带预发布段的 current（如 1.6.0-beta）
+/// 视为早于同号正式版 latest（1.6.0）——否则 beta 用户永远收不到正式版发布提示
+/// （semver_gte 解析时忽略预发布段，会把 1.6.0-beta 与 1.6.0 判等）。
+/// 两边都带预发布段时按数字段判等处理（简化语义，beta 递增不提示）。
+fn current_is_older(current: &str, latest: &str) -> bool {
+    if !mod_loader::semver_gte(current, latest) {
+        return true; // current 数字段更小
+    }
+    if mod_loader::semver_gte(latest, current) {
+        // 双向 gte = 数字段相等：仅当 current 是预发布而 latest 是正式版时 current 更早
+        let current_is_pre = current.split('-').nth(1).is_some();
+        let latest_is_pre = latest.split('-').nth(1).is_some();
+        return current_is_pre && !latest_is_pre;
+    }
+    false
 }
 
 /// 从 Release 资产列表中挑选匹配当前架构的 Windows 安装包。
@@ -169,6 +187,16 @@ mod tests {
         let info = parse_release_response(&sample_release("1.4.0"), "1.4.0").unwrap();
         assert!(!info.has_update);
         let info = parse_release_response(&sample_release("1.3.0"), "1.4.0").unwrap();
+        assert!(!info.has_update);
+    }
+
+    #[test]
+    fn prerelease_current_is_notified_of_same_numbered_final() {
+        // beta 当前版本应收到同号正式版的发布提示（semver_gte 忽略预发布段会误判相等）
+        let info = parse_release_response(&sample_release("1.6.0"), "1.6.0-beta").unwrap();
+        assert!(info.has_update, "1.6.0-beta 用户应收到 1.6.0 正式版提示");
+        // latest 也是预发布 → 数字段相等不提示（简化语义）
+        let info = parse_release_response(&sample_release("v1.6.0-rc.1"), "1.6.0-beta").unwrap();
         assert!(!info.has_update);
     }
 

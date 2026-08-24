@@ -9,7 +9,7 @@
 
 import { useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
-import { getThemeTagPresetColors } from "../lib/tagColors";
+import { pickRandomTagColor } from "../lib/tagColors";
 import type { ItemWithTags, Tag } from "../types";
 
 interface UseItemTagActionsParams {
@@ -81,9 +81,7 @@ export function useItemTagActions({
       if (existingTag) {
         tagId = existingTag.id;
       } else {
-        const colors = getThemeTagPresetColors();
-        const color = colors[Math.floor(Math.random() * colors.length)];
-        const newTag = await addTag(normalizedName, color);
+        const newTag = await addTag(normalizedName, pickRandomTagColor());
         tagId = newTag.id;
       }
 

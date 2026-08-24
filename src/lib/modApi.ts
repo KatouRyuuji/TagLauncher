@@ -1,5 +1,5 @@
 // ============================================================================
-// lib/modApi.ts — 暴露给 JS Mod 的全局 API（v2.2）
+// lib/modApi.ts — 暴露给 JS Mod 的全局 API（v3.2.0）
 // ============================================================================
 //
 // ⚠️ 安全模型（务必知悉，勿误解）：
@@ -33,6 +33,7 @@
 // ============================================================================
 
 import * as db from "./db";
+import { showToast, type ToastType } from "./toast";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Item, ItemWithTags, Tag, TagRelation, Cabinet } from "../types";
 import type { ModPermission } from "../types/mod";
@@ -52,7 +53,6 @@ import {
   type ItemSlotPosition,
 } from "./modItemSlotRegistry";
 
-type ToastType = "info" | "success" | "error" | "warning";
 type LifecycleType = "enable" | "disable" | "uninstall" | "install" | "update";
 
 // ── 类型定义 ─────────────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ interface ModScope {
   };
   // UI
   notify(message: string, type?: ToastType): void;
-  /** 注册 mod 生命周期回调（enable / disable / uninstall） */
+  /** 注册 mod 生命周期回调（enable / disable / uninstall / install / update） */
   onLifecycle(type: LifecycleType, cb: () => void | Promise<void>): void;
   /**
    * 在应用内创建 UI 面板。需要 "dom" 权限。
@@ -264,6 +264,24 @@ export function notifyCabinetItemsChanged(cabinetId: number, itemIds: number[]) 
 export function notifySelectionChanged(itemIds: number[]) {
   currentSelectedItemIds = itemIds.slice();
   for (const cb of selectionChangedListeners) try { cb(currentSelectedItemIds.slice()); } catch { /* */ }
+}
+
+// ── 宿主内部桥接：Mod 写入事件 ────────────────────────────────────────────
+// 与上面面向 Mod 的 notify*Changed 广播严格分离：广播告诉 Mod「数据变了」，
+// 本事件告诉宿主 UI「有 Mod 执行了写操作，需要刷新」。宿主自身刷新后也会
+// 触发 notify*Changed（useItems/useTags 的集中 effect），若桥接直接挂在
+// 广播上会形成 刷新→广播→再刷新 的自维持回路（v1.3.0 起的历史缺陷）。
+export type ModWriteKind = "items" | "tags" | "cabinets";
+const modWriteListeners = new Set<(kind: ModWriteKind) => void>();
+
+/** 仅供宿主 App 桥接订阅：Mod 写操作（含批量）成功后触发。 */
+export function onModWrite(cb: (kind: ModWriteKind) => void): () => void {
+  modWriteListeners.add(cb);
+  return () => { modWriteListeners.delete(cb); };
+}
+
+function notifyModWrite(kind: ModWriteKind): void {
+  for (const cb of modWriteListeners) try { cb(kind); } catch { /* */ }
 }
 
 // ── 权限注册表 ────────────────────────────────────────────────────────────
@@ -510,6 +528,16 @@ function parseJsonOrNull(value: string | null): unknown {
   }
 }
 
+// JSON.stringify 对 undefined / 函数 / Symbol 返回 undefined（不是字符串），
+// 直接传给 invoke 只会得到后端参数错误——提前给 mod 开发者可读的报错。
+function serializeModData(value: unknown, opName: string): string {
+  const json = JSON.stringify(value);
+  if (json === undefined) {
+    throw new Error(`[Mod] ${opName} 的值不可序列化（undefined / 函数 / Symbol），请转换为可 JSON 化的数据`);
+  }
+  return json;
+}
+
 // ── 核心方法实现 ──────────────────────────────────────────────────────────
 
 // 主题
@@ -536,12 +564,15 @@ function getCabinets(): Promise<Cabinet[]>      { return db.getCabinets(); }
 // 写入后重取并广播变更事件，使其它 Mod 经 onItemsChanged/onTagsChanged 感知到由
 // 本 Mod（或批量 API）发起的数据改动（best-effort，重取失败不影响写入结果）。
 async function notifyItemsRefreshed(): Promise<void> {
+  notifyModWrite("items");
   try { notifyItemsChanged(await db.getItems()); } catch { /* ignore */ }
 }
 async function notifyTagsRefreshed(): Promise<void> {
+  notifyModWrite("tags");
   try { notifyTagsChanged(await db.getTags()); } catch { /* ignore */ }
 }
 async function notifyCabinetsRefreshed(): Promise<void> {
+  notifyModWrite("cabinets");
   try { notifyCabinetsChanged(await db.getCabinets()); } catch { /* ignore */ }
 }
 
@@ -596,7 +627,7 @@ async function launchItems(ids: number[]): Promise<void> {
     nameById = new Map(items.map((i) => [i.id, i.name]));
   } catch { /* 查名失败时按 #id 展示 */ }
   for (const id of ids) {
-    if (!failed.includes(id)) notifyItemLaunched(id, nameById.get(id) ?? "");
+    if (!failed.includes(id)) notifyItemLaunched(id, nameById.get(id) ?? `#${id}`);
   }
   if (failed.length > 0) {
     const names = failed.map((id) => nameById.get(id) ?? `#${id}`).join("、");
@@ -616,7 +647,7 @@ export function onSelectionChanged(cb: (ids: number[]) => void) { selectionChang
 
 // UI
 function notify(msg: string, type: ToastType = "info") {
-  window.dispatchEvent(new CustomEvent("taglauncher-toast", { detail: { message: msg, type } }));
+  showToast(msg, type);
 }
 
 // ── 文件系统 ───────────────────────────────────────────────────────────────
@@ -730,10 +761,10 @@ function createScope(modId: string): ModScope {
   const storage = createStorage(modId);
   const data = {
     get: async (key: string) => parseJsonOrNull(await db.modKvGet(modId, key)),
-    set: async (key: string, value: unknown) => db.modKvSet(modId, key, JSON.stringify(value)),
+    set: async (key: string, value: unknown) => db.modKvSet(modId, key, serializeModData(value, "data.set")),
     remove: async (key: string) => db.modKvRemove(modId, key),
     list: async (collection: string) => (await db.modRecordsList(modId, collection)).map(parseJsonOrNull),
-    put: async (collection: string, id: string, value: unknown) => db.modRecordPut(modId, collection, id, JSON.stringify(value)),
+    put: async (collection: string, id: string, value: unknown) => db.modRecordPut(modId, collection, id, serializeModData(value, "data.put")),
     delete: async (collection: string, id: string) => db.modRecordRemove(modId, collection, id),
   };
 

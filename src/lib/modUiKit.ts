@@ -104,10 +104,10 @@ export function createContainer(opts: UiContainerOptions = {}): HTMLDivElement {
   el.style.flexDirection = "column";
   el.style.gap = getCssVar("spacing-sm", "8px");
   el.style.padding = getCssVar("spacing-md", "12px");
-  el.style.backgroundColor = getCssVar("bg-surface", "rgba(10,21,38,0.84)");
+  el.style.backgroundColor = getCssVar("bg-surface", "rgba(33,34,44,0.92)");
   el.style.borderRadius = getCssVar("radius-md", "8px");
-  el.style.border = `1px solid ${getCssVar("border-subtle", "rgba(148,163,184,0.08)")}`;
-  el.style.color = getCssVar("text-primary", "#eff6ff");
+  el.style.border = `1px solid ${getCssVar("border-subtle", "rgba(68,71,90,0.6)")}`;
+  el.style.color = getCssVar("text-primary", "#f8f8f2");
   el.style.fontFamily = getCssVar("font-family", "system-ui, sans-serif");
   el.style.fontSize = getCssVar("font-size-base", "14px");
 
@@ -135,8 +135,8 @@ export function createButton(opts: UiButtonOptions): HTMLButtonElement {
 
     switch (variant) {
       case "primary":
-        el.style.backgroundColor = getCssVar("accent-primary", "#7dd3fc");
-        el.style.color = getCssVar("bg-base", "#07111f");
+        el.style.backgroundColor = getCssVar("accent-primary", "#ff5555");
+        el.style.color = getCssVar("bg-base", "#282a36");
         el.style.border = "none";
         break;
       case "danger":
@@ -146,14 +146,14 @@ export function createButton(opts: UiButtonOptions): HTMLButtonElement {
         break;
       case "ghost":
         el.style.backgroundColor = "transparent";
-        el.style.color = getCssVar("text-secondary", "#94a3b8");
-        el.style.border = `1px solid ${getCssVar("border-subtle", "rgba(148,163,184,0.08)")}`;
+        el.style.color = getCssVar("text-secondary", "#d8d8d2");
+        el.style.border = `1px solid ${getCssVar("border-subtle", "rgba(68,71,90,0.6)")}`;
         break;
       case "secondary":
       default:
-        el.style.backgroundColor = getCssVar("bg-hover", "rgba(148,163,184,0.12)");
-        el.style.color = getCssVar("text-primary", "#eff6ff");
-        el.style.border = `1px solid ${getCssVar("border-default", "rgba(148,163,184,0.12)")}`;
+        el.style.backgroundColor = getCssVar("bg-hover", "rgba(255,85,85,0.08)");
+        el.style.color = getCssVar("text-primary", "#f8f8f2");
+        el.style.border = `1px solid ${getCssVar("border-default", "rgba(68,71,90,0.85)")}`;
         break;
     }
   };
@@ -214,7 +214,7 @@ export function createText(opts: UiTextOptions): HTMLElement {
   };
 
   el.style.fontSize = fontSizeMap[tag] ?? fontSizeMap.span;
-  el.style.color = getCssVar("text-primary", "#eff6ff");
+  el.style.color = getCssVar("text-primary", "#f8f8f2");
   el.style.lineHeight = getCssVar("line-height-normal", "1.5");
 
   if (tag.startsWith("h")) {
@@ -222,7 +222,7 @@ export function createText(opts: UiTextOptions): HTMLElement {
     el.style.margin = "0";
   }
   if (tag === "label") {
-    el.style.color = getCssVar("text-secondary", "#94a3b8");
+    el.style.color = getCssVar("text-secondary", "#d8d8d2");
     el.style.fontWeight = getCssVar("font-weight-medium", "500");
   }
 
@@ -236,9 +236,9 @@ export function createCard(opts: UiCardOptions = {}): HTMLDivElement {
   el.style.flexDirection = "column";
   el.style.gap = getCssVar("spacing-sm", "8px");
   el.style.padding = getCssVar("spacing-md", "12px");
-  el.style.backgroundColor = getCssVar("bg-card", "rgba(10,21,38,0.6)");
+  el.style.backgroundColor = getCssVar("bg-card", "rgba(33,34,44,0.94)");
   el.style.borderRadius = getCssVar("radius-lg", "10px");
-  el.style.border = `1px solid ${getCssVar("border-default", "rgba(148,163,184,0.12)")}`;
+  el.style.border = `1px solid ${getCssVar("border-default", "rgba(68,71,90,0.85)")}`;
   el.style.boxShadow = getCssVar("shadow-card", "0 2px 8px rgba(0,0,0,0.2)");
 
   if (opts.title) {
@@ -268,7 +268,7 @@ export function createList<T>(opts: UiListOptions<T>): HTMLDivElement {
       text: opts.emptyText ?? "暂无数据",
       tag: "p",
       className: "mod-ui-list-empty",
-      style: { color: getCssVar("text-muted", "#64748b"), textAlign: "center", padding: getCssVar("spacing-md", "12px") },
+      style: { color: getCssVar("text-muted", "#7e8c9f"), textAlign: "center", padding: getCssVar("spacing-md", "12px") },
     });
     el.appendChild(empty);
     return el;
@@ -286,7 +286,7 @@ export function createList<T>(opts: UiListOptions<T>): HTMLDivElement {
     row.style.minHeight = "36px";
 
     row.addEventListener("mouseenter", () => {
-      row.style.backgroundColor = getCssVar("bg-hover", "rgba(148,163,184,0.12)");
+      row.style.backgroundColor = getCssVar("bg-hover", "rgba(255,85,85,0.08)");
     });
     row.addEventListener("mouseleave", () => {
       row.style.backgroundColor = "transparent";
@@ -309,9 +309,9 @@ export function createInput(opts: UiInputOptions): HTMLInputElement {
   el.disabled = opts.disabled ?? false;
 
   el.style.padding = `${getCssVar("spacing-sm", "8px")} ${getCssVar("spacing-md", "12px")}`;
-  el.style.backgroundColor = getCssVar("bg-input", "rgba(10,21,38,0.6)");
-  el.style.color = getCssVar("text-primary", "#eff6ff");
-  el.style.border = `1px solid ${getCssVar("border-default", "rgba(148,163,184,0.12)")}`;
+  el.style.backgroundColor = getCssVar("bg-input", "rgba(24,25,33,0.94)");
+  el.style.color = getCssVar("text-primary", "#f8f8f2");
+  el.style.border = `1px solid ${getCssVar("border-default", "rgba(68,71,90,0.85)")}`;
   el.style.borderRadius = getCssVar("radius-md", "8px");
   el.style.fontSize = getCssVar("font-size-base", "14px");
   el.style.fontFamily = "inherit";
@@ -321,11 +321,11 @@ export function createInput(opts: UiInputOptions): HTMLInputElement {
   el.style.boxSizing = "border-box";
 
   el.addEventListener("focus", () => {
-    el.style.borderColor = getCssVar("accent-primary", "#7dd3fc");
-    el.style.boxShadow = `0 0 0 2px ${getCssVar("accent-primary-bg", "rgba(125,211,252,0.16)")}`;
+    el.style.borderColor = getCssVar("accent-primary", "#ff5555");
+    el.style.boxShadow = `0 0 0 2px ${getCssVar("accent-primary-bg", "rgba(255,85,85,0.14)")}`;
   });
   el.addEventListener("blur", () => {
-    el.style.borderColor = getCssVar("border-default", "rgba(148,163,184,0.12)");
+    el.style.borderColor = getCssVar("border-default", "rgba(68,71,90,0.85)");
     el.style.boxShadow = "none";
   });
 

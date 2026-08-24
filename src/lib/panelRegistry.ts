@@ -167,11 +167,13 @@ export function destroyPanel(fullId: string): void {
   // 重入守卫：若已在销毁过程中，直接返回
   if (!activePanels.has(fullId) && !pendingMap.has(fullId)) return;
 
-  // 取消 pending（若 React 还未挂载）
+  // 取消 pending（若 React 还未挂载）：必须 reject，否则 mod 侧
+  // `await api.createPanel(...)` 永久悬挂，后续逻辑（含清理注册）静默丢失。
   const pending = pendingMap.get(fullId);
   if (pending) {
     clearTimeout(pending.timerId);
     pendingMap.delete(fullId);
+    pending.reject(new Error(`Panel "${fullId}" 在挂载完成前被销毁（mod 被禁用/重载）`));
   }
 
   // 快照 close 监听器，然后清理内部状态（防止 close 回调重入）

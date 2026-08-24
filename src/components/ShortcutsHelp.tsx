@@ -51,7 +51,7 @@ export function ShortcutsHelp() {
       data-shortcuts-help=""
       data-workspace-overlay=""
       className="fixed inset-0 flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-base)_62%,transparent)] px-4"
-      style={{ zIndex: "var(--z-shortcuts-help)" as unknown as number }}
+      style={{ zIndex: "var(--z-shortcuts-help)" }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) setOpen(false);
       }}

@@ -209,7 +209,7 @@ pub fn sync_restore(
 
         // 2. 校验是合法的 TagLauncher 库且 schema 不高于当前版本
         let source_version = data_commands::validate_importable_db(&temp)?;
-        let current_version = live_schema_version(&db);
+        let current_version = crate::db::live_schema_version(&db);
         if current_version > 0 && source_version > current_version {
             return Err(format!(
                 "云端备份 schema 版本(v{})高于当前应用支持的版本(v{})，请先升级 TagLauncher",
@@ -686,16 +686,6 @@ pub fn reapply_local_secrets(db: &Database, secrets: &[(String, String)]) -> Res
     }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
-}
-
-fn live_schema_version(db: &Database) -> u32 {
-    let conn = db.get_conn();
-    conn.query_row(
-        "SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='schema_version'",
-        [],
-        |r| r.get(0),
-    )
-    .unwrap_or(0)
 }
 
 fn temp_file_path(purpose: &str) -> PathBuf {

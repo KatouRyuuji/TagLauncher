@@ -38,7 +38,7 @@ import { useVersionCheck } from "./hooks/useVersionCheck";
 import { useStartupMaintenance } from "./hooks/useStartupMaintenance";
 import { useWorkspaceHotkeys } from "./hooks/useWorkspaceHotkeys";
 import { resetWorkspaceSearchInput } from "./lib/workspaceChrome";
-import { initModApi, notifySelectionChanged, onTagsChanged, onCabinetsChanged, onItemsChanged } from "./lib/modApi";
+import { initModApi, notifySelectionChanged, onModWrite } from "./lib/modApi";
 import { initModRuntime } from "./lib/modRuntime";
 import { ToastContainer } from "./components/ToastContainer";
 import { FloatingPanels } from "./components/FloatingPanels";
@@ -53,7 +53,6 @@ function App() {
     loading,
     loadError,
     addItems,
-    removeItem,
     removeItems,
     updateItemIcon,
     setItemTags,
@@ -102,21 +101,14 @@ function App() {
 
   // 桥接 Mod 数据变更到主 UI：mod 调用 api.addTag/removeTag/setItemTags/removeItem 等写操作后，
   // 主界面自动刷新对应数据，避免界面陈旧到重启。
+  // 注意：只订阅 Mod 写入事件（onModWrite），不能订阅面向 Mod 的 notify*Changed 广播——
+  // 宿主自身刷新也会触发该广播，订阅它会形成自维持无限刷新回路。
   useEffect(() => {
-    const unsubTags = onTagsChanged(() => {
-      void refreshTags();
+    return onModWrite((kind) => {
+      if (kind === "items") void refresh();
+      else if (kind === "tags") void refreshTags();
+      else void refreshCabinets();
     });
-    const unsubCabinets = onCabinetsChanged(() => {
-      void refreshCabinets();
-    });
-    const unsubItems = onItemsChanged(() => {
-      void refresh();
-    });
-    return () => {
-      unsubTags();
-      unsubCabinets();
-      unsubItems();
-    };
   }, [refresh, refreshTags, refreshCabinets]);
 
   const recentLaunchRef = useRef<Map<number, number>>(new Map());
@@ -175,7 +167,6 @@ function App() {
 
   // 对象移除确认流（单个 / 批量）：读取"本次跳过"标记，需确认时挂起并交由弹窗渲染。
   const { requestRemoveFromApp, requestBatchRemoveFromApp, removeDialog } = useItemRemoval({
-    removeItem,
     removeItems,
     selectedItemIds,
     setSelectedItemIds,
@@ -291,6 +282,7 @@ function App() {
     onLaunch: (id) => { void handleLaunchItem(id); },
     onRemoveSelected: () => { void requestBatchRemoveFromApp(); },
     onToggleSelectedFavorite: handleToggleSelectedFavorite,
+    onToggleItemFavorite: (id: number) => { void toggleFavorite(id); },
     onOpenSettings: () => setShowSettings(true),
   });
 
@@ -337,7 +329,7 @@ function App() {
       <div
         data-region="bg-decoration"
         className="fixed inset-0 pointer-events-none"
-        style={{ background: "var(--bg-gradient)", zIndex: "var(--z-bg-decoration)" as unknown as number }}
+        style={{ background: "var(--bg-gradient)", zIndex: "var(--z-bg-decoration)" }}
       />
       <TitleBar />
       <div data-region="app-body">

@@ -25,6 +25,7 @@ import {
   purgeModResources,
   setExecutingModId,
 } from "./modApi";
+import { showToast } from "./toast";
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
 
@@ -93,8 +94,10 @@ function dispatchThemeRemoved(themeId: string) {
   window.dispatchEvent(new CustomEvent<string>(MOD_THEME_REMOVED, { detail: themeId }));
 }
 
-/** 内置保留主题 id（与后端 theme_loader::RESERVED_THEME_IDS 同步，禁止 mod 主题占用） */
-const RESERVED_THEME_IDS = ["dark", "light", "sakura"];
+/** 内置保留主题 id（与后端 theme_loader::RESERVED_THEME_IDS 同步，禁止 mod 主题占用）。
+ *  "light" 为 v1.6.1 对调前的旧内置 id（现为亮色樱花的 "sakura"），继续保留防止
+ *  mod 主题占用后与老配置迁移映射（"light"→"sakura"）产生歧义。 */
+const RESERVED_THEME_IDS = ["dark", "sakura", "cyber-cyan", "light"];
 
 /**
  * 校验 mod 主题结构（与后端 theme_loader::validate_theme_for_loading 同款口径）。
@@ -126,11 +129,7 @@ function parseModTheme(modId: string, jsonContent: string): ThemeDefinition | nu
     parsed = JSON.parse(jsonContent) as ThemeDefinition;
   } catch {
     console.warn(`[modRuntime] Failed to parse theme JSON for mod "${modId}"`);
-    window.dispatchEvent(
-      new CustomEvent("taglauncher-toast", {
-        detail: { message: `Mod "${modId}" 主题 JSON 解析失败`, type: "error" },
-      }),
-    );
+    showToast(`Mod "${modId}" 主题 JSON 解析失败`, "error");
     return null;
   }
   if (!parsed.id || parsed.id.trim() === "") {
@@ -139,11 +138,7 @@ function parseModTheme(modId: string, jsonContent: string): ThemeDefinition | nu
   const error = validateModTheme(parsed);
   if (error) {
     console.warn(`[modRuntime] Mod "${modId}" 主题校验失败：${error}`);
-    window.dispatchEvent(
-      new CustomEvent("taglauncher-toast", {
-        detail: { message: `Mod "${modId}" 主题校验失败：${error}`, type: "error" },
-      }),
-    );
+    showToast(`Mod "${modId}" 主题校验失败：${error}`, "error");
     return null;
   }
   return parsed;
@@ -154,8 +149,22 @@ function parseModTheme(modId: string, jsonContent: string): ThemeDefinition | nu
 /** 模块级初始化标记：防止 StrictMode / 重复调用导致 mod 被加载两次 */
 let initModRuntimePromise: Promise<void> | null = null;
 
-/** 启用单个 mod：注册元信息，读取入口文件，按类型注入 */
+/** 启用单个 mod：注册元信息，读取入口文件，按类型注入。
+ *  单 mod 并发互斥：initModRuntime 串行加载期间用户手动启用同一 mod 时，
+ *  无守卫会导致权限注册/trackModStart/install/update 生命周期重复执行。 */
+const enablingModIds = new Set<string>();
+
 export async function enableModRuntime(mod: ModInfo): Promise<void> {
+  if (enablingModIds.has(mod.id)) return;
+  enablingModIds.add(mod.id);
+  try {
+    await enableModRuntimeInner(mod);
+  } finally {
+    enablingModIds.delete(mod.id);
+  }
+}
+
+async function enableModRuntimeInner(mod: ModInfo): Promise<void> {
   const { id, type, entrypoints } = mod;
 
   // 注册权限声明和 API 版本（在执行 JS 之前完成，确保 createScope 能正确检查）
@@ -217,11 +226,7 @@ export async function enableModRuntime(mod: ModInfo): Promise<void> {
 
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[modRuntime] Failed to enable mod "${id}":`, err);
-    window.dispatchEvent(
-      new CustomEvent("taglauncher-toast", {
-        detail: { message: `Mod "${mod.name}" 加载失败：${msg}`, type: "error" },
-      }),
-    );
+    showToast(`Mod "${mod.name}" 加载失败：${msg}`, "error");
     throw err;
   }
 }
@@ -427,14 +432,7 @@ export function initModRuntime(mods: ModInfo[]): Promise<void> {
           reasons.push(`依赖 "${u.id}" 版本不满足（需要 ${u.required}，实际 ${u.actual}）`);
         }
         console.warn(`[modRuntime] Mod "${mod.id}" 依赖未满足，跳过加载：${reasons.join("；")}`);
-        window.dispatchEvent(
-          new CustomEvent("taglauncher-toast", {
-            detail: {
-              message: `Mod "${mod.name}" 依赖未满足，已跳过加载：${reasons.join("；")}`,
-              type: "warning",
-            },
-          }),
-        );
+        showToast(`Mod "${mod.name}" 依赖未满足，已跳过加载：${reasons.join("；")}`, "warning");
       }
     }
 
@@ -442,14 +440,7 @@ export function initModRuntime(mods: ModInfo[]): Promise<void> {
 
     if (cycles.length > 0) {
       console.warn(`[modRuntime] 检测到循环依赖，受影响 mod：${cycles.join(", ")}`);
-      window.dispatchEvent(
-        new CustomEvent("taglauncher-toast", {
-          detail: {
-            message: `检测到 Mod 循环依赖：${cycles.join(", ")}，加载顺序可能不正确`,
-            type: "warning",
-          },
-        }),
-      );
+      showToast(`检测到 Mod 循环依赖：${cycles.join(", ")}，加载顺序可能不正确`, "warning");
     }
 
     // 按拓扑顺序串行加载（保证依赖先初始化完毕）

@@ -145,7 +145,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
       ref={trapRef}
       data-workspace-overlay=""
       className="fixed inset-0 flex flex-col"
-      style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-panel)" as unknown as number }}
+      style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-editor-panel)" }}
       role="dialog"
       aria-modal="true"
       aria-label="标签关系图"

@@ -38,6 +38,9 @@ export function StatusBar({
       if (recovered === 0) {
         showToast("未能自动找回失效对象：请确认磁盘已连接；文件恢复后会自动重新关联", "info");
       }
+    } catch (err) {
+      // 扫描失败（如磁盘不可读）：明确错误反馈，不能静默——用户点击后必须知道发生了什么
+      showToast(`找回失效对象失败：${err instanceof Error ? err.message : String(err)}`, "error");
     } finally {
       setRelocating(false);
     }

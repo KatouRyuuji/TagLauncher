@@ -108,12 +108,12 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
         data-settings-overlay=""
         data-workspace-overlay=""
         className="fixed inset-0"
-        style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-overlay)" as unknown as number }}
+        style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-overlay)" }}
         onClick={onClose}
       />
       <div
         className="fixed inset-0 flex items-center justify-center p-5 pointer-events-none"
-        style={{ zIndex: "var(--z-settings-panel)" as unknown as number }}
+        style={{ zIndex: "var(--z-settings-panel)" }}
       >
         <div
           ref={trapRef}

@@ -47,22 +47,91 @@ pub fn enable_mod(
     registry: State<ModRegistry>,
     mod_id: String,
 ) -> Result<(), String> {
-    if !registry.enable_mod(&mod_id) {
+    // 先确认存在、先落库、最后改内存注册表：任一失败都不留"内存已启用但重启回退"的不一致。
+    if registry.get_mod_path(&mod_id).is_none() {
         return Err(format!("Mod '{}' not found", mod_id));
     }
-    let conn = db.get_conn();
-    let (mut enabled, parse_err) = settings_service::get_enabled_mods(&conn);
-    if let Some(err) = parse_err {
-        // 解析失败时 get_enabled_mods 返回空列表，若继续写回会把其它已启用 Mod 全部丢弃
-        return Err(format!(
-            "enabled_mods 配置已损坏，为避免覆盖已启用列表，本次启用未落库：{}",
-            err
-        ));
+    {
+        let conn = db.get_conn();
+        let (mut enabled, parse_err) = settings_service::get_enabled_mods(&conn);
+        if let Some(err) = parse_err {
+            // 解析失败时 get_enabled_mods 返回空列表，若继续写回会把其它已启用 Mod 全部丢弃
+            return Err(format!(
+                "enabled_mods 配置已损坏，为避免覆盖已启用列表，本次启用未落库：{}",
+                err
+            ));
+        }
+        if !enabled.contains(&mod_id) {
+            enabled.push(mod_id.clone());
+        }
+        settings_service::set_enabled_mods(&conn, &enabled)?;
     }
-    if !enabled.contains(&mod_id) {
-        enabled.push(mod_id);
+    // 存在性已确认，此处必为 true
+    registry.enable_mod(&mod_id);
+    // 启用可能补齐了其它 mod 的依赖：重估被标「依赖未满足」的 mod，
+    // 依赖齐备即恢复兼容，无需重启（启动时的同款检查见 lib.rs）。
+    reassess_dependency_compatibility(&registry);
+    Ok(())
+}
+
+/// 收集某 manifest 的依赖/加载顺序问题（与 lib.rs 启动检查、import_mod 同款口径）。
+/// 返回空 Vec 表示依赖全部满足。
+fn dependency_issues(
+    manifest: &ModManifest,
+    mod_map: &std::collections::HashMap<String, ModInfo>,
+) -> Vec<String> {
+    let mut reasons: Vec<String> = Vec::new();
+    for (dep_id, required_ver) in &manifest.dependencies {
+        match mod_map.get(dep_id) {
+            None => reasons.push(format!("依赖 mod '{}' 不存在", dep_id)),
+            Some(dep) if !dep.enabled => {
+                reasons.push(format!("依赖 mod '{}' 未启用", dep_id))
+            }
+            Some(dep) if !mod_loader::semver_satisfies(&dep.manifest.version, required_ver) => {
+                reasons.push(format!(
+                    "依赖 mod '{}' 版本不满足（需要 {}，实际 {}）",
+                    dep_id, required_ver, dep.manifest.version
+                ))
+            }
+            _ => {}
+        }
     }
-    settings_service::set_enabled_mods(&conn, &enabled)
+    for after_id in &manifest.load_after {
+        if !mod_map.contains_key(after_id) {
+            reasons.push(format!("前置 mod '{}' 不存在", after_id));
+        }
+    }
+    reasons
+}
+
+/// enable_mod 成功后重估依赖兼容性：启用只会让更多依赖得到满足（不会反向破坏），
+/// 故只需扫描当前因「依赖未满足」被标不兼容的 mod，重算通过即恢复，无需重启
+/// （min/max_app_version 标记不受启用动作影响，不在此重估）。
+/// pub 以便集成测试验证「启用依赖后 dependents 即时恢复」。
+pub fn reassess_dependency_compatibility(registry: &ModRegistry) {
+    let all_mods = registry.list_mods();
+    let mod_map: std::collections::HashMap<String, ModInfo> = all_mods
+        .iter()
+        .map(|m| (m.manifest.id.clone(), m.clone()))
+        .collect();
+
+    for mod_info in &all_mods {
+        if mod_info.is_compatible {
+            continue;
+        }
+        // 只重估「依赖未满足」标记者：版本兼容性标记不因启用动作而变化
+        let dep_marked = mod_info
+            .incompatible_reason
+            .as_deref()
+            .map(|r| r.starts_with("依赖未满足"))
+            .unwrap_or(false);
+        if !dep_marked {
+            continue;
+        }
+        if dependency_issues(&mod_info.manifest, &mod_map).is_empty() {
+            registry.mark_compatible(&mod_info.manifest.id);
+        }
+    }
 }
 
 #[tauri::command]
@@ -71,20 +140,25 @@ pub fn disable_mod(
     registry: State<ModRegistry>,
     mod_id: String,
 ) -> Result<(), String> {
-    if !registry.disable_mod(&mod_id) {
+    // 同 enable_mod：先落库、后改内存，避免失败路径留下不一致状态。
+    if registry.get_mod_path(&mod_id).is_none() {
         return Err(format!("Mod '{}' not found", mod_id));
     }
-    let conn = db.get_conn();
-    let (mut enabled, parse_err) = settings_service::get_enabled_mods(&conn);
-    if let Some(err) = parse_err {
-        // 同上：损坏状态下写回空列表会误伤其它已启用 Mod
-        return Err(format!(
-            "enabled_mods 配置已损坏，为避免覆盖已启用列表，本次禁用未落库：{}",
-            err
-        ));
+    {
+        let conn = db.get_conn();
+        let (mut enabled, parse_err) = settings_service::get_enabled_mods(&conn);
+        if let Some(err) = parse_err {
+            // 同上：损坏状态下写回空列表会误伤其它已启用 Mod
+            return Err(format!(
+                "enabled_mods 配置已损坏，为避免覆盖已启用列表，本次禁用未落库：{}",
+                err
+            ));
+        }
+        enabled.retain(|id| id != &mod_id);
+        settings_service::set_enabled_mods(&conn, &enabled)?;
     }
-    enabled.retain(|id| id != &mod_id);
-    settings_service::set_enabled_mods(&conn, &enabled)
+    registry.disable_mod(&mod_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -98,7 +172,14 @@ pub fn delete_mod(
         .get_mod_path(&mod_id)
         .ok_or_else(|| format!("Mod '{}' not found", mod_id))?;
 
-    // 2. 从 enabled_mods 中移除（如果存在），并清理该 mod 在 SQLite 中的持久化数据
+    // 2. 先删目录：目录删除失败（只读文件/占用）时不触碰任何持久状态，避免
+    // "数据已清但 mod 还在"的半截状态（重试 delete 仍可走完整流程）。
+    if mod_path.exists() {
+        std::fs::remove_dir_all(&mod_path).map_err(|e| format!("删除 mod 目录失败: {}", e))?;
+    }
+
+    // 3. 目录已删，清理持久化状态：从 enabled_mods 移除，并清理该 mod 在 SQLite 中的
+    // 专属数据表，避免残留孤儿数据。
     {
         let conn = db.get_conn();
         let (mut enabled, _) = settings_service::get_enabled_mods(&conn);
@@ -107,16 +188,10 @@ pub fn delete_mod(
             settings_service::set_enabled_mods(&conn, &enabled)?;
         }
 
-        // 卸载时一并清理 mod 专属数据表，避免残留孤儿数据
         conn.execute("DELETE FROM mod_kv WHERE mod_id = ?1", [&mod_id])
             .map_err(|e| e.to_string())?;
         conn.execute("DELETE FROM mod_records WHERE mod_id = ?1", [&mod_id])
             .map_err(|e| e.to_string())?;
-    }
-
-    // 3. 删除 mod 目录（递归）
-    if mod_path.exists() {
-        std::fs::remove_dir_all(&mod_path).map_err(|e| format!("删除 mod 目录失败: {}", e))?;
     }
 
     // 4. 从注册表中注销
@@ -339,6 +414,23 @@ pub fn resolve_mod_file_path(
         }
         if !check.starts_with(&canonical_mod) {
             return Err("Path traversal detected".to_string());
+        }
+        // 组件校验看不到链接语义：若中间目录是指向外部的符号链接（mod 目录内
+        // link -> 外部目录），写 link/x 会落到 mod 目录外。锚定最近存在的祖先
+        // canonicalize 再校验一次（Path::exists 跟随链接；链接断裂时目标写入
+        // 本身就会失败，此处按通过处理）。
+        let mut ancestor = target.as_path();
+        while !ancestor.exists() {
+            match ancestor.parent() {
+                Some(p) => ancestor = p,
+                None => break,
+            }
+        }
+        if ancestor.exists() {
+            let canonical_ancestor = ancestor.canonicalize().map_err(|e| e.to_string())?;
+            if !canonical_ancestor.starts_with(&canonical_mod) {
+                return Err("Path traversal detected".to_string());
+            }
         }
         Ok(target)
     }
@@ -567,7 +659,7 @@ pub fn import_mod(
         }
     };
 
-    // 2) 依赖 / load_after 校验（基于已注册的其它 mod 全集）
+    // 2) 依赖 / load_after 校验（基于已注册的其它 mod 全集；与启动检查/reassess 同款口径）
     if is_compatible {
         let mod_map: std::collections::HashMap<String, ModInfo> = registry
             .list_mods()
@@ -575,29 +667,7 @@ pub fn import_mod(
             .map(|m| (m.manifest.id.clone(), m))
             .collect();
 
-        let mut reasons: Vec<String> = Vec::new();
-        for (dep_id, required_ver) in &manifest.dependencies {
-            match mod_map.get(dep_id) {
-                None => reasons.push(format!("依赖 mod '{}' 不存在", dep_id)),
-                Some(dep) if !dep.enabled => {
-                    reasons.push(format!("依赖 mod '{}' 未启用", dep_id))
-                }
-                Some(dep)
-                    if !mod_loader::semver_satisfies(&dep.manifest.version, required_ver) =>
-                {
-                    reasons.push(format!(
-                        "依赖 mod '{}' 版本不满足（需要 {}，实际 {}）",
-                        dep_id, required_ver, dep.manifest.version
-                    ))
-                }
-                _ => {}
-            }
-        }
-        for after_id in &manifest.load_after {
-            if !mod_map.contains_key(after_id) {
-                reasons.push(format!("前置 mod '{}' 不存在", after_id));
-            }
-        }
+        let reasons = dependency_issues(&manifest, &mod_map);
         if !reasons.is_empty() {
             is_compatible = false;
             incompatible_reason = Some(format!("依赖未满足：{}", reasons.join("；")));

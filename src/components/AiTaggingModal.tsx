@@ -30,11 +30,11 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
       <div
         data-workspace-overlay=""
         className="fixed inset-0"
-        style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-migration-overlay)" as unknown as number }}
+        style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-ai-tagging-overlay)" }}
       />
       <div
         className="fixed inset-0 flex items-center justify-center p-5"
-        style={{ zIndex: "var(--z-migration-panel)" as unknown as number }}
+        style={{ zIndex: "var(--z-ai-tagging-panel)" }}
       >
         <section
           ref={trapRef}

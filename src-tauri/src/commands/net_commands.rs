@@ -25,6 +25,13 @@ fn default_method() -> String {
     "GET".to_string()
 }
 
+/// URL 协议校验：仅放行 http/https（file:// 等本地协议会绕过网络栈直接读盘）。
+/// 大小写敏感是故意的：非常规大小写按失败关闭处理（ureq 也只认小写 scheme）。
+/// 独立纯函数便于单元测试。
+fn url_scheme_allowed(url: &str) -> bool {
+    url.starts_with("http://") || url.starts_with("https://")
+}
+
 /// Mod 网络响应（body 为原始字节的 base64 编码，前端按内容类型自行解码）。
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,7 +55,7 @@ pub fn net_fetch(_db: State<Database>, req: NetFetchRequest) -> Result<NetFetchR
     let url = req.url.trim();
 
     // 仅允许 http/https
-    if !url.starts_with("http://") && !url.starts_with("https://") {
+    if !url_scheme_allowed(url) {
         return Err("net.fetch 仅支持 http/https 协议".to_string());
     }
 
@@ -172,17 +179,14 @@ mod tests {
 
     #[test]
     fn rejects_non_http_protocols() {
-        let req = NetFetchRequest {
-            url: "file:///etc/passwd".to_string(),
-            method: "GET".to_string(),
-            headers: HashMap::new(),
-            body: None,
-            timeout_ms: None,
-        };
-        // 不持有 Database，只测 URL 验证（在 DB state 之前检查）
-        // 直接调用内部逻辑
-        assert!(req.url.trim().starts_with("file://"), "测试数据正确");
-        assert!(!req.url.trim().starts_with("http://") && !req.url.trim().starts_with("https://"));
+        // 直接验证命令使用的协议校验谓词（非夹具自证）
+        assert!(url_scheme_allowed("http://example.com"));
+        assert!(url_scheme_allowed("https://example.com/path?q=1"));
+        assert!(!url_scheme_allowed("file:///C:/Windows/system.ini"));
+        assert!(!url_scheme_allowed("ftp://example.com/x"));
+        assert!(!url_scheme_allowed("example.com"));
+        // 非常规大小写失败关闭（ureq 同样只认小写 scheme）
+        assert!(!url_scheme_allowed("HTTP://example.com"));
     }
 
     #[test]

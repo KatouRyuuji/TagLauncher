@@ -2,14 +2,8 @@ import { useEffect, useState } from "react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import * as db from "../lib/db";
 import type { UpdateInfo } from "../lib/db";
+import { formatBytes } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
-
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return "";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
-  return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
 
 export function UpdateSettingsSection() {
   const [currentVersion, setCurrentVersion] = useState("");

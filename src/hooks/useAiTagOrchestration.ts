@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useAiTagging, type AiTaggingPrimitives, type AiTagProgress } from "./useAiTagging";
-import { getThemeTagPresetColors, FALLBACK_TAG_PRESET_COLORS } from "../lib/tagColors";
+import { pickRandomTagColor } from "../lib/tagColors";
 import { showToast } from "../lib/toast";
 import { AI_TAG_ALL_EVENT, type AiTagAllDetail } from "../components/AiSettingsSection";
 import * as db from "../lib/db";
@@ -36,7 +36,7 @@ export function useAiTagOrchestration({
   addTag,
   setItemTags,
 }: UseAiTagOrchestrationParams): UseAiTagOrchestrationResult {
-  const { state, start, cancel: rawCancel, reset } = useAiTagging();
+  const { state, start, cancel: rawCancel, reset, isRunning } = useAiTagging();
 
   // App 级 allItems 快照（供事件回调读取最新全库，避免闭包过期）
   const allItemsSnapshotRef = useRef(allItems);
@@ -44,12 +44,10 @@ export function useAiTagOrchestration({
     allItemsSnapshotRef.current = allItems;
   }, [allItems]);
 
-  // running 快照与待打标队列：任务进行中导入的新对象先入队，
-  // 当前任务结束后自动补跑，避免静默漏标。
-  const runningRef = useRef(state.running);
-  useEffect(() => {
-    runningRef.current = state.running;
-  }, [state.running]);
+  // 待打标队列：任务进行中（或紧凑连续）导入的新对象先入队，由 flushQueuedAutoTag
+  // 统一排水。运行态判断一律用 isRunning()（useAiTagging 内部同步 ref，无镜像滞后）——
+  // 此前经 effect 镜像 state.running 的 runningRef 有滞后，两个紧凑的 items-added
+  // 事件可都通过检查，后到的 start 被守卫拒绝导致该批对象静默漏标。
   const pendingAutoTagRef = useRef<ItemWithTags[]>([]);
 
   // 用户取消当前任务时一并清空待打标队列——"停止 AI 打标"的手势不应立刻又被队列触发
@@ -66,10 +64,7 @@ export function useAiTagOrchestration({
         .getState()
         .tags.find((t) => t.name.toLowerCase() === normalized.toLowerCase());
       if (existing) return existing.id;
-      const colors = getThemeTagPresetColors();
-      const palette = colors.length > 0 ? colors : FALLBACK_TAG_PRESET_COLORS;
-      const color = palette[Math.floor(Math.random() * palette.length)] ?? "#3b82f6";
-      const created = await addTag(normalized, color);
+      const created = await addTag(normalized, pickRandomTagColor());
       return created.id;
     },
     [addTag],
@@ -105,40 +100,10 @@ export function useAiTagOrchestration({
     return () => window.removeEventListener(AI_TAG_ALL_EVENT, onTagAll);
   }, [start, aiPrimitives, state.running]);
 
-  // 新对象自动打标（后台静默）
-  useEffect(() => {
-    const onItemsAdded = (event: Event) => {
-      const items = (event as CustomEvent<{ items: ItemWithTags[] }>).detail?.items ?? [];
-      if (items.length === 0) return;
-      void (async () => {
-        try {
-          const cfg = await db.aiGetConfig();
-          if (!cfg.autoTagOnAdd) return;
-          // 后端不再下发明文密钥，用 hasApiKey 判断是否已配置（apiKey 恒为空串）。
-          // 与后端 is_configured 口径一致：baseUrl + 密钥 + model 三项缺一不可，
-          // 缺 model 时后端会直接报错空转（silent 模式下静默浪费配额）。
-          if (!cfg.baseUrl.trim() || !cfg.hasApiKey || !cfg.model.trim()) return;
-          const targets = items.filter((item) => item.tags.length === 0);
-          if (targets.length === 0) return;
-          // 打标任务进行中：start 会直接拒绝（running 守卫），先入队等当前任务结束补跑
-          if (runningRef.current) {
-            pendingAutoTagRef.current.push(...targets);
-            return;
-          }
-          const tagged = await start(targets, aiPrimitives, { silent: true });
-          if (tagged > 0) showToast(`AI 已为 ${tagged} 个新对象自动打标`, "success");
-        } catch {
-          // 自动打标失败静默处理，不打扰用户导入流程
-        }
-      })();
-    };
-    window.addEventListener("taglauncher-items-added", onItemsAdded);
-    return () => window.removeEventListener("taglauncher-items-added", onItemsAdded);
-  }, [start, aiPrimitives]);
-
-  // 当前打标任务结束后补跑排队的新对象（读取最新全库快照过滤，期间已打标/已删除的自动跳过）
-  useEffect(() => {
-    if (state.running) return;
+  // 排队新对象的统一排水：去重/去已打标后检查配置并启动静默打标。
+  // 启动前用同步 isRunning() 复核（aiGetConfig 的 await 间隙可能已有任务启动），
+  // 运行中则回排，由当前任务结束后的补跑 effect 接手，任何时序下目标不丢失。
+  const flushQueuedAutoTag = useCallback(async () => {
     const queued = pendingAutoTagRef.current;
     if (queued.length === 0) return;
     pendingAutoTagRef.current = [];
@@ -151,18 +116,40 @@ export function useAiTagOrchestration({
       .filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)));
     if (targets.length === 0) return;
 
-    void (async () => {
-      try {
-        const cfg = await db.aiGetConfig();
-        if (!cfg.autoTagOnAdd) return;
-        if (!cfg.baseUrl.trim() || !cfg.hasApiKey || !cfg.model.trim()) return;
-        const tagged = await start(targets, aiPrimitives, { silent: true });
-        if (tagged > 0) showToast(`AI 已为 ${tagged} 个新对象自动打标`, "success");
-      } catch {
-        // 排队补跑失败同样静默处理
+    try {
+      const cfg = await db.aiGetConfig();
+      // 后端不再下发明文密钥，用 hasApiKey 判断是否已配置（apiKey 恒为空串）。
+      if (!cfg.autoTagOnAdd) return;
+      if (!cfg.baseUrl.trim() || !cfg.hasApiKey || !cfg.model.trim()) return;
+      if (isRunning()) {
+        pendingAutoTagRef.current.push(...targets);
+        return;
       }
-    })();
-  }, [state.running, start, aiPrimitives]);
+      const tagged = await start(targets, aiPrimitives, { silent: true });
+      if (tagged > 0) showToast(`AI 已为 ${tagged} 个新对象自动打标`, "success");
+    } catch {
+      // 自动打标失败静默处理，不打扰用户导入流程
+    }
+  }, [isRunning, start, aiPrimitives]);
+
+  // 新对象自动打标（后台静默）：先入队再排水，任务运行中由补跑 effect 接手
+  useEffect(() => {
+    const onItemsAdded = (event: Event) => {
+      const items = (event as CustomEvent<{ items: ItemWithTags[] }>).detail?.items ?? [];
+      if (items.length === 0) return;
+      pendingAutoTagRef.current.push(...items.filter((item) => item.tags.length === 0));
+      if (isRunning()) return;
+      void flushQueuedAutoTag();
+    };
+    window.addEventListener("taglauncher-items-added", onItemsAdded);
+    return () => window.removeEventListener("taglauncher-items-added", onItemsAdded);
+  }, [isRunning, flushQueuedAutoTag]);
+
+  // 当前打标任务结束后补跑排队的新对象
+  useEffect(() => {
+    if (state.running) return;
+    void flushQueuedAutoTag();
+  }, [state.running, flushQueuedAutoTag]);
 
   return { state, cancel, reset };
 }

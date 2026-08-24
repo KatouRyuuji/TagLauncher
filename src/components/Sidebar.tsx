@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TagEditor } from "./TagEditor";
 import { TagRelationsEditor } from "./TagRelationsEditor";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
+import { onCabinetItemsChanged } from "../lib/modApi";
 import * as db from "../lib/db";
 import {
   beginInternalPointerDrag,
@@ -101,13 +102,16 @@ export function Sidebar({
 
   const [itemCountByCabinet, setItemCountByCabinet] = useState<Map<number, number>>(() => new Map());
 
+  // 计数重算抽为独立函数：除了 cabinets/列表规模变化触发外，还要响应
+  // 柜内成员变更事件（拖拽入库不改变 cabinets 引用也不改 allItems.length，
+  // 仅靠依赖数组会漏刷——notifyCabinetItemsChanged 事件正是为此存在）。
   useEffect(() => {
     if (cabinets.length === 0) {
       setItemCountByCabinet(new Map());
       return;
     }
     let cancelled = false;
-    void (async () => {
+    const reload = async () => {
       const pairs = await Promise.all(
         cabinets.map(async (cabinet) => {
           try {
@@ -118,11 +122,13 @@ export function Sidebar({
           }
         }),
       );
-      if (cancelled) return;
-      setItemCountByCabinet(new Map(pairs));
-    })();
+      if (!cancelled) setItemCountByCabinet(new Map(pairs));
+    };
+    void reload();
+    const unsubCabinetItems = onCabinetItemsChanged(() => { void reload(); });
     return () => {
       cancelled = true;
+      unsubCabinetItems();
     };
   }, [cabinets, allItems.length]);
 

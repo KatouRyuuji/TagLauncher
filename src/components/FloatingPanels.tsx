@@ -242,7 +242,7 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
         top:    panel.y,
         width:  panel.width,
         height: panel.height,
-        zIndex: `calc(${zIndexBase} + ${Math.min(zSerial, 49)})` as unknown as number,
+        zIndex: `calc(${zIndexBase} + ${Math.min(zSerial, 49)})`,
         display: panel.visible ? undefined : "none",
       }}
       onMouseDown={onBringToFront}
@@ -321,8 +321,8 @@ function VisibleModalPanel({ panel }: ModalPanelProps) {
   });
 
   // modal 使用 settings-overlay 之下（-5），避免覆盖系统模态；高于内置空格预览（160）
-  const overlayZ = `calc(var(--z-settings-overlay) - 5)` as unknown as number;
-  const panelZ   = `calc(var(--z-settings-panel) - 5)` as unknown as number;
+  const overlayZ = `calc(var(--z-settings-overlay) - 5)`;
+  const panelZ   = `calc(var(--z-settings-panel) - 5)`;
 
   return (
     <>

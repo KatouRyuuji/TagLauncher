@@ -1,4 +1,5 @@
 import type { ThemeDefinition, ThemeTokenLayers } from "../types/theme";
+import { showToast } from "./toast";
 import { DEFAULT_THEME_VARIABLES, THEME_VARIABLE_KEYS } from "../themes";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
@@ -69,7 +70,17 @@ function detectCssBraceError(css: string): string | null {
       continue;
     }
     if (inStr) {
-      if (ch === strChar && css[i - 1] !== "\\") inStr = false;
+      if (ch === strChar) {
+        // 引号前连续奇数个反斜杠才算被转义：\\" 是「转义反斜杠 + 结束引号」，
+        // 只看前一字符会把结束引号误判为转义引号。
+        let backslashes = 0;
+        let j = i - 1;
+        while (j >= 0 && css[j] === "\\") {
+          backslashes++;
+          j--;
+        }
+        if (backslashes % 2 === 0) inStr = false;
+      }
       continue;
     }
     if (ch === "*" && css[i - 1] === "/") {
@@ -264,14 +275,7 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
     // 注入前检查括号平衡，不平衡时警告（仍继续注入，浏览器会尽力解析有效部分）
     const cssError = detectCssBraceError(combinedCss);
     if (cssError) {
-      window.dispatchEvent(
-        new CustomEvent("taglauncher-toast", {
-          detail: {
-            message: `主题 "${theme.id}" 的 CSS 存在语法问题（${cssError}），部分样式可能无效`,
-            type: "warning",
-          },
-        }),
-      );
+      showToast(`主题 "${theme.id}" 的 CSS 存在语法问题（${cssError}），部分样式可能无效`, "warning");
     }
     if (!styleEl) {
       styleEl = document.createElement("style");

@@ -7,17 +7,29 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { gridOverscanRows, setWorkspaceGridLanes } from "../lib/workspaceChrome";
 
-/** 网格参数：与 index.css --grid-col-min + gap-4 对齐 */
-const GRID_COL_MIN = 238;
+/** 网格行间距（gap-4），无对应 CSS 变量 */
 const GRID_GAP = 16;
 /** 卡片行初始估算高度（含 gap）；真实高度由 measureElement 动态校正，避免标签裁剪 */
 const GRID_ROW_EST = 188;
+
+/**
+ * 列最小宽度：唯一来源是 index.css --grid-col-min（主题可覆盖，骨架屏按它渲染），
+ * JS 侧读取同一变量保证真实网格与骨架屏一致；读取失败回退 238。
+ * 注意：主题运行时切换该变量不会触发 lanes 重算（resize 才会），内置主题均为 238，可接受。
+ */
+const FALLBACK_COL_MIN = 238;
+function gridColMin(): number {
+  if (typeof window === "undefined") return FALLBACK_COL_MIN;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--grid-col-min").trim();
+  const value = parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? value : FALLBACK_COL_MIN;
+}
 
 /** 首帧前的列数粗估，避免 lanes=1 闪烁（useLayoutEffect 会立即精确校正） */
 function estimateInitialLanes(): number {
   if (typeof window === "undefined") return 4;
   const approxContent = Math.max(320, window.innerWidth - 300);
-  return Math.max(1, Math.floor((approxContent + GRID_GAP) / (GRID_COL_MIN + GRID_GAP)));
+  return Math.max(1, Math.floor((approxContent + GRID_GAP) / (gridColMin() + GRID_GAP)));
 }
 
 type ItemCardViewProps = Omit<
@@ -149,7 +161,7 @@ export function ItemGrid({
     const el = scrollRef.current;
     if (!el) return;
     const w = el.clientWidth - 40; // 扣除 px-5 左右内边距
-    const next = Math.max(1, Math.floor((w + GRID_GAP) / (GRID_COL_MIN + GRID_GAP)));
+    const next = Math.max(1, Math.floor((w + GRID_GAP) / (gridColMin() + GRID_GAP)));
     setLanes((prev) => (prev === next ? prev : next));
   }, []);
 

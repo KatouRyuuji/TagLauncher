@@ -307,13 +307,21 @@ class Parser {
 
 function parseQuery(query: string): Expr | null {
   const cached = queryExprCache.get(query);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    // 命中即刷新热度（Map 按插入序迭代，重插移到最新位）
+    queryExprCache.delete(query);
+    queryExprCache.set(query, cached);
+    return cached;
+  }
 
   const tokens = tokenize(query);
   const expr = tokens.length === 0 ? null : new Parser(tokens).parse();
 
-  if (queryExprCache.size > 128) {
-    queryExprCache.clear();
+  // 尾部淘汰最老条目，保留热点（原实现超限整体 clear，连热点一起清掉）
+  while (queryExprCache.size >= 128) {
+    const oldest = queryExprCache.keys().next();
+    if (oldest.done) break;
+    queryExprCache.delete(oldest.value);
   }
   queryExprCache.set(query, expr);
 

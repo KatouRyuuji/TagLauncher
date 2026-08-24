@@ -24,11 +24,14 @@ impl Migration for V004AudioType {
             migrate_items_table_with_audio_type(conn)?;
         }
 
+        // 仅按路径扩展名重分类，但排除目录：名为 "xxx.mp3" 的文件夹不应被改判为 audio。
+        // `IS NOT 'folder'`（而非 `<> 'folder'`）让历史 NULL type 行仍按旧行为被重分类。
         conn.execute_batch(
             r#"
             UPDATE items
             SET type = 'audio'
-            WHERE lower(path) GLOB '*.aac'
+            WHERE type IS NOT 'folder'
+              AND (lower(path) GLOB '*.aac'
                OR lower(path) GLOB '*.ape'
                OR lower(path) GLOB '*.aiff'
                OR lower(path) GLOB '*.aif'
@@ -50,7 +53,7 @@ impl Migration for V004AudioType {
                OR lower(path) GLOB '*.mpc'
                OR lower(path) GLOB '*.mp+'
                OR lower(path) GLOB '*.mpp'
-               OR lower(path) GLOB '*.spx';
+               OR lower(path) GLOB '*.spx');
             "#,
         )?;
 
@@ -158,6 +161,7 @@ mod tests {
             CREATE INDEX idx_item_tags_item_position ON item_tags(item_id, position);
             CREATE INDEX idx_cabinet_items_item ON cabinet_items(item_id);
             INSERT INTO items (name, path, type) VALUES ('track', 'D:\Music\track.mp3', 'exe');
+            INSERT INTO items (name, path, type) VALUES ('mp3dir', 'D:\Music\backup.mp3', 'folder');
             "#,
         )
         .expect("create old schema");
@@ -168,6 +172,12 @@ mod tests {
             .query_row("SELECT type FROM items WHERE name = 'track'", [], |r| r.get(0))
             .expect("read migrated item type");
         assert_eq!(item_type, "audio");
+
+        // 名为 *.mp3 的文件夹不应被音频重分类改判
+        let dir_type: String = conn
+            .query_row("SELECT type FROM items WHERE name = 'mp3dir'", [], |r| r.get(0))
+            .expect("read migrated folder type");
+        assert_eq!(dir_type, "folder", "文件夹不应被改判为 audio");
 
         for index_name in [
             "idx_item_tags_tag_item",

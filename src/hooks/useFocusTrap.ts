@@ -30,10 +30,15 @@ interface UseFocusTrapOptions {
 export function useFocusTrap<T extends HTMLElement>(options: UseFocusTrapOptions) {
   const containerRef = useRef<T>(null);
   const previousActiveRef = useRef<Element | null>(null);
+  // 激活时刻的 restoreFocus 快照：只取激活时一次的值，不随调用方引用变化重跑
+  // effect——否则重跑会重新捕获 document.activeElement（此刻焦点可能已在陷阱内），
+  // 失活后焦点被恢复到陷阱内部元素。
+  const restoreSnapshotRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!options.active) return;
     previousActiveRef.current = document.activeElement;
+    restoreSnapshotRef.current = options.restoreFocus ?? null;
 
     const container = containerRef.current;
     if (!container) return;
@@ -67,12 +72,13 @@ export function useFocusTrap<T extends HTMLElement>(options: UseFocusTrapOptions
     container.addEventListener("keydown", handler);
     return () => {
       container.removeEventListener("keydown", handler);
-      const restoreTo = options.restoreFocus ?? previousActiveRef.current;
+      const restoreTo = restoreSnapshotRef.current ?? previousActiveRef.current;
       if (restoreTo instanceof HTMLElement) {
         restoreTo.focus();
       }
     };
-  }, [options.active, options.autoFocus, options.restoreFocus]);
+    // options.restoreFocus 有意不入依赖：只在激活时刻取快照（见上注释）
+  }, [options.active, options.autoFocus]);
 
   return containerRef;
 }
