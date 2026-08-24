@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { assert, test, run } from "./__testutil";
 import { darkTheme } from "../themes/dark";
-import { lightTheme } from "../themes/light";
 import { sakuraTheme } from "../themes/sakura";
+import { cyberCyanTheme } from "../themes/cyber-cyan";
 
 const NEW_LAYER_KEYS = ["z-quick-preview", "z-command-palette", "z-shortcuts-help"] as const;
 
@@ -42,10 +42,10 @@ test("提取逻辑健全：REQUIRED_VARIABLES 数量合理", () => {
   assert.ok(required.length >= 80, `仅提取到 ${required.length} 个必填变量`);
 });
 
-test("内置 dark / light / sakura 的 variables 键集合一致", () => {
+test("内置 dark / sakura / cyber-cyan 的 variables 键集合一致", () => {
   const darkKeys = variableKeys(darkTheme);
-  assert.deepEqual(variableKeys(lightTheme), darkKeys);
   assert.deepEqual(variableKeys(sakuraTheme), darkKeys);
+  assert.deepEqual(variableKeys(cyberCyanTheme), darkKeys);
 });
 
 test("内置主题与 :root 回退把空格预览放在 Mod 模态之下", () => {

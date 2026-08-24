@@ -72,7 +72,7 @@ mod tests {
             let ver: String = conn
                 .query_row("SELECT value FROM app_meta WHERE key='schema_version'", [], |r| r.get(0))
                 .unwrap();
-            assert_eq!(ver, "7");
+            assert_eq!(ver, "8");
             // 身份列就位
             let cols: i64 = conn
                 .query_row(

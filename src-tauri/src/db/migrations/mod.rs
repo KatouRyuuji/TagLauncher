@@ -5,6 +5,7 @@ mod v004_audio_type;
 mod v005_object_identity;
 mod v006_object_signature;
 mod v007_tag_relations;
+mod v008_theme_id_realign;
 
 use rusqlite::Connection;
 
@@ -164,6 +165,7 @@ pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
         Box::new(v005_object_identity::V005ObjectIdentity),
         Box::new(v006_object_signature::V006ObjectSignature),
         Box::new(v007_tag_relations::V007TagRelations),
+        Box::new(v008_theme_id_realign::V008ThemeIdRealign),
     ];
 
     let current_version = get_schema_version(conn);
@@ -272,7 +274,7 @@ mod tests {
 
         run_pending(&conn).expect("run_pending upgrade");
 
-        assert_eq!(get_schema_version(&conn), 7, "版本应推进到最新");
+        assert_eq!(get_schema_version(&conn), 8, "版本应推进到最新");
 
         let it: i64 = conn
             .query_row("SELECT COUNT(*) FROM item_tags", [], |r| r.get(0))
@@ -302,9 +304,9 @@ mod tests {
         let conn = Connection::open_in_memory().expect("open");
         seed_v4_with_cascading_relations(&conn);
         run_pending(&conn).expect("first upgrade");
-        // 再跑一次（current_version 已是 7，全部跳过）
+        // 再跑一次（current_version 已是 8，全部跳过）
         run_pending(&conn).expect("idempotent rerun");
-        assert_eq!(get_schema_version(&conn), 7);
+        assert_eq!(get_schema_version(&conn), 8);
         let it: i64 = conn
             .query_row("SELECT COUNT(*) FROM item_tags", [], |r| r.get(0))
             .unwrap();
