@@ -536,6 +536,28 @@
     cursor: se-resize;
   }
 
+  /* 首屏骨架屏占位块：低对比底色 + 横向 shimmer 扫光（reduced-motion 下自动静止） */
+  .skeleton-block {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--text-faint) 14%, transparent);
+  }
+
+  .skeleton-block::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--bg-elevated) 55%, transparent),
+      transparent
+    );
+    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  }
+
   .item-card-render-scope,
   .item-row-render-scope {
     content-visibility: auto;
@@ -547,6 +569,12 @@
 
   .item-row-render-scope {
     contain-intrinsic-size: 68px;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  to {
+    transform: translateX(100%);
   }
 }
 
