@@ -39,6 +39,20 @@ const TYPE_ORDER: Record<string, number> = {
   ps1: 5,
 };
 
+// 排序热点：localeCompare 每次调用都会隐式构造 Collator，大库排序时开销显著。
+// 模块级缓存一份 Collator 复用；numeric 开启自然数字排序（file2 < file10）。
+const nameCollator = new Intl.Collator("zh-CN", { numeric: true });
+
+/** 名称比较（缓存 Collator + 自然数字排序），全应用名称排序统一走这里。 */
+export function compareNames(a: string, b: string): number {
+  return nameCollator.compare(a, b);
+}
+
+/** ISO 时间戳是 ASCII 字典序可比的，纯字符串比较即可，避免 localeCompare 开销。 */
+function compareTimestamps(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function isSortMode(value: unknown): value is SortMode {
   return value === "smart" || value === "name" || value === "recent" || value === "added" || value === "type";
 }
@@ -86,24 +100,24 @@ export function compareItems(
 ): number {
   switch (mode) {
     case "name":
-      return a.name.localeCompare(b.name, "zh-CN");
+      return compareNames(a.name, b.name);
     case "recent": {
-      const used = (b.last_used_at ?? "").localeCompare(a.last_used_at ?? "");
-      return used || a.name.localeCompare(b.name, "zh-CN");
+      const used = compareTimestamps(b.last_used_at ?? "", a.last_used_at ?? "");
+      return used || compareNames(a.name, b.name);
     }
     case "added": {
-      const added = b.created_at.localeCompare(a.created_at);
-      return added || a.name.localeCompare(b.name, "zh-CN");
+      const added = compareTimestamps(b.created_at, a.created_at);
+      return added || compareNames(a.name, b.name);
     }
     case "type": {
       const order = (TYPE_ORDER[a.type] ?? 9) - (TYPE_ORDER[b.type] ?? 9);
-      return order || a.name.localeCompare(b.name, "zh-CN");
+      return order || compareNames(a.name, b.name);
     }
     case "smart":
     default: {
       if (a.is_favorite !== b.is_favorite) return a.is_favorite ? -1 : 1;
-      const used = (b.last_used_at ?? "").localeCompare(a.last_used_at ?? "");
-      return used || a.name.localeCompare(b.name, "zh-CN");
+      const used = compareTimestamps(b.last_used_at ?? "", a.last_used_at ?? "");
+      return used || compareNames(a.name, b.name);
     }
   }
 }

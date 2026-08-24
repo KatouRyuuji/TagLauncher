@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } f
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
-import { applyTypeFilter, applyWorkspaceQuery } from "../lib/itemQuery";
+import { applyTypeFilter, applyWorkspaceQuery, compareNames } from "../lib/itemQuery";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
@@ -32,9 +32,10 @@ function sortItems(items: ItemWithTags[]): ItemWithTags[] {
 
     const aUsed = a.last_used_at ?? "";
     const bUsed = b.last_used_at ?? "";
-    if (aUsed !== bUsed) return bUsed.localeCompare(aUsed);
+    // ISO 时间戳 ASCII 字典序可比，纯字符串比较即可
+    if (aUsed !== bUsed) return bUsed < aUsed ? -1 : 1;
 
-    return a.name.localeCompare(b.name);
+    return compareNames(a.name, b.name);
   });
 }
 
@@ -432,6 +433,7 @@ export function useItems() {
     loading,
     loadError,
     refresh: loadAll,
+    relocateMissing,
     addItems,
     removeItem,
     removeItems,

@@ -13,7 +13,9 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - 标签系统（图状层级，DAG）：标签是集合、可多父继承构成有向无环图；选中父标签筛选时并入其所有后代标签的对象。四类筛选（标签/文件柜/收藏夹/最近使用）互斥；标签多选取交集；提供关系编辑器与独立图谱视图。
 - 工作台查询：类型筛选与五种排序在 `src/lib/itemQuery.ts` 纯函数完成，搜索命中顺序不被排序打乱；视图偏好（网格/列表、搜索模式、排序、类型）写入 localStorage。全屏弹层与选中锚点见 `workspaceChrome.ts`。
 - 键盘优先：`/` 聚焦搜索，Ctrl+K 命令面板，空格预览（方向键/Home/End 切换），Enter 启动；网格方向键按列跳转；Ctrl+C 复制选中路径、Ctrl+D 收藏；无新依赖。
-- 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量删除。
+- 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量收藏/取消收藏（与 Ctrl+D 同逻辑：有未收藏项则全部收藏）、复制路径、批量删除。
+- 失效对象可感知恢复：库内存在失效对象（文件丢失/跨盘移动）时，底部状态栏显示警示徽标，点击即手动触发按内容签名的跨盘找回扫描（含扫描中状态与「未找到」反馈）；自动兜底找回仍在刷新链路后台执行。
+- 加载与通知体验：首屏按当前视图渲染与真实布局同构的骨架屏（`WorkspaceSkeleton`，reduced-motion 下静止）；Toast 悬停暂停自动关闭、错误/警告驻留更久（7s/5s）。
 - 视图虚拟化：网格与列表视图均经 `@tanstack/react-virtual` 虚拟化（measureElement 动态测高），仅渲染可见项，大库滚动流畅、内存可控。
 - 缩略图：支持手动设置/更换/清除；图片对象直接用图片，非图片对象提取系统图标缓存为 PNG，其余回退到类型 Emoji 图标。
 - 音频：提供 `get_audio_preview` 等对象预览命令。
@@ -548,5 +550,6 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `...
 - **列表加载 / 刷新（`get_items`）改用 `#[tauri::command(async)]` 工作线程执行**，不占用主 IPC 线程；并以「锁内取快照 → 锁外做 exists()/FFI/签名/图标抽取等重 IO → 锁内批量回写」三段式，把重 IO 移出 DB 全局锁，首屏与刷新不再冻结界面（图标抽取走 PowerShell / 文件 IO，是卡顿大头）。
 - **批量拖拽导入（`add_item` / `add_items`）改用 async 工作线程**：文件ID FFI、内容签名读取、类型识别等重 IO 从 UI 主线程移到工作线程，导入期间界面不冻结。**注意**——其重 IO 仍在 DB 事务锁内串行执行（既有逻辑未改），async 化仅解决「不冻结主线程」，并不等于「移出 DB 锁」或「并发无阻塞」。
 - 其余重 IO 命令同样以 async 工作线程执行：跨盘找回 `relocate_missing`、数据 `backup_data` / `export_data` / `import_data` / `set_data_directory`、AI `ai_test_connection` / `ai_suggest_tags`、Mod `net_fetch`。
+- **前端排序热点用缓存 Collator**：`localeCompare` 每次调用隐式构造 `Intl.Collator`，大库排序（工作台五种排序、upsert 后重排、标签/文件柜列表）是可测热点；`itemQuery.compareNames` 模块级缓存一份 zh-CN Collator（`numeric: true` 自然数字排序，file2 < file10）供全应用复用，ISO 时间戳降级为纯字符串比较。
 
 

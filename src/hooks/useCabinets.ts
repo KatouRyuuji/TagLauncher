@@ -9,11 +9,12 @@ import { useEffect, useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { notifyCabinetsChanged } from "../lib/modApi";
+import { compareNames } from "../lib/itemQuery";
 import type { Cabinet } from "../types";
 
 /** 按名称排序，保持与后端 get_cabinets 的返回顺序一致 */
 function sortCabinets(list: Cabinet[]): Cabinet[] {
-  return [...list].sort((a, b) => a.name.localeCompare(b.name));
+  return [...list].sort((a, b) => compareNames(a.name, b.name));
 }
 
 export function useCabinets() {

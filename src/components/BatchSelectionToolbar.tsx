@@ -15,6 +15,8 @@ export function BatchSelectionToolbar({
   onAddToCabinet,
   onRemoveFromCabinet,
   onRemoveFromApp,
+  favoriteLabel,
+  onToggleFavorite,
   onCopyPaths,
   onSelectAll,
   onClearSelection,
@@ -31,6 +33,9 @@ export function BatchSelectionToolbar({
   onAddToCabinet: (cabinetId: number) => Promise<void>;
   onRemoveFromCabinet: () => Promise<void>;
   onRemoveFromApp: () => Promise<void>;
+  /** 批量收藏按钮文案："收藏"（选中含未收藏项）或"取消收藏"（已全部收藏）。 */
+  favoriteLabel: string;
+  onToggleFavorite: () => void;
   onCopyPaths: () => void;
   onSelectAll: () => void;
   onClearSelection: () => void;
@@ -154,6 +159,17 @@ export function BatchSelectionToolbar({
             全选 {totalCount}
           </button>
         )}
+        <button
+          type="button"
+          onClick={onToggleFavorite}
+          className="action-button"
+          title={`${favoriteLabel}选中对象（Ctrl+D）`}
+        >
+          <svg className="h-3.5 w-3.5 text-[var(--color-favorite)]" viewBox="0 0 24 24" fill={favoriteLabel === "收藏" ? "none" : "currentColor"} stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m12 3.6 2.5 5.06 5.59.81-4.05 3.95.96 5.57L12 16.36l-5 2.63.96-5.57-4.05-3.95 5.59-.81L12 3.6Z" />
+          </svg>
+          {favoriteLabel}
+        </button>
         <button
           type="button"
           onClick={onCopyPaths}

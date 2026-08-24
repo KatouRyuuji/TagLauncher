@@ -1,6 +1,7 @@
 import type { ItemViewProps } from "../types";
 import { ItemCard } from "./ItemCard";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
+import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
 import { SelectionCanvas, type Rect } from "./SelectionCanvas";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -253,14 +254,7 @@ export function ItemGrid({
   }, [lanes, rowCount, items]);
 
   if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center px-6 py-10">
-        <div className="surface-card flex items-center gap-3 px-5 py-4 text-sm text-[var(--text-muted)]">
-          <span className="inline-flex h-3 w-3 animate-pulse rounded-full bg-[var(--accent-primary)]" />
-          正在加载项目数据...
-        </div>
-      </div>
-    );
+    return <WorkspaceSkeleton view="grid" />;
   }
 
   if (items.length === 0) {

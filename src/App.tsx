@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
 import { SearchBar } from "./components/SearchBar";
@@ -66,6 +66,7 @@ function App() {
     removeItemsFromCabinet,
     findItemById,
     refresh,
+    relocateMissing,
   } = useItems();
   const { tags, addTag, updateTag, removeTag, refresh: refreshTags } = useTags();
   const { addCabinet, updateCabinet, removeCabinet, refresh: refreshCabinets } = useCabinets();
@@ -259,6 +260,28 @@ function App() {
     commandPaletteOpen ||
     shortcutsHelpOpen;
 
+  // 库内失效对象计数（文件丢失/跨盘移动）：状态栏徽标 + 手动找回入口
+  const missingCount = useMemo(
+    () => allItems.reduce((count, item) => count + (item.is_missing ? 1 : 0), 0),
+    [allItems],
+  );
+
+  // 批量收藏（Ctrl+D 与批量工具条共用）：有未收藏项则全部收藏，否则全部取消收藏
+  const selectedNeedsFavorite = useMemo(
+    () => items.some((item) => selectedItemIds.includes(item.id) && !item.is_favorite),
+    [items, selectedItemIds],
+  );
+  const handleToggleSelectedFavorite = useCallback(() => {
+    const idSet = new Set(selectedItemIds);
+    const selected = items.filter((item) => idSet.has(item.id));
+    const ids = idsNeedingFavoriteToggle(selected);
+    void (async () => {
+      for (const id of ids) {
+        await toggleFavorite(id).catch(() => {});
+      }
+    })();
+  }, [items, selectedItemIds, toggleFavorite]);
+
   useWorkspaceHotkeys({
     blocked: overlaysBlocked,
     items,
@@ -267,15 +290,7 @@ function App() {
     setSelectedItemIds,
     onLaunch: (id) => { void handleLaunchItem(id); },
     onRemoveSelected: () => { void requestBatchRemoveFromApp(); },
-    onToggleSelectedFavorite: () => {
-      const selected = items.filter((item) => selectedItemIds.includes(item.id));
-      const ids = idsNeedingFavoriteToggle(selected);
-      void (async () => {
-        for (const id of ids) {
-          await toggleFavorite(id).catch(() => {});
-        }
-      })();
-    },
+    onToggleSelectedFavorite: handleToggleSelectedFavorite,
     onOpenSettings: () => setShowSettings(true),
   });
 
@@ -369,6 +384,8 @@ function App() {
           onAddToCabinet={batchAddToCabinet}
           onRemoveFromCabinet={batchRemoveFromCabinet}
           onRemoveFromApp={requestBatchRemoveFromApp}
+          favoriteLabel={selectedNeedsFavorite ? "收藏" : "取消收藏"}
+          onToggleFavorite={handleToggleSelectedFavorite}
           onCopyPaths={() => {
             const idSet = new Set(selectedItemIds);
             const payload = formatPathCopy(
@@ -383,6 +400,8 @@ function App() {
           visibleCount={items.length}
           selectedCount={selectedItemIds.length}
           libraryCount={allItems.length}
+          missingCount={missingCount}
+          onRelocateMissing={relocateMissing}
         />
         <ItemDropActions
           visible={isDraggingItem}
