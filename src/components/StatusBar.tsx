@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAppStore } from "../stores/appStore";
+import { useSearch } from "../hooks/useSearch";
 import { sortModeLabel, typeFilterLabel } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
 
@@ -18,7 +19,7 @@ export function StatusBar({
   /** 手动触发按内容签名跨盘找回，返回成功找回的对象数。 */
   onRelocateMissing: () => Promise<number>;
 }) {
-  const searchQuery = useAppStore((state) => state.searchQuery);
+  const { searchQuery, inputValue } = useSearch();
   const sortMode = useAppStore((state) => state.sortMode);
   const typeFilter = useAppStore((state) => state.typeFilter);
   const showFavorites = useAppStore((state) => state.showFavorites);
@@ -52,6 +53,10 @@ export function StatusBar({
           ? `${selectedTagIds.length} 个标签`
           : "全部";
 
+  // 防抖窗口内（输入已敲下、搜索词尚未生效）显示"搜索中"指示，
+  // 让用户知道当前计数/列表对应的还是上一次搜索词。
+  const searchPending = inputValue !== searchQuery;
+
   const parts = [`${visibleCount} 项`, scope];
   if (selectedCount > 0) parts.push(`已选 ${selectedCount}`);
   if (typeFilter !== "all") parts.push(typeFilterLabel(typeFilter));
@@ -67,6 +72,20 @@ export function StatusBar({
     >
       <div className="flex min-w-0 items-center gap-2">
         <span className="min-w-0 truncate">{parts.join(" · ")}</span>
+        {searchPending && (
+          <span
+            data-testid="search-pending"
+            role="status"
+            aria-label="正在搜索"
+            className="inline-flex shrink-0 items-center gap-1 text-[var(--accent-primary)]"
+            title={`正在等待输入停顿后搜索“${inputValue.trim()}”`}
+          >
+            <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3a9 9 0 1 0 9 9" />
+            </svg>
+            搜索中…
+          </span>
+        )}
         {missingCount > 0 && (
           <button
             type="button"

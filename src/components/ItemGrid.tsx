@@ -5,7 +5,7 @@ import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
 import { SelectionCanvas, type Rect } from "./SelectionCanvas";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { setWorkspaceGridLanes } from "../lib/workspaceChrome";
+import { gridOverscanRows, setWorkspaceGridLanes } from "../lib/workspaceChrome";
 
 /** 网格参数：与 index.css --grid-col-min + gap-4 对齐 */
 const GRID_COL_MIN = 238;
@@ -176,7 +176,8 @@ export function ItemGrid({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => GRID_ROW_EST,
-    overscan: 3,
+    // 列数自适应 overscan：一行卡片越多预渲染越贵，行数相应减少
+    overscan: gridOverscanRows(lanes),
   });
 
   // 每次渲染把可见行的真实测量数据记录下来，供 getItemRects 使用。

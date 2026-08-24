@@ -19,6 +19,7 @@ describe("appStore", () => {
       showFavorites: false,
       showRecent: false,
       searchQuery: "",
+      searchInputValue: "",
       searchMode: "all",
       viewMode: "grid",
       sortMode: "smart",
@@ -80,9 +81,22 @@ describe("appStore", () => {
     expect(useAppStore.getState().showFavorites).toBe(false);
   });
 
-  it("setSearchQuery 更新搜索词", () => {
+  it("setSearchQuery 更新搜索词并同步即时输入值（跳过防抖的直达路径）", () => {
+    useAppStore.setState({ searchInputValue: "残留输入" });
+
     useAppStore.getState().setSearchQuery("忍者神龟");
+
     expect(useAppStore.getState().searchQuery).toBe("忍者神龟");
+    expect(useAppStore.getState().searchInputValue).toBe("忍者神龟");
+  });
+
+  it("setSearchInputValue 只更新即时输入值，不触碰生效中的搜索词", () => {
+    useAppStore.setState({ searchQuery: "旧词" });
+
+    useAppStore.getState().setSearchInputValue("旧词新增");
+
+    expect(useAppStore.getState().searchInputValue).toBe("旧词新增");
+    expect(useAppStore.getState().searchQuery).toBe("旧词");
   });
 
   it("setTagGraphOpen 切换图谱开关", () => {
@@ -115,6 +129,7 @@ describe("appStore", () => {
       showRecent: true,
       typeFilter: "image",
       searchQuery: "游戏",
+      searchInputValue: "游戏机",
       sortMode: "name",
     });
 
@@ -125,6 +140,7 @@ describe("appStore", () => {
     expect(useAppStore.getState().showRecent).toBe(false);
     expect(useAppStore.getState().typeFilter).toBe("all");
     expect(useAppStore.getState().searchQuery).toBe("");
+    expect(useAppStore.getState().searchInputValue).toBe("");
     expect(useAppStore.getState().sortMode).toBe("name");
   });
 

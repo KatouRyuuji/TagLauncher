@@ -314,20 +314,29 @@ export function ContextMenu({
         style={{ ...style, boxShadow: "var(--shadow-dropdown)" }}
         className="modal-surface w-[196px] max-h-[72vh] max-w-[46vw] overflow-y-auto p-2"
       >
+        <MenuGroupLabel>启动</MenuGroupLabel>
         <MenuItem label="打开" onClick={() => { onLaunch(); onClose(); }} />
         {onPreview && <MenuItem label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
         <MenuItem label="打开所在文件夹" onClick={() => void handleOpenFolder()} />
         <MenuItem label="复制路径" onClick={() => { void copyText(item.path, "已复制路径"); onClose(); }} />
-        <MenuItem label={item.icon_path ? "更换缩略图" : "设置缩略图"} onClick={() => void handleChangeThumbnail()} />
-        {item.icon_path && <MenuItem label="清除缩略图" onClick={() => void handleClearThumbnail()} />}
         <MenuDivider />
 
+        <MenuGroupLabel>收藏与整理</MenuGroupLabel>
         <MenuItem
           label={item.is_favorite ? "取消收藏" : "加入收藏"}
           onClick={() => { onToggleFavorite(); onClose(); }}
           accent={item.is_favorite ? "favorite" : undefined}
         />
         <MenuItem label="管理标签" onClick={() => { onEditTags(); onClose(); }} />
+        <MenuItem label={item.icon_path ? "更换缩略图" : "设置缩略图"} onClick={() => void handleChangeThumbnail()} />
+        {item.icon_path && <MenuItem label="清除缩略图" onClick={() => void handleClearThumbnail()} />}
+
+        {(cabinets.length > 0 || currentCabinetId !== null) && (
+          <>
+            <MenuDivider />
+            <MenuGroupLabel>文件柜</MenuGroupLabel>
+          </>
+        )}
 
         {cabinets.length > 0 && (
           <div onMouseEnter={openCabinetSubmenu} onMouseLeave={scheduleCloseCabinetSubmenu}>
@@ -363,6 +372,7 @@ export function ContextMenu({
         )}
 
         <MenuDivider />
+        <MenuGroupLabel>危险操作</MenuGroupLabel>
         <MenuItem label="删除" onClick={() => { onRemove(); onClose(); }} accent="danger" />
       </div>
 
@@ -450,5 +460,20 @@ function MenuItem({
 }
 
 function MenuDivider() {
-  return <div className="my-1 h-px bg-[var(--border-subtle)]" />;
+  return <div role="separator" className="my-1 h-px bg-[var(--border-subtle)]" />;
+}
+
+/**
+ * 分组标题：仅视觉分组，不参与键盘导航（键盘循环只查 [role="menuitem"]），
+ * aria-hidden 避免读屏把标题当可操作项播报。
+ */
+function MenuGroupLabel({ children }: { children: string }) {
+  return (
+    <div
+      aria-hidden="true"
+      className="select-none px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]"
+    >
+      {children}
+    </div>
+  );
 }
