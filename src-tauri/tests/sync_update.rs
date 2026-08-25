@@ -84,7 +84,7 @@ fn restore_from_cloud_preserves_local_credentials() {
     }
 
     // 4) 恢复：保留本机凭据 → 覆盖 → 回填（与 sync_restore 命令同一原语序列）
-    let secrets = read_local_secrets(&t.db);
+    let secrets = read_local_secrets(&t.db).expect("read local secrets");
     overwrite_live_from(&t.db, &cloud).expect("overwrite");
     reapply_local_secrets(&t.db, &secrets).expect("reapply");
 
@@ -129,7 +129,7 @@ fn restore_prefers_local_credentials_over_embedded_ones() {
         .unwrap();
     }
 
-    let secrets = read_local_secrets(&t.db);
+    let secrets = read_local_secrets(&t.db).expect("read local secrets");
     overwrite_live_from(&t.db, &cloud).expect("overwrite");
     reapply_local_secrets(&t.db, &secrets).expect("reapply");
 

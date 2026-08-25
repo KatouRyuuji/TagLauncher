@@ -12,7 +12,7 @@
 // 的既有约定一致），若单独手动运行需先 cd 到仓库根目录。
 //
 // 特例说明：db.ts 的 searchItems（search_items）当前无 UI 调用方，属有意保留的
-// 后端 FTS5 路径（功能清单已声明的边界），本契约测试的双向一致规则因此成立、
+// 后端 FTS5 路径（开发手册已声明的边界），本契约测试的双向一致规则因此成立、
 // 该封装不得当作死代码删除。
 // ============================================================================
 
@@ -116,6 +116,31 @@ test("后端命令列表内部无重复注册（重复通常意味着复制粘�
   }
   const duplicates = [...counts.entries()].filter(([, n]) => n > 1).map(([name]) => name);
   assert.deepEqual(duplicates, [], `generate_handler! 中重复注册的命令：${duplicates.join(", ")}`);
+});
+
+// ============================================================================
+// 版本号三处一致（测试计划 ENG-06）：package.json / Cargo.toml / tauri.conf.json
+// 版本不一致会导致 release 工作流产出与客户端更新检查错乱，发版前必须拦下。
+// ============================================================================
+
+/** 从 Cargo.toml 文本提取 package 段 version（Cargo.toml 无注释 JSON 可解析，用行匹配即可）。 */
+function extractCargoVersion(source: string): string {
+  const match = source.match(/^version\s*=\s*"([^"]+)"/m);
+  if (!match) throw new Error("未在 Cargo.toml 中提取到 version 字段");
+  return match[1];
+}
+
+test("版本号三处一致：package.json / Cargo.toml / tauri.conf.json", () => {
+  const pkgVersion = (JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf-8")) as { version?: string }).version;
+  const cargoVersion = extractCargoVersion(readFileSync(resolve(process.cwd(), "src-tauri/Cargo.toml"), "utf-8"));
+  const tauriVersion = (JSON.parse(readFileSync(resolve(process.cwd(), "src-tauri/tauri.conf.json"), "utf-8")) as { version?: string }).version;
+  assert.ok(pkgVersion, "package.json 缺少 version 字段");
+  assert.ok(tauriVersion, "tauri.conf.json 缺少 version 字段");
+  assert.equal(
+    new Set([pkgVersion, cargoVersion, tauriVersion]).size,
+    1,
+    `三处版本号不一致：package.json=${pkgVersion}，Cargo.toml=${cargoVersion}，tauri.conf.json=${tauriVersion}`,
+  );
 });
 
 await run("contract");

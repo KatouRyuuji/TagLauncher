@@ -58,9 +58,9 @@ const ItemGridCard = memo(function ItemGridCard({
     currentCabinetId,
     onLaunch,
     onSetTags,
-    onAddTagToItem,
     onRemoveTagFromItem,
     onAddNewTagToItem,
+    onRecycleNewTags,
     onToggleFavorite,
     onAddItemToCabinet,
     onRemoveItemFromCabinet,
@@ -79,9 +79,9 @@ const ItemGridCard = memo(function ItemGridCard({
       currentCabinetId={currentCabinetId}
       onLaunch={handleLaunch}
       onSetTags={onSetTags}
-      onAddTagToItem={onAddTagToItem}
       onRemoveTagFromItem={onRemoveTagFromItem}
       onAddNewTagToItem={onAddNewTagToItem}
+      onRecycleNewTags={onRecycleNewTags}
       onToggleFavorite={handleToggleFavorite}
       onAddItemToCabinet={onAddItemToCabinet}
       onRemoveItemFromCabinet={onRemoveItemFromCabinet}
@@ -101,9 +101,9 @@ export function ItemGrid({
   currentCabinetId,
   onLaunch,
   onSetTags,
-  onAddTagToItem,
   onRemoveTagFromItem,
   onAddNewTagToItem,
+  onRecycleNewTags,
   onToggleFavorite,
   onAddItemToCabinet,
   onRemoveItemFromCabinet,
@@ -121,9 +121,9 @@ export function ItemGrid({
     currentCabinetId,
     onLaunch,
     onSetTags,
-    onAddTagToItem,
     onRemoveTagFromItem,
     onAddNewTagToItem,
+    onRecycleNewTags,
     onToggleFavorite,
     onAddItemToCabinet,
     onRemoveItemFromCabinet,
@@ -136,9 +136,9 @@ export function ItemGrid({
     currentCabinetId,
     onLaunch,
     onSetTags,
-    onAddTagToItem,
     onRemoveTagFromItem,
     onAddNewTagToItem,
+    onRecycleNewTags,
     onToggleFavorite,
     onAddItemToCabinet,
     onRemoveItemFromCabinet,
@@ -287,6 +287,8 @@ export function ItemGrid({
       {/* 虚拟化网格：position:relative 撑开滚动高度，每行绝对定位 */}
       <div
         data-region="item-grid-inner"
+        role="list"
+        aria-label="对象列表"
         style={{ height: virtualizer.getTotalSize(), position: "relative" }}
       >
         {virtualizer.getVirtualItems().map((vRow) => {
@@ -297,6 +299,7 @@ export function ItemGrid({
               key={vRow.key}
               data-index={vRow.index}
               ref={virtualizer.measureElement}
+              role="presentation"
               style={{
                 // 用 top 而非 transform 定位：transform 会创建新的定位上下文，
                 // 导致卡片右键菜单等 position:fixed 元素错位。

@@ -61,7 +61,14 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
 
           <div className="px-6 py-5">
             {/* 进度条 */}
-            <div className="h-2 w-full overflow-hidden rounded-none bg-[var(--bg-hover)]">
+            <div
+              className="h-2 w-full overflow-hidden rounded-none bg-[var(--bg-hover)]"
+              role="progressbar"
+              aria-valuenow={percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="打标进度"
+            >
               <div
                 className="h-full rounded-none bg-[var(--accent-primary)] transition-[width]"
                 style={{ width: `${percent}%` }}

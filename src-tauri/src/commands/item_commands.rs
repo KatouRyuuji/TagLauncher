@@ -30,7 +30,7 @@ pub fn remove_item(db: State<Database>, id: i64) -> Result<(), String> {
     item_service::remove_item(&conn, id)
 }
 
-/// 批量删除项目（单条 IN 语句，原子）
+/// 批量删除项目（500 分块多条 IN 语句 + 单事务，整体原子）
 #[tauri::command]
 pub fn remove_items(db: State<Database>, ids: Vec<i64>) -> Result<(), String> {
     let conn = db.get_conn();

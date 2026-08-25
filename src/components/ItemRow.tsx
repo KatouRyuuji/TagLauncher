@@ -115,6 +115,7 @@ function ItemRowComponent({
       <div
         data-drop-tag-item-id={item.id}
         data-selectable-item-id={item.id}
+        role="listitem"
         className={`item-row-render-scope item-focus-ring group grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] px-4 py-3 ${
           tagDragOver
             ? "bg-[var(--accent-primary-bg-light)]"

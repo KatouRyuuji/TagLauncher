@@ -267,15 +267,10 @@ fn run_backup_with_timeout(backup: &Backup) -> Result<(), String> {
 /// 仅 export_data（用户主动导出到任意路径，真正的分享出口）调用；
 /// backup_data（本机灾备）、import 的 safety_backup、数据目录迁移均保留密钥以支持完整恢复。
 /// DELETE 后立即 VACUUM 重写文件，确保密钥明文不残留在被释放的空闲页里（否则可被 strings/hex 还原）。
+/// 实现单源在 db::strip_sensitive_keys_in_file（与云端副本剔除共用）。
 /// pub 以便集成测试验证导出副本已剔除 ai.*/sync.* 且明文不残留于文件字节。
 pub fn strip_sensitive_keys(db_file: &Path) -> Result<(), String> {
-    let conn = Connection::open(db_file)
-        .map_err(|e| format!("无法打开副本以清理敏感配置: {}", e))?;
-    conn.execute_batch(
-        "DELETE FROM app_meta WHERE key LIKE 'ai.%' OR key LIKE 'sync.%'; VACUUM;",
-    )
-    .map_err(|e| format!("清理敏感配置失败: {}", e))?;
-    Ok(())
+    crate::db::strip_sensitive_keys_in_file(db_file)
 }
 
 /// 用来源库内容覆盖当前打开的库（Backup API，页级一致）。用于导入及导入失败回滚。

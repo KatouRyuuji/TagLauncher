@@ -102,7 +102,7 @@ pub struct ModManifest {
     pub entrypoints: ModEntrypoints,
     #[serde(default)]
     pub min_app_version: Option<String>,
-    /// 最高兼容版本（exclusive）：App > 此版本时标记不兼容（如 mod 依赖已移除的 API）
+    /// 最高兼容版本（inclusive，含此版本）：App 版本 > 此版本时标记不兼容（如 mod 依赖已移除的 API）
     #[serde(default)]
     pub max_app_version: Option<String>,
     /// 权限声明（items:read / tags:read / cabinets:read / storage / dom / theme）

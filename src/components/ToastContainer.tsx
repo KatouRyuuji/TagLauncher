@@ -67,7 +67,10 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
   const remainingRef = useRef(TOAST_DURATION[toast.type] ?? 3500);
   const startedAtRef = useRef(0);
   const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
+  // 写 ref 属于副作用，放 effect 内同步（渲染期写入在并发渲染被丢弃时会残留脏数据）
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
 
   const pause = useCallback(() => {
     if (timerRef.current === undefined) return;

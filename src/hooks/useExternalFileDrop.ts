@@ -62,9 +62,18 @@ export function useExternalFileDrop(
       if (recentDropRef.current.key === key && now - recentDropRef.current.ts < 800) {
         return;
       }
+      // 先记 key 挡住双通道的并发重复投递；导入失败时撤销记录，
+      // 使 800ms 窗口内的重试不被静默吞掉。
       recentDropRef.current = { key, ts: now };
 
-      await addItems(normalized);
+      try {
+        await addItems(normalized);
+      } catch (e) {
+        if (recentDropRef.current.key === key) {
+          recentDropRef.current = { key: "", ts: 0 };
+        }
+        throw e;
+      }
     },
     [addItems],
   );

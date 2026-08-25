@@ -30,3 +30,17 @@ pub(crate) fn live_schema_version(db: &Database) -> u32 {
     )
     .unwrap_or(0)
 }
+
+/// 从副本文件中物理剔除敏感配置（ai.*/sync.*）并 VACUUM 重写。
+/// 对外导出（data_commands::strip_sensitive_keys）与云端副本（sync_commands::strip_cloud_secrets）
+/// 共用同一份实现，避免两处各自复制、剔除口径日后漂移。
+/// VACUUM 重写文件，确保密钥明文不残留在被释放的空闲页（否则可被 strings/hex 还原）。
+pub(crate) fn strip_sensitive_keys_in_file(db_file: &std::path::Path) -> Result<(), String> {
+    let conn = Connection::open(db_file)
+        .map_err(|e| format!("无法打开副本以清理敏感配置: {}", e))?;
+    conn.execute_batch(
+        "DELETE FROM app_meta WHERE key LIKE 'ai.%' OR key LIKE 'sync.%'; VACUUM;",
+    )
+    .map_err(|e| format!("清理敏感配置失败: {}", e))?;
+    Ok(())
+}

@@ -15,6 +15,8 @@ impl Migration for V002ItemTagPosition {
     }
 
     fn up(&self, conn: &Connection) -> Result<(), rusqlite::Error> {
+        // 与 v001 第 4 步重复是有意的幂等兜底：两处都有 has_column 前置检查，
+        // 只应用过其中一版的历史库也能收敛到含 position 列的状态；新库上第二处为 no-op。
         if !has_column(conn, "item_tags", "position") {
             conn.execute_batch("ALTER TABLE item_tags ADD COLUMN position INTEGER NOT NULL DEFAULT 0")?;
         }

@@ -258,10 +258,10 @@ function App() {
   );
 
   // 批量收藏（Ctrl+D 与批量工具条共用）：有未收藏项则全部收藏，否则全部取消收藏
-  const selectedNeedsFavorite = useMemo(
-    () => items.some((item) => selectedItemIds.includes(item.id) && !item.is_favorite),
-    [items, selectedItemIds],
-  );
+  const selectedNeedsFavorite = useMemo(() => {
+    const idSet = new Set(selectedItemIds);
+    return items.some((item) => idSet.has(item.id) && !item.is_favorite);
+  }, [items, selectedItemIds]);
   const handleToggleSelectedFavorite = useCallback(() => {
     const idSet = new Set(selectedItemIds);
     const selected = items.filter((item) => idSet.has(item.id));
@@ -305,7 +305,6 @@ function App() {
     onLaunch: handleLaunchItem,
     onSetTags: setItemTags,
     onSetManyTags: setManyItemTags,
-    onAddTagToItem: addTagToItem,
     onRemoveTagFromItem: removeTagFromItem,
     onAddNewTagToItem: addNewTagToItem,
     onRecycleNewTags: recycleNewTags,

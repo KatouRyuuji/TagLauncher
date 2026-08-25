@@ -38,6 +38,9 @@ fn friendly_name_err(e: rusqlite::Error) -> String {
 
 /// 新建文件柜
 pub fn add_cabinet(conn: &Connection, name: &str, color: &str) -> Result<Cabinet, String> {
+    if name.trim().is_empty() {
+        return Err("文件柜名称不能为空".to_string());
+    }
     conn.execute(
         "INSERT INTO cabinets (name, color) VALUES (?1, ?2)",
         params![name, color],
@@ -61,23 +64,36 @@ pub fn add_cabinet(conn: &Connection, name: &str, color: &str) -> Result<Cabinet
 
 /// 更新文件柜
 pub fn update_cabinet(conn: &Connection, id: i64, name: &str, color: &str) -> Result<(), String> {
-    conn.execute(
-        "UPDATE cabinets SET name = ?1, color = ?2 WHERE id = ?3",
-        params![name, color, id],
-    )
-    .map_err(friendly_name_err)?;
+    let affected = conn
+        .execute(
+            "UPDATE cabinets SET name = ?1, color = ?2 WHERE id = ?3",
+            params![name, color, id],
+        )
+        .map_err(friendly_name_err)?;
+    // 与 update_item_icon 同一口径：id 不存在时明确报错，不静默成功
+    if affected == 0 {
+        return Err(format!("文件柜不存在（id {}），可能已被删除", id));
+    }
     Ok(())
 }
 
 /// 删除文件柜
 pub fn remove_cabinet(conn: &Connection, id: i64) -> Result<(), String> {
-    conn.execute("DELETE FROM cabinets WHERE id = ?1", [id])
+    let affected = conn
+        .execute("DELETE FROM cabinets WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
+    if affected == 0 {
+        return Err(format!("文件柜不存在（id {}），可能已被删除", id));
+    }
     Ok(())
 }
 
 /// 添加项目到文件柜
 pub fn add_item_to_cabinet(conn: &Connection, cabinet_id: i64, item_id: i64) -> Result<(), String> {
+    // 先校验存在性给友好文案：否则把裸 FOREIGN KEY constraint failed 抛给前端
+    // （与 tag_service::set_item_tags 同一模式）
+    tag_service::ensure_exists(conn, "cabinets", cabinet_id, "文件柜")?;
+    tag_service::ensure_exists(conn, "items", item_id, "对象")?;
     conn.execute(
         "INSERT OR IGNORE INTO cabinet_items (cabinet_id, item_id) VALUES (?1, ?2)",
         params![cabinet_id, item_id],
@@ -107,7 +123,10 @@ pub fn add_items_to_cabinet(
     item_ids: &[i64],
 ) -> Result<(), String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    // 先校验存在性给友好文案（事务保证校验失败时不留半份写入）
+    tag_service::ensure_exists(&tx, "cabinets", cabinet_id, "文件柜")?;
     for item_id in item_ids {
+        tag_service::ensure_exists(&tx, "items", *item_id, "对象")?;
         tx.execute(
             "INSERT OR IGNORE INTO cabinet_items (cabinet_id, item_id) VALUES (?1, ?2)",
             params![cabinet_id, *item_id],

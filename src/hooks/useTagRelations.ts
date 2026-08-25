@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
+import { showToast } from "../lib/toast";
 
 export function useTagRelations() {
   const relations = useAppStore((s) => s.tagRelations);
@@ -23,6 +24,8 @@ export function useTagRelations() {
       setTagRelations(await db.getTagRelations());
     } catch (e) {
       console.error("加载标签关系失败:", e);
+      // 后端故障不得静默呈现为「无标签关系」假象（对齐 useItems 的错误提示范式）
+      showToast(`加载标签关系失败：${e instanceof Error ? e.message : String(e)}`, "error");
     }
   }, [setTagRelations]);
 

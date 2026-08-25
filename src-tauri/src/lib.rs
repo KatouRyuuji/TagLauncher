@@ -125,42 +125,9 @@ pub fn run() {
             for (manifest, path) in mods {
                 let enabled = enabled_mods.contains(&manifest.id);
 
-                // 校验 min_app_version 和 max_app_version
-                let (is_compatible, incompatible_reason) = {
-                    // 1. 检查最低版本要求
-                    let min_ok = match manifest.min_app_version.as_deref() {
-                        None => Ok(()),
-                        Some(required) => {
-                            if mod_loader::semver_gte(app_version, required) {
-                                Ok(())
-                            } else {
-                                Err(format!(
-                                    "需要 App >= {}，当前版本为 {}",
-                                    required, app_version
-                                ))
-                            }
-                        }
-                    };
-                    // 2. 检查最高版本限制（app_version > max → 不兼容）
-                    let max_ok = match manifest.max_app_version.as_deref() {
-                        None => Ok(()),
-                        Some(max) => {
-                            if mod_loader::semver_gte(max, app_version) {
-                                Ok(())
-                            } else {
-                                Err(format!(
-                                    "此 mod 不兼容 App >= {}，当前版本为 {}",
-                                    max, app_version
-                                ))
-                            }
-                        }
-                    };
-                    match (min_ok, max_ok) {
-                        (Ok(()), Ok(())) => (true, None),
-                        (Err(e), _) => (false, Some(e)),
-                        (_, Err(e)) => (false, Some(e)),
-                    }
-                };
+                // 校验 min_app_version 和 max_app_version（与 import_mod 同一共用判定）
+                let (is_compatible, incompatible_reason) =
+                    mod_loader::check_app_version_compat(&manifest, app_version);
 
                 registry.register(manifest, path, enabled, is_compatible, incompatible_reason);
             }

@@ -1,4 +1,5 @@
 use crate::db::Database;
+use crate::extensions::fs_util;
 use crate::extensions::mod_loader;
 use crate::extensions::mod_registry::ModRegistry;
 use crate::models::{ModInfo, ModLoadError, ModManifest};
@@ -179,19 +180,22 @@ pub fn delete_mod(
     }
 
     // 3. 目录已删，清理持久化状态：从 enabled_mods 移除，并清理该 mod 在 SQLite 中的
-    // 专属数据表，避免残留孤儿数据。
+    // 专属数据表，避免残留孤儿数据。三步 DB 写包进一个事务：任一步失败整体回滚，
+    // 不留"enabled_mods 已改但 mod_kv 残留"的半截状态。
     {
         let conn = db.get_conn();
-        let (mut enabled, _) = settings_service::get_enabled_mods(&conn);
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let (mut enabled, _) = settings_service::get_enabled_mods(&tx);
         if enabled.contains(&mod_id) {
             enabled.retain(|id| id != &mod_id);
-            settings_service::set_enabled_mods(&conn, &enabled)?;
+            settings_service::set_enabled_mods(&tx, &enabled)?;
         }
 
-        conn.execute("DELETE FROM mod_kv WHERE mod_id = ?1", [&mod_id])
+        tx.execute("DELETE FROM mod_kv WHERE mod_id = ?1", [&mod_id])
             .map_err(|e| e.to_string())?;
-        conn.execute("DELETE FROM mod_records WHERE mod_id = ?1", [&mod_id])
+        tx.execute("DELETE FROM mod_records WHERE mod_id = ?1", [&mod_id])
             .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
     }
 
     // 4. 从注册表中注销
@@ -236,18 +240,13 @@ pub fn mark_mod_version(
 // Mod 数据 API
 // ============================================================================
 
-/// 校验 mod_id：非空、长度受限、仅含合法字符（字母/数字/`.`/`_`/`-`），
-/// 且已在注册表中存在。可信模型下用于挡明显越权 / 非法 id（非强身份校验）。
+/// 校验 mod_id：复用 mod_loader::is_valid_mod_id 的单一规则来源（非空、长度受限、
+/// 仅含字母/数字/`.`/`_`/`-`、排除全点号），且已在注册表中存在。
+/// 可信模型下用于挡明显越权 / 非法 id（非强身份校验）。
 /// pub 以便集成测试验证 kv/record/file 命令共用的 id 合法性 + 注册表存在性校验。
 pub fn ensure_valid_mod_id(registry: &ModRegistry, mod_id: &str) -> Result<(), String> {
-    if mod_id.is_empty() || mod_id.len() > 128 {
+    if !mod_loader::is_valid_mod_id(mod_id) {
         return Err("非法的 mod id".to_string());
-    }
-    if !mod_id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
-    {
-        return Err("mod id 含非法字符".to_string());
     }
     if registry.get_mod_path(mod_id).is_none() {
         return Err(format!("Mod '{}' not found", mod_id));
@@ -565,26 +564,6 @@ pub fn remove_mod_file(
 // Mod 导入导出
 // ============================================================================
 
-fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<(), String> {
-    std::fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
-    for entry in std::fs::read_dir(&src).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let src_path = entry.path();
-        let dst_path = dst.as_ref().join(entry.file_name());
-        // 与 theme_loader 一致：不跟随符号链接，避免把包外文件拖入 mod 目录
-        let meta = std::fs::symlink_metadata(&src_path).map_err(|e| e.to_string())?;
-        if meta.file_type().is_symlink() {
-            continue;
-        }
-        if meta.is_dir() {
-            copy_dir_all(&src_path, &dst_path)?;
-        } else {
-            std::fs::copy(&src_path, &dst_path).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub fn import_mod(
     app_handle: tauri::AppHandle,
@@ -626,40 +605,34 @@ pub fn import_mod(
         ));
     }
 
-    copy_dir_all(&source, &target)?;
-
-    // 与启动发现路径（lib.rs）一致地做版本兼容判断，不再硬编码 true。
-    // 1) min/max_app_version 校验
-    let app_version = settings_service::get_app_version();
-    let (mut is_compatible, mut incompatible_reason) = {
-        let min_ok = match manifest.min_app_version.as_deref() {
-            None => Ok(()),
-            Some(required) => {
-                if mod_loader::semver_gte(app_version, required) {
-                    Ok(())
-                } else {
-                    Err(format!("需要 App >= {}，当前版本为 {}", required, app_version))
-                }
-            }
-        };
-        let max_ok = match manifest.max_app_version.as_deref() {
-            None => Ok(()),
-            Some(max) => {
-                if mod_loader::semver_gte(max, app_version) {
-                    Ok(())
-                } else {
-                    Err(format!("此 mod 不兼容 App >= {}，当前版本为 {}", max, app_version))
-                }
-            }
-        };
-        match (min_ok, max_ok) {
-            (Ok(()), Ok(())) => (true, None),
-            (Err(e), _) => (false, Some(e)),
-            (_, Err(e)) => (false, Some(e)),
+    // 嵌套防御（与主题安装同一共用判定）：源是目标祖先时 copy_dir_all 会把源递归
+    // 搬进其子目录（自我递归）；源即目标/源在目标内时复制语义不成立，逐一明确拒绝。
+    match fs_util::detect_dir_nesting(&source, &target)? {
+        fs_util::DirNesting::Disjoint => {}
+        fs_util::DirNesting::Same => {
+            return Err("不能把 mods 目录中已安装的 mod 作为导入源".to_string());
         }
-    };
+        fs_util::DirNesting::SourceContainsTarget => {
+            return Err("不能把 mods 目录的祖先目录作为导入源".to_string());
+        }
+        fs_util::DirNesting::TargetContainsSource => {
+            return Err("导入源不能位于 mods 目标目录内".to_string());
+        }
+    }
 
-    // 2) 依赖 / load_after 校验（基于已注册的其它 mod 全集；与启动检查/reassess 同款口径）
+    if let Err(e) = fs_util::copy_dir_all(&source, &target) {
+        // 清理半截目录：复制中途失败时 target 已部分创建，不清理会让重试被
+        // 上方"已存在"检查阻塞。尽力而为，清理失败不掩盖原始错误。
+        let _ = std::fs::remove_dir_all(&target);
+        return Err(e);
+    }
+
+    // 与启动发现路径（lib.rs）同一共用版本兼容判定，不再硬编码 true。
+    let app_version = settings_service::get_app_version();
+    let (mut is_compatible, mut incompatible_reason) =
+        mod_loader::check_app_version_compat(&manifest, app_version);
+
+    // 依赖 / load_after 校验（基于已注册的其它 mod 全集；与启动检查/reassess 同款口径）
     if is_compatible {
         let mod_map: std::collections::HashMap<String, ModInfo> = registry
             .list_mods()
@@ -706,6 +679,21 @@ pub fn export_mod(
         return Err(format!("目标目录中已存在 '{}' 文件夹", mod_id));
     }
 
-    copy_dir_all(&mod_path, &target)?;
+    // 嵌套防御（与 import_mod 同一共用判定）：导出目标是 mod 目录的子路径时
+    // copy_dir_all 会把源递归搬进其自身子目录（自我递归），逐一明确拒绝。
+    match fs_util::detect_dir_nesting(&mod_path, &target)? {
+        fs_util::DirNesting::Disjoint => {}
+        fs_util::DirNesting::Same => {
+            return Err("不能把 mod 导出到其自身目录".to_string());
+        }
+        fs_util::DirNesting::SourceContainsTarget => {
+            return Err("不能把 mod 导出到其目录内部".to_string());
+        }
+        fs_util::DirNesting::TargetContainsSource => {
+            return Err("导出目标目录不能包含 mod 源目录".to_string());
+        }
+    }
+
+    fs_util::copy_dir_all(&mod_path, &target)?;
     Ok(target.to_string_lossy().to_string())
 }

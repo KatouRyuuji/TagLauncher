@@ -5,6 +5,7 @@ import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { enableModRuntime, reloadModRuntime } from "../lib/modRuntime";
 import { importMod, exportMod } from "../lib/db";
+import { showToast } from "../lib/toast";
 import type { ModPermission } from "../types/mod";
 
 const PERMISSION_META: Record<ModPermission, { label: string; color: string }> = {
@@ -85,18 +86,10 @@ export function ModManagerPanel() {
       if (typeof selected !== "string") return;
       await importMod(selected);
       await refresh();
-      window.dispatchEvent(
-        new CustomEvent("taglauncher-toast", {
-          detail: { message: "Mod 导入成功", type: "success" },
-        }),
-      );
+      showToast("Mod 导入成功", "success");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      window.dispatchEvent(
-        new CustomEvent("taglauncher-toast", {
-          detail: { message: `Mod 导入失败：${msg}`, type: "error" },
-        }),
-      );
+      showToast(`Mod 导入失败：${msg}`, "error");
     }
   };
 
@@ -109,18 +102,10 @@ export function ModManagerPanel() {
       });
       if (typeof selected !== "string") return;
       const targetPath = await exportMod(modId, selected);
-      window.dispatchEvent(
-        new CustomEvent("taglauncher-toast", {
-          detail: { message: `Mod 已导出到 ${targetPath}`, type: "success" },
-        }),
-      );
+      showToast(`Mod 已导出到 ${targetPath}`, "success");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      window.dispatchEvent(
-        new CustomEvent("taglauncher-toast", {
-          detail: { message: `Mod 导出失败：${msg}`, type: "error" },
-        }),
-      );
+      showToast(`Mod 导出失败：${msg}`, "error");
     }
   };
 

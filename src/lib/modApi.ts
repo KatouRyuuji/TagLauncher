@@ -174,50 +174,14 @@ interface ModScope {
   unregisterItemSlot(slotId: string): void;
 }
 
+/**
+ * 暴露到 window.__tagLauncherModApi 的全局形状。
+ * 仅 version + createScope：数据/事件能力全部经 createScope 按权限分发，
+ * 防止绕过权限体系直接调用（完整能力清单见 ModScope）。
+ */
 interface TagLauncherModApi {
   version: string;
   createScope(modId: string): ModScope;
-  // 主题
-  getThemeVariable(name: string): string;
-  setThemeVariable(name: string, value: string): void;
-  getThemeId(): string;
-  onThemeChange(cb: (themeId: string) => void): () => void;
-  // 数据读取
-  getItems(): Promise<ItemWithTags[]>;
-  getTags(): Promise<Tag[]>;
-  getTagRelations(): Promise<TagRelation[]>;
-  getCabinets(): Promise<Cabinet[]>;
-  // 数据写入
-  addItem(path: string): Promise<Item>;
-  removeItem(id: number): Promise<void>;
-  addTag(name: string, color: string): Promise<Tag>;
-  updateTag(id: number, name: string, color: string): Promise<void>;
-  removeTag(id: number): Promise<void>;
-  setItemTags(itemId: number, tagIds: number[]): Promise<void>;
-  launchItem(id: number): Promise<void>;
-  toggleFavorite(id: number): Promise<boolean>;
-  addCabinet(name: string, color: string): Promise<Cabinet>;
-  updateCabinet(id: number, name: string, color: string): Promise<void>;
-  removeCabinet(id: number): Promise<void>;
-  addItemToCabinet(cabinetId: number, itemId: number): Promise<void>;
-  removeItemFromCabinet(cabinetId: number, itemId: number): Promise<void>;
-  // 数据写入（批量版）
-  removeItems(ids: number[]): Promise<void>;
-  setManyItemTags(updates: Array<{ itemId: number; tagIds: number[] }>): Promise<void>;
-  addItemsToCabinet(cabinetId: number, itemIds: number[]): Promise<void>;
-  removeItemsFromCabinet(cabinetId: number, itemIds: number[]): Promise<void>;
-  launchItems(ids: number[]): Promise<void>;
-  // 事件
-  onSearchInput(cb: (query: string) => void): () => void;
-  onItemLaunched(cb: (itemId: number, itemName: string) => void): () => void;
-  onItemsChanged(cb: (items: ItemWithTags[]) => void): () => void;
-  onTagsChanged(cb: (tags: Tag[]) => void): () => void;
-  onCabinetsChanged(cb: (cabinets: Cabinet[]) => void): () => void;
-  onCabinetItemsChanged(cb: (cabinetId: number, itemIds: number[]) => void): () => void;
-  getSelectedItemIds(): number[];
-  onSelectionChanged(cb: (itemIds: number[]) => void): () => void;
-  // UI
-  notify(message: string, type?: ToastType): void;
 }
 
 // ── 当前 API 版本 ────────────────────────────────────────────────────────
@@ -458,6 +422,17 @@ export function trackModStart(modId: string): void {
   modTrackedStateMap.set(modId, { unsubscribers: [] });
 }
 
+/**
+ * 该 mod 运行时是否处于激活追踪中（trackModStart 已记录且尚未被 purge 移除）。
+ * 用途：
+ *   - modRuntime 的 enable 幂等守卫（已激活则跳过重复注入）；
+ *   - useMods 的禁用警告过滤（从未激活 → 无任何注入 → 不存在残留副作用）。
+ * 注意：enable 中途失败会回滚 purge（追踪被移除），因此「加载失败」也视为未激活。
+ */
+export function isModRuntimeActive(modId: string): boolean {
+  return modTrackedStateMap.has(modId);
+}
+
 /** 取消该 mod 通过 scope 注册的所有监听器 */
 function cancelModTrackedListeners(modId: string): void {
   const state = modTrackedStateMap.get(modId);
@@ -561,19 +536,19 @@ function getTags():     Promise<Tag[]>          { return db.getTags(); }
 function getTagRelations(): Promise<TagRelation[]> { return db.getTagRelations(); }
 function getCabinets(): Promise<Cabinet[]>      { return db.getCabinets(); }
 
-// 写入后重取并广播变更事件，使其它 Mod 经 onItemsChanged/onTagsChanged 感知到由
-// 本 Mod（或批量 API）发起的数据改动（best-effort，重取失败不影响写入结果）。
+// 写入成功后只通知宿主刷新（onModWrite），不再直接向 Mod 广播变更：宿主刷新完成后
+// 会经集中 effect（useItems）或刷新函数（useTags/useCabinets）统一广播一次，此处再
+// 广播会导致 Mod 的 onItemsChanged 等订阅每次写操作收到两次。
+// 取舍：宿主未桥接 onModWrite（纯测试环境）或宿主刷新失败时无兜底广播——生产环境
+// App 始终桥接（App.tsx onModWrite → refresh*），接受此取舍。
 async function notifyItemsRefreshed(): Promise<void> {
   notifyModWrite("items");
-  try { notifyItemsChanged(await db.getItems()); } catch { /* ignore */ }
 }
 async function notifyTagsRefreshed(): Promise<void> {
   notifyModWrite("tags");
-  try { notifyTagsChanged(await db.getTags()); } catch { /* ignore */ }
 }
 async function notifyCabinetsRefreshed(): Promise<void> {
   notifyModWrite("cabinets");
-  try { notifyCabinetsChanged(await db.getCabinets()); } catch { /* ignore */ }
 }
 
 // 数据写入：db 操作成功后派发对应变更事件
@@ -583,7 +558,17 @@ async function addTag(name: string, color: string): Promise<Tag> { const r = awa
 async function updateTag(id: number, n: string, c: string): Promise<void> { await db.updateTag(id, n, c); await notifyTagsRefreshed(); }
 async function removeTag(id: number): Promise<void> { await db.removeTag(id); await notifyTagsRefreshed(); await notifyItemsRefreshed(); }
 async function setItemTags(itemId: number, tagIds: number[]): Promise<void> { await db.setItemTags(itemId, tagIds); await notifyItemsRefreshed(); }
-function launchItem(id: number):                           Promise<void>    { return db.launchItem(id); }
+// 单条启动：成功后派发 notifyItemLaunched，与批量 launchItems 及宿主
+// useItems.launchItem 的契约保持一致（订阅方在三条路径都能收到启动事件）。
+async function launchItem(id: number): Promise<void> {
+  await db.launchItem(id);
+  // 查名失败降级为 #id（同批量路径的取舍），不得掩盖启动结果本身
+  let name = `#${id}`;
+  try {
+    name = (await db.getItem(id)).name;
+  } catch { /* 查名失败时按 #id 展示 */ }
+  notifyItemLaunched(id, name);
+}
 async function toggleFavorite(id: number): Promise<boolean> { const r = await db.toggleFavorite(id); await notifyItemsRefreshed(); return r; }
 async function addCabinet(name: string, color: string): Promise<Cabinet> { const r = await db.addCabinet(name, color); await notifyCabinetsRefreshed(); return r; }
 async function updateCabinet(id: number, n: string, c: string): Promise<void> { await db.updateCabinet(id, n, c); await notifyCabinetsRefreshed(); }
@@ -941,7 +926,7 @@ function createScope(modId: string): ModScope {
 
 // ── 全局 API（仅暴露 version 与 createScope，防止绕过权限体系） ─────────────
 
-export const modApi: Pick<TagLauncherModApi, "version" | "createScope"> = {
+export const modApi: TagLauncherModApi = {
   version: API_VERSION,
   createScope,
 };

@@ -27,7 +27,9 @@ export type UiVariant = "primary" | "secondary" | "danger" | "ghost";
 export interface UiBaseOptions {
   /** 附加 CSS 类名 */
   className?: string;
-  /** 内联样式（会覆盖组件默认值） */
+  /** 内联样式（覆盖组件默认值；例外：createButton 的 opacity/cursor/
+   *  backgroundColor/color/border 由 variant 托管——applyVariant 在 applyBase
+   *  之后执行，会反向覆盖此处传入的同名属性） */
   style?: Partial<CSSStyleDeclaration>;
 }
 

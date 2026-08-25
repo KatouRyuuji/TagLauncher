@@ -100,7 +100,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
   return (
     <div
       data-tag-drag="true"
-      className={`flex flex-wrap gap-1.5 ${compact ? "" : ""}`}
+      className={`flex flex-wrap ${compact ? "gap-1" : "gap-1.5"}`}
     >
       {item.tags.map((tag, idx) => (
         <span
@@ -109,7 +109,9 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
           data-reorder-tag-item-id={item.id}
           data-reorder-tag-idx={idx}
           onPointerDown={(event) => handleTagPointerDown(event, idx)}
-          className={`inline-flex items-center gap-1.5 rounded-[var(--radius-full)] border px-2.5 py-1 text-[11px] font-medium cursor-grab active:cursor-grabbing transition-all group/tag ${
+          className={`inline-flex items-center rounded-[var(--radius-full)] border font-medium cursor-grab active:cursor-grabbing transition-all group/tag ${
+            compact ? "gap-1 px-2 py-0.5 text-[10px]" : "gap-1.5 px-2.5 py-1 text-[11px]"
+          } ${
             dragIdx === idx ? "opacity-40" : ""
           } ${overIdx === idx && dragIdx !== null && dragIdx !== idx ? "ring-1 ring-[var(--accent-primary)]" : ""}`}
           style={{

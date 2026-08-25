@@ -38,7 +38,7 @@ impl Migration for V001Baseline {
             migrate_items_table_with_image_type(conn)?;
         }
 
-        // 4. 确保项目标签顺序字段存在
+        // 4. 确保项目标签顺序字段存在（与 v002 重复是有意的幂等兜底，见 v002 注释）
         if !has_column(conn, "item_tags", "position") {
             conn.execute_batch("ALTER TABLE item_tags ADD COLUMN position INTEGER NOT NULL DEFAULT 0")?;
         }

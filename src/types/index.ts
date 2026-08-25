@@ -43,7 +43,6 @@ export interface ItemViewProps {
   onLaunch: (id: number) => Promise<void>;
   onSetTags: (itemId: number, tagIds: number[]) => Promise<void>;
   onSetManyTags: (changes: Array<{ itemId: number; tagIds: number[] }>) => Promise<void>;
-  onAddTagToItem: (itemId: number, tagId: number) => Promise<void>;
   onRemoveTagFromItem: (itemId: number, tagId: number) => Promise<void>;
   onAddNewTagToItem: (itemId: number, tagName: string, baseTagIds?: number[]) => Promise<number[]>;
   /** 回收标签编辑器取消时未落库的新建空标签（避免点取消却已写入 DB 的残留） */

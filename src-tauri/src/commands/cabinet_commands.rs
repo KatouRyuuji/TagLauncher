@@ -64,7 +64,7 @@ pub fn add_items_to_cabinet(
     cabinet_service::add_items_to_cabinet(&conn, cabinet_id, &item_ids)
 }
 
-/// 批量从文件柜移除项目（单条 IN 语句，原子）
+/// 批量从文件柜移除项目（500 分块多条 IN 语句 + 单事务，整体原子）
 #[tauri::command]
 pub fn remove_items_from_cabinet(
     db: State<Database>,

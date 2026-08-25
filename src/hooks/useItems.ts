@@ -373,16 +373,18 @@ export function useItems() {
     });
   }, [refreshItemById]);
 
+  // 柜成员操作：await 后用 useAppStore.getState() 读最新选中柜（同 useTags 范式），
+  // 避免等待期间用户切柜后按调用时刻的捕获值写错 cabinetItems 列表。
   const addItemToCabinet = useCallback(async (cabinetId: number, itemId: number) => {
     await withErrorToast("添加到文件柜", async () => {
       await db.addItemToCabinet(cabinetId, itemId);
-      if (selectedCabinetId === cabinetId) {
+      if (useAppStore.getState().selectedCabinetId === cabinetId) {
         const item = allItemsRef.current.find((current) => current.id === itemId) ?? await db.getItem(itemId);
         setCabinetItems((current) => upsertItem(current, item));
       }
     });
     notifyCabinetItemsChanged(cabinetId, [itemId]);
-  }, [selectedCabinetId]);
+  }, []);
 
   const addItemsToCabinet = useCallback(async (cabinetId: number, itemIds: number[]) => {
     if (itemIds.length === 0) return;
@@ -390,23 +392,23 @@ export function useItems() {
     await withErrorToast("批量添加到文件柜", async () => {
       await db.addItemsToCabinet(cabinetId, itemIds);
 
-      if (selectedCabinetId === cabinetId) {
+      if (useAppStore.getState().selectedCabinetId === cabinetId) {
         const changedItems = await db.getItemsByIds(itemIds);
         setCabinetItems((current) => upsertItems(current, changedItems));
       }
     });
     notifyCabinetItemsChanged(cabinetId, itemIds);
-  }, [selectedCabinetId]);
+  }, []);
 
   const removeItemFromCabinet = useCallback(async (cabinetId: number, itemId: number) => {
     await withErrorToast("从文件柜移除", async () => {
       await db.removeItemFromCabinet(cabinetId, itemId);
-      if (selectedCabinetId === cabinetId) {
+      if (useAppStore.getState().selectedCabinetId === cabinetId) {
         setCabinetItems((current) => removeItemFromList(current, itemId));
       }
     });
     notifyCabinetItemsChanged(cabinetId, [itemId]);
-  }, [selectedCabinetId]);
+  }, []);
 
   const removeItemsFromCabinet = useCallback(async (cabinetId: number, itemIds: number[]) => {
     if (itemIds.length === 0) return;
@@ -414,13 +416,13 @@ export function useItems() {
     await withErrorToast("批量从文件柜移除", async () => {
       await db.removeItemsFromCabinet(cabinetId, itemIds);
 
-      if (selectedCabinetId === cabinetId) {
+      if (useAppStore.getState().selectedCabinetId === cabinetId) {
         const idSet = new Set(itemIds);
         setCabinetItems((current) => current.filter((item) => !idSet.has(item.id)));
       }
     });
     notifyCabinetItemsChanged(cabinetId, itemIds);
-  }, [selectedCabinetId]);
+  }, []);
 
   const findItemById = useCallback(
     (itemId: number) =>

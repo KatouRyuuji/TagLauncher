@@ -263,6 +263,7 @@ export function Sidebar({
                       key={tag.id}
                       role="button"
                       tabIndex={0}
+                      aria-pressed={active}
                       style={activeTagStyle}
                       onPointerDown={(event) => handleTagPointerDown(event, tag)}
                       onClick={() => handleTagClick(tag.id)}
@@ -270,6 +271,12 @@ export function Sidebar({
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
                           toggleTagSelection(tag.id);
+                          return;
+                        }
+                        // 键盘可达的编辑入口（对齐右键菜单）：F2 重命名 / Delete 删除，均打开编辑弹窗
+                        if (event.key === "F2" || event.key === "Delete") {
+                          event.preventDefault();
+                          setEditingTag(tag);
                         }
                       }}
                       onContextMenu={(event) => {
@@ -391,6 +398,13 @@ export function Sidebar({
                       onContextMenu={(event) => {
                         event.preventDefault();
                         setEditingCabinet(cabinet);
+                      }}
+                      onKeyDown={(event) => {
+                        // 键盘可达的编辑入口（对齐右键菜单）：F2 重命名 / Delete 删除，均打开编辑弹窗
+                        if (event.key === "F2" || event.key === "Delete") {
+                          event.preventDefault();
+                          setEditingCabinet(cabinet);
+                        }
                       }}
                       className={`flex w-full items-center gap-3 rounded-[var(--radius-md)] border px-3 py-2.5 text-left ${
                         hovered

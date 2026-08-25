@@ -161,6 +161,16 @@ interface FloatingPanelProps {
 function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  // 进行中的 document 级拖拽监听（mousemove/mouseup）的清理函数集合：
+  // 正常在 mouseup 时自移除；拖拽中面板被编程式关闭（组件卸载）时由下方 unmount 兜底清理，避免监听泄漏。
+  const dragCleanupsRef = useRef<Set<() => void>>(new Set());
+  useEffect(() => {
+    const cleanups = dragCleanupsRef.current;
+    return () => {
+      for (const cleanup of cleanups) cleanup();
+      cleanups.clear();
+    };
+  }, []);
 
   // 初次挂载时 resolve PanelHandle；面板隐藏时保持容器常驻，仅 CSS 隐藏
   useEffect(() => {
@@ -191,10 +201,12 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
+      dragCleanupsRef.current.delete(onUp);
     };
 
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
+    dragCleanupsRef.current.add(onUp);
   }, [onBringToFront]);
 
   // 调整大小（右下角 resize 句柄）
@@ -224,10 +236,12 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
+      dragCleanupsRef.current.delete(onUp);
     };
 
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
+    dragCleanupsRef.current.add(onUp);
   }, []);
 
   // z-index = 基础层(CSS var) + 序号（最大 49，不超过 settings-overlay 200）

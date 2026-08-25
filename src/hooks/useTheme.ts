@@ -220,9 +220,6 @@ export function useTheme() {
           db.getThemeDirectoryInfo().catch(() => null),
         ]);
 
-        // 已被超时兜底接管，不再覆盖
-        if (settled) return;
-
         // 同一批坏文件不重复弹错：签名变化时才 toast
         const errorSignature = JSON.stringify(customResult.errors);
         if (customResult.errors.length > 0 && errorSignature !== loadErrorSignatureRef.current) {
@@ -232,6 +229,9 @@ export function useTheme() {
         }
         loadErrorSignatureRef.current = errorSignature;
 
+        // 超时兜底可能已放行 UI（settled=true）：迟到的结果仍补齐状态——自定义主题
+        // 与目录信息是无害的状态设置，丢掉会导致本次会话自定义主题整体不可用。
+        // 「超时后 UI 不再等待」的语义只由 settled/finish 保证，不影响此处应用。
         const customs = customResult.themes.map((theme) => normalizeTheme(theme, "custom"));
         customThemesRef.current = customs;
         setCustomThemes(customs);

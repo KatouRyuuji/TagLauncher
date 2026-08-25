@@ -23,7 +23,6 @@ export interface ItemCardProps {
   cabinets: Cabinet[];
   currentCabinetId: number | null;
   onLaunch: () => void;
-  onAddTagToItem: (itemId: number, tagId: number) => Promise<void>;
   onRemoveTagFromItem: (itemId: number, tagId: number) => Promise<void>;
   onAddNewTagToItem: (itemId: number, tagName: string, baseTagIds?: number[]) => Promise<number[]>;
   onRecycleNewTags?: (tagIds: number[]) => Promise<void>;
@@ -175,6 +174,7 @@ function ItemCardComponent({
       <article
         data-drop-tag-item-id={item.id}
         data-selectable-item-id={item.id}
+        role="listitem"
         className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex min-h-[156px] cursor-pointer flex-col overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--bg-card)] p-3 ${
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"

@@ -69,7 +69,7 @@ pub struct TestDb {
     pub dir: TempDir,
 }
 
-/// 建一个真实磁盘文件库：Database::new 会启用 WAL 并跑完 v001..v007 迁移链。
+/// 建一个真实磁盘文件库：Database::new 会启用 WAL 并跑完 v001..v008 迁移链。
 pub fn temp_db() -> TestDb {
     let dir = TempDir::new("db");
     let db = Database::new(&dir.db_path()).expect("init real file db");

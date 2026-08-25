@@ -10,6 +10,7 @@ import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { notifyCabinetsChanged } from "../lib/modApi";
 import { compareNames } from "../lib/itemQuery";
+import { showToast } from "../lib/toast";
 import type { Cabinet } from "../types";
 
 /** 按名称排序，保持与后端 get_cabinets 的返回顺序一致 */
@@ -28,6 +29,8 @@ export function useCabinets() {
       notifyCabinetsChanged(data);
     } catch (e) {
       console.error("Failed to load cabinets:", e);
+      // 后端故障不得静默呈现为「暂无文件柜」假象（对齐 useItems 的错误提示范式）
+      showToast(`加载文件柜列表失败：${e instanceof Error ? e.message : String(e)}`, "error");
     }
   }, [setCabinets]);
 

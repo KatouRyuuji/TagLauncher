@@ -17,7 +17,6 @@ use crate::commands::data_commands;
 use crate::db::Database;
 use crate::services::settings_service::{get_setting, set_setting};
 use base64::{engine::general_purpose, Engine as _};
-use rusqlite::Connection;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use tauri::State;
@@ -228,8 +227,9 @@ pub fn sync_restore(
         data_commands::snapshot_live_db(&db, &safety)?;
 
         // 4. 保留本机凭据（云端副本无 ai.*/sync.*；覆盖后回填本机现值，
-        //    否则恢复一次云同步配置就丢，用户须重新配置才能继续同步）
-        let local_secrets = read_local_secrets(&db);
+        //    否则恢复一次云同步配置就丢，用户须重新配置才能继续同步）。
+        //    读取失败直接中止：继续覆盖会丢本机凭据。
+        let local_secrets = read_local_secrets(&db)?;
 
         // 5. 覆盖实库；失败自动回滚到安全备份
         if let Err(e) = data_commands::overwrite_live_from(&db, &temp) {
@@ -380,9 +380,9 @@ fn ensure_remote_dir(ctx: &DavContext) -> Result<(), String> {
         }
         match req.call() {
             Ok(_) => {}
-            // 405 Method Not Allowed = 集合已存在；301/302 部分服务器对已存在目录重定向
+            // 405 Method Not Allowed = 集合已存在，视为成功。
+            // （ureq 默认跟随重定向，301/302 不会以 Err::Status 浮出水面，无需特判）
             Err(ureq::Error::Status(405, _)) => {}
-            Err(ureq::Error::Status(301, _)) | Err(ureq::Error::Status(302, _)) => {}
             Err(e) => return Err(map_dav_error(e)),
         }
     }
@@ -401,7 +401,10 @@ fn dav_put(
         .timeout(TRANSFER_TIMEOUT)
         .send(reader);
     match resp {
-        Ok(_) => Ok(()),
+        // ureq 会把 301/302/303 的非 GET 请求改写为 GET 跟随：Ok 不代表 PUT 成功，
+        // 必须校验最终状态确为 2xx，否则"上传成功"可能只是跟随重定向后的 GET 成功。
+        Ok(r) if (200..300).contains(&r.status()) => Ok(()),
+        Ok(r) => Err(map_dav_error(ureq::Error::Status(r.status(), r))),
         Err(e) => Err(map_dav_error(e)),
     }
 }
@@ -421,11 +424,15 @@ fn dav_get_to_file(ctx: &DavContext, file_name: &str, target: &Path) -> Result<(
 }
 
 fn dav_delete(ctx: &DavContext, file_name: &str) -> Result<(), String> {
-    dav_request(ctx, "DELETE", file_name)
+    let resp = dav_request(ctx, "DELETE", file_name)
         .timeout(CONTROL_TIMEOUT)
         .call()
-        .map(|_| ())
-        .map_err(map_dav_error)
+        .map_err(map_dav_error)?;
+    // 同 dav_put：Ok 需校验最终状态为 2xx（ureq 对 30x 会改写为 GET 跟随）
+    if !(200..300).contains(&resp.status()) {
+        return Err(map_dav_error(ureq::Error::Status(resp.status(), resp)));
+    }
+    Ok(())
 }
 
 fn list_remote_backups(ctx: &DavContext) -> Result<Vec<RemoteBackup>, String> {
@@ -640,33 +647,26 @@ fn extract_first_tag_text(block: &str, local_name: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 /// 云端副本剔除敏感配置：AI 密钥 + 云同步凭据自身。
-/// DELETE 后 VACUUM 重写文件，确保明文不残留在空闲页（与 export 同一策略）。
+/// DELETE 后 VACUUM 重写文件，确保明文不残留在空闲页（与 export 同一策略、同一实现：
+/// 见 db::strip_sensitive_keys_in_file）。
 /// pub 以便集成测试验证云端副本不含 ai.*/sync.* 键。
 pub fn strip_cloud_secrets(db_file: &Path) -> Result<(), String> {
-    let conn = Connection::open(db_file)
-        .map_err(|e| format!("无法打开云端副本以清理敏感配置: {}", e))?;
-    conn.execute_batch(
-        "DELETE FROM app_meta WHERE key LIKE 'ai.%' OR key LIKE 'sync.%'; VACUUM;",
-    )
-    .map_err(|e| format!("清理敏感配置失败: {}", e))?;
-    Ok(())
+    crate::db::strip_sensitive_keys_in_file(db_file)
 }
 
 /// 读取本机敏感/本机域配置（ai.* 与 sync.*），恢复覆盖后回填。
+/// 查询失败必须向上报错（让同步操作整体失败）：静默返回空表会让
+/// reapply_local_secrets 把本机凭据全部清空。
 /// pub 以便集成测试验证「恢复保留本机凭据」这一原语。
-pub fn read_local_secrets(db: &Database) -> Vec<(String, String)> {
+pub fn read_local_secrets(db: &Database) -> Result<Vec<(String, String)>, String> {
     let conn = db.get_conn();
-    let mut stmt = match conn
+    let mut stmt = conn
         .prepare("SELECT key, value FROM app_meta WHERE key LIKE 'ai.%' OR key LIKE 'sync.%'")
-    {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)));
-    match rows {
-        Ok(iter) => iter.flatten().collect(),
-        Err(_) => Vec::new(),
-    }
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
 /// 覆盖恢复后回填本机配置：先清掉恢复库里可能带的同类键（手动上传的未剔除副本），
@@ -704,6 +704,7 @@ fn temp_file_path(purpose: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
 
     #[test]
     fn normalize_remote_dir_variants() {

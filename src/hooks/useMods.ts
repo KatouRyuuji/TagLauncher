@@ -7,7 +7,7 @@ import {
   reloadModRuntime,
   checkDependencySatisfied,
 } from "../lib/modRuntime";
-import { callModLifecycle, clearModLifecycle } from "../lib/modApi";
+import { callModLifecycle, clearModLifecycle, isModRuntimeActive } from "../lib/modApi";
 import { showToast } from "../lib/toast";
 
 export function useMods() {
@@ -85,12 +85,15 @@ export function useMods() {
       const mod = mods.find((m) => m.id === modId);
       try {
         // 与 enable 顺序对齐：先尽力清理 runtime，再持久化到 db。
+        // 先记录运行时是否真正激活过：依赖未满足被 init 跳过 / 加载失败已回滚的
+        // mod 从未注入任何资源（trackModStart 无记录），不存在可残留的副作用。
+        const wasRuntimeActive = isModRuntimeActive(modId);
         // 先单独执行 disable 生命周期回调以拿到“是否注册过”布尔
         // （执行后回调会被移除，后续 disableModRuntime 内不会重复执行）。
         const hadDisableHook = await callModLifecycle(modId, "disable");
         if (mod) await disableModRuntime(mod);
-        if (!hadDisableHook) {
-          // Mod 未注册 disable 回调，自注册的全局副作用无法被自动回收
+        if (!hadDisableHook && wasRuntimeActive) {
+          // Mod 运行过但未注册 disable 回调，自注册的全局副作用无法被自动回收
           showToast(
             `Mod "${mod?.name ?? modId}" 未注册 disable 清理回调，可能残留副作用，建议刷新页面`,
             "warning",

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { copyText } from "../lib/clipboard";
 import {
   formatPathCopy,
@@ -81,28 +81,32 @@ export function useWorkspaceHotkeys({
     shortcutsHelpOpen,
     viewMode,
   });
-  refs.current = {
-    allItems,
-    blocked,
-    commandPaletteOpen,
-    items,
-    onLaunch,
-    onOpenSettings,
-    onRemoveSelected,
-    onToggleItemFavorite,
-    onToggleSelectedFavorite,
-    previewItemId,
-    searchQuery,
-    selectedItemIds,
-    setCommandPaletteOpen,
-    setPreviewItemId,
-    setSearchQuery,
-    setSelectedItemIds,
-    setShortcutsHelpOpen,
-    setViewMode,
-    shortcutsHelpOpen,
-    viewMode,
-  };
+  // 渲染期不写 ref（并发渲染被丢弃时会残留脏数据，项目标准见 ItemGrid 的同类注释），
+  // 每次渲染后在布局阶段同步最新值；下方 keydown 监听 effect 挂载晚于首次布局，时序安全。
+  useLayoutEffect(() => {
+    refs.current = {
+      allItems,
+      blocked,
+      commandPaletteOpen,
+      items,
+      onLaunch,
+      onOpenSettings,
+      onRemoveSelected,
+      onToggleItemFavorite,
+      onToggleSelectedFavorite,
+      previewItemId,
+      searchQuery,
+      selectedItemIds,
+      setCommandPaletteOpen,
+      setPreviewItemId,
+      setSearchQuery,
+      setSelectedItemIds,
+      setShortcutsHelpOpen,
+      setViewMode,
+      shortcutsHelpOpen,
+      viewMode,
+    };
+  });
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -261,7 +265,11 @@ export function useWorkspaceHotkeys({
       }
 
       if (event.key === "Escape") {
-        if (ctx.searchQuery) {
+        // 防抖窗口内待生效的搜索也要可取消：searchInputValue 非空而 searchQuery 尚未
+        // 更新时（useSearch 150ms 防抖），Escape 应优先取消搜索而非清空选择。
+        // resetWorkspaceSearchInput 经事件让 SearchBar 调 handleSearch("")，
+        // 一并取消待发的防抖定时器（否则词会在 150ms 后被写回）。
+        if (ctx.searchQuery || useAppStore.getState().searchInputValue) {
           ctx.setSearchQuery("");
           resetWorkspaceSearchInput();
           return;

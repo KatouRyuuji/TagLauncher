@@ -10,6 +10,7 @@ import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { notifyTagsChanged } from "../lib/modApi";
 import { compareNames } from "../lib/itemQuery";
+import { showToast } from "../lib/toast";
 import type { Tag } from "../types";
 
 /** 按名称排序，保持与后端 get_tags 的返回顺序一致 */
@@ -31,6 +32,8 @@ export function useTags() {
       notifyTagsChanged(data);
     } catch (e) {
       console.error("Failed to load tags:", e);
+      // 后端故障不得静默呈现为「暂无标签」假象（对齐 useItems 的错误提示范式）
+      showToast(`加载标签失败：${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setLoading(false);
     }

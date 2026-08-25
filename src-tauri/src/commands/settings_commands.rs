@@ -77,6 +77,16 @@ fn is_sensitive_setting_key(key: &str) -> bool {
     key.starts_with("ai.") || key.starts_with("sync.")
 }
 
+/// 完整性键：schema_version / app_version / migration::* 由迁移框架维护，
+/// enabled_mods 由 enable_mod/disable_mod/delete_mod 专属通道维护（含损坏保护逻辑）。
+/// 放任通用 set_setting 写入会破坏迁移判定与 mod 启用状态的一致性，必须拦截。
+fn is_integrity_setting_key(key: &str) -> bool {
+    key == "schema_version"
+        || key == "app_version"
+        || key == "enabled_mods"
+        || key.starts_with("migration::")
+}
+
 #[tauri::command]
 pub fn get_setting(db: State<Database>, key: String) -> Option<String> {
     // 敏感键按"不存在"处理：既不泄露值，也不泄露存在性
@@ -91,6 +101,9 @@ pub fn get_setting(db: State<Database>, key: String) -> Option<String> {
 pub fn set_setting(db: State<Database>, key: String, value: String) -> Result<(), String> {
     if is_sensitive_setting_key(&key) {
         return Err("该配置项受保护，请使用对应的专用设置入口".to_string());
+    }
+    if is_integrity_setting_key(&key) {
+        return Err("该配置项由系统维护，不允许通过通用入口修改".to_string());
     }
     let conn = db.get_conn();
     settings_service::set_setting(&conn, &key, &value)
@@ -111,5 +124,18 @@ mod tests {
         assert!(!is_sensitive_setting_key("enabled_mods"));
         // 注意大小写敏感：配置键约定为小写，大写变体落不到敏感键上，无需拦
         assert!(!is_sensitive_setting_key("AI.api_key"));
+    }
+
+    #[test]
+    fn integrity_keys_are_blocked() {
+        assert!(is_integrity_setting_key("schema_version"));
+        assert!(is_integrity_setting_key("app_version"));
+        assert!(is_integrity_setting_key("enabled_mods"));
+        assert!(is_integrity_setting_key("migration::8::description"));
+        assert!(is_integrity_setting_key("migration::8::is_breaking"));
+        // 普通业务键不受影响
+        assert!(!is_integrity_setting_key("last_known_version"));
+        assert!(!is_integrity_setting_key("theme"));
+        assert!(!is_integrity_setting_key("migration_notes"));
     }
 }

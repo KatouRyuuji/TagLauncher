@@ -181,7 +181,10 @@ export function ContextMenu({
   useEffect(() => () => clearSubmenuHideTimer(), [clearSubmenuHideTimer]);
 
   const showCabinetSubRef = useRef(showCabinetSub);
-  showCabinetSubRef.current = showCabinetSub;
+  // 写 ref 属于副作用，放 effect 内同步（渲染期写入在并发渲染被丢弃时会残留脏数据）
+  useEffect(() => {
+    showCabinetSubRef.current = showCabinetSub;
+  }, [showCabinetSub]);
   const focusSubmenuOnOpenRef = useRef(false);
 
   const handleEscape = useCallback(() => {

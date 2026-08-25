@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-/// Mod 注册表：管理已发现的 mod 及其启用状态
+/// Mod 注册表：管理已发现的 mod 及其启用状态。
+/// 锁获取统一用中毒恢复（与 db::Database 同一策略）：某次持锁 panic 不应让后续
+/// 所有 mod 操作全部 panic——注册表数据本身无事务性不变量，恢复继续使用即可。
 pub struct ModRegistry {
     mods: Mutex<HashMap<String, ModEntry>>,
     load_errors: Mutex<Vec<ModLoadError>>,
@@ -35,7 +37,7 @@ impl ModRegistry {
         incompatible_reason: Option<String>,
     ) {
         let id = manifest.id.clone();
-        self.mods.lock().unwrap().insert(
+        self.mods.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(
             id,
             ModEntry {
                 manifest,
@@ -51,18 +53,18 @@ impl ModRegistry {
     pub fn add_load_error(&self, dir_name: String, error: String) {
         self.load_errors
             .lock()
-            .unwrap()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .push(ModLoadError { dir_name, error });
     }
 
     /// 获取所有 mod 加载错误
     pub fn get_load_errors(&self) -> Vec<ModLoadError> {
-        self.load_errors.lock().unwrap().clone()
+        self.load_errors.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
     }
 
     /// 获取所有 mod 的信息（按 id 字母序稳定排序）
     pub fn list_mods(&self) -> Vec<ModInfo> {
-        let mods = self.mods.lock().unwrap();
+        let mods = self.mods.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut list: Vec<ModInfo> = mods
             .values()
             .map(|entry| ModInfo {
@@ -79,13 +81,13 @@ impl ModRegistry {
 
     /// 获取 mod 目录路径
     pub fn get_mod_path(&self, mod_id: &str) -> Option<PathBuf> {
-        let mods = self.mods.lock().unwrap();
+        let mods = self.mods.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         mods.get(mod_id).map(|e| e.path.clone())
     }
 
     /// 启用 mod
     pub fn enable_mod(&self, mod_id: &str) -> bool {
-        let mut mods = self.mods.lock().unwrap();
+        let mut mods = self.mods.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(entry) = mods.get_mut(mod_id) {
             entry.enabled = true;
             true
@@ -96,7 +98,7 @@ impl ModRegistry {
 
     /// 禁用 mod
     pub fn disable_mod(&self, mod_id: &str) -> bool {
-        let mut mods = self.mods.lock().unwrap();
+        let mut mods = self.mods.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(entry) = mods.get_mut(mod_id) {
             entry.enabled = false;
             true
@@ -107,13 +109,13 @@ impl ModRegistry {
 
     /// 获取指定 mod 的 manifest（用于依赖检查）
     pub fn get_mod_manifest(&self, mod_id: &str) -> Option<ModManifest> {
-        let mods = self.mods.lock().unwrap();
+        let mods = self.mods.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         mods.get(mod_id).map(|e| e.manifest.clone())
     }
 
     /// 标记 mod 为不兼容（用于依赖检查失败时）
     pub fn mark_incompatible(&self, mod_id: &str, reason: String) {
-        let mut mods = self.mods.lock().unwrap();
+        let mut mods = self.mods.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(entry) = mods.get_mut(mod_id) {
             entry.is_compatible = false;
             entry.incompatible_reason = Some(reason);
@@ -123,7 +125,7 @@ impl ModRegistry {
     /// 恢复 mod 为兼容（与 mark_incompatible 对称）：
     /// 运行期依赖被补齐（enable_mod 后重估通过）时即时恢复，无需重启。
     pub fn mark_compatible(&self, mod_id: &str) {
-        let mut mods = self.mods.lock().unwrap();
+        let mut mods = self.mods.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(entry) = mods.get_mut(mod_id) {
             entry.is_compatible = true;
             entry.incompatible_reason = None;
@@ -132,7 +134,7 @@ impl ModRegistry {
 
     /// 从注册表中注销 mod（卸载时使用）
     pub fn unregister(&self, mod_id: &str) {
-        let mut mods = self.mods.lock().unwrap();
+        let mut mods = self.mods.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         mods.remove(mod_id);
     }
 }

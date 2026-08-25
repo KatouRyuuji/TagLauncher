@@ -9,8 +9,9 @@
 // 设计原则：
 //   - 与 React 解耦（纯 DOM 操作），任意时刻均可调用
 //   - 每个 mod 的 DOM 元素以 mod ID 命名，便于调试和清理
-//   - JS mod 应通过 api.onDisable() 注册清理函数；
-//     未注册时 notify 警告用户可能需要刷新
+//   - JS mod 应通过 api.onLifecycle("disable", cb) 注册清理函数；
+//     未注册时的「可能残留副作用，建议刷新」警告由 useMods 的禁用流程负责
+//     （本模块只负责注入与强制清理，不弹该警告）
 // ============================================================================
 
 import type { ModInfo } from "../types/mod";
@@ -22,6 +23,7 @@ import {
   registerModApiVersion,
   callModLifecycle,
   trackModStart,
+  isModRuntimeActive,
   purgeModResources,
   setExecutingModId,
 } from "./modApi";
@@ -149,19 +151,38 @@ function parseModTheme(modId: string, jsonContent: string): ThemeDefinition | nu
 /** 模块级初始化标记：防止 StrictMode / 重复调用导致 mod 被加载两次 */
 let initModRuntimePromise: Promise<void> | null = null;
 
-/** 启用单个 mod：注册元信息，读取入口文件，按类型注入。
- *  单 mod 并发互斥：initModRuntime 串行加载期间用户手动启用同一 mod 时，
- *  无守卫会导致权限注册/trackModStart/install/update 生命周期重复执行。 */
-const enablingModIds = new Set<string>();
+/**
+ * 单 mod 操作互斥队列：同一 mod 的 enable/disable/reload 必须串行。
+ * 后到操作挂在前一个操作之后「等待执行」（不拒绝，保留用户最后一次操作意图）：
+ *   - 交错 A（disable 慢钩子窗口内 enable）：enable 等 purge 完成后再注入，
+ *     避免新注入的资源被前序 purge 掏空；
+ *   - 交错 B（enable 的 IPC await 窗口内 disable）：disable 等注入完成后统一清理，
+ *     用户的禁用意图不被吞掉（CSS 不残留、启用结果不被反转）；
+ *   - initModRuntime 启动串行加载与用户手动操作经同一队列互斥。
+ * 前序操作失败不阻断队列（错误经各自返回的 Promise 抛给调用方处理）。
+ */
+const modOpQueue = new Map<string, Promise<void>>();
 
-export async function enableModRuntime(mod: ModInfo): Promise<void> {
-  if (enablingModIds.has(mod.id)) return;
-  enablingModIds.add(mod.id);
-  try {
+function enqueueModOp(modId: string, op: () => Promise<void>): Promise<void> {
+  const prev = modOpQueue.get(modId) ?? Promise.resolve();
+  const run = prev.catch(() => {}).then(op);
+  // 尾指针吞掉 rejection 仅用于排队与自清理；真实错误经 run 抛给调用方
+  const tail = run.catch(() => {});
+  modOpQueue.set(modId, tail);
+  void tail.then(() => {
+    if (modOpQueue.get(modId) === tail) modOpQueue.delete(modId);
+  });
+  return run;
+}
+
+/** 启用单个 mod：注册元信息，读取入口文件，按类型注入（经 per-mod 队列串行）。 */
+export function enableModRuntime(mod: ModInfo): Promise<void> {
+  return enqueueModOp(mod.id, async () => {
+    // 幂等守卫：运行时已激活（已注入且未禁用/回滚）时跳过重复注入——
+    // 重复 enable 会让 trackModStart 重置追踪状态，使首批监听器脱管泄漏。
+    if (isModRuntimeActive(mod.id)) return;
     await enableModRuntimeInner(mod);
-  } finally {
-    enablingModIds.delete(mod.id);
-  }
+  });
 }
 
 async function enableModRuntimeInner(mod: ModInfo): Promise<void> {
@@ -253,9 +274,14 @@ async function handleInstallLifecycle(mod: ModInfo): Promise<void> {
 
 /**
  * 禁用单个 mod：强制清理所有资源（CSS/JS/Panel/监听器/生命周期回调）。
+ * 经 per-mod 队列串行：与 enable/reload 互斥，等待前序操作完成后执行。
  * @param skipClearLifecycle 为 true 时保留生命周期注册表（用于 uninstall 流程）
  */
-export async function disableModRuntime(mod: ModInfo, skipClearLifecycle?: boolean): Promise<void> {
+export function disableModRuntime(mod: ModInfo, skipClearLifecycle?: boolean): Promise<void> {
+  return enqueueModOp(mod.id, () => disableModRuntimeInner(mod, skipClearLifecycle));
+}
+
+async function disableModRuntimeInner(mod: ModInfo, skipClearLifecycle?: boolean): Promise<void> {
   const { id, type, entrypoints } = mod;
 
   // 1. 执行完整的资源清理（生命周期回调、监听器、Panel、权限注册表）
@@ -277,10 +303,12 @@ export async function disableModRuntime(mod: ModInfo, skipClearLifecycle?: boole
   }
 }
 
-/** 热重载单个 mod（等待清理完成后再重新启用） */
-export async function reloadModRuntime(mod: ModInfo): Promise<void> {
-  await disableModRuntime(mod);
-  await enableModRuntime(mod);
+/** 热重载单个 mod：清理与重新启用作为同一队列操作原子执行，不被其它操作插入 */
+export function reloadModRuntime(mod: ModInfo): Promise<void> {
+  return enqueueModOp(mod.id, async () => {
+    await disableModRuntimeInner(mod);
+    await enableModRuntimeInner(mod);
+  });
 }
 
 // ── 依赖管理与拓扑排序 ────────────────────────────────────────────────────

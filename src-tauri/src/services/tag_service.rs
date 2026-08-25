@@ -129,6 +129,9 @@ fn friendly_name_err(e: rusqlite::Error) -> String {
 
 /// 新建标签
 pub fn add_tag(conn: &Connection, name: &str, color: &str) -> Result<Tag, String> {
+    if name.trim().is_empty() {
+        return Err("标签名称不能为空".to_string());
+    }
     conn.execute(
         "INSERT INTO tags (name, color) VALUES (?1, ?2)",
         params![name, color],
@@ -145,18 +148,27 @@ pub fn add_tag(conn: &Connection, name: &str, color: &str) -> Result<Tag, String
 
 /// 更新标签
 pub fn update_tag(conn: &Connection, id: i64, name: &str, color: &str) -> Result<(), String> {
-    conn.execute(
-        "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
-        params![name, color, id],
-    )
-    .map_err(friendly_name_err)?;
+    let affected = conn
+        .execute(
+            "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
+            params![name, color, id],
+        )
+        .map_err(friendly_name_err)?;
+    // 与 update_item_icon 同一口径：id 不存在时明确报错，不静默成功
+    if affected == 0 {
+        return Err(format!("标签不存在（id {}），可能已被删除", id));
+    }
     Ok(())
 }
 
 /// 删除标签
 pub fn remove_tag(conn: &Connection, id: i64) -> Result<(), String> {
-    conn.execute("DELETE FROM tags WHERE id = ?1", [id])
+    let affected = conn
+        .execute("DELETE FROM tags WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
+    if affected == 0 {
+        return Err(format!("标签不存在（id {}），可能已被删除", id));
+    }
     Ok(())
 }
 
@@ -246,7 +258,8 @@ fn descendants_of(conn: &Connection, id: i64) -> Result<HashSet<i64>, String> {
 
 /// 校验标签/对象存在，给出友好文案：避免把裸 FOREIGN KEY constraint failed 抛给前端
 /// （与 add/update 的 friendly_name_err 同一取向：约束错误翻译为用户可读提示）。
-fn ensure_exists(conn: &Connection, table: &str, id: i64, label: &str) -> Result<(), String> {
+/// pub(crate) 供 cabinet_service 复用同一模式（cabinet_items 的 FK 校验）。
+pub(crate) fn ensure_exists(conn: &Connection, table: &str, id: i64, label: &str) -> Result<(), String> {
     // table 为代码内常量（"tags"/"items"），非用户输入，format! 拼接无注入风险
     let exists: bool = conn
         .query_row(

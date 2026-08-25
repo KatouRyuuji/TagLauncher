@@ -128,10 +128,10 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
   const selectedItems = selectedNodeId == null ? [] : itemsByTag.get(selectedNodeId) ?? [];
   const selectedParents = selectedNodeId == null
     ? []
-    : validRelations.filter((r) => r.childId === selectedNodeId).map((r) => tagById.get(r.parentId)).filter(Boolean);
+    : validRelations.filter((r) => r.childId === selectedNodeId).map((r) => tagById.get(r.parentId)).filter((t): t is NonNullable<typeof t> => t != null);
   const selectedChildren = selectedNodeId == null
     ? []
-    : validRelations.filter((r) => r.parentId === selectedNodeId).map((r) => tagById.get(r.childId)).filter(Boolean);
+    : validRelations.filter((r) => r.parentId === selectedNodeId).map((r) => tagById.get(r.childId)).filter((t): t is NonNullable<typeof t> => t != null);
 
   const applyFilter = (tagId: number) => {
     // 双击=明确筛选意图：强制选中该标签。不能用 toggleTagSelection——
@@ -209,7 +209,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                       <path d="M0,0 L6,3 L0,6 Z" fill="var(--border-default)" />
                     </marker>
                   </defs>
-                  {validRelations.map((rel, i) => {
+                  {validRelations.map((rel) => {
                     const p = positions.get(rel.parentId);
                     const c = positions.get(rel.childId);
                     if (!p || !c) return null;
@@ -221,7 +221,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                     const active = selectedNodeId === rel.parentId || selectedNodeId === rel.childId;
                     return (
                       <path
-                        key={i}
+                        key={`${rel.parentId}-${rel.childId}`}
                         d={`M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`}
                         fill="none"
                         stroke={active ? "var(--accent-primary)" : "var(--border-default)"}
@@ -313,13 +313,13 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                         <span className="text-[var(--text-faint)]">父：</span>
                         {selectedParents.map((p) => (
                           <button
-                            key={p!.id}
+                            key={p.id}
                             type="button"
-                            onClick={() => setSelectedNodeId(p!.id)}
+                            onClick={() => setSelectedNodeId(p.id)}
                             className="rounded-[var(--radius-full)] px-1.5 py-0.5"
-                            style={{ backgroundColor: `color-mix(in srgb, ${p!.color} 16%, transparent)`, color: p!.color }}
+                            style={{ backgroundColor: `color-mix(in srgb, ${p.color} 16%, transparent)`, color: p.color }}
                           >
-                            {p!.name}
+                            {p.name}
                           </button>
                         ))}
                       </div>
@@ -329,13 +329,13 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                         <span className="text-[var(--text-faint)]">子：</span>
                         {selectedChildren.map((c) => (
                           <button
-                            key={c!.id}
+                            key={c.id}
                             type="button"
-                            onClick={() => setSelectedNodeId(c!.id)}
+                            onClick={() => setSelectedNodeId(c.id)}
                             className="rounded-[var(--radius-full)] px-1.5 py-0.5"
-                            style={{ backgroundColor: `color-mix(in srgb, ${c!.color} 16%, transparent)`, color: c!.color }}
+                            style={{ backgroundColor: `color-mix(in srgb, ${c.color} 16%, transparent)`, color: c.color }}
                           >
-                            {c!.name}
+                            {c.name}
                           </button>
                         ))}
                       </div>

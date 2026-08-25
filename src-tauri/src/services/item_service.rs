@@ -152,13 +152,16 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
                 if Path::new(&existing_path).exists() {
                     effective_identity = None;
                 } else {
+                    // 路径/名称刷新时同步用 detect_type 重算 type：改名/移动可能改变扩展名，
+                    // type 须与当前路径一致（INSERT 路径的 detect_type 口径不变）。
                     if let Some(ns) = sig {
                         conn.execute(
-                            "UPDATE items SET path = ?1, name = ?2, is_missing = 0, \
-                             sig_size = ?3, sig_head = ?4, sig_tail = ?5 WHERE id = ?6",
+                            "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0, \
+                             sig_size = ?4, sig_head = ?5, sig_tail = ?6 WHERE id = ?7",
                             params![
                                 path,
                                 get_name(path),
+                                detect_type(path),
                                 ns.size as i64,
                                 ns.head_hash as i64,
                                 ns.tail_hash as i64,
@@ -168,8 +171,8 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
                         .map_err(|e| e.to_string())?;
                     } else {
                         conn.execute(
-                            "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
-                            params![path, get_name(path), existing_id],
+                            "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0 WHERE id = ?4",
+                            params![path, get_name(path), detect_type(path), existing_id],
                         )
                         .map_err(|e| e.to_string())?;
                     }
@@ -178,8 +181,8 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
             } else {
                 // 已管理同一文件（即使被改名/移动过）→ 更新到最新位置、清除失效标记后返回。
                 conn.execute(
-                    "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
-                    params![path, get_name(path), existing_id],
+                    "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0 WHERE id = ?4",
+                    params![path, get_name(path), detect_type(path), existing_id],
                 )
                 .map_err(|e| e.to_string())?;
                 return select_item_by_id(conn, existing_id);
@@ -209,12 +212,14 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
                 if let Some(idn) = effective_identity {
                     // 既有记录无身份而本次取到身份 → 顺手回填身份与内容签名。
                     // 身份查询刚 miss，回填必不撞身份唯一索引。
+                    // 同路径下文件可能被替换过（如目录换成同名 exe），一并刷新 type。
                     conn.execute(
-                        "UPDATE items SET name = ?1, is_missing = 0, \
-                         volume_serial = ?2, file_id = ?3, sig_size = ?4, sig_head = ?5, sig_tail = ?6 \
-                         WHERE id = ?7",
+                        "UPDATE items SET name = ?1, type = ?2, is_missing = 0, \
+                         volume_serial = ?3, file_id = ?4, sig_size = ?5, sig_head = ?6, sig_tail = ?7 \
+                         WHERE id = ?8",
                         params![
                             get_name(path),
+                            detect_type(path),
                             idn.volume_serial as i64,
                             idn.file_id_hex(),
                             sig.map(|s| s.size as i64),
@@ -228,10 +233,10 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
                 }
             }
             // 其余合并情形（本次无身份或身份冲突降级）：刷新名称并清除失效标记，
-            // 不触碰其已有身份列。
+            // 不触碰其已有身份列。type 同步刷新（同路径文件可能已被替换）。
             conn.execute(
-                "UPDATE items SET name = ?1, is_missing = 0 WHERE id = ?2",
-                params![get_name(path), existing_id],
+                "UPDATE items SET name = ?1, type = ?2, is_missing = 0 WHERE id = ?3",
+                params![get_name(path), detect_type(path), existing_id],
             )
             .map_err(|e| e.to_string())?;
             return select_item_by_id(conn, existing_id);
@@ -431,15 +436,16 @@ pub fn fill_visuals(app: &AppHandle, items: &mut [ItemWithTags]) {
 pub fn get_item(conn: &Connection, id: i64) -> Result<ItemWithTags, String> {
     let sql = format!("SELECT {} FROM items WHERE id = ?1", ITEM_COLS);
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let items = vec![
-        stmt.query_row([id], item_from_row)
-            .map_err(|e| e.to_string())?,
-    ];
+    let item = stmt.query_row([id], item_from_row).map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => format!("Item {} not found", id),
+        other => other.to_string(),
+    })?;
 
-    tag_service::items_with_tags(conn, items)?
+    // items_with_tags 输出与输入等长：单个输入必产出单个输出
+    Ok(tag_service::items_with_tags(conn, vec![item])?
         .into_iter()
         .next()
-        .ok_or_else(|| format!("Item {} not found", id))
+        .expect("items_with_tags 输出与输入等长"))
 }
 
 /// 按默认排序（ITEM_ORDER：收藏优先 → 最近使用 DESC(NULLS LAST) → 名称）在内存中排序。
@@ -550,8 +556,8 @@ pub enum ReconcileWrite {
     BackfillSignature { id: i64, size: i64, head: i64, tail: i64 },
     /// 文件在原路径且曾失效 → 清除失效标记。
     ClearMissing { id: i64 },
-    /// 按文件ID重定位到新路径并清除失效标记。
-    Relocate { id: i64, new_path: String, new_name: String },
+    /// 按文件ID重定位到新路径并清除失效标记（new_type 在锁外 IO 阶段用 detect_type 预计算）。
+    Relocate { id: i64, new_path: String, new_name: String, new_type: &'static str },
     /// 文件找不到 → 标记失效。
     MarkMissing { id: i64 },
 }
@@ -588,6 +594,10 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
         let identity = row_identity(row.volume_serial, row.file_id);
 
         if exists {
+            // 口径说明（有意取舍）：路径仍在时不校验"该处文件是否已被替换成另一个文件"
+            // （不比对文件身份），与 resolve_current_path 的身份校验口径不同。对账是每次
+            // 列表刷新都跑的轻量路径，逐对象 FFI 身份比对太贵；被替换的误挂在启动/打开时
+            // 由 resolve_current_path 自愈，此处容忍短暂偏差。
             if identity.is_none() {
                 // 回填文件ID。唯一冲突=极少数多条记录指向同一物理文件(硬链接/历史重复)，
                 // 由回写阶段记录日志以便排查，不阻断对账（该记录退化为按 path 处理）。
@@ -617,10 +627,13 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
             match file_identity::resolve_path(idn, &row.path) {
                 Some(new_path) => {
                     let new_name = get_name(&new_path);
+                    // 重定位后扩展名可能已变，锁外预计算 type（detect_type 含 FS IO，不进锁内回写段）
+                    let new_type = detect_type(&new_path);
                     writes.push(ReconcileWrite::Relocate {
                         id: row.id,
                         new_path,
                         new_name,
+                        new_type,
                     });
                 }
                 None if row.is_missing == 0 => {
@@ -658,10 +671,10 @@ pub fn apply_reconcile(conn: &Connection, writes: &[ReconcileWrite]) -> Result<(
             ReconcileWrite::ClearMissing { id } => {
                 let _ = tx.execute("UPDATE items SET is_missing = 0 WHERE id = ?1", [id]);
             }
-            ReconcileWrite::Relocate { id, new_path, new_name } => {
+            ReconcileWrite::Relocate { id, new_path, new_name, new_type } => {
                 let _ = tx.execute(
-                    "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
-                    params![new_path, new_name, id],
+                    "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0 WHERE id = ?4",
+                    params![new_path, new_name, new_type, id],
                 );
             }
             ReconcileWrite::MarkMissing { id } => {
@@ -682,7 +695,12 @@ pub fn resolve_current_path(conn: &Connection, id: i64) -> Result<String, String
             [id],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                format!("对象不存在（id {}），可能已被删除", id)
+            }
+            other => other.to_string(),
+        })?;
 
     let identity = row_identity(vol, fid);
 
@@ -872,12 +890,14 @@ fn scan_dir_tree(
     }
 }
 
-/// 将扫描命中的新路径回写：重算文件身份与签名、更新位置并清除失效标记。
-/// 身份与已有记录冲突（极少数）时跳过该条，返回成功找回数量。
+/// 将扫描命中的新路径回写：重算文件身份/签名/type、更新位置并清除失效标记。
+/// 整批包在单事务里提交（与 apply_reconcile 同一策略，避免逐条自动提交的半截状态），
+/// 计数按实际影响行数统计；单条失败（极少数身份冲突）记日志跳过，不阻断整批。
 pub fn apply_signature_relocations(
     conn: &Connection,
     found: &[(i64, String)],
 ) -> Result<usize, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     let mut count = 0usize;
     for (id, new_path) in found {
         let (vol, fid) = match file_identity::get_identity(new_path) {
@@ -885,12 +905,13 @@ pub fn apply_signature_relocations(
             None => (None, None),
         };
         let sig = file_identity::compute_signature(new_path);
-        match conn.execute(
-            "UPDATE items SET path = ?1, name = ?2, volume_serial = ?3, file_id = ?4, \
-             sig_size = ?5, sig_head = ?6, sig_tail = ?7, is_missing = 0 WHERE id = ?8",
+        match tx.execute(
+            "UPDATE items SET path = ?1, name = ?2, type = ?3, volume_serial = ?4, file_id = ?5, \
+             sig_size = ?6, sig_head = ?7, sig_tail = ?8, is_missing = 0 WHERE id = ?9",
             params![
                 new_path,
                 get_name(new_path),
+                detect_type(new_path),
                 vol,
                 fid,
                 sig.map(|s| s.size as i64),
@@ -899,10 +920,11 @@ pub fn apply_signature_relocations(
                 id
             ],
         ) {
-            Ok(_) => count += 1,
+            Ok(affected) => count += affected,
             Err(e) => eprintln!("[relocate] 回写对象 {} 失败(可能身份冲突): {}", id, e),
         }
     }
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(count)
 }
 

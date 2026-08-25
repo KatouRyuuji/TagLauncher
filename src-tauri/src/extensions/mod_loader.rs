@@ -51,9 +51,9 @@ pub fn discover_mods(mods_dir: &Path) -> (Vec<(ModManifest, PathBuf)>, Vec<ModLo
             }
         };
 
-        // id 字符集在载入期即校验（与 mod_commands::ensure_valid_mod_id 同一规则）：
-        // 否则含中文/空格等 id 的 mod 能加载，但其 kv/record/file 命令会在调用期全被拒，
-        // 故障面割裂且报错不指向根因。
+        // id 字符集在载入期即校验（与 mod_commands::ensure_valid_mod_id 共用 is_valid_mod_id
+        // 单一来源）：否则含中文/空格等 id 的 mod 能加载，但其 kv/record/file 命令会在调用期
+        // 全被拒，故障面割裂且报错不指向根因。
         if !is_valid_mod_id(&manifest.id) {
             errors.push(ModLoadError {
                 dir_name,
@@ -71,9 +71,10 @@ pub fn discover_mods(mods_dir: &Path) -> (Vec<(ModManifest, PathBuf)>, Vec<ModLo
     (result, errors)
 }
 
-/// mod id 合法性：与 mod_commands::ensure_valid_mod_id 同一规则（载入期与命令期一致）。
-/// 追加排除全点号 id（"." / ".." / "..."）：字符集允许 '.'，但这类 id 直接拼目录即路径逃逸。
-/// pub 供 mod_commands::import_mod 在导入期复用同一规则。
+/// mod id 合法性：载入期（discover_mods）与命令期（mod_commands::ensure_valid_mod_id）
+/// 共用的单一规则来源。追加排除全点号 id（"." / ".." / "..."）：字符集允许 '.'，
+/// 但这类 id 直接拼目录即路径逃逸。
+/// pub 供 mod_commands 在导入期/命令期复用同一规则。
 pub fn is_valid_mod_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
@@ -81,6 +82,40 @@ pub fn is_valid_mod_id(id: &str) -> bool {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
         && id.chars().any(|c| c != '.')
+}
+
+/// min/max_app_version 兼容判定：启动发现（lib.rs）与导入（mod_commands::import_mod）
+/// 共用的单一口径。max 为 inclusive（含边界）：app_version == max 仍判兼容。
+/// 返回 (是否兼容, 不兼容原因)。
+pub fn check_app_version_compat(
+    manifest: &ModManifest,
+    app_version: &str,
+) -> (bool, Option<String>) {
+    let min_ok = match manifest.min_app_version.as_deref() {
+        None => Ok(()),
+        Some(required) => {
+            if semver_gte(app_version, required) {
+                Ok(())
+            } else {
+                Err(format!("需要 App >= {}，当前版本为 {}", required, app_version))
+            }
+        }
+    };
+    let max_ok = match manifest.max_app_version.as_deref() {
+        None => Ok(()),
+        Some(max) => {
+            if semver_gte(max, app_version) {
+                Ok(())
+            } else {
+                Err(format!("此 mod 不兼容 App >= {}，当前版本为 {}", max, app_version))
+            }
+        }
+    };
+    match (min_ok, max_ok) {
+        (Ok(()), Ok(())) => (true, None),
+        (Err(e), _) => (false, Some(e)),
+        (_, Err(e)) => (false, Some(e)),
+    }
 }
 
 /// 简单语义版本比较：current >= required

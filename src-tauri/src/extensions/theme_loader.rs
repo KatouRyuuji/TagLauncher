@@ -1,3 +1,4 @@
+use crate::extensions::fs_util;
 use crate::models::{
     CustomThemesResult, ThemeDefinition, ThemeExportPayload, ThemeInstallResult, ThemeLoadError,
     ThemeValidationIssue,
@@ -256,52 +257,36 @@ pub fn install_theme_file(
     theme.file_name = Some(file_name);
 
     if source_path.is_dir() {
-        // 「源即目标」防御：源与目标同路径时 remove_dir_all + copy_dir_all 会先把源删掉
-        // 再拷贝失败（主题被自删）。source 必然存在（manifest 已读取成功），可直接
-        // canonicalize；target 可能尚不存在，用其父目录（themes_dir 开头已创建）
-        // canonicalize 后拼文件名得到规范化目标。
-        let canonical_source = source_path
-            .canonicalize()
-            .map_err(|e| format!("无法解析源目录: {}", e))?;
-        let canonical_target = if target_path.exists() {
-            target_path.canonicalize()
-        } else {
-            target_path
-                .parent()
-                .ok_or_else(|| "目标路径无父目录".to_string())?
-                .canonicalize()
-                .map(|p| {
-                    p.join(
-                        target_path
-                            .file_name()
-                            .unwrap_or_else(|| std::ffi::OsStr::new("theme")),
-                    )
-                })
-        }
-        .map_err(|e| format!("无法解析目标目录: {}", e))?;
-
-        if canonical_source == canonical_target {
-            // 源即目标（对已安装的主题包再次导入）：跳过删除与拷贝，
-            // 直接重写 theme.json 完成再注册。
-            let payload = theme_to_pretty_json(&theme)?;
-            std::fs::write(target_path.join("theme.json"), payload)
-                .map_err(|e| format!("无法写入主题文件: {}", e))?;
-        } else if canonical_target.starts_with(&canonical_source) {
-            // 源是目标的祖先（如把主题根目录本身当主题包导入）：继续执行会把整个
-            // 主题目录搬进其子目录，明确拒绝。
-            return Err("不能把主题目录的父目录作为主题包导入".to_string());
-        } else if canonical_source.starts_with(&canonical_target) {
-            // 源在目标内（已安装主题包里的子目录）：替换式删除会连源一起删掉，明确拒绝。
-            return Err("不能把已安装主题目录内的子目录作为主题包导入".to_string());
-        } else {
-            if replaced {
-                std::fs::remove_dir_all(&target_path)
-                    .map_err(|e| format!("无法替换主题包: {}", e))?;
+        // 嵌套防御（与 mod 导入/导出同一共用判定 fs_util::detect_dir_nesting）：
+        // 源即目标时 remove_dir_all + copy_dir_all 会先把源删掉再拷贝失败（主题被自删）；
+        // 源与目标互相包含时替换语义不成立或会自我递归，必须逐一区分处理。
+        match fs_util::detect_dir_nesting(source_path, &target_path)? {
+            fs_util::DirNesting::Same => {
+                // 源即目标（对已安装的主题包再次导入）：跳过删除与拷贝，
+                // 直接重写 theme.json 完成再注册。
+                let payload = theme_to_pretty_json(&theme)?;
+                std::fs::write(target_path.join("theme.json"), payload)
+                    .map_err(|e| format!("无法写入主题文件: {}", e))?;
             }
-            copy_dir_all(source_path, &target_path)?;
-            let payload = theme_to_pretty_json(&theme)?;
-            std::fs::write(target_path.join("theme.json"), payload)
-                .map_err(|e| format!("无法写入主题文件: {}", e))?;
+            fs_util::DirNesting::SourceContainsTarget => {
+                // 源是目标的祖先（如把主题根目录本身当主题包导入）：继续执行会把整个
+                // 主题目录搬进其子目录，明确拒绝。
+                return Err("不能把主题目录的父目录作为主题包导入".to_string());
+            }
+            fs_util::DirNesting::TargetContainsSource => {
+                // 源在目标内（已安装主题包里的子目录）：替换式删除会连源一起删掉，明确拒绝。
+                return Err("不能把已安装主题目录内的子目录作为主题包导入".to_string());
+            }
+            fs_util::DirNesting::Disjoint => {
+                if replaced {
+                    std::fs::remove_dir_all(&target_path)
+                        .map_err(|e| format!("无法替换主题包: {}", e))?;
+                }
+                fs_util::copy_dir_all(source_path, &target_path)?;
+                let payload = theme_to_pretty_json(&theme)?;
+                std::fs::write(target_path.join("theme.json"), payload)
+                    .map_err(|e| format!("无法写入主题文件: {}", e))?;
+            }
         }
     } else {
         let payload = theme_to_pretty_json(&theme)?;
@@ -314,27 +299,6 @@ pub fn install_theme_file(
         file_path: target_path.to_string_lossy().to_string(),
         validation_issues,
     })
-}
-
-fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
-    for entry in std::fs::read_dir(src).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        // 不跟随符号链接/重解析点：主题包内的链接会把包外任意文件拖入主题目录，
-        // 随后可能被前端经 convertFileSrc 读取。遇到即跳过。
-        let meta = std::fs::symlink_metadata(&src_path).map_err(|e| e.to_string())?;
-        if meta.file_type().is_symlink() {
-            continue;
-        }
-        if meta.is_dir() {
-            copy_dir_all(&src_path, &dst_path)?;
-        } else {
-            std::fs::copy(&src_path, &dst_path).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
 }
 
 /// 写出主题 JSON 到用户选择的位置。
