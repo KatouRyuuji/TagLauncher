@@ -2,7 +2,7 @@
 // scripts/demo-screenshots.mjs — 演示模式自动截图工具
 // ============================================================================
 // 启动 demo 模式（浏览器内 mock 后端，见 src/demo/），用 Playwright 驱动 UI，
-// 遍历全部功能特性与 3 个官方主题的主要页面并自动截图。
+// 以樱花粉主题全覆盖遍历全部功能特性截图；3 个官方主题另各截主界面并列展示。
 //
 // 用法：
 //   npm run demo:shots            # 截图到 screenshots/（本地目录，不上云）
@@ -25,7 +25,7 @@ const argValue = (name, fallback) => {
 const OUT_DIR = path.resolve(argValue("out", "screenshots"));
 const PORT = Number(argValue("port", "5199"));
 const BASE = `http://127.0.0.1:${PORT}`;
-const THEMES = ["dark", "sakura", "cyber-cyan"];
+const THEMES = ["sakura", "dark", "cyber-cyan"];
 
 // ---- 小工具 ----
 
@@ -131,7 +131,7 @@ async function clickMenu(page, label) {
   await settle();
 }
 
-// ---- 功能特性巡演（默认主题） ----
+// ---- 功能特性巡演（樱花粉主题全覆盖） ----
 
 async function featureTour(page) {
   // 01 欢迎页（首次进入自动弹出）
@@ -306,28 +306,18 @@ async function featureTour(page) {
   await shot(page, "missing-relocate-失效对象找回反馈");
 }
 
-// ---- 主题巡演：每个官方主题的主要页面 ----
+// ---- 主题巡演：仅并列展示各官方主题的主界面（功能截图由樱花粉全覆盖） ----
 
 async function themeTour(page) {
   for (const themeId of THEMES) {
     await openSettings(page);
     await selectTheme(page, themeId);
-    await shot(page, `theme-${themeId}-settings-主题设置`);
     await closeSettings(page);
-    await shot(page, `theme-${themeId}-grid-主界面网格`);
-    await page.locator('button[title="列表视图"]').click();
-    await settle();
-    await shot(page, `theme-${themeId}-list-主界面列表`);
-    await page.locator('button[title="网格视图"]').click();
-    await settle(300);
-    await page.locator('[data-region="sidebar"] button:has-text("图谱")').first().click();
-    await settle(900);
-    await shot(page, `theme-${themeId}-graph-标签图谱`);
-    await closeOverlays(page);
+    await shot(page, `theme-${themeId}-grid-主界面`);
   }
-  // 巡演结束后回到默认主题，便于人工接续体验
+  // 巡演结束后回到演示主用主题（樱花粉），便于人工接续体验
   await openSettings(page);
-  await selectTheme(page, "dark");
+  await selectTheme(page, "sakura");
   await closeSettings(page);
 }
 

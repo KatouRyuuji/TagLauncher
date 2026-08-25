@@ -73,7 +73,8 @@ function seedState(): DemoState {
       Object.entries(DEMO_CABINET_ITEMS).map(([id, ids]) => [Number(id), new Set(ids)]),
     ),
     settings: new Map([
-      ["theme", "dark"],
+      // 演示主用主题：樱花粉（功能巡演与截图全覆盖）
+      ["theme", "sakura"],
       ["last_known_version", VERSION],
     ]),
     ai: {

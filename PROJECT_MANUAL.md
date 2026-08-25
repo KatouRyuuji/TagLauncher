@@ -728,6 +728,6 @@ npm run demo        # 浏览器打开 http://127.0.0.1:3456 即完整应用
 npm run demo:shots  # 自动截图：功能巡演 + 三官方主题主要页面
 ```
 
-`scripts/demo-screenshots.mjs` 启动 demo 服务器后用 Playwright 驱动真实 UI 交互（搜索/拼音、标签筛选、文件柜、命令面板、快速预览、右键菜单、标签编辑器、框选批量、图谱、设置各区块、AI 打标、快捷键、失效找回），再遍历 `dark` / `sakura` / `cyber-cyan` 三主题的网格/列表/图谱/设置页，产出约 40 张 2x 截图。
+`scripts/demo-screenshots.mjs` 启动 demo 服务器后用 Playwright 驱动真实 UI 交互（搜索/拼音、标签筛选、文件柜、命令面板、快速预览、右键菜单、标签编辑器、框选批量、图谱、设置各区块、AI 打标、快捷键、失效找回）——功能截图以**樱花粉（sakura）主题全覆盖**；再切到 `sakura` / `dark` / `cyber-cyan` 三主题各截一张主界面并列对比，共约 31 张 2x 截图。
 
 **产物边界**：截图输出到 `screenshots/`（已 gitignore，不上云）；工具本身（`src/demo/` + 脚本）随仓库分发，clone 后 `npm i && npx playwright install chromium` 即可复现同一套截图。可选参数：`--out <目录>`、`--port <端口>`。
