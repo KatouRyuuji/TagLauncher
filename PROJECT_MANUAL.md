@@ -14,7 +14,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - 对象身份：以「NTFS 卷序列号 + 文件ID」为唯一标识，跨重命名/同盘移动稳定；`path` 降级为可更新的「最近已知位置」。跨盘符移动（卷序列号变化）时，以内容签名（文件大小 + 首/尾 16KB 的 FNV-1a 哈希）兜底重定位自动找回，详见 `file_identity.rs`。
 - 标签系统（图状层级，DAG）：标签是集合、可多父继承构成有向无环图；选中父标签筛选时并入其所有后代标签的对象。四类筛选（标签/文件柜/收藏夹/最近使用）互斥；标签多选取交集；提供关系编辑器与独立图谱视图。
 - 工作台查询：类型筛选与五种排序在 `src/lib/itemQuery.ts` 纯函数完成，搜索命中顺序不被排序打乱；视图偏好（网格/列表、搜索模式、排序、类型）写入 localStorage。全屏弹层与选中锚点见 `workspaceChrome.ts`。
-- 键盘优先：`/` 聚焦搜索，Ctrl+K 命令面板，空格预览（方向键/Home/End 切换），Enter 启动；网格方向键按列跳转；Ctrl+C 复制选中路径、Ctrl+D 收藏；无新依赖。
+- 键盘优先：`/` 聚焦搜索，Ctrl+K 命令面板，空格预览（方向键/Home/End 切换），Enter 启动；网格方向键按列跳转；Ctrl+C 复制选中路径、Ctrl+D 收藏。
 - 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量收藏/取消收藏（与 Ctrl+D 同逻辑：有未收藏项则全部收藏）、复制路径、批量删除。
 - 失效对象可感知恢复：库内存在失效对象（文件丢失/跨盘移动）时，底部状态栏显示警示徽标，点击即手动触发按内容签名的跨盘找回扫描（含扫描中状态与「未找到」反馈）；自动兜底找回仍在刷新链路后台执行。
 - 加载与通知体验：首屏按当前视图渲染与真实布局同构的骨架屏（`WorkspaceSkeleton`，reduced-motion 下静止）；Toast 悬停暂停自动关闭、错误/警告驻留更久（7s/5s）。
@@ -27,8 +27,8 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - Mod 扩展系统：支持 `css` / `css+js` / `theme` 三类 Mod，提供权限声明（能力/意图标注 + API 误用防呆，**非安全沙箱**——Mod 属可信扩展，JS 以完全权限运行于主 realm，启用前须确认来源可信）、生命周期回调、工具栏按钮、侧栏/浮动面板、卡片与列表行对等插槽、Mod 数据存储、文件读写、受约束的网络请求原语（`net.fetch` 经 Rust 后端代理）、只读标签关系等接口（API 版本 3.2.0）。
 - AI 自动打标：兼容 Anthropic Messages API（官方或第三方兼容地址），在设置中填写 base URL / API key / 模型后，可为全部或未打标对象批量打标，支持「新对象自动打标」「允许创建新标签」「每对象最多标签数」等选项；后端仅提供无状态「建议标签」原语，批量遍历/并发/进度/取消由前端编排。
 - 数据管理：数据目录可自定义（exe 旁 `datapath.json` 记录重定向，仅重定向 `Save/`）；支持一键备份、导出、导入，统一走 SQLite Online Backup API（页级一致快照），导入前自动安全备份、可回退；切换目录或导入后自动重启生效。
-- 云同步（WebDAV，v1.4.0）：备份/恢复到任意 WebDAV 服务（NAS/Nextcloud/坚果云），云端副本剔除敏感配置（`ai.*`/`sync.*`），恢复保留本机凭据；远端保留最近 10 份；可选启动时自动备份（24h 节流）。详见 §十一。
-- 在线更新（GitHub Releases，v1.4.0）：`update_check` 拉取 latest release，语义版本比较 + 按架构匹配安装包资产；设置页手动检查 + 启动后台自动检查（24h 节流、同版本只提示一次）。详见 §十一。
+- 云同步（WebDAV）：备份/恢复到任意 WebDAV 服务（NAS/Nextcloud/坚果云），云端副本剔除敏感配置（`ai.*`/`sync.*`），恢复保留本机凭据；远端保留最近 10 份；可选启动时自动备份（24h 节流）。详见 §十一。
+- 在线更新（GitHub Releases）：`update_check` 拉取 latest release，语义版本比较 + 按架构匹配安装包资产；设置页手动检查 + 启动后台自动检查（24h 节流、同版本只提示一次）。详见 §十一。
 - NAS/UNC/软链接场景：对象身份重定位支持 UNC 共享根与扩展前缀路径形态（`\\server\share\`、`\\?\C:\`、`\\?\UNC\`）作为卷句柄候选；网络文件系统无文件 ID 时优雅回退按路径管理。
 
 ---
@@ -112,11 +112,11 @@ tag-launcher/
 │   │   ├── useTags.ts            # 标签 CRUD
 │   │   ├── useCabinets.ts        # 文件柜 CRUD
 │   │   ├── useSearch.ts          # 搜索防抖（清空立即生效）
-│   │   └── useWorkspaceHotkeys.ts # 键盘优先（v1.5.0；IME/弹层让路）
+│   │   └── useWorkspaceHotkeys.ts # 键盘优先（IME/弹层让路）
 │   ├── lib/
 │   │   ├── db.ts                 # Tauri invoke 封装层
 │   │   ├── search.ts             # 自研搜索引擎（前缀/拼音/低容错/同义词/表达式）
-│   │   ├── itemQuery.ts          # 排序 / 类型筛选 / 键盘选择 / 点选（v1.5.0）
+│   │   ├── itemQuery.ts          # 排序 / 类型筛选 / 键盘选择 / 点选
 │   │   ├── workspaceChrome.ts    # 工作台遮罩、选中锚点、网格列数
 │   │   └── synonyms.ts           # 同义词字典加载
 │   ├── components/
@@ -124,7 +124,7 @@ tag-launcher/
 │   │   ├── AppErrorBoundary.tsx  # 顶层错误边界（崩溃时强制显示窗口 + 可复制错误详情）
 │   │   ├── Sidebar.tsx           # 左侧导航（标签/文件柜/最近使用）
 │   │   ├── SearchBar.tsx         # 顶部搜索栏（排序 / Ctrl+K）
-│   │   ├── SearchHighlightText.tsx # 搜索关键词高亮渲染（v1.6.0）
+│   │   ├── SearchHighlightText.tsx # 搜索关键词高亮渲染
 │   │   ├── TagFilterBar.tsx      # 类型 chip + 标签筛选
 │   │   ├── CommandPalette.tsx    # Ctrl+K 命令面板（同名对象以路径第二行区分）
 │   │   ├── QuickPreview.tsx      # 空格快速预览
@@ -140,15 +140,15 @@ tag-launcher/
 │   │   ├── FavoriteStar.tsx      # 收藏星标
 │   │   ├── SelectionCanvas.tsx   # 框选画布（几何坐标全量命中）
 │   │   ├── BatchSelectionToolbar.tsx # 批量操作工具条（打标/入柜/收藏/复制路径/移除）
-│   │   ├── WorkspaceSkeleton.tsx # 首屏骨架屏（v1.6.0，与真实布局同构）
-│   │   ├── WorkspaceEmptyState.tsx # 空态引导（空库/搜索无结果/筛选无结果三态，v1.6.0）
+│   │   ├── WorkspaceSkeleton.tsx # 首屏骨架屏（与真实布局同构）
+│   │   ├── WorkspaceEmptyState.tsx # 空态引导（空库/搜索无结果/筛选无结果三态）
 │   │   ├── InternalDragOverlays.tsx # 内部拖拽悬停落点提示层
 │   │   ├── ContextMenu.tsx       # 右键菜单（Portal 渲染，键盘可导航）
 │   │   ├── DraggableTagList.tsx  # 对象内标签重排列表
 │   │   ├── TagEditor.tsx         # 标签/文件柜编辑弹窗
 │   │   ├── TagRelationsEditor.tsx # 标签父子关系编辑器（DAG 环冲突提示）
 │   │   ├── TagGraphView.tsx      # 标签图谱视图
-│   │   ├── SettingsPanel.tsx     # 设置面板（顶部区块快速导航，v1.6.0）
+│   │   ├── SettingsPanel.tsx     # 设置面板（顶部区块快速导航）
 │   │   ├── AiSettingsSection.tsx # 设置 · AI 打标区
 │   │   ├── DataSettingsSection.tsx # 设置 · 数据管理区
 │   │   ├── SyncSettingsSection.tsx # 设置 · 云同步区
@@ -176,8 +176,8 @@ tag-launcher/
 │   │   │   ├── net_commands.rs
 │   │   │   ├── ai_commands.rs           # AI 自动打标（Anthropic 协议）
 │   │   │   ├── data_commands.rs         # 数据目录/导入/导出/备份
-│   │   │   ├── sync_commands.rs         # WebDAV 云同步（v1.4.0）
-│   │   │   ├── update_commands.rs       # 在线更新检查（v1.4.0）
+│   │   │   ├── sync_commands.rs         # WebDAV 云同步
+│   │   │   ├── update_commands.rs       # 在线更新检查
 │   │   │   ├── settings_commands.rs
 │   │   │   ├── synonym_commands.rs
 │   │   │   ├── launch_commands.rs
@@ -226,9 +226,9 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | volume_serial | INTEGER | NTFS 卷序列号（对象特征，可空） |
 | file_id | TEXT | NTFS 文件ID 十六进制（对象特征，可空）；`(volume_serial, file_id)` 为身份唯一索引 |
 | is_missing | INTEGER | 文件是否丢失（0/1，删除/离线/跨盘移动且无法重定位） |
-| sig_size | INTEGER | 内容签名：文件字节大小（v006，仅文件，可空） |
-| sig_head | INTEGER | 内容签名：首 16KB 的 FNV-1a 哈希（v006，可空） |
-| sig_tail | INTEGER | 内容签名：尾 16KB 的 FNV-1a 哈希（v006，可空） |
+| sig_size | INTEGER | 内容签名：文件字节大小（仅文件，可空） |
+| sig_head | INTEGER | 内容签名：首 16KB 的 FNV-1a 哈希（可空） |
+| sig_tail | INTEGER | 内容签名：尾 16KB 的 FNV-1a 哈希（可空） |
 
 > 对象身份以 `(volume_serial, file_id)` 为准（NTFS 文件ID，跨重命名/同盘移动稳定）；`path` 为可更新的最近已知位置。取不到文件ID的对象回退按 `path` 去重。**跨盘符移动时文件ID失效，由内容签名 `(sig_size, sig_head, sig_tail)` 在候选盘兜底重定位**。详见 `src-tauri/src/services/file_identity.rs` 与迁移 `v005_object_identity` / `v006_object_signature`。
 
@@ -246,7 +246,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | tag_id | INTEGER FK | 关联 tags.id，级联删除 |
 | position | INTEGER | 标签在对象内的展示顺序 |
 
-#### tag_relations（标签父子关系表，v007 · 图状 DAG）
+#### tag_relations（标签父子关系表，图状 DAG）
 | 列名 | 类型 | 说明 |
 |------|------|------|
 | parent_id | INTEGER FK | 父标签，关联 tags.id，级联删除 |
@@ -277,12 +277,6 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 ## 五、Tauri 命令清单
 
 后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 90 个 `#[tauri::command]`（含 `#[tauri::command(async)]` 变体），按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
-
-> v1.4.0 新增命令：云同步 `sync_get_config` / `sync_set_config` / `sync_clear_password` / `sync_test_connection` / `sync_list_backups` / `sync_backup_now` / `sync_restore`（7 个）；在线更新 `update_check`（1 个）。
->
-> v1.3.0 新增命令：AI 自动打标 `ai_get_config` / `ai_set_config` / `ai_is_configured` / `ai_clear_api_key` / `ai_test_connection` / `ai_suggest_tags`（6 个）；数据管理 `get_data_directory_info` / `set_data_directory` / `reset_data_directory` / `backup_data` / `export_data` / `import_data` / `restart_app`（7 个）。
->
-> v1.2.0 新增命令：`relocate_missing`（跨盘签名找回）、`get_tag_relations` / `add_tag_relation` / `remove_tag_relation`（标签 DAG）、`net_fetch`（Mod 网络原语）。
 
 | 命令名 | 参数 | 返回值 | 说明 |
 |--------|------|--------|------|
@@ -467,7 +461,7 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 
 ---
 
-## 十一、云同步与在线更新（v1.4.0）
+## 十一、云同步与在线更新
 
 ### 11.1 云同步（WebDAV）
 
@@ -504,11 +498,11 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 
 ## 十二、构建与部署
 
-### 环境准备（v1.3.0 新增）
+### 环境准备
 
 - `setup.bat`：一键检测并安装 Node / Rust(rustup) / VS C++ BuildTools / WebView2，并执行 `npm install`（全英文 + UTF-8 + CRLF）。
 - `dev.bat` / `build.bat`：自动注入 `%USERPROFILE%\.cargo\bin` 到 PATH 并做环境前置检查；`build.bat` 支持可选 target 参数。
-- `build-arm64.bat`：面向 `aarch64-pc-windows-msvc` 的 ARM64 构建，会自动 `rustup target add`（对应 GitHub issue #1）。
+- `build-arm64.bat`：面向 `aarch64-pc-windows-msvc` 的 ARM64 构建，会自动 `rustup target add`。
 
 ### 开发模式
 ```bash
@@ -525,7 +519,7 @@ npm run tauri build  # 编译 + 打包 NSIS 安装包（x64）
 
 ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `..._arm64-setup.exe`。
 
-### CI 与发版（v1.4.0 新增）
+### CI 与发版
 
 - `.github/workflows/ci.yml`：push/PR 自动跑 `npm run test:all` + 前端生产构建校验（windows-latest，与本地同一套测试脚本）。
 - `.github/workflows/release.yml`：推送版本 tag 自动构建 x64 + ARM64 双架构安装包并生成草稿 Release；发版流程清单见 `MAINTENANCE.md`。
@@ -562,7 +556,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `...
 
 ---
 
-## 十四、安全模型与性能要点（v1.3.0 硬化，v1.4.0 增补）
+## 十四、安全模型与性能要点
 
 ### 安全
 
@@ -571,8 +565,8 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `...
 - **Mod `net.fetch` SSRF 防御**：自定义 DNS 解析器（`SsrfGuardResolver`）在解析层拦截环回 / 私网 / 链路本地 / 保留地址，fail-closed，重定向每一跳重新校验；仅 http/https、默认 30s（上限 120s）超时、10MB 体积上限。见 `commands/net_commands.rs`。
 - **WebView CSP**：`tauri.conf.json` 配置 `csp` / `devCsp`（`default-src 'self'`、`connect-src` 限本机 IPC/asset、`object-src 'none'`、`frame-src 'none'` 等），收敛脚本 / 网络 / 框架来源，作为纵深防御。
 - **Mod / 主题为「可信扩展」**：其 `permissions` 是能力声明（运行时由 JS 宿主据此约束可调用的 API 面），**并非操作系统级安全沙箱边界**——Mod 与应用同处一个 WebView，请仅安装可信来源的扩展。
-- **云同步凭据最小暴露面（v1.4.0）**：WebDAV 密码只存后端 `app_meta`，`sync_get_config` 不下发明文（仅 `hasPassword`）；云端副本剔除 `ai.*`/`sync.*` 并 VACUUM；恢复回填本机凭据。Mod 文件读写有 32MiB 上限，目录复制跳过符号链接，`import_mod` 校验 id 合法性防目录逃逸（v1.3.x 硬化随审阅并入）。
-- **通用 KV 命令收紧（v1.5.1 审阅硬化）**：`get_setting` / `set_setting` 拒绝读写 `ai.*` / `sync.*` 前缀——这两类凭据只能走各自的专用脱敏通道（`ai_get_config` / `sync_get_config` 均不下发明文），通用原语不再是绕过脱敏的旁路；读敏感键按「键不存在」处理（不泄露存在性），写敏感键明确报错并引导至专用入口。
+- **云同步凭据最小暴露面**：WebDAV 密码只存后端 `app_meta`，`sync_get_config` 不下发明文（仅 `hasPassword`）；云端副本剔除 `ai.*`/`sync.*` 并 VACUUM；恢复回填本机凭据。Mod 文件读写有 32MiB 上限，目录复制跳过符号链接，`import_mod` 校验 id 合法性防目录逃逸。
+- **通用 KV 命令收紧**：`get_setting` / `set_setting` 拒绝读写 `ai.*` / `sync.*` 前缀——这两类凭据只能走各自的专用脱敏通道（`ai_get_config` / `sync_get_config` 均不下发明文），通用原语不再是绕过脱敏的旁路；读敏感键按「键不存在」处理（不泄露存在性），写敏感键明确报错并引导至专用入口。
 
 ### 性能
 
@@ -675,7 +669,7 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 | data-region | 位置 | 说明 |
 |---|---|---|
 | `root` | 应用最外层容器 | 全局背景、字体基线 |
-| `titlebar` | 顶部自绘窗口栏 | **v1.6.0 新增**（`decorations: false` 后的主题化窗口栏） |
+| `titlebar` | 顶部自绘窗口栏 | 主题化窗口栏（`decorations: false`） |
 | `app-body` | 窗口栏之下的主体容器 | 包覆侧栏与主区 |
 | `sidebar` | 左侧栏整体 | 标签/文件柜/最近使用 |
 | `sidebar-nav` | 侧栏导航区 | 集合入口列表 |
@@ -686,7 +680,7 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 | `statusbar` | 底部状态栏 | 可见数量/范围/已选/排序 |
 | `item-grid-inner` | 网格内部容器 | 虚拟化网格内容层 |
 | `bg-decoration` | 背景装饰层 | 主题背景动画/渐变挂点（z-index 最低） |
-| `workspace-skeleton` | 骨架屏 | v1.6.0 加载占位（reduced-motion 下静止） |
+| `workspace-skeleton` | 骨架屏 | 加载占位（reduced-motion 下静止） |
 
 ### 15.6 主题 theme.json 结构
 
@@ -694,7 +688,7 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 
 | 字段 | 说明 |
 |---|---|
-| `id` / `name` / `author` / `version` | 主题标识与元信息；`id` 不得使用保留字 `dark` / `sakura` / `cyber-cyan` / `light`（与内置主题冲突会被拒绝；`light` 为 v1.6.1 对调前旧 id，继续保留防占用歧义） |
+| `id` / `name` / `author` / `version` | 主题标识与元信息；`id` 不得使用保留字 `dark` / `sakura` / `cyber-cyan` / `light`（与内置主题冲突会被拒绝；`light` 为保留旧 id，防占用歧义） |
 | `isPreset` | 是否内置预设（自定义主题固定 `false`） |
 | `variables` | 扁平 CSS 变量表（颜色/字体/间距/圆角/阴影/z-index 等全量 token，缺省项由宿主默认值补齐） |
 | `tokens` | 分层 token：`primitive`（原始色板）→ `semantic`（语义层）→ `component`（组件层）→ `motion` / `layout` |
@@ -702,7 +696,7 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 | `variants` | 主题变体：每个变体可覆盖部分 `variables` 并附加 `css`（如 SkyCloud 的「静止云层」变体关闭动画） |
 | `css` | 自定义 CSS 文本；非内置主题会经消毒（去 `@import`、中和远程 `url()`、放行 asset/ipc 协议） |
 
-内置三主题（`src/themes/`）：`dark`（深色·赛博红）、`sakura`（亮色·樱花）、`cyber-cyan`（深色·赛博青）（v1.6.1 起 id 与主题身份对齐，老配置经迁移 v008 自动改写）。自定义主题建议以 `toExportableTheme` 导出格式为准，或直接从示例主题改起。
+内置三主题（`src/themes/`）：`dark`（深色·赛博红）、`sakura`（亮色·樱花）、`cyber-cyan`（深色·赛博青）。自定义主题建议以 `toExportableTheme` 导出格式为准，或直接从示例主题改起。
 
 ### 15.7 安全说明：CSP 与 assetProtocol 的有意取舍
 

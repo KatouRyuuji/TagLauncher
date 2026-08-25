@@ -102,9 +102,8 @@ src-tauri/src/
 ## 4.1 `db/`（连接、schema 与迁移）
 
 - 采用 SQLite（`rusqlite` bundled）。
-- `connection.rs` 负责连接与 `PRAGMA`，`schema.rs` 建表并幂等回填 FTS，`migrations/` 下按版本（v001..v007）做表结构迁移。
+- `connection.rs` 负责连接与 `PRAGMA`，`schema.rs` 建表并幂等回填 FTS，`migrations/` 下按版本（v001..v008）做表结构迁移。
 - 表结构包括：`items`、`tags`、`item_tags`、`tag_relations`、`items_fts`、`cabinets`、`cabinet_items`、`mod_kv`、`mod_records` 等。
-- 迁移逻辑：`items.type` 扩展支持 `image`/`audio`（v004）→ 对象身份去 path 唯一+加文件ID（v005）→ 内容签名列（v006）→ 标签父子关系表（v007）。
 
 ## 4.2 `commands/`（命令实现，按域分模块）
 
@@ -134,7 +133,7 @@ src-tauri/src/
   - 先短锁查询数据；
   - 释放锁后执行图标提取（`item_service::fill_visuals`）；
   - 再短锁补齐标签。
-- 目的是避免 DB 锁在外部 IO（如 PowerShell 图标提取）期间被长时间占用。v1.3.0 把 `get_item` / `get_items_by_ids` / `search_items` 也纳入此模式（此前它们在持锁期间跑图标提取会串行阻塞所有 DB 命令），并删除了不再使用的 `icon_service::fill_auto_visual_paths`。
+- 目的是避免 DB 锁在外部 IO（如 PowerShell 图标提取）期间被长时间占用。
 
 3. 移除潜在 panic
 - `get_item_tags` 和 `items_with_tags` 改为 `Result` 链路，移除 `unwrap`。
@@ -164,7 +163,7 @@ src-tauri/src/
 - `import_data`：`validate_importable_db` 校验来源库（`app_meta.schema_version > 0`）→ 自动把当前库备份到 `Save/Backups/`（可回退）→ 用 Backup API 灌入当前连接。
 - 切换目录 / 导入后需 `restart_app`（`app.restart()`）生效。
 
-## 4.6 `sync_commands.rs`（WebDAV 云同步，v1.4.0）
+## 4.6 `sync_commands.rs`（WebDAV 云同步）
 
 - 复用 `data_commands` 的快照/校验/覆盖原语（`snapshot_live_db` / `validate_importable_db` / `overwrite_live_from`）+ `ureq` 阻塞 HTTP。
 - 上传前 `strip_cloud_secrets`（删 `ai.*`/`sync.*` + VACUUM）；恢复时 `read_local_secrets` → 覆盖 → `reapply_local_secrets`（本机凭据优先）。
@@ -172,7 +171,7 @@ src-tauri/src/
 - 远端文件名 `taglauncher_<UTC时间戳>.db`（字典序即时间序），上传后按 `REMOTE_KEEP_COUNT=10` 清理旧份。
 - 前端编排：`SyncSettingsSection`（设置区）+ `useStartupMaintenance`（启动自动备份，24h 节流）。
 
-## 4.7 `update_commands.rs`（在线更新检查，v1.4.0）
+## 4.7 `update_commands.rs`（在线更新检查）
 
 - `update_check` → GitHub `/releases/latest` → `parse_release_response`（纯函数，可单测）→ `semver_gte` 版本比较（复用 `mod_loader`）→ `pick_installer_asset` 按编译期架构匹配 `_x64-setup.exe`/`_arm64-setup.exe`。
 - 只检查 + 引导浏览器下载，不做静默自更新；仓库迁移须改 `GITHUB_REPO` 常量。
@@ -263,7 +262,7 @@ NSIS 安装包会创建开始菜单快捷方式；桌面快捷方式在安装功
 
 ## 8.3 欢迎弹窗定制
 
-v1.3.0 起欢迎弹窗改为 标题+简介 + 特性列表 + 右侧扫码赞助卡片 + B 站主页链接。
+欢迎弹窗为 标题+简介 + 特性列表 + 右侧扫码赞助卡片 + B 站主页链接。
 
 - 组件：`src/components/WelcomeModal.tsx`
 - 特性列表：编辑 `FEATURES` 数组（`isNew: true` 会显示「新」徽标）。
@@ -271,7 +270,7 @@ v1.3.0 起欢迎弹窗改为 标题+简介 + 特性列表 + 右侧扫码赞助�
 - 版本号：通过 `getAppVersion()` 动态获取展示。
 - 「下次不再显示」使用 `localStorage` 键 `taglauncher.hide_welcome_modal`。
 
-## 8.4 工作台排序 / 筛选 / 快捷键（v1.5.0）
+## 8.4 工作台排序 / 筛选 / 快捷键
 
 - 纯函数：`src/lib/itemQuery.ts`（排序、类型筛选、键盘步进、点选/右键选择、路径复制格式、IME 判断），单测 `itemQuery.test.ts`。
 - 状态：`appStore` 的 `sortMode` / `typeFilter` / `showRecent`；四者互斥筛选与收藏/标签/文件柜并列。

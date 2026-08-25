@@ -2,7 +2,9 @@
 
 TagLauncher 是一个基于 **Tauri 2 + React + TypeScript + Rust + SQLite** 的 Windows 桌面标签式启动器与本地对象管理工具。它用于把本地文件、文件夹、脚本、程序和图片资源按「标签 + 文件柜 + 收藏」组织起来，并提供快速搜索、拖拽归类、缩略图和一键启动能力。
 
-文档导航：[使用手册](./USER_GUIDE.md) · [开发手册](./PROJECT_MANUAL.md) · [源码开发指南](./TUTORIAL.md) · [维护手册](./MAINTENANCE.md)
+文档导航：[使用手册](./USER_GUIDE.md) · [开发手册](./PROJECT_MANUAL.md) · [源码开发指南](./TUTORIAL.md) · [维护手册](./MAINTENANCE.md) · [版本对比](./版本对比.md)
+
+[![Star History Chart](https://api.star-history.com/svg?repos=KatouRyuuji/TagLauncher&type=Date)](https://star-history.com/#KatouRyuuji/TagLauncher&Date)
 
 ## 功能特性
 
@@ -15,7 +17,7 @@ TagLauncher 是一个基于 **Tauri 2 + React + TypeScript + Rust + SQLite** 的
 - 搜索增强：支持全部/名称/标签三种模式，覆盖名称、路径、标签、拼音、拼音首字母和同义词，支持表达式语法，输入带 150ms 防抖。
 - **类型筛选与排序**：顶栏按文件夹/图片/音频/程序/脚本筛选；排序偏好与网格/列表视图会记住。
 - 视图切换：支持网格卡片视图和列表视图，**两者均虚拟化渲染（@tanstack/react-virtual），大库滚动流畅、内存可控**。
-- **界面打磨（v1.6.1-beta）**：自定义主题化窗口栏（拖拽移动、双击最大化、最小化/最大化/关闭随主题联动）；搜索关键词在结果中高亮；首屏骨架屏加载；空态引导文案区分「空库 / 搜索无结果 / 筛选无结果」；批量工具条支持批量收藏；设置页顶部区块快速导航；命令面板同名对象以路径第二行区分。
+- **界面打磨**：自定义主题化窗口栏（拖拽移动、双击最大化、最小化/最大化/关闭随主题联动）；搜索关键词在结果中高亮；首屏骨架屏加载；空态引导文案区分「空库 / 搜索无结果 / 筛选无结果」；批量工具条支持批量收藏；设置页顶部区块快速导航；命令面板同名对象以路径第二行区分。
 - **键盘优先**：`/` 聚焦搜索，Ctrl+K 命令面板，空格快速预览，方向键（网格按列）/ Home / End / 翻页选择，Enter 启动，Ctrl+C 复制路径，Ctrl+D 收藏。
 - 缩略图：支持手动设置、更换、清除缩略图，图片对象和系统类型图标作为默认视觉回退。
 - 主题系统：支持内置主题、自定义 JSON 主题、Mod 主题，以及主题导入、导出和刷新；应用会等待主题准备完成后再显示主窗口，避免启动闪烁。
@@ -208,6 +210,11 @@ tag-launcher/
 │  ├─ capabilities/        Tauri capability 配置
 │  ├─ icons/               应用图标
 │  └─ tauri.conf.json      Tauri 配置
+├─ ExampleMod/             示例 Mod(开发手册 §15 的参照实现)
+├─ ExampleTheme/           示例主题
+├─ scripts/                测试与构建辅助脚本
+├─ design-system/          设计系统资源
+├─ .github/workflows/      CI 与发版流水线
 ├─ package.json
 ├─ vite.config.ts
 ├─ postcss.config.js
