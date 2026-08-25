@@ -4,7 +4,15 @@ TagLauncher 是一个基于 **Tauri 2 + React + TypeScript + Rust + SQLite** 的
 
 文档导航：[使用手册](./USER_GUIDE.md) · [开发手册](./PROJECT_MANUAL.md) · [源码开发指南](./TUTORIAL.md) · [维护手册](./MAINTENANCE.md) · [版本对比](./版本对比.md)
 
-[![GitHub Stars](https://img.shields.io/github/stars/KatouRyuuji/TagLauncher?style=social)](https://github.com/KatouRyuuji/TagLauncher/stargazers) · [Star 趋势](https://star-history.com/#KatouRyuuji/TagLauncher&Date)
+## Star History
+
+<a href="https://www.star-history.com/?repos=KatouRyuuji%2FTagLauncher&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=KatouRyuuji/TagLauncher&type=date&theme=dark&legend=top-left&sealed_token=Geo4894px16_OyWAwwft6H4BqOZfv_6qXGe-ITYWhWluDq0MSTL3Pe5mAwfzv-NsjZ0tAdui-P6mk4Z6hJIXA89R8OFNtBCB3vnVlRZg7tfpFR-dVtv39ZerRb2Ddi2ASHsKUTkfhqs-8wWcBVxwLA8Ws0WqFgLG6-pCERumuhfT4lS0z9uvCgWt0p55" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=KatouRyuuji/TagLauncher&type=date&legend=top-left&sealed_token=Geo4894px16_OyWAwwft6H4BqOZfv_6qXGe-ITYWhWluDq0MSTL3Pe5mAwfzv-NsjZ0tAdui-P6mk4Z6hJIXA89R8OFNtBCB3vnVlRZg7tfpFR-dVtv39ZerRb2Ddi2ASHsKUTkfhqs-8wWcBVxwLA8Ws0WqFgLG6-pCERumuhfT4lS0z9uvCgWt0p55" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=KatouRyuuji/TagLauncher&type=date&legend=top-left&sealed_token=Geo4894px16_OyWAwwft6H4BqOZfv_6qXGe-ITYWhWluDq0MSTL3Pe5mAwfzv-NsjZ0tAdui-P6mk4Z6hJIXA89R8OFNtBCB3vnVlRZg7tfpFR-dVtv39ZerRb2Ddi2ASHsKUTkfhqs-8wWcBVxwLA8Ws0WqFgLG6-pCERumuhfT4lS0z9uvCgWt0p55" />
+ </picture>
+</a>
 
 ## 功能特性
 
