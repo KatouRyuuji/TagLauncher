@@ -34,8 +34,9 @@
 4. **快速开始**:面向用户(下载安装包)与开发者(setup.bat 一键环境 → `npm run tauri dev`)两条路径,命令用代码块。
 5. **功能总览**:折叠式 `<details>` 区块,完整但不占地。
 6. **文档导航**:使用手册 USER_GUIDE.md、开发手册 PROJECT_MANUAL.md、源码开发指南 TUTORIAL.md、维护手册 MAINTENANCE.md、版本对比 版本对比.md。
-7. **星标趋势**:保留 star-history 嵌入
-   `[![Star History Chart](https://api.star-history.com/svg?repos=KatouRyuuji/TagLauncher&type=Date)](https://star-history.com/#KatouRyuuji/TagLauncher&Date)`。
+7. **星标**:GitHub 已限制 stargazers 公开 API,star-history 内嵌图表需要仓库所有者在 star-history.com 用 token 生成加密嵌入码(令牌加密后出现在 README,安全)。在此之前,使用 shields.io 星标徽章 + 趋势链接:
+   `[![GitHub Stars](https://img.shields.io/github/stars/KatouRyuuji/TagLauncher?style=social)](https://github.com/KatouRyuuji/TagLauncher/stargazers) · [Star 趋势](https://star-history.com/#KatouRyuuji/TagLauncher&Date)`
+   若所有者已生成加密嵌入码,则替换为 star-history 实时图表。
 8. **页脚**:License、版权、致谢占位。
 
 ### 风格要求

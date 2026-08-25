@@ -4,7 +4,7 @@ TagLauncher 是一个基于 **Tauri 2 + React + TypeScript + Rust + SQLite** 的
 
 文档导航：[使用手册](./USER_GUIDE.md) · [开发手册](./PROJECT_MANUAL.md) · [源码开发指南](./TUTORIAL.md) · [维护手册](./MAINTENANCE.md) · [版本对比](./版本对比.md)
 
-[![Star History Chart](https://api.star-history.com/svg?repos=KatouRyuuji/TagLauncher&type=Date)](https://star-history.com/#KatouRyuuji/TagLauncher&Date)
+[![GitHub Stars](https://img.shields.io/github/stars/KatouRyuuji/TagLauncher?style=social)](https://github.com/KatouRyuuji/TagLauncher/stargazers) · [Star 趋势](https://star-history.com/#KatouRyuuji/TagLauncher&Date)
 
 ## 功能特性
 
