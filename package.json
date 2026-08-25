@@ -12,6 +12,8 @@
     "test": "node scripts/run-tests.mjs --frontend-only",
     "test:all": "node scripts/run-tests.mjs",
     "test:unit": "vitest run",
+    "demo": "vite --mode demo --host 127.0.0.1",
+    "demo:shots": "node scripts/demo-screenshots.mjs",
     "icon": "node generate-icon.mjs"
   },
   "dependencies": {
@@ -36,6 +38,7 @@
     "autoprefixer": "^10.4.24",
     "esbuild": "^0.27.3",
     "jsdom": "^29.1.1",
+    "playwright": "^1.62.1",
     "png-to-ico": "^3.0.1",
     "postcss": "^8.5.6",
     "sharp": "^0.34.5",

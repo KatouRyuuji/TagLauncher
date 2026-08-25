@@ -707,3 +707,27 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 
 
 
+
+---
+
+## 十六、演示模式与自动截图（src/demo/）
+
+演示模式让应用**无需 Rust 后端即可在浏览器中完整运行**，用于功能演示、UI 走查与自动截图；业务不触碰真实文件系统与网络，但 UI 表现与真实应用一致。
+
+### 16.1 原理
+
+- `vite --mode demo` 时 `vite.config.ts` 用 `resolve.alias` 把 5 个 Tauri 模块（`api/core`、`api/window`、`api/webview`、`plugin-dialog`、`plugin-shell`）替换为 `src/demo/tauri/` 下的浏览器内替身，前端代码零改动。
+- `src/demo/backend.ts` 是内存演示后端，覆盖 `lib/db.ts` 全部命令：数据读写、标签 DAG（含成环检测）、文件柜、设置、AI 打标建议、云同步、更新检查、Mod 管理等，并带模拟 IPC 延迟让加载态可见。页面刷新后数据重置。
+- `src/demo/data.ts` 是演示数据集：6 种对象类型（folder/image/audio/exe/bat/ps1）各 4 个，模拟知名软件/游戏/音乐/图片（如 VS Code、原神、周杰伦专辑），全部挂匹配标签；标签构成 DAG（如 娱乐⊃音乐⊃华语流行）；含 3 个文件柜与 1 个失效对象（演示找回流程）。
+- `src/demo/assets.ts` 把虚构路径确定性地生成为内联 SVG data URL（缩略图/专辑封面）；音频路径喂给 `<audio>` 的是生成的静音 WAV，保证播放器正常加载。仓库不含任何第三方版权素材。
+
+### 16.2 用法
+
+```bash
+npm run demo        # 浏览器打开 http://127.0.0.1:3456 即完整应用
+npm run demo:shots  # 自动截图：功能巡演 + 三官方主题主要页面
+```
+
+`scripts/demo-screenshots.mjs` 启动 demo 服务器后用 Playwright 驱动真实 UI 交互（搜索/拼音、标签筛选、文件柜、命令面板、快速预览、右键菜单、标签编辑器、框选批量、图谱、设置各区块、AI 打标、快捷键、失效找回），再遍历 `dark` / `sakura` / `cyber-cyan` 三主题的网格/列表/图谱/设置页，产出约 40 张 2x 截图。
+
+**产物边界**：截图输出到 `screenshots/`（已 gitignore，不上云）；工具本身（`src/demo/` + 脚本）随仓库分发，clone 后 `npm i && npx playwright install chromium` 即可复现同一套截图。可选参数：`--out <目录>`、`--port <端口>`。
