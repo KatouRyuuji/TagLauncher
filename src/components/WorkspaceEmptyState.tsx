@@ -1,3 +1,4 @@
+import { CircleAlert, FilterX, LibraryBig, RefreshCw, SearchX } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { emptyStateCopy, resolveEmptyStateVariant } from "../lib/emptyStateCopy";
 import { resetWorkspaceSearchInput } from "../lib/workspaceChrome";
@@ -12,20 +13,21 @@ export function WorkspaceLoadError({
 }) {
   return (
     <div className="flex-1 overflow-auto">
-      <div className="empty-state-panel">
-        <div className="flex h-16 w-16 items-center justify-center rounded-[calc(var(--radius-xl)+4px)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]">
-          <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-          </svg>
+      <section className="empty-state-panel" role="alert" aria-labelledby="workspace-load-error-title">
+        <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--color-danger)_24%,var(--border-subtle))] bg-[var(--color-danger-bg)] text-[var(--color-danger)] shadow-[var(--shadow-sm)]">
+          <CircleAlert className="h-8 w-8" strokeWidth={1.6} aria-hidden="true" />
         </div>
-        <div>
-          <p className="text-lg font-semibold text-[var(--text-primary)]">对象列表加载失败</p>
-          <p className="mx-auto mt-2 max-w-[420px] break-all text-sm text-[var(--text-muted)]">{message}</p>
-          <button type="button" className="action-button mt-4" onClick={onRetry}>
+        <div className="max-w-[480px]">
+          <h2 id="workspace-load-error-title" className="text-base font-semibold text-[var(--text-primary)]">
+            对象列表加载失败
+          </h2>
+          <p className="mt-2 break-words text-[13px] leading-5 text-[var(--text-muted)]">{message}</p>
+          <button type="button" className="action-button mt-5" onClick={onRetry}>
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
             重试
           </button>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
@@ -41,6 +43,7 @@ export function WorkspaceEmptyState({
   const setSearchQuery = useAppStore((state) => state.setSearchQuery);
   const variant = resolveEmptyStateVariant(kind, searchQuery);
   const copy = emptyStateCopy(variant, searchQuery);
+  const EmptyIcon = variant === "library" ? LibraryBig : variant === "search" ? SearchX : FilterX;
 
   const handleClearSearch = () => {
     setSearchQuery("");
@@ -50,35 +53,40 @@ export function WorkspaceEmptyState({
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="empty-state-panel" data-empty-variant={variant}>
-        <div className="flex h-16 w-16 items-center justify-center rounded-[calc(var(--radius-xl)+4px)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-          <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
-            {variant === "library" ? (
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7.75A2.75 2.75 0 0 1 6.75 5h3.4a1.5 1.5 0 0 1 1.06.44l1.35 1.35c.28.28.66.44 1.06.44h3.63A2.75 2.75 0 0 1 20 10v6.25A2.75 2.75 0 0 1 17.25 19H6.75A2.75 2.75 0 0 1 4 16.25V7.75Z" />
-            ) : (
-              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" />
-            )}
-          </svg>
+      <section
+        className="empty-state-panel"
+        data-empty-variant={variant}
+        role="status"
+        aria-labelledby="workspace-empty-title"
+      >
+        <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--accent-primary)_22%,var(--border-subtle))] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)] shadow-[var(--shadow-sm)]">
+          <EmptyIcon className="h-8 w-8" strokeWidth={1.55} aria-hidden="true" />
         </div>
-        <div>
-          <p className="break-all text-lg font-semibold text-[var(--text-primary)]">{copy.title}</p>
-          <p className="mx-auto mt-2 max-w-[380px] text-sm text-[var(--text-muted)]">{copy.description}</p>
+        <div className="max-w-[460px]">
+          <h2 id="workspace-empty-title" className="break-words text-base font-semibold text-[var(--text-primary)]">
+            {copy.title}
+          </h2>
+          <p className="mx-auto mt-2 max-w-[420px] text-[13px] leading-5 text-[var(--text-muted)]">
+            {copy.description}
+          </p>
           {(copy.showClearSearch || (copy.showClearFilters && onClearFilters)) && (
-            <div className="mt-4 flex items-center justify-center gap-2">
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
               {copy.showClearSearch && (
                 <button type="button" className="action-button action-button-primary" onClick={handleClearSearch}>
+                  <SearchX className="h-4 w-4" aria-hidden="true" />
                   清空搜索
                 </button>
               )}
               {copy.showClearFilters && onClearFilters && (
                 <button type="button" className="action-button" onClick={onClearFilters}>
+                  <FilterX className="h-4 w-4" aria-hidden="true" />
                   清空所有筛选
                 </button>
               )}
             </div>
           )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

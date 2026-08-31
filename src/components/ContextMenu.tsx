@@ -1,6 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
+import {
+  ChevronRight,
+  Copy,
+  Eye,
+  FolderInput,
+  FolderMinus,
+  FolderOpen,
+  ImagePlus,
+  ImageOff,
+  Play,
+  Star,
+  Tags,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { stepMenuIndex } from "../lib/itemQuery";
@@ -66,7 +81,7 @@ export function ContextMenu({
     if (!menuEl) return;
 
     const gap = 8;
-    const subMenuWidth = 196;
+    const subMenuWidth = 220;
     const rect = menuEl.getBoundingClientRect();
     const nextLeft = Math.min(
       Math.max(gap, position.x),
@@ -114,7 +129,7 @@ export function ContextMenu({
 
     const viewportGap = 8;
     const gap = 8;
-    const fallbackWidth = 196;
+    const fallbackWidth = 220;
     const fallbackHeight = Math.min(320, cabinets.length * 40 + 20);
     const rect = triggerEl.getBoundingClientRect();
     const panelWidth = submenuRef.current?.offsetWidth ?? fallbackWidth;
@@ -315,24 +330,25 @@ export function ContextMenu({
         data-context-menu=""
         role="menu"
         style={{ ...style, boxShadow: "var(--shadow-dropdown)" }}
-        className="modal-surface w-[196px] max-h-[72vh] max-w-[46vw] overflow-y-auto p-2"
+        className="modal-surface w-[220px] max-h-[72vh] max-w-[72vw] overflow-y-auto p-1.5"
       >
         <MenuGroupLabel>启动</MenuGroupLabel>
-        <MenuItem label="打开" onClick={() => { onLaunch(); onClose(); }} />
-        {onPreview && <MenuItem label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
-        <MenuItem label="打开所在文件夹" onClick={() => void handleOpenFolder()} />
-        <MenuItem label="复制路径" onClick={() => { void copyText(item.path, "已复制路径"); onClose(); }} />
+        <MenuItem icon={Play} label="打开" onClick={() => { onLaunch(); onClose(); }} />
+        {onPreview && <MenuItem icon={Eye} label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
+        <MenuItem icon={FolderOpen} label="打开所在文件夹" onClick={() => void handleOpenFolder()} />
+        <MenuItem icon={Copy} label="复制路径" onClick={() => { void copyText(item.path, "已复制路径"); onClose(); }} />
         <MenuDivider />
 
         <MenuGroupLabel>收藏与整理</MenuGroupLabel>
         <MenuItem
+          icon={Star}
           label={item.is_favorite ? "取消收藏" : "加入收藏"}
           onClick={() => { onToggleFavorite(); onClose(); }}
           accent={item.is_favorite ? "favorite" : undefined}
         />
-        <MenuItem label="管理标签" onClick={() => { onEditTags(); onClose(); }} />
-        <MenuItem label={item.icon_path ? "更换缩略图" : "设置缩略图"} onClick={() => void handleChangeThumbnail()} />
-        {item.icon_path && <MenuItem label="清除缩略图" onClick={() => void handleClearThumbnail()} />}
+        <MenuItem icon={Tags} label="管理标签" onClick={() => { onEditTags(); onClose(); }} />
+        <MenuItem icon={ImagePlus} label={item.icon_path ? "更换缩略图" : "设置缩略图"} onClick={() => void handleChangeThumbnail()} />
+        {item.icon_path && <MenuItem icon={ImageOff} label="清除缩略图" onClick={() => void handleClearThumbnail()} />}
 
         {(cabinets.length > 0 || currentCabinetId !== null) && (
           <>
@@ -347,24 +363,18 @@ export function ContextMenu({
               ref={cabinetTriggerRef}
               type="button"
               role="menuitem"
-              className="flex w-full items-center justify-between rounded-[var(--radius-md)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              className="flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
-              添加到文件柜
-              <svg
-                className={`h-4 w-4 text-[var(--text-faint)] transition-transform ${submenuToLeft ? "rotate-180" : ""}`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.8}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
-              </svg>
+              <FolderInput aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
+              <span className="min-w-0 flex-1">添加到文件柜</span>
+              <ChevronRight aria-hidden="true" size={15} strokeWidth={1.8} className={`shrink-0 text-[var(--text-faint)] transition-transform ${submenuToLeft ? "rotate-180" : ""}`} />
             </button>
           </div>
         )}
 
         {currentCabinetId !== null && (
           <MenuItem
+            icon={FolderMinus}
             label={currentCabinetName ? `移出文件柜 · ${currentCabinetName}` : "移出当前文件柜"}
             onClick={async () => {
               await onRemoveItemFromCabinet(currentCabinetId, item.id);
@@ -376,7 +386,7 @@ export function ContextMenu({
 
         <MenuDivider />
         <MenuGroupLabel>危险操作</MenuGroupLabel>
-        <MenuItem label="删除" onClick={() => { onRemove(); onClose(); }} accent="danger" />
+        <MenuItem icon={Trash2} label="删除" onClick={() => { onRemove(); onClose(); }} accent="danger" />
       </div>
 
       {showCabinetSub && (
@@ -385,7 +395,7 @@ export function ContextMenu({
           style={{ ...submenuStyle, boxShadow: "var(--shadow-dropdown)" }}
           onMouseEnter={openCabinetSubmenu}
           onMouseLeave={scheduleCloseCabinetSubmenu}
-          className="modal-surface w-[196px] max-h-[60vh] max-w-[42vw] overflow-y-auto p-2"
+          className="modal-surface w-[220px] max-h-[60vh] max-w-[72vw] overflow-y-auto p-1.5"
         >
           {cabinets.map((cabinet) => (
             <button
@@ -400,7 +410,7 @@ export function ContextMenu({
                   // 失败提示已由 withErrorToast 统一弹出；菜单保持打开便于重试
                 }
               }}
-              className="flex w-full items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              className="flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
               <span className="h-3 w-3 shrink-0 rounded-[4px]" style={{ backgroundColor: cabinet.color }} />
               <span className="truncate">{cabinet.name}</span>
@@ -414,10 +424,12 @@ export function ContextMenu({
 }
 
 function MenuItem({
+  icon: Icon,
   label,
   onClick,
   accent,
 }: {
+  icon: LucideIcon;
   label: string;
   onClick: () => void | Promise<void>;
   accent?: "danger" | "warning" | "favorite";
@@ -446,7 +458,7 @@ function MenuItem({
       // 菜单动作多为 async（启动/缩略图/文件柜操作），其底层链路（withErrorToast）
       // 已统一 toast 反馈；这里吞掉 rejection 避免未处理拒绝噪音（Promise.resolve 兼容同步返回）。
       onClick={() => void Promise.resolve(onClick()).catch(() => {})}
-      className="w-full rounded-[var(--radius-md)] px-3 py-2 text-left text-sm hover:text-[var(--text-primary)]"
+      className="flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm hover:text-[var(--text-primary)]"
       style={{
         color: accentStyle?.color ?? "var(--text-secondary)",
       }}
@@ -457,7 +469,8 @@ function MenuItem({
         event.currentTarget.style.backgroundColor = "";
       }}
     >
-      {label}
+      <Icon aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 opacity-80" />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
   );
 }
@@ -474,7 +487,7 @@ function MenuGroupLabel({ children }: { children: string }) {
   return (
     <div
       aria-hidden="true"
-      className="select-none px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]"
+      className="instrument-label select-none px-2.5 pb-1 pt-1.5"
     >
       {children}
     </div>

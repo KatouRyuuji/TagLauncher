@@ -1,4 +1,17 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  ArrowUpDown,
+  Command,
+  FilePlus2,
+  FolderPlus,
+  Grid2X2,
+  Info,
+  List,
+  RefreshCw,
+  Search,
+  Settings,
+  X,
+} from "lucide-react";
 import { useSearch } from "../hooks/useSearch";
 import { notifySearchInput } from "../lib/modApi";
 import { useAppStore, type SearchMode } from "../stores/appStore";
@@ -69,98 +82,37 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
     if (paths) await onAddItems(paths);
   };
 
+  const clearSearch = () => {
+    setInputValue("");
+    handleSearch("");
+    notifySearchInput("");
+  };
+
   return (
-    <header
-      data-region="searchbar"
-      className="relative border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-surface)_82%,transparent)] px-5 py-4"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="text-label">Workspace</div>
-          <h2 className="mt-1 text-[22px] font-semibold tracking-tight text-[var(--text-primary)]">
-            项目工作台
-          </h2>
-          <p className="mt-1 text-sm text-[var(--text-muted)]">
-            快速搜索、导入和整理你的启动项与素材目录
-          </p>
+    <header data-region="searchbar" className="shrink-0">
+      <div className="toolbar-strip flex h-12 items-center gap-2 px-3">
+        <div className="hidden min-w-[126px] shrink-0 items-center gap-2 border-r border-[var(--line-hairline)] pr-3 min-[1180px]:flex">
+          <span className="status-led" aria-hidden="true" />
+          <span className="min-w-0">
+            <span className="instrument-label block">Workspace</span>
+            <span className="block truncate text-xs font-semibold text-[var(--text-primary)]">
+              启动工作台
+            </span>
+          </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={onRefresh} className="icon-button" title="刷新">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.75m14.5 2a8 8 0 0 0-14.5-2M20 20v-5h-.75m-14.5-2a8 8 0 0 0 14.5 2" />
-            </svg>
-          </button>
-
-          {onOpenSettings && (
-            <button type="button" onClick={onOpenSettings} className="icon-button" title="设置">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3.75c1.15 0 2.1.83 2.28 1.93l.08.52a1.45 1.45 0 0 0 2.12 1.04l.46-.24a2.25 2.25 0 0 1 2.97.87c.58.99.31 2.25-.61 2.93l-.43.31a1.45 1.45 0 0 0 0 2.36l.43.31c.92.68 1.19 1.94.61 2.93a2.25 2.25 0 0 1-2.97.87l-.46-.24a1.45 1.45 0 0 0-2.12 1.04l-.08.52A2.31 2.31 0 0 1 12 20.25a2.31 2.31 0 0 1-2.28-1.93l-.08-.52a1.45 1.45 0 0 0-2.12-1.04l-.46.24a2.25 2.25 0 0 1-2.97-.87 2.23 2.23 0 0 1 .61-2.93l.43-.31a1.45 1.45 0 0 0 0-2.36l-.43-.31a2.23 2.23 0 0 1-.61-2.93 2.25 2.25 0 0 1 2.97-.87l.46.24A1.45 1.45 0 0 0 9.64 6.2l.08-.52A2.31 2.31 0 0 1 12 3.75Z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.25a2.75 2.75 0 1 1 0 5.5 2.75 2.75 0 0 1 0-5.5Z" />
-              </svg>
-            </button>
-          )}
-
-          <button type="button" onClick={onOpenAbout} className="action-button">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8h.01M10.75 11.75h1.25V16h1.25M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-            </svg>
-            关于
-          </button>
-
-          {modButtons.map((btn) => (
-            <button
-              key={`${btn.modId}::${btn.id}`}
-              type="button"
-              data-mod-toolbar={btn.modId}
-              onClick={btn.onClick}
-              className="action-button"
-              title={btn.text}
-            >
-              {btn.icon ? (
-                <span
-                  className="h-4 w-4"
-                  dangerouslySetInnerHTML={{ __html: btn.icon }}
-                />
-              ) : null}
-              {btn.text}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1 p-1">
-          {MODES.map((mode) => (
-            <button
-              key={mode.value}
-              type="button"
-              onClick={() => setSearchMode(mode.value)}
-              className={`control-chip min-h-[34px] px-4 text-xs font-medium ${
-                searchMode === mode.value ? "control-chip-active" : ""
-              }`}
-              aria-pressed={searchMode === mode.value}
-              title={mode.hint}
-            >
-              {mode.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="surface-card relative min-w-[280px] flex-1 px-4 py-3">
-          <svg
-            className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-faint)]"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={1.8}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" />
-          </svg>
-
+        <div
+          role="search"
+          className="workbench-panel flex h-8 min-w-[220px] flex-1 items-center gap-2 overflow-hidden px-2.5 shadow-none focus-within:border-[var(--accent-primary)] focus-within:ring-1 focus-within:ring-[color-mix(in_srgb,var(--accent-primary)_20%,transparent)]"
+        >
+          <label htmlFor={WORKSPACE_SEARCH_ID} className="sr-only">
+            搜索启动项
+          </label>
+          <Search className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" strokeWidth={1.8} aria-hidden="true" />
           <input
             id={WORKSPACE_SEARCH_ID}
-            type="text"
+            type="search"
+            aria-label="搜索启动项"
             placeholder={PLACEHOLDERS[searchMode]}
             value={inputValue}
             onCompositionStart={() => {
@@ -180,67 +132,132 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
               handleSearch(value);
               notifySearchInput(value);
             }}
-            className={`w-full border-0 bg-transparent pl-7 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none ${
-              searchMode !== "all" ? "pr-44" : "pr-28"
-            }`}
+            className="h-full min-w-0 flex-1 appearance-none border-0 bg-transparent text-[13px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none [&::-webkit-search-cancel-button]:hidden"
           />
 
-          <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
-            {/* 当前搜索范围徽章：非"全部"时提醒用户搜索被收窄，点击一键恢复 */}
-            {searchMode !== "all" && (
-              <button
-                type="button"
-                data-testid="search-mode-badge"
-                onClick={() => setSearchMode("all")}
-                className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-full)] border border-[color-mix(in_srgb,var(--accent-primary)_28%,transparent)] bg-[var(--accent-primary-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-primary)] hover:border-[var(--accent-primary)]"
-                title={`当前只搜${MODES.find((m) => m.value === searchMode)?.label}；点击恢复为“全部”`}
-              >
-                仅{MODES.find((m) => m.value === searchMode)?.label}
-                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
-                </svg>
-              </button>
-            )}
-
-            {!inputValue && (
-              <kbd className="kbd" title="按 / 聚焦搜索框（Ctrl+F 亦可）">/</kbd>
-            )}
-
+          {searchMode !== "all" && (
             <button
               type="button"
-              onClick={() => setCommandPaletteOpen(true)}
-              className="inline-flex items-center"
-              title="命令面板 (Ctrl+K)"
+              data-testid="search-mode-badge"
+              onClick={() => setSearchMode("all")}
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent-primary)_36%,transparent)] bg-[var(--accent-primary-bg)] px-1.5 text-[10px] font-semibold text-[var(--accent-primary)] hover:border-[var(--accent-primary)]"
+              title={`当前只搜${MODES.find((mode) => mode.value === searchMode)?.label}；点击恢复为“全部”`}
             >
-              <kbd className="kbd">Ctrl+K</kbd>
+              仅{MODES.find((mode) => mode.value === searchMode)?.label}
+              <X className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
             </button>
+          )}
 
-            {inputValue && (
-              <button
-                type="button"
-                onClick={() => {
-                  setInputValue("");
-                  handleSearch("");
-                  notifySearchInput("");
-                }}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-full)] text-[var(--text-faint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
-                title="清空搜索 (Esc)"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
-                </svg>
-              </button>
-            )}
-          </div>
+          {inputValue && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-faint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+              title="清空搜索"
+              aria-label="清空搜索"
+            >
+              <X className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setCommandPaletteOpen(true)}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-faint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            title="命令面板"
+            aria-label="打开命令面板"
+          >
+            <Command className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+          </button>
         </div>
 
-        <label className="control-chip min-h-[34px] gap-2 px-3 text-xs font-medium">
-          <span className="text-[var(--text-faint)]">排序</span>
+        {modButtons.length > 0 && (
+          <div className="flex min-w-0 max-w-64 shrink items-center gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            {modButtons.map((button) => (
+              <button
+                key={`${button.modId}::${button.id}`}
+                type="button"
+                data-mod-toolbar={button.modId}
+                onClick={button.onClick}
+                className="action-button h-8 min-h-8 shrink-0 px-2.5 text-xs"
+                title={button.text}
+              >
+                {button.icon ? (
+                  <span
+                    className="h-3.5 w-3.5 shrink-0"
+                    aria-hidden="true"
+                    dangerouslySetInnerHTML={{ __html: button.icon }}
+                  />
+                ) : null}
+                {button.text}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex shrink-0 items-center gap-1 border-l border-[var(--line-hairline)] pl-2">
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="icon-button h-8 w-8"
+            title="刷新"
+            aria-label="刷新"
+          >
+            <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+          </button>
+
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="icon-button h-8 w-8"
+              title="设置"
+              aria-label="设置"
+            >
+              <Settings className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onOpenAbout}
+            className="icon-button h-8 w-8"
+            title="关于 TagLauncher"
+            aria-label="关于 TagLauncher"
+          >
+            <Info className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex h-10 items-center gap-2 overflow-x-auto border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 [&::-webkit-scrollbar]:hidden">
+        <div role="group" aria-label="搜索范围" className="segmented-control h-8 shrink-0">
+          {MODES.map((mode) => (
+            <button
+              key={mode.value}
+              type="button"
+              onClick={() => setSearchMode(mode.value)}
+              className={`control-chip h-6 min-h-6 rounded-[var(--radius-sm)] border-0 px-2.5 text-[11px] font-medium ${
+                searchMode === mode.value ? "control-chip-active" : ""
+              }`}
+              aria-pressed={searchMode === mode.value}
+              title={mode.hint}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+
+        <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
+
+        <label className="flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[11px] text-[var(--text-secondary)]">
+          <ArrowUpDown className="h-3.5 w-3.5 text-[var(--text-faint)]" strokeWidth={1.8} aria-hidden="true" />
+          <span className="instrument-label">排序</span>
           <select
             value={sortMode}
             onChange={(event) => setSortMode(event.target.value as SortMode)}
-            className="bg-transparent text-xs text-current outline-none"
-            title="排序方式"
+            className="h-full bg-transparent text-[11px] text-[var(--text-primary)] outline-none"
+            aria-label="排序方式"
           >
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -250,42 +267,51 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
           </select>
         </label>
 
-        <div className="flex items-center gap-1 p-1">
+        <div role="group" aria-label="显示方式" className="segmented-control h-8 shrink-0">
           <button
             type="button"
             onClick={() => setViewMode("grid")}
-            className={`control-chip min-h-[34px] px-3 ${viewMode === "grid" ? "control-chip-active" : ""}`}
+            className={`control-chip h-6 min-h-6 w-7 rounded-[var(--radius-sm)] border-0 px-0 ${
+              viewMode === "grid" ? "control-chip-active" : ""
+            }`}
             title="网格视图"
+            aria-label="网格视图"
+            aria-pressed={viewMode === "grid"}
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 5.75A2.75 2.75 0 0 1 7.75 3h8.5A2.75 2.75 0 0 1 19 5.75v12.5A2.75 2.75 0 0 1 16.25 21h-8.5A2.75 2.75 0 0 1 5 18.25V5.75Z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7.5h8M8 10.5h5M8 14.25h8M8 17.25h6" />
-            </svg>
+            <Grid2X2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={() => setViewMode("list")}
-            className={`control-chip min-h-[34px] px-3 ${viewMode === "list" ? "control-chip-active" : ""}`}
+            className={`control-chip h-6 min-h-6 w-7 rounded-[var(--radius-sm)] border-0 px-0 ${
+              viewMode === "list" ? "control-chip-active" : ""
+            }`}
             title="列表视图"
+            aria-label="列表视图"
+            aria-pressed={viewMode === "list"}
           >
-            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M2 3.25A1.25 1.25 0 0 1 3.25 2h9.5a1.25 1.25 0 1 1 0 2.5h-9.5A1.25 1.25 0 0 1 2 3.25Zm0 4.75A1.25 1.25 0 0 1 3.25 6.75h9.5a1.25 1.25 0 1 1 0 2.5h-9.5A1.25 1.25 0 0 1 2 8Zm0 4.75a1.25 1.25 0 0 1 1.25-1.25h9.5a1.25 1.25 0 1 1 0 2.5h-9.5A1.25 1.25 0 0 1 2 12.75Z" />
-            </svg>
+            <List className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
           </button>
         </div>
 
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <button type="button" onClick={handleBrowse} className="action-button">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
-            </svg>
+        <div className="flex-1" />
+
+        <div role="group" aria-label="导入" className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={handleBrowse}
+            className="action-button h-8 min-h-8 px-2.5 text-xs"
+          >
+            <FilePlus2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
             添加文件
           </button>
 
-          <button type="button" onClick={handleBrowseFolder} className="action-button action-button-primary">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 7.5A2.25 2.25 0 0 1 6 5.25h3.19a1.5 1.5 0 0 1 1.06.44l1.62 1.62c.28.28.66.44 1.06.44H18A2.25 2.25 0 0 1 20.25 10v6A2.25 2.25 0 0 1 18 18.25H6A2.25 2.25 0 0 1 3.75 16V7.5Z" />
-            </svg>
+          <button
+            type="button"
+            onClick={handleBrowseFolder}
+            className="action-button action-button-primary h-8 min-h-8 px-2.5 text-xs"
+          >
+            <FolderPlus className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
             添加文件夹
           </button>
         </div>

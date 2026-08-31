@@ -1,15 +1,13 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { ArrowUp } from "lucide-react";
 import type { ItemViewProps } from "../types";
 import { useAppStore } from "../stores/appStore";
 import { isHeaderSortActive, toggleHeaderSort, type ListHeaderColumn } from "../lib/itemQuery";
-import { ItemRow } from "./ItemRow";
+import { ITEM_LIST_BASE_ROW_HEIGHT, ITEM_LIST_GRID_TEMPLATE, ItemRow } from "./ItemRow";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
 import { SelectionCanvas, type Rect } from "./SelectionCanvas";
-
-/** 列表行初始估算高度（py-3 × 2 + icon 44px ≈ 68px）；真实高度由 measureElement 动态校正 */
-const LIST_ROW_HEIGHT = 68;
 
 type ItemRowViewProps = Omit<
   ItemViewProps,
@@ -95,20 +93,16 @@ function SortableHeaderCell({
       aria-pressed={active}
       onClick={() => setSortMode(toggleHeaderSort(sortMode, column))}
       title={active ? "再点一次回到智能排序" : `按${label}排序`}
-      className={`group flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors ${
+      className={`group inline-flex h-8 items-center gap-1 text-[10px] font-semibold transition-colors ${
         align === "right" ? "justify-end text-right" : "text-left"
       } ${active ? "text-[var(--accent-primary)]" : "text-[var(--text-faint)] hover:text-[var(--text-secondary)]"}`}
     >
       {label}
-      <svg
+      <ArrowUp
         className={`h-3 w-3 transition-opacity ${active ? "opacity-100" : "opacity-0 group-hover:opacity-50"}`}
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={2.2}
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0-5 5m5-5 5 5" />
-      </svg>
+        strokeWidth={2}
+        aria-hidden="true"
+      />
     </button>
   );
 }
@@ -176,7 +170,7 @@ export function ItemListView({
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => LIST_ROW_HEIGHT,
+    estimateSize: () => ITEM_LIST_BASE_ROW_HEIGHT,
     overscan: 6,
   });
 
@@ -238,8 +232,8 @@ export function ItemListView({
     const map = new Map<number, Rect>();
     for (let index = 0; index < items.length; index++) {
       const metric = rowMetricsRef.current.get(index);
-      const start = metric?.start ?? index * LIST_ROW_HEIGHT;
-      const size = metric?.size ?? LIST_ROW_HEIGHT;
+      const start = metric?.start ?? index * ITEM_LIST_BASE_ROW_HEIGHT;
+      const size = metric?.size ?? ITEM_LIST_BASE_ROW_HEIGHT;
       map.set(items[index].id, {
         left: baseLeft,
         top: baseTop + start,
@@ -261,18 +255,21 @@ export function ItemListView({
   return (
     <SelectionCanvas
       dataRegion="item-list"
-      className="flex-1 overflow-y-auto px-5 py-5"
+      className="flex-1 overflow-y-auto p-4"
       itemIds={itemIds}
       selectedItemIds={selectedItemIds}
       onSelectItems={onSelectItems}
       scrollElementRef={scrollRef}
       getItemRects={getItemRects}
     >
-      <div className="surface-card overflow-hidden">
-        <div className="sticky top-0 z-10 grid grid-cols-[56px_minmax(0,1fr)_minmax(180px,300px)_112px] items-center gap-4 border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_96%,transparent)] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)] backdrop-blur-sm">
-          <span />
+      <div className="workbench-panel overflow-hidden">
+        <div
+          className="sticky top-0 z-10 grid min-h-9 items-center gap-3 border-b border-[var(--line-hairline)] bg-[color-mix(in_srgb,var(--surface-raised)_96%,transparent)] px-3 backdrop-blur-sm"
+          style={{ gridTemplateColumns: ITEM_LIST_GRID_TEMPLATE }}
+        >
+          <span aria-hidden="true" />
           <SortableHeaderCell column="name" label="名称" />
-          <span>标签</span>
+          <span className="instrument-label">标签</span>
           <SortableHeaderCell column="type" label="类型" align="right" />
         </div>
 

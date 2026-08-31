@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { Import } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
 import { SearchBar } from "./components/SearchBar";
@@ -113,6 +114,7 @@ function App() {
 
   const recentLaunchRef = useRef<Map<number, number>>(new Map());
   const [showSettings, setShowSettings] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { migration, dismissMigration } = useVersionCheck();
   // 启动期后台维护：在线更新检查（24h 节流）+ 自动云备份（需在设置中开启）
   useStartupMaintenance();
@@ -251,6 +253,15 @@ function App() {
     commandPaletteOpen ||
     shortcutsHelpOpen;
 
+  useEffect(() => {
+    if (!mobileSidebarOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileSidebarOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileSidebarOpen]);
+
   // 库内失效对象计数（文件丢失/跨盘移动）：状态栏徽标 + 手动找回入口
   const missingCount = useMemo(
     () => allItems.reduce((count, item) => count + (item.is_missing ? 1 : 0), 0),
@@ -325,14 +336,29 @@ function App() {
   return (
     <ThemeProvider>
     <div data-region="root" className="select-none" style={{ fontFamily: "var(--font-family)" }}>
+      <a href="#workspace-main" className="skip-link">
+        跳到主工作区
+      </a>
       <div
         data-region="bg-decoration"
         className="fixed inset-0 pointer-events-none"
         style={{ background: "var(--bg-gradient)", zIndex: "var(--z-bg-decoration)" }}
       />
-      <TitleBar />
+      <TitleBar
+        sidebarOpen={mobileSidebarOpen}
+        onToggleSidebar={() => setMobileSidebarOpen((value) => !value)}
+      />
       <div data-region="app-body">
+      {mobileSidebarOpen && (
+        <button
+          type="button"
+          className="mobile-sidebar-overlay"
+          aria-label="关闭资源导航"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
       <Sidebar
+        mobileOpen={mobileSidebarOpen}
         tags={tags}
         cabinets={cabinets}
         onAddTag={addTag}
@@ -348,10 +374,16 @@ function App() {
         modPanels={sidebarPanels}
       />
       <main
+        id="workspace-main"
         data-region="main"
-        className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-surface)]"
+        aria-labelledby="workspace-heading"
+        tabIndex={-1}
+        className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-base)]"
         {...dragHandlers}
       >
+        <h1 id="workspace-heading" className="sr-only">
+          TagLauncher 启动工作台
+        </h1>
         <SearchBar onAddItems={addItems} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} />
         <TagFilterBar />
         {/* 加载失败且本地无任何缓存时渲染可重试的错误面板；有缓存时保留旧列表，
@@ -403,9 +435,7 @@ function App() {
           <div className="absolute inset-4 z-50 flex items-center justify-center rounded-[calc(var(--radius-xl)+6px)] border-2 border-dashed border-[color-mix(in_srgb,var(--accent-primary)_58%,transparent)] bg-[var(--accent-primary-bg-light)] pointer-events-none">
             <div className="surface-card px-8 py-7 text-center">
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-                <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 12 4-4m-4 4-4-4M4 18.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5" />
-                </svg>
+                <Import aria-hidden="true" size={28} strokeWidth={1.8} />
               </div>
               <p className="text-[var(--accent-primary)] text-base font-semibold">释放以添加文件</p>
               <p className="mt-1 text-xs text-[var(--text-muted)]">支持文件、图片和文件夹批量导入</p>

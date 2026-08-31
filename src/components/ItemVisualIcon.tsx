@@ -1,7 +1,26 @@
 import { useState, useEffect, useMemo } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import {
+  AppWindow,
+  File,
+  FileAudio,
+  FileCode,
+  FileImage,
+  Folder,
+  SquareTerminal,
+  type LucideIcon,
+} from "lucide-react";
 import type { ItemWithTags } from "../types";
-import { TYPE_ICONS } from "../lib/itemUtils";
+import { getTypeLabel } from "../lib/itemUtils";
+
+const FALLBACK_ICONS: Record<string, LucideIcon> = {
+  folder: Folder,
+  image: FileImage,
+  audio: FileAudio,
+  exe: AppWindow,
+  bat: SquareTerminal,
+  ps1: FileCode,
+};
 
 export function ItemVisualIcon({ item, emojiClass, imageClass }: { item: ItemWithTags; emojiClass: string; imageClass: string }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -29,13 +48,13 @@ export function ItemVisualIcon({ item, emojiClass, imageClass }: { item: ItemWit
       />
     );
   }
-  if (item.type === "audio") {
-    return (
-      <svg className="h-6 w-6 text-[var(--accent-primary)]" viewBox="0 0 32 32" fill="none" aria-label="音频">
-        <rect x="6" y="5" width="20" height="22" rx="5" fill="currentColor" opacity="0.12" />
-        <path d="M20.5 8.8v12.3a3.4 3.4 0 1 1-1.9-3V12l-7.1 1.7v8.8a3.4 3.4 0 1 1-1.9-3V12.2a1.6 1.6 0 0 1 1.2-1.6l7.8-1.9a1.5 1.5 0 0 1 1.9 1.5Z" fill="currentColor" />
-      </svg>
-    );
-  }
-  return <span className={emojiClass}>{TYPE_ICONS[item.type] || "📄"}</span>;
+  const FallbackIcon = FALLBACK_ICONS[item.type] ?? File;
+  return (
+    <FallbackIcon
+      className={`h-[1em] w-[1em] text-[var(--accent-primary)] ${emojiClass}`}
+      strokeWidth={1.65}
+      role="img"
+      aria-label={`${getTypeLabel(item.type)}图标`}
+    />
+  );
 }

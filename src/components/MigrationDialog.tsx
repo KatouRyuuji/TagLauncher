@@ -1,3 +1,4 @@
+import { ArrowRight, Check, CircleCheckBig, X } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 
@@ -30,54 +31,76 @@ export function MigrationDialog({
         onClick={onClose}
       />
       <div
-        className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
+        className="pointer-events-none fixed inset-0 flex items-center justify-center p-3 sm:p-4"
         style={{ zIndex: "var(--z-migration-panel)" }}
       >
         <div
           ref={trapRef}
-          className="modal-surface pointer-events-auto w-[460px] max-w-[92vw] p-6"
+          className="modal-surface pointer-events-auto flex max-h-[86dvh] w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden"
           role="dialog"
           aria-modal="true"
-          aria-label="软件已更新"
+          aria-labelledby="migration-dialog-title"
         >
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v6m0 0 2.5-2.5M12 9 9.5 6.5M4 14a8 8 0 0 0 16 0" />
-              </svg>
+          <header className="flex shrink-0 items-center justify-between gap-4 border-b border-[var(--line-hairline)] px-4 py-4 sm:px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+                <CircleCheckBig aria-hidden="true" size={19} strokeWidth={1.8} />
+              </div>
+              <div className="min-w-0">
+                <div className="instrument-label">Update / Complete</div>
+                <h2 id="migration-dialog-title" className="mt-1 truncate text-lg font-semibold text-[var(--text-primary)]">
+                  软件已更新
+                </h2>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-label">Update</div>
-              <h2 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">软件已更新</h2>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">
-                {fromVersion} → {toVersion}
-              </p>
+            <button type="button" onClick={onClose} className="icon-button shrink-0" title="关闭更新说明" aria-label="关闭更新说明">
+              <X aria-hidden="true" size={17} strokeWidth={1.8} />
+            </button>
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
+            <div className="flex items-center gap-2 border-y border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-3 py-2.5">
+              <span className="data-readout text-sm font-semibold text-[var(--text-primary)]">v{fromVersion}</span>
+              <ArrowRight aria-hidden="true" size={15} strokeWidth={1.8} className="text-[var(--text-faint)]" />
+              <span className="data-readout text-sm font-semibold text-[var(--accent-primary)]">v{toVersion}</span>
             </div>
+
+            <p className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">
+              检测到应用版本已更新。现有数据将沿用兼容的存储结构，可继续正常使用。
+            </p>
+
+            {appliedMigrations.length > 0 && (
+              <section className="mt-4" aria-labelledby="migration-notes-title">
+                <div className="flex items-center justify-between gap-3 border-b border-[var(--line-hairline)] pb-2">
+                  <h3 id="migration-notes-title" className="instrument-label text-[var(--text-secondary)]">
+                    本次迁移
+                  </h3>
+                  <span className="data-readout text-[10px] text-[var(--text-faint)]">
+                    {String(appliedMigrations.length).padStart(2, "0")} ITEMS
+                  </span>
+                </div>
+                <ul>
+                  {appliedMigrations.map((migration, index) => (
+                    <li
+                      key={`${migration}-${index}`}
+                      className="flex items-start gap-2.5 border-b border-[var(--line-hairline)] py-2.5 text-sm leading-5 text-[var(--text-secondary)] last:border-b-0"
+                    >
+                      <Check aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--color-success)]" size={15} strokeWidth={2} />
+                      <span>{migration}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </div>
 
-          <p className="mt-5 text-sm leading-7 text-[var(--text-secondary)]">
-            检测到应用版本已更新。现有数据将沿用兼容的存储结构，可继续正常使用。
-          </p>
-
-          {appliedMigrations.length > 0 && (
-            <div className="surface-card-soft mt-5 p-4">
-              <div className="text-label">Notes</div>
-              <ul className="mt-3 space-y-2">
-                {appliedMigrations.map((migration, index) => (
-                  <li key={`${migration}-${index}`} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
-                    <span className="mt-1 h-2 w-2 rounded-full bg-[var(--text-muted)]" />
-                    <span>{migration}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="mt-6 flex justify-end">
+          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-3 sm:px-5">
+            <span className="text-xs text-[var(--text-faint)]">数据结构已就绪</span>
             <button type="button" onClick={onClose} className="action-button action-button-primary">
+              <Check aria-hidden="true" size={16} strokeWidth={1.9} />
               我知道了
             </button>
-          </div>
+          </footer>
         </div>
       </div>
     </>

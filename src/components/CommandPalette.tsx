@@ -1,5 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  ArrowDownUp,
+  Clock3,
+  Command,
+  FilePlus2,
+  Filter,
+  FolderPlus,
+  Grid3X3,
+  Info,
+  Keyboard,
+  List,
+  PackageOpen,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Settings2,
+  Star,
+  Tags,
+  type LucideIcon,
+} from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
@@ -28,6 +48,7 @@ interface CommandDef {
   title: string;
   hint?: string;
   keywords: string;
+  icon: LucideIcon;
   run: () => void;
 }
 
@@ -73,31 +94,33 @@ export function CommandPalette({
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open, autoFocus: false });
 
   const commands = useMemo<CommandDef[]>(() => [
-    { id: "search", title: "聚焦搜索", hint: "/", keywords: "search 搜索 find", run: () => focusWorkspaceSearch() },
-    { id: "grid", title: "网格视图", hint: "G", keywords: "grid 网格", run: () => setViewMode("grid") },
-    { id: "list", title: "列表视图", hint: "L", keywords: "list 列表", run: () => setViewMode("list") },
-    { id: "favorites", title: showFavorites ? "退出收藏夹" : "打开收藏夹", keywords: "favorite 收藏 星标", run: () => setShowFavorites(!showFavorites) },
-    { id: "recent", title: showRecent ? "退出最近使用" : "最近使用", keywords: "recent 最近 历史", run: () => setShowRecent(!showRecent) },
-    { id: "clear", title: "清空筛选", keywords: "clear 重置 筛选", run: () => { clearWorkspaceFilters(); resetWorkspaceSearchInput(); } },
+    { id: "search", title: "聚焦搜索", hint: "/", keywords: "search 搜索 find", icon: Search, run: () => focusWorkspaceSearch() },
+    { id: "grid", title: "网格视图", hint: "G", keywords: "grid 网格", icon: Grid3X3, run: () => setViewMode("grid") },
+    { id: "list", title: "列表视图", hint: "L", keywords: "list 列表", icon: List, run: () => setViewMode("list") },
+    { id: "favorites", title: showFavorites ? "退出收藏夹" : "打开收藏夹", keywords: "favorite 收藏 星标", icon: Star, run: () => setShowFavorites(!showFavorites) },
+    { id: "recent", title: showRecent ? "退出最近使用" : "最近使用", keywords: "recent 最近 历史", icon: Clock3, run: () => setShowRecent(!showRecent) },
+    { id: "clear", title: "清空筛选", keywords: "clear 重置 筛选", icon: RotateCcw, run: () => { clearWorkspaceFilters(); resetWorkspaceSearchInput(); } },
     ...SORT_OPTIONS.map((option) => ({
       id: `sort-${option.value}`,
       title: `排序：${option.label}`,
       keywords: `sort 排序 ${option.label} ${option.value}`,
+      icon: ArrowDownUp,
       run: () => setSortMode(option.value),
     })),
     ...TYPE_FILTERS.map((filter) => ({
       id: `type-${filter.value}`,
       title: filter.value === "all" ? "取消类型筛选" : `筛选${filter.label}`,
       keywords: `filter 类型 ${filter.label} ${filter.value}`,
+      icon: Filter,
       run: () => setTypeFilter(nextTypeFilter(typeFilter, filter.value)),
     })),
-    { id: "add-files", title: "添加文件", keywords: "import 导入 添加 文件", run: () => { void pickFilesToAdd().then((paths) => { if (paths) void onAddItems(paths); }); } },
-    { id: "add-folders", title: "添加文件夹", keywords: "import 导入 添加 文件夹", run: () => { void pickFoldersToAdd().then((paths) => { if (paths) void onAddItems(paths); }); } },
-    { id: "refresh", title: "刷新", keywords: "refresh 刷新 reload", run: () => { void onRefresh(); } },
-    { id: "settings", title: "打开设置", hint: "Ctrl+,", keywords: "settings 设置 偏好", run: onOpenSettings },
-    { id: "graph", title: "打开标签图谱", keywords: "graph 图谱 关系", run: () => setTagGraphOpen(true) },
-    { id: "shortcuts", title: "快捷键一览", hint: "?", keywords: "shortcut 快捷键 help", run: () => setShortcutsHelpOpen(true) },
-    { id: "about", title: "关于 TagLauncher", keywords: "about 关于 欢迎", run: onOpenAbout },
+    { id: "add-files", title: "添加文件", keywords: "import 导入 添加 文件", icon: FilePlus2, run: () => { void pickFilesToAdd().then((paths) => { if (paths) void onAddItems(paths); }); } },
+    { id: "add-folders", title: "添加文件夹", keywords: "import 导入 添加 文件夹", icon: FolderPlus, run: () => { void pickFoldersToAdd().then((paths) => { if (paths) void onAddItems(paths); }); } },
+    { id: "refresh", title: "刷新", keywords: "refresh 刷新 reload", icon: RefreshCw, run: () => { void onRefresh(); } },
+    { id: "settings", title: "打开设置", hint: "Ctrl+,", keywords: "settings 设置 偏好", icon: Settings2, run: onOpenSettings },
+    { id: "graph", title: "打开标签图谱", keywords: "graph 图谱 关系", icon: Tags, run: () => setTagGraphOpen(true) },
+    { id: "shortcuts", title: "快捷键一览", hint: "?", keywords: "shortcut 快捷键 help", icon: Keyboard, run: () => setShortcutsHelpOpen(true) },
+    { id: "about", title: "关于 TagLauncher", keywords: "about 关于 欢迎", icon: Info, run: onOpenAbout },
   ], [
     clearWorkspaceFilters,
     onAddItems,
@@ -226,7 +249,7 @@ export function CommandPalette({
       role="dialog"
       aria-modal="true"
       aria-label="命令面板"
-      className="fixed inset-0 flex items-start justify-center px-4 pt-[12vh]"
+      className="fixed inset-0 flex items-start justify-center bg-[color-mix(in_srgb,var(--bg-base)_70%,transparent)] px-3 pt-[10vh] sm:px-4"
       style={{ zIndex: "var(--z-command-palette)" }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) setOpen(false);
@@ -234,10 +257,14 @@ export function CommandPalette({
     >
       <div
         ref={trapRef}
-        className="modal-surface flex w-full max-w-[560px] flex-col overflow-hidden shadow-[var(--shadow-dropdown)]"
+        className="modal-surface flex w-full max-w-[620px] flex-col overflow-hidden shadow-[var(--shadow-dropdown)]"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="border-b border-[var(--border-subtle)] px-4 py-3">
+        <div className="flex items-center gap-3 border-b border-[var(--line-hairline)] px-4 py-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+            <Command aria-hidden="true" size={17} strokeWidth={1.8} />
+          </div>
+          <Search aria-hidden="true" size={17} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
           <input
             ref={inputRef}
             value={query}
@@ -258,16 +285,23 @@ export function CommandPalette({
             }}
             onKeyDown={handleKeyDown}
             placeholder="搜索命令或项目…"
-            className="w-full bg-transparent text-[15px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none"
+            aria-label="搜索命令或项目"
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none"
           />
+          <kbd className="kbd hidden sm:inline-flex">Ctrl K</kbd>
         </div>
-        <div ref={listRef} className="max-h-[min(52vh,420px)] overflow-y-auto p-2">
+        <div className="flex items-center justify-between border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-4 py-2">
+          <span className="instrument-label">Commands / Objects</span>
+          <span className="data-readout text-[10px] text-[var(--text-faint)]">{rows.length.toString().padStart(2, "0")}</span>
+        </div>
+        <div ref={listRef} className="max-h-[min(56vh,460px)] overflow-y-auto p-2">
           {rows.length === 0 && (
             <p className="px-3 py-6 text-center text-sm text-[var(--text-muted)]">没有匹配的命令或项目</p>
           )}
           {rows.map((row, index) => {
             const selected = index === safeActive;
             if (row.kind === "command") {
+              const Icon = row.command.icon;
               return (
                 <button
                   key={row.command.id}
@@ -275,11 +309,12 @@ export function CommandPalette({
                   data-active-row={selected ? "" : undefined}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => runRow(row)}
-                  className={`flex w-full items-center justify-between rounded-[var(--radius-md)] px-3 py-2 text-left text-sm ${
-                    selected ? "bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]" : "text-[var(--text-secondary)]"
+                  className={`flex min-h-10 w-full items-center gap-3 rounded-[var(--radius-sm)] border-l-2 px-3 py-2 text-left text-sm ${
+                    selected ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]" : "border-transparent text-[var(--text-secondary)]"
                   }`}
                 >
-                  <span>{row.command.title}</span>
+                  <Icon aria-hidden="true" size={16} strokeWidth={1.8} className="shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{row.command.title}</span>
                   {row.command.hint && <kbd className="kbd">{row.command.hint}</kbd>}
                 </button>
               );
@@ -291,11 +326,12 @@ export function CommandPalette({
                 data-active-row={selected ? "" : undefined}
                 onMouseEnter={() => setActive(index)}
                 onClick={() => runRow(row)}
-                className={`flex w-full items-center justify-between gap-3 rounded-[var(--radius-md)] px-3 py-2 text-left text-sm ${
-                  selected ? "bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]" : "text-[var(--text-secondary)]"
+                className={`flex min-h-12 w-full items-center gap-3 rounded-[var(--radius-sm)] border-l-2 px-3 py-2 text-left text-sm ${
+                  selected ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]" : "border-transparent text-[var(--text-secondary)]"
                 }`}
                 title={row.item.path}
               >
+                <PackageOpen aria-hidden="true" size={17} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{row.item.name}</span>
                   {/* 第二行展示中段折叠的路径：同名对象靠位置区分（盘符 + 文件名信息量最高） */}
@@ -308,9 +344,9 @@ export function CommandPalette({
             );
           })}
         </div>
-        <div className="flex items-center justify-between border-t border-[var(--border-subtle)] px-4 py-2 text-[11px] text-[var(--text-faint)]">
-          <span>Enter 执行 · Tab 预览对象</span>
-          <span>Esc 关闭</span>
+        <div className="flex min-h-9 items-center justify-between border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 text-[11px] text-[var(--text-faint)]">
+          <span className="flex items-center gap-2"><span className="status-led" aria-hidden="true" />命令索引就绪</span>
+          <span className="data-readout">{matchedCommands.length} CMD · {matchedItems.length} OBJ</span>
         </div>
       </div>
     </div>,

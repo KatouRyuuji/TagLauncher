@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { Copy, File, Folder, Play, ScanSearch, TriangleAlert, X } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { copyText } from "../lib/clipboard";
@@ -37,7 +38,7 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
     <div
       data-quick-preview=""
       data-workspace-overlay=""
-      className="fixed inset-0 flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-base)_72%,transparent)] px-6 py-8"
+      className="fixed inset-0 flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-base)_72%,transparent)] px-3 py-4 sm:px-6 sm:py-8"
       style={{ zIndex: "var(--z-quick-preview)" }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) setPreviewItemId(null);
@@ -48,29 +49,35 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
         role="dialog"
         aria-modal="true"
         aria-label="快速预览"
-        className="modal-surface flex max-h-[86vh] w-full max-w-[760px] flex-col overflow-hidden"
+        className="modal-surface flex max-h-[88vh] w-full max-w-[920px] flex-col overflow-hidden"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="flex items-start justify-between gap-3 border-b border-[var(--border-subtle)] px-5 py-4">
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium text-[var(--accent-primary)]">{getTypeLabel(item.type)}</p>
-            <h3 className="mt-1 truncate text-lg font-semibold text-[var(--text-primary)]" title={item.name}>
-              {item.name}
-            </h3>
-            <p className="mt-1 break-all text-xs text-[var(--text-muted)]" title={item.path}>
-              {item.path}
-            </p>
+        <header className="flex min-h-[68px] items-start justify-between gap-3 border-b border-[var(--line-hairline)] px-4 py-3 sm:px-5">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+              <ScanSearch aria-hidden="true" size={18} strokeWidth={1.8} />
+            </div>
+            <div className="min-w-0">
+              <p className="instrument-label">Preview / {getTypeLabel(item.type)}</p>
+              <h2 className="mt-1 truncate text-base font-semibold text-[var(--text-primary)]" title={item.name}>
+                {item.name}
+              </h2>
+              <p className="data-readout mt-1 truncate text-[10px] text-[var(--text-faint)]" title={item.path}>
+                {item.path}
+              </p>
+            </div>
           </div>
-          <button type="button" className="icon-button" title="关闭" onClick={() => setPreviewItemId(null)}>
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
-            </svg>
+          <button type="button" className="icon-button shrink-0" title="关闭" aria-label="关闭预览" onClick={() => setPreviewItemId(null)}>
+            <X aria-hidden="true" size={17} strokeWidth={1.8} />
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-auto bg-[var(--surface-recessed)] px-4 py-4 sm:px-5">
           {item.is_missing ? (
-            <p className="text-sm text-[var(--color-warning)]">对象已失效，无法预览当前文件。归类仍保留，文件恢复后会自动关联。</p>
+            <div role="alert" className="flex items-start gap-3 border border-[color-mix(in_srgb,var(--color-warning)_28%,transparent)] bg-[var(--status-warning-bg)] p-4 text-sm text-[var(--color-warning)]">
+              <TriangleAlert aria-hidden="true" size={18} strokeWidth={1.8} className="mt-0.5 shrink-0" />
+              <p>对象已失效，无法预览当前文件。归类仍保留，文件恢复后会自动关联。</p>
+            </div>
           ) : (
             <PreviewBody
               item={item}
@@ -82,10 +89,11 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
           )}
         </div>
 
-        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-subtle)] px-5 py-3">
-          <p className="text-[11px] text-[var(--text-faint)]">空格 / Esc 关闭 · ← → 切换 · Home / End 首尾</p>
+        <footer className="flex min-h-[56px] flex-wrap items-center justify-between gap-2 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-2.5 sm:px-5">
+          <p className="flex items-center gap-2 text-[11px] text-[var(--text-faint)]"><span className="status-led" aria-hidden="true" />本地对象预览</p>
           <div className="flex items-center gap-2">
             <button type="button" className="action-button" onClick={() => void copyText(item.path, "已复制路径")}>
+              <Copy aria-hidden="true" size={15} strokeWidth={1.8} />
               复制路径
             </button>
             <button
@@ -96,6 +104,7 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
                 void onLaunch(item.id);
               }}
             >
+              <Play aria-hidden="true" size={15} strokeWidth={1.9} />
               启动
             </button>
           </div>
@@ -167,9 +176,9 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
   }
 
   return (
-    <div className="space-y-4">
+      <div className="space-y-4">
       {item.type === "image" && (
-        <div className="flex max-h-[48vh] min-h-[120px] items-center justify-center overflow-hidden rounded-[var(--radius-md)] bg-[var(--bg-hover)]">
+        <div className="workbench-panel flex max-h-[52vh] min-h-[180px] items-center justify-center overflow-hidden bg-[var(--bg-base)]">
           {imageFailed ? (
             <p className="px-4 py-8 text-sm text-[var(--text-muted)]">无法加载图片预览</p>
           ) : (
@@ -177,7 +186,7 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
               src={toAssetUrl(item.path) ?? undefined}
               alt={item.name}
               decoding="async"
-              className="max-h-[48vh] max-w-full object-contain"
+              className="max-h-[52vh] max-w-full object-contain"
               onError={() => setImageFailed(true)}
             />
           )}
@@ -191,7 +200,7 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
             <img
               src={audio?.album_cover_data_url ?? assetUrl ?? undefined}
               alt=""
-              className="mx-auto h-40 w-40 rounded-[var(--radius-md)] object-cover"
+              className="mx-auto h-44 w-44 rounded-[var(--radius-md)] border border-[var(--line-hairline)] object-cover shadow-[var(--shadow-md)]"
               onError={() => setCoverFailed(true)}
             />
             )
@@ -214,7 +223,7 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
 
       {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
 
-      <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+      <dl className="workbench-panel grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 p-4 text-sm">
         <dt className="text-[var(--text-faint)]">大小</dt>
         <dd className="text-[var(--text-secondary)]">{formatBytes(info?.size)}</dd>
         <dt className="text-[var(--text-faint)]">修改时间</dt>
@@ -250,10 +259,15 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
           {entries.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)]">空文件夹或无法列出</p>
           ) : (
-            <ul className="space-y-1 text-sm text-[var(--text-secondary)]">
+            <ul className="workbench-panel divide-y divide-[var(--line-hairline)] overflow-hidden text-sm text-[var(--text-secondary)]">
               {entries.map((entry) => (
-                <li key={entry.path} className="truncate">
-                  {entry.is_dir ? "📁" : "📄"} {entry.name}
+                <li key={entry.path} className="flex min-h-9 items-center gap-2 px-3 py-2">
+                  {entry.is_dir ? (
+                    <Folder aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--color-warning)]" />
+                  ) : (
+                    <File aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
+                  )}
+                  <span className="truncate">{entry.name}</span>
                 </li>
               ))}
             </ul>

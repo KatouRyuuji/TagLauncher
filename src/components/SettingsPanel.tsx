@@ -1,22 +1,47 @@
-import { useState } from "react";
+import { useLayoutEffect, useState, type UIEvent } from "react";
 import { open as dialogOpen, save } from "@tauri-apps/plugin-dialog";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import {
+  Check,
+  Cloud,
+  Database,
+  Download,
+  FolderOpen,
+  Palette,
+  PanelRight,
+  Puzzle,
+  RefreshCw,
+  Settings2,
+  Sparkles,
+  Upload,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
-import { ModManagerPanel } from "./ModManagerPanel";
-import { AiSettingsSection } from "./AiSettingsSection";
-import { DataSettingsSection } from "./DataSettingsSection";
-import { SyncSettingsSection } from "./SyncSettingsSection";
-import { UpdateSettingsSection } from "./UpdateSettingsSection";
-import { useThemeContext } from "./ThemeProvider";
 import { showToast } from "../lib/toast";
 import { SETTINGS_SECTIONS, settingsSectionDomId } from "../lib/settingsSections";
 import type { ThemeDefinition, ThemeSource, ThemeVariant } from "../types/theme";
+import { AiSettingsSection } from "./AiSettingsSection";
+import { DataSettingsSection } from "./DataSettingsSection";
+import { ModManagerPanel } from "./ModManagerPanel";
+import { SyncSettingsSection } from "./SyncSettingsSection";
+import { useThemeContext } from "./ThemeProvider";
+import { UpdateSettingsSection } from "./UpdateSettingsSection";
 
 interface SettingsPanelProps {
   open: boolean;
   onClose: () => void;
 }
+
+const SECTION_ICONS: Record<string, LucideIcon> = {
+  theme: Palette,
+  ai: Sparkles,
+  data: Database,
+  sync: Cloud,
+  update: RefreshCw,
+  mods: Puzzle,
+};
 
 export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const {
@@ -31,9 +56,14 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     setActiveVariant,
   } = useThemeContext();
   const [busy, setBusy] = useState<"import" | "export" | "refresh" | "folder" | null>(null);
-  const trapRef = useFocusTrap<HTMLDivElement>({ active: open, autoFocus: false });
+  const [activeSection, setActiveSection] = useState(SETTINGS_SECTIONS[0]?.id ?? "theme");
+  const trapRef = useFocusTrap<HTMLElement>({ active: open });
 
   useEscapeKey(onClose, open);
+
+  useLayoutEffect(() => {
+    if (open) setActiveSection(SETTINGS_SECTIONS[0]?.id ?? "theme");
+  }, [open]);
 
   if (!open) return null;
 
@@ -102,6 +132,34 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     }
   };
 
+  const navigateToSection = (sectionId: string) => {
+    setActiveSection(sectionId);
+    document
+      .getElementById(settingsSectionDomId(sectionId))
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleContentScroll = (event: UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
+    if (scrollTop + clientHeight >= scrollHeight - 4) {
+      const lastSection = SETTINGS_SECTIONS.at(-1)?.id ?? "theme";
+      setActiveSection((current) => (current === lastSection ? current : lastSection));
+      return;
+    }
+
+    const containerTop = event.currentTarget.getBoundingClientRect().top;
+    let nextSection = SETTINGS_SECTIONS[0]?.id ?? "theme";
+
+    for (const section of SETTINGS_SECTIONS) {
+      const element = document.getElementById(settingsSectionDomId(section.id));
+      if (element && element.getBoundingClientRect().top <= containerTop + 48) {
+        nextSection = section.id;
+      }
+    }
+
+    setActiveSection((current) => (current === nextSection ? current : nextSection));
+  };
+
   return (
     <>
       <div
@@ -112,132 +170,202 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
         onClick={onClose}
       />
       <div
-        className="fixed inset-0 flex items-center justify-center p-5 pointer-events-none"
+        className="pointer-events-none fixed inset-x-0 bottom-0 top-[var(--titlebar-height)] flex justify-end"
         style={{ zIndex: "var(--z-settings-panel)" }}
       >
-        <div
+        <aside
           ref={trapRef}
           role="dialog"
           aria-modal="true"
-          aria-label="设置"
-          className="modal-surface pointer-events-auto flex max-h-[86vh] w-[760px] max-w-[94vw] flex-col overflow-hidden border-[color-mix(in_srgb,var(--border-default)_72%,transparent)]"
+          aria-labelledby="settings-panel-title"
+          className="pointer-events-auto flex h-full w-[980px] max-w-[calc(100vw-12px)] flex-col overflow-hidden border-l border-[var(--border-default)] bg-[var(--surface-raised)] shadow-[var(--shadow-overlay)]"
         >
-          <div className="border-b border-[var(--border-subtle)] px-6 py-5">
-            <div className="flex items-start justify-between gap-5">
-              <div>
-                <div className="text-label">Preferences</div>
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--text-primary)]">设置</h2>
-                <p className="mt-1 text-sm text-[var(--text-muted)]">
-                  管理主题、导入导出与扩展能力
-                </p>
+          <header className="flex h-[68px] shrink-0 items-center justify-between gap-4 border-b border-[var(--line-hairline)] px-4 sm:px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+                <Settings2 aria-hidden="true" size={19} strokeWidth={1.8} />
               </div>
-              <button type="button" onClick={onClose} className="icon-button">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
-                </svg>
-              </button>
+              <div className="min-w-0">
+                <div className="instrument-label">Preferences / Workbench</div>
+                <h2 id="settings-panel-title" className="mt-1 truncate text-lg font-semibold text-[var(--text-primary)]">
+                  设置工作台
+                </h2>
+              </div>
             </div>
-            {/* 区块快速导航：设置内容已超一屏，chips 点击滚动到对应区块 */}
-            <nav aria-label="设置区块导航" className="mt-4 flex flex-wrap gap-1.5">
-              {SETTINGS_SECTIONS.map((section) => (
-                <button
-                  key={section.id}
-                  type="button"
-                  onClick={() => {
-                    document
-                      .getElementById(settingsSectionDomId(section.id))
-                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
-                  className="rounded-[var(--radius-full)] border border-[var(--border-subtle)] px-3 py-1 text-xs text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)]"
-                >
-                  {section.label}
-                </button>
-              ))}
-            </nav>
-          </div>
+            <button type="button" onClick={onClose} className="icon-button shrink-0" title="关闭设置" aria-label="关闭设置">
+              <X aria-hidden="true" size={17} strokeWidth={1.8} />
+            </button>
+          </header>
 
-          <div className="flex-1 overflow-y-auto px-6 py-6">
-            <section id={settingsSectionDomId("theme")} className="surface-card-soft scroll-mt-2 p-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="text-label">Theme</div>
-                  <h3 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">主题外观</h3>
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">
-                    当前主题：
-                    <span className="font-medium text-[var(--accent-primary)]">{currentTheme.name}</span>
-                  </p>
-                  {themeDirectoryInfo?.themes_dir && (
-                    <p className="mt-1 truncate text-xs text-[var(--text-faint)]" title={themeDirectoryInfo.themes_dir}>
-                      目录：{themeDirectoryInfo.themes_dir}
+          <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[184px_minmax(0,1fr)] sm:grid-rows-1">
+            <nav
+              aria-label="设置区块导航"
+              className="flex min-w-0 gap-1 overflow-x-auto border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] p-2 sm:flex-col sm:overflow-y-auto sm:border-b-0 sm:border-r sm:p-3"
+            >
+              <div className="hidden px-2 pb-2 pt-1 sm:block">
+                <div className="instrument-label">Sections</div>
+                <p className="mt-1 text-xs text-[var(--text-faint)]">06 个设置模块</p>
+              </div>
+              {SETTINGS_SECTIONS.map((section, index) => {
+                const Icon = SECTION_ICONS[section.id] ?? PanelRight;
+                const selected = activeSection === section.id;
+                return (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => navigateToSection(section.id)}
+                    aria-controls={settingsSectionDomId(section.id)}
+                    aria-current={selected ? "location" : undefined}
+                    className={`flex min-h-9 shrink-0 items-center gap-2.5 rounded-[var(--radius-md)] px-3 text-left text-sm transition-colors sm:w-full ${
+                      selected
+                        ? "bg-[var(--accent-primary-bg)] font-semibold text-[var(--accent-primary)] shadow-[inset_2px_0_0_var(--accent-primary)]"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                    }`}
+                  >
+                    <Icon aria-hidden="true" size={16} strokeWidth={1.8} />
+                    <span>{section.label}</span>
+                    <span className="data-readout ml-auto hidden text-[10px] text-[var(--text-faint)] sm:inline">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                  </button>
+                );
+              })}
+              <div className="mt-auto hidden border-t border-[var(--line-hairline)] px-2 pt-3 text-xs leading-5 text-[var(--text-faint)] sm:block">
+                所有改动即时生效
+              </div>
+            </nav>
+
+            <div
+              className="min-h-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6"
+              onScroll={handleContentScroll}
+            >
+              <section id={settingsSectionDomId("theme")} className="scroll-mt-5 border-b border-[var(--line-hairline)] pb-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-[var(--accent-primary)]">
+                      <Palette aria-hidden="true" size={17} strokeWidth={1.8} />
+                      <span className="instrument-label">Appearance / Theme</span>
+                    </div>
+                    <h3 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">主题外观</h3>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">
+                      当前使用 <span className="font-semibold text-[var(--text-primary)]">{currentTheme.name}</span>
                     </p>
+                    {themeDirectoryInfo?.themes_dir && (
+                      <p className="data-readout mt-1 truncate text-[11px] text-[var(--text-faint)]" title={themeDirectoryInfo.themes_dir}>
+                        {themeDirectoryInfo.themes_dir}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <ActionButton
+                      icon={Upload}
+                      label={busy === "import" ? "导入中..." : "导入"}
+                      onClick={() => void handleImportTheme()}
+                      disabled={busy !== null}
+                    />
+                    <ActionButton
+                      icon={Download}
+                      label={busy === "export" ? "导出中..." : "导出"}
+                      onClick={() => void handleExportThemeToFile()}
+                      disabled={busy !== null}
+                    />
+                    <ActionButton
+                      icon={RefreshCw}
+                      label={busy === "refresh" ? "刷新中..." : "刷新"}
+                      onClick={() => void handleRefresh()}
+                      disabled={busy !== null}
+                      spinning={busy === "refresh"}
+                    />
+                    <ActionButton
+                      icon={FolderOpen}
+                      label={busy === "folder" ? "打开中..." : "目录"}
+                      onClick={() => void handleOpenThemeFolder()}
+                      disabled={busy !== null || !themeDirectoryInfo?.themes_dir}
+                    />
+                  </div>
+                </div>
+
+                <div className={`mt-5 grid gap-4 ${currentTheme.variants && Object.keys(currentTheme.variants).length > 0 ? "md:grid-cols-2" : ""}`}>
+                  <ThemeSelect themes={availableThemes} currentThemeId={currentTheme.id} onSelect={setTheme} />
+                  {currentTheme.variants && Object.keys(currentTheme.variants).length > 0 && (
+                    <VariantSelect
+                      variants={currentTheme.variants}
+                      activeVariant={activeVariant}
+                      onSelect={setActiveVariant}
+                    />
                   )}
                 </div>
+              </section>
 
-                <div className="flex flex-wrap justify-end gap-2">
-                  <ActionButton label={busy === "import" ? "导入中..." : "导入主题"} onClick={() => void handleImportTheme()} disabled={busy !== null} />
-                  <ActionButton label={busy === "export" ? "导出中..." : "导出当前"} onClick={() => void handleExportThemeToFile()} disabled={busy !== null} />
-                  <ActionButton label={busy === "refresh" ? "刷新中..." : "刷新目录"} onClick={() => void handleRefresh()} disabled={busy !== null} />
-                  <ActionButton label={busy === "folder" ? "打开中..." : "打开目录"} onClick={() => void handleOpenThemeFolder()} disabled={busy !== null || !themeDirectoryInfo?.themes_dir} />
+              <div id={settingsSectionDomId("ai")} className="scroll-mt-5 pt-6 [&>section]:mt-0">
+                <AiSettingsSection />
+              </div>
+
+              <div id={settingsSectionDomId("data")} className="scroll-mt-5 pt-6 [&>section]:mt-0">
+                <DataSettingsSection />
+              </div>
+
+              <div id={settingsSectionDomId("sync")} className="scroll-mt-5 pt-6 [&>section]:mt-0">
+                <SyncSettingsSection />
+              </div>
+
+              <div id={settingsSectionDomId("update")} className="scroll-mt-5 pt-6 [&>section]:mt-0">
+                <UpdateSettingsSection />
+              </div>
+
+              <section id={settingsSectionDomId("mods")} className="scroll-mt-5 pt-6">
+                <div className="mb-4 flex items-center gap-3 border-b border-[var(--line-hairline)] pb-4">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+                    <Puzzle aria-hidden="true" size={17} strokeWidth={1.8} />
+                  </div>
+                  <div>
+                    <div className="instrument-label">Extensions</div>
+                    <h3 className="mt-1 text-lg font-semibold text-[var(--text-primary)]">扩展</h3>
+                  </div>
                 </div>
-              </div>
-
-              <ThemeSelect themes={availableThemes} currentThemeId={currentTheme.id} onSelect={setTheme} />
-
-              {currentTheme.variants && Object.keys(currentTheme.variants).length > 0 && (
-                <VariantSelect
-                  variants={currentTheme.variants}
-                  activeVariant={activeVariant}
-                  onSelect={setActiveVariant}
-                />
-              )}
-            </section>
-
-            <div id={settingsSectionDomId("ai")} className="scroll-mt-2">
-              <AiSettingsSection />
+                <ModManagerPanel />
+              </section>
             </div>
-
-            <div id={settingsSectionDomId("data")} className="scroll-mt-2">
-              <DataSettingsSection />
-            </div>
-
-            <div id={settingsSectionDomId("sync")} className="scroll-mt-2">
-              <SyncSettingsSection />
-            </div>
-
-            <div id={settingsSectionDomId("update")} className="scroll-mt-2">
-              <UpdateSettingsSection />
-            </div>
-
-            <section id={settingsSectionDomId("mods")} className="mt-6 scroll-mt-2">
-              <div className="mb-3">
-                <div className="text-label">Extensions</div>
-                <h3 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">扩展</h3>
-              </div>
-              <ModManagerPanel />
-            </section>
           </div>
-        </div>
+
+          <footer className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 sm:px-5">
+            <span className="hidden items-center gap-2 text-xs text-[var(--text-faint)] sm:flex">
+              <span className="status-led" aria-hidden="true" />
+              设置已连接到当前工作区
+            </span>
+            <button type="button" onClick={onClose} className="action-button action-button-primary ml-auto">
+              <Check aria-hidden="true" size={16} strokeWidth={1.9} />
+              完成
+            </button>
+          </footer>
+        </aside>
       </div>
     </>
   );
 }
 
 function ActionButton({
+  icon: Icon,
   label,
   onClick,
   disabled,
+  spinning = false,
 }: {
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  spinning?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="action-button min-h-[36px] px-3 text-xs disabled:opacity-50"
+      className="action-button min-h-[34px] px-3 text-xs disabled:opacity-50"
     >
+      <Icon aria-hidden="true" size={15} strokeWidth={1.8} className={spinning ? "animate-spin" : undefined} />
       {label}
     </button>
   );
@@ -259,12 +387,12 @@ function ThemeSelect({
   ];
 
   return (
-    <label className="mt-5 block">
-      <span className="mb-2 block text-xs font-semibold text-[var(--text-muted)]">当前主题</span>
+    <label className="block min-w-0">
+      <span className="instrument-label mb-2 block">当前主题</span>
       <select
         value={currentThemeId}
         onChange={(event) => void onSelect(event.target.value)}
-        className="w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+        className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
       >
         {groups.map((group) => (
           group.themes.length > 0 && (
@@ -292,12 +420,12 @@ function VariantSelect({
   onSelect: (variant: string | undefined) => void;
 }) {
   return (
-    <label className="mt-4 block">
-      <span className="mb-2 block text-xs font-semibold text-[var(--text-muted)]">主题变体</span>
+    <label className="block min-w-0">
+      <span className="instrument-label mb-2 block">主题变体</span>
       <select
         value={activeVariant ?? ""}
         onChange={(event) => onSelect(event.target.value || undefined)}
-        className="w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+        className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
       >
         <option value="">默认（无变体）</option>
         {Object.entries(variants).map(([key, variant]) => (

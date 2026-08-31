@@ -1,4 +1,5 @@
 import { memo, useState, useRef, useEffect } from "react";
+import { Check, Play, TriangleAlert } from "lucide-react";
 import { ContextMenu } from "./ContextMenu";
 import { DraggableTagList } from "./DraggableTagList";
 import { FavoriteStar } from "./FavoriteStar";
@@ -174,13 +175,15 @@ function ItemCardComponent({
       <article
         data-drop-tag-item-id={item.id}
         data-selectable-item-id={item.id}
+        data-selected={selected ? "true" : "false"}
         role="listitem"
-        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex min-h-[156px] cursor-pointer flex-col overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--bg-card)] p-3 ${
+        aria-label={`${item.name}${selected ? "，已选择" : ""}`}
+        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex min-h-[188px] cursor-pointer flex-col overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--surface-raised)] shadow-[var(--shadow-card)] ${
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
             : selected
-            ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary)_22%,transparent)]"
-            : "border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:bg-[var(--bg-card-hover)]"
+            ? "border-[var(--accent-primary)] bg-[color-mix(in_srgb,var(--surface-raised)_88%,var(--accent-primary-bg))] shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary)_18%,transparent)]"
+            : "border-[var(--line-hairline)] hover:border-[var(--border-default)] hover:bg-[var(--bg-card-hover)]"
         }`}
         style={{ backdropFilter: "var(--card-backdrop-filter)" }}
         onDoubleClick={onLaunch}
@@ -197,17 +200,51 @@ function ItemCardComponent({
         }}
         tabIndex={0}
       >
-        {selected && (
-          <div className="absolute right-3 top-3 z-10 flex h-6 w-6 items-center justify-center rounded-[var(--radius-full)] bg-[var(--accent-primary)] text-[var(--text-invert)] shadow-[var(--shadow-sm)]">
-            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2}>
-              <path d="m3.5 8.3 3 3.1 6-6.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-        )}
+        <div
+          aria-hidden="true"
+          className={`h-[3px] w-full shrink-0 ${
+            tagDragOver || selected
+              ? "bg-[var(--accent-primary)]"
+              : item.is_missing
+              ? "bg-[var(--color-warning)]"
+              : "bg-[var(--line-hairline)]"
+          }`}
+        />
 
-        <div className="flex items-start justify-between gap-2.5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] text-[24px]">
+        <div className="flex min-h-10 items-center justify-between gap-2 border-b border-[var(--line-hairline)] px-3 py-1.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="instrument-label truncate" title={getTypeLabel(item.type)}>
+              {getTypeLabel(item.type)}
+            </span>
+            <span
+              className="data-readout max-w-20 truncate rounded-[var(--radius-sm)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-1.5 py-0.5 text-[9px] text-[var(--text-muted)]"
+              title={fileSuffix}
+            >
+              {fileSuffix}
+            </span>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-0.5">
+            {selected && (
+              <span
+                className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary)] text-[var(--text-invert)]"
+                role="img"
+                aria-label="已选择"
+                title="已选择"
+              >
+                <Check className="h-3.5 w-3.5" strokeWidth={2.2} aria-hidden="true" />
+              </span>
+            )}
+            <ItemDragHandle onPointerDown={handleItemHandlePointerDown} />
+            <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
+            {/* Mod 插槽：header */}
+            {modSlots.header.length > 0 && <div ref={headerSlotRef} className="flex items-center gap-1" />}
+          </div>
+        </div>
+
+        <div className="flex flex-1 flex-col px-3 py-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-[23px]">
               <ItemVisualIcon
                 item={item}
                 emojiClass="leading-none"
@@ -215,58 +252,44 @@ function ItemCardComponent({
               />
             </div>
 
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-[var(--accent-primary)]" title={getTypeLabel(item.type)}>
-                {getTypeLabel(item.type)}
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <h3 className="min-w-0 flex-1 truncate text-sm font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
+                  <SearchHighlightText text={item.name} query={searchQuery} />
+                </h3>
+                {item.is_missing && (
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[9px] font-semibold leading-none text-[var(--color-warning)]"
+                    title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
+                  >
+                    <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
+                    失效
+                  </span>
+                )}
+              </div>
+              <p
+                className={`mt-1 line-clamp-2 min-h-8 break-all text-[11px] leading-4 ${
+                  item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"
+                }`}
+                title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
+              >
+                {item.path}
               </p>
-              <h3 className="mt-0.5 truncate text-[15px] font-semibold leading-tight text-[var(--text-primary)]" title={item.name}>
-                <SearchHighlightText text={item.name} query={searchQuery} />
-              </h3>
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1">
-            <ItemDragHandle onPointerDown={handleItemHandlePointerDown} />
-            <span className="inline-flex h-7 w-7 items-center justify-center">
-              <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
-            </span>
-            {/* Mod 插槽：header */}
-            {modSlots.header.length > 0 && (
-              <div ref={headerSlotRef} className="flex items-center gap-1" />
-            )}
+          <div className="mt-3 min-h-6">
+            <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} />
           </div>
         </div>
 
-        {item.is_missing && (
-          <span
-            className="mt-2 inline-flex w-fit items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-warning)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-warning)]"
-            title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
-          >
-            ⚠ 失效
+        <div className="flex min-h-10 items-center justify-between gap-2 border-t border-[var(--line-hairline)] px-3 py-1.5">
+          <span className="instrument-label">
+            <span className="data-readout text-[var(--text-muted)]">{item.tags.length}</span> 标签
           </span>
-        )}
-
-        <p
-          className={`mt-2 line-clamp-2 min-h-[30px] break-all text-[11px] leading-4.5 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
-          title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
-        >
-          {item.path}
-        </p>
-
-        <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--border-subtle)] pt-2.5">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
-              后缀
-            </div>
-            <div className="mt-0.5 text-[13px] font-medium text-[var(--text-tertiary)]" title={fileSuffix}>
-              {fileSuffix}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
             {/* Mod 插槽：actions */}
-            {modSlots.actions.length > 0 && (
-              <div ref={actionsSlotRef} className="flex items-center gap-1" />
-            )}
+            {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="flex min-w-0 items-center gap-1" />}
             <button
               type="button"
               onClick={(event) => {
@@ -276,27 +299,17 @@ function ItemCardComponent({
               onDoubleClick={(event) => {
                 event.stopPropagation();
               }}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onLaunch();
-                }
-              }}
-              className="rounded-[var(--radius-full)] border border-[color-mix(in_srgb,var(--accent-primary)_22%,transparent)] bg-[var(--accent-primary-bg)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-[var(--text-invert)]"
+              className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--accent-primary)_32%,var(--border-subtle))] bg-[var(--accent-primary-bg)] px-2.5 text-[11px] font-semibold text-[var(--accent-primary)] transition-colors hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-[var(--text-invert)]"
             >
+              <Play className="h-3 w-3" fill="currentColor" aria-hidden="true" />
               启动
             </button>
           </div>
         </div>
 
-        <div className="mt-2.5 min-h-[24px]">
-          <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} />
-        </div>
-
         {/* Mod 插槽：footer */}
         {modSlots.footer.length > 0 && (
-          <div ref={footerSlotRef} className="mt-2" />
+          <div ref={footerSlotRef} className="border-t border-[var(--line-hairline)] px-3 py-2" />
         )}
       </article>
 

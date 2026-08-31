@@ -696,7 +696,7 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 | `variants` | 主题变体：每个变体可覆盖部分 `variables` 并附加 `css`（如 SkyCloud 的「静止云层」变体关闭动画） |
 | `css` | 自定义 CSS 文本；非内置主题会经消毒（去 `@import`、中和远程 `url()`、放行 asset/ipc 协议） |
 
-内置三主题（`src/themes/`）：`dark`（深色·赛博红）、`sakura`（亮色·樱花）、`cyber-cyan`（深色·赛博青）。自定义主题建议以 `toExportableTheme` 导出格式为准，或直接从示例主题改起。
+内置主题（`src/themes/`）共 20 套，色值全部锁定自 RyuujiDesign 色板（`styles/palettes.css`）：3 个历史主题 `sakura`（亮色·霜纸，A1 亮）、`dark`（深色·信号红，A2 暗）、`cyber-cyan`（深色·仪表青，B2 暗）保留独立文件以兼容已持久化的主题 id；其余 17 套（A1–A6 × 亮/暗、B1–B4 × 亮/暗去重后）由 `src/themes/ryuuji.ts` 工厂按调色板数据生成，新增色板只需在工厂的 `DEFS` 加一行。自定义主题建议以 `toExportableTheme` 导出格式为准，或直接从示例主题改起。
 
 ### 15.7 安全说明：CSP 与 assetProtocol 的有意取舍
 
@@ -725,9 +725,9 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 
 ```bash
 npm run demo        # 浏览器打开 http://127.0.0.1:3456 即完整应用
-npm run demo:shots  # 自动截图：功能巡演 + 三官方主题主要页面
+npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页面
 ```
 
-`scripts/demo-screenshots.mjs` 启动 demo 服务器后用 Playwright 驱动真实 UI 交互（搜索/拼音、标签筛选、文件柜、命令面板、快速预览、右键菜单、标签编辑器、框选批量、图谱、设置各区块、AI 打标、快捷键、失效找回）——功能截图以**樱花粉（sakura）主题全覆盖**；再切到 `sakura` / `dark` / `cyber-cyan` 三主题各截一张主界面并列对比，共约 31 张 2x 截图。
+`scripts/demo-screenshots.mjs` 启动 demo 服务器后用 Playwright 驱动真实 UI 交互（搜索/拼音、标签筛选、文件柜、命令面板、快速预览、右键菜单、标签编辑器、框选批量、图谱、设置各区块、AI 打标、快捷键、失效找回）——功能截图以**亮色·霜纸（sakura）主题全覆盖**；再遍历全部 20 套内置主题各截一张主界面并列对比，共约 48 张 2x 截图。
 
 **产物边界**：截图输出到 `screenshots/`（已 gitignore，不上云）；工具本身（`src/demo/` + 脚本）随仓库分发，clone 后 `npm i && npx playwright install chromium` 即可复现同一套截图。可选参数：`--out <目录>`、`--port <端口>`。

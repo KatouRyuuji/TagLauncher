@@ -1,4 +1,17 @@
 import { useEffect, useState } from "react";
+import {
+  CheckCheck,
+  ChevronUp,
+  Copy,
+  FolderPlus,
+  LoaderCircle,
+  Star,
+  Tag,
+  Tags,
+  Trash2,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { stepMenuIndex } from "../lib/itemQuery";
 
@@ -94,27 +107,18 @@ export function BatchSelectionToolbar({
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-5 bottom-12 z-50 flex justify-center"
+      className="pointer-events-none absolute inset-x-2 bottom-10 z-50 flex justify-center sm:inset-x-5"
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div
         data-testid="batch-toolbar"
         aria-busy={busy}
-        className="surface-card pointer-events-auto flex max-w-[calc(100vw-var(--sidebar-width)-40px)] items-center gap-2 px-3 py-2 shadow-[var(--shadow-dropdown)]"
+        className="surface-card pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto px-2 py-1.5 shadow-[var(--shadow-dropdown)] sm:max-w-[calc(100vw-var(--sidebar-width)-40px)]"
       >
         <div className="flex items-center gap-2 border-r border-[var(--border-subtle)] pr-3 text-sm font-semibold text-[var(--text-primary)]">
-          <span className="flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-full)] bg-[var(--accent-primary)] px-2 text-xs text-[var(--text-invert)]">
+          <span className="data-readout flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-primary)] px-2 text-xs text-[var(--text-invert)]">
             {busy ? (
-              <svg
-                data-testid="batch-busy-spinner"
-                className="h-3.5 w-3.5 animate-spin"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.4}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3a9 9 0 1 0 9 9" />
-              </svg>
+              <LoaderCircle data-testid="batch-busy-spinner" aria-hidden="true" size={14} strokeWidth={2} className="animate-spin" />
             ) : (
               selectedCount
             )}
@@ -124,6 +128,7 @@ export function BatchSelectionToolbar({
 
         <ToolbarMenuButton
           label="加入标签"
+          icon={Tag}
           disabled={busy}
           open={openMenu === "add-tag"}
           onClick={() => setOpenMenu(openMenu === "add-tag" ? null : "add-tag")}
@@ -139,6 +144,7 @@ export function BatchSelectionToolbar({
 
         <ToolbarMenuButton
           label="移除标签"
+          icon={Tags}
           disabled={busy}
           open={openMenu === "remove-tag"}
           onClick={() => setOpenMenu(openMenu === "remove-tag" ? null : "remove-tag")}
@@ -154,6 +160,7 @@ export function BatchSelectionToolbar({
 
         <ToolbarMenuButton
           label="文件夹"
+          icon={FolderPlus}
           disabled={busy}
           open={openMenu === "cabinet"}
           onClick={() => setOpenMenu(openMenu === "cabinet" ? null : "cabinet")}
@@ -181,9 +188,10 @@ export function BatchSelectionToolbar({
             type="button"
             onClick={onSelectAll}
             disabled={busy}
-            className="action-button"
+            className="action-button min-h-8 shrink-0 px-2.5 text-xs"
             title="选中当前筛选结果的全部对象（含虚拟化未渲染的条目）"
           >
+            <CheckCheck aria-hidden="true" size={14} strokeWidth={1.8} />
             全选 {totalCount}
           </button>
         )}
@@ -191,32 +199,33 @@ export function BatchSelectionToolbar({
           type="button"
           onClick={onToggleFavorite}
           disabled={busy}
-          className="action-button"
+          className="action-button min-h-8 shrink-0 px-2.5 text-xs"
           title={`${favoriteLabel}选中对象（Ctrl+D）`}
         >
-          <svg className="h-3.5 w-3.5 text-[var(--color-favorite)]" viewBox="0 0 24 24" fill={favoriteLabel === "收藏" ? "none" : "currentColor"} stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="m12 3.6 2.5 5.06 5.59.81-4.05 3.95.96 5.57L12 16.36l-5 2.63.96-5.57-4.05-3.95 5.59-.81L12 3.6Z" />
-          </svg>
+          <Star aria-hidden="true" size={14} strokeWidth={1.8} fill={favoriteLabel === "收藏" ? "none" : "currentColor"} className="text-[var(--color-favorite)]" />
           {favoriteLabel}
         </button>
         <button
           type="button"
           onClick={onCopyPaths}
           disabled={busy}
-          className="action-button"
+          className="action-button min-h-8 shrink-0 px-2.5 text-xs"
           title="复制选中路径（Ctrl+C，多项换行）"
         >
+          <Copy aria-hidden="true" size={14} strokeWidth={1.8} />
           复制路径
         </button>
         <button
           type="button"
           onClick={() => runAction(onRemoveFromApp)}
           disabled={busy}
-          className="action-button text-[var(--color-danger)] hover:text-[var(--color-danger-hover)]"
+          className="action-button min-h-8 shrink-0 px-2.5 text-xs text-[var(--color-danger)] hover:text-[var(--color-danger-hover)]"
         >
+          <Trash2 aria-hidden="true" size={14} strokeWidth={1.8} />
           批量删除
         </button>
-        <button type="button" onClick={onClearSelection} disabled={busy} className="action-button">
+        <button type="button" onClick={onClearSelection} disabled={busy} className="action-button min-h-8 shrink-0 px-2.5 text-xs">
+          <X aria-hidden="true" size={14} strokeWidth={1.8} />
           取消选择
         </button>
       </div>
@@ -226,12 +235,14 @@ export function BatchSelectionToolbar({
 
 function ToolbarMenuButton({
   label,
+  icon: Icon,
   open,
   disabled,
   onClick,
   children,
 }: {
   label: string;
+  icon: LucideIcon;
   open: boolean;
   disabled?: boolean;
   onClick: () => void;
@@ -245,9 +256,11 @@ function ToolbarMenuButton({
         aria-haspopup="menu"
         disabled={disabled}
         onClick={onClick}
-        className={`action-button ${open ? "border-[var(--accent-primary)] text-[var(--accent-primary)]" : ""}`}
+        className={`action-button min-h-8 shrink-0 px-2.5 text-xs ${open ? "border-[var(--accent-primary)] text-[var(--accent-primary)]" : ""}`}
       >
+        <Icon aria-hidden="true" size={14} strokeWidth={1.8} />
         {label}
+        <ChevronUp aria-hidden="true" size={12} strokeWidth={1.8} className={`transition-transform ${open ? "" : "rotate-180"}`} />
       </button>
       {open && (
         <div

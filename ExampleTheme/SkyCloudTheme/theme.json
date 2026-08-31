@@ -1,8 +1,8 @@
 {
   "id": "sky-cloud",
-  "name": "Sky Cloud",
+  "name": "霜纸·紫苑 (A3)",
   "author": "TagLauncher Official Example",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "isPreset": false,
   "variables": {
     "font-family": "\"Segoe UI Variable Text\", \"PingFang SC\", \"HarmonyOS Sans SC\", \"Microsoft YaHei UI\", sans-serif",
@@ -23,12 +23,12 @@
     "radius-lg": "4px",
     "radius-xl": "4px",
     "radius-full": "999px",
-    "shadow-sm": "0 1px 2px rgba(41, 128, 185, 0.06)",
-    "shadow-md": "0 2px 8px rgba(41, 128, 185, 0.1)",
-    "shadow-lg": "0 4px 16px rgba(41, 128, 185, 0.13)",
-    "shadow-overlay": "0 8px 24px rgba(41, 128, 185, 0.16)",
-    "shadow-dropdown": "0 4px 16px rgba(41, 128, 185, 0.12)",
-    "shadow-card": "0 1px 3px rgba(41, 128, 185, 0.07)",
+    "shadow-sm": "0 1px 1px rgba(52, 34, 82, 0.05), 0 5px 16px rgba(52, 34, 82, 0.04)",
+    "shadow-md": "0 1px 1px rgba(52, 34, 82, 0.06), 0 10px 28px rgba(52, 34, 82, 0.07)",
+    "shadow-lg": "0 2px 3px rgba(52, 34, 82, 0.08), 0 18px 48px rgba(52, 34, 82, 0.1)",
+    "shadow-overlay": "0 2px 4px rgba(52, 34, 82, 0.08), 0 24px 70px rgba(52, 34, 82, 0.16)",
+    "shadow-dropdown": "0 2px 3px rgba(52, 34, 82, 0.08), 0 14px 36px rgba(52, 34, 82, 0.12)",
+    "shadow-card": "0 1px 1px rgba(52, 34, 82, 0.04), 0 6px 18px rgba(52, 34, 82, 0.04)",
     "shadow-glow": "none",
     "spacing-unit": "4px",
     "spacing-xs": "4px",
@@ -39,50 +39,50 @@
     "transition-fast": "140ms cubic-bezier(0.2, 0.8, 0.2, 1)",
     "transition-normal": "220ms cubic-bezier(0.2, 0.8, 0.2, 1)",
     "transition-slow": "360ms cubic-bezier(0.2, 0.8, 0.2, 1)",
-    "bg-gradient": "linear-gradient(180deg, #f4faff 0%, #eaf5fc 100%)",
+    "bg-gradient": "linear-gradient(180deg, #f7f3fc 0%, #ece4f6 100%)",
     "card-backdrop-filter": "none",
     "sidebar-backdrop-filter": "none",
-    "welcome-accent-gradient": "linear-gradient(180deg, rgba(52, 152, 219, 0.08), transparent)",
-    "media-caption-gradient": "linear-gradient(to top, rgba(31, 87, 130, 0.58), transparent)",
-    "status-warning-bg": "rgba(245, 158, 11, 0.12)",
-    "status-success-bg": "rgba(34, 197, 94, 0.12)",
-    "tag-preset-colors": "#3498db,#2980b9,#5dade2,#85c1e9,#aed6f1,#1a5276,#21618c,#2874a6",
+    "welcome-accent-gradient": "linear-gradient(180deg, rgba(138, 88, 196, 0.1), transparent)",
+    "media-caption-gradient": "linear-gradient(to top, rgba(34, 24, 51, 0.72), transparent)",
+    "status-warning-bg": "#faf3e3",
+    "status-success-bg": "#e6f3ec",
+    "tag-preset-colors": "#8a58c4,#5157d8,#d93448,#7cb82e,#3db8bf,#d96d90,#d29a12,#2f9a62",
     "sidebar-width": "258px",
     "grid-col-min": "238px",
-    "bg-base": "#f4faff",
-    "bg-surface": "rgba(255, 255, 255, 0.88)",
+    "bg-base": "#f7f3fc",
+    "bg-surface": "#ffffff",
     "bg-elevated": "#ffffff",
     "bg-overlay": "#ffffff",
-    "bg-hover": "rgba(52, 152, 219, 0.08)",
-    "bg-active": "rgba(52, 152, 219, 0.14)",
-    "bg-card": "rgba(255, 255, 255, 0.94)",
+    "bg-hover": "rgba(138, 88, 196, 0.07)",
+    "bg-active": "rgba(138, 88, 196, 0.13)",
+    "bg-card": "#ffffff",
     "bg-card-hover": "#ffffff",
-    "bg-input": "rgba(255, 255, 255, 0.96)",
-    "text-primary": "#12324a",
-    "text-secondary": "#255574",
-    "text-tertiary": "#3d6f8f",
-    "text-muted": "#638da6",
-    "text-faint": "#93b9cc",
-    "text-ghost": "#c6dfeb",
-    "text-placeholder": "#8eb4c8",
+    "bg-input": "#ffffff",
+    "text-primary": "#221833",
+    "text-secondary": "#564472",
+    "text-tertiary": "#8a7aa0",
+    "text-muted": "rgba(138, 122, 160, 0.85)",
+    "text-faint": "rgba(138, 122, 160, 0.62)",
+    "text-ghost": "#d4c6e8",
+    "text-placeholder": "rgba(138, 122, 160, 0.78)",
     "text-invert": "#ffffff",
-    "border-subtle": "rgba(89, 154, 190, 0.18)",
-    "border-default": "rgba(89, 154, 190, 0.30)",
-    "border-medium": "rgba(71, 132, 170, 0.42)",
-    "border-strong": "rgba(44, 101, 142, 0.52)",
-    "accent-primary": "#3498db",
-    "accent-primary-hover": "#2980b9",
-    "accent-primary-bg": "rgba(52, 152, 219, 0.12)",
-    "accent-primary-bg-light": "rgba(52, 152, 219, 0.07)",
-    "color-danger": "#dc2626",
-    "color-danger-hover": "#b91c1c",
-    "color-danger-bg": "rgba(220, 38, 38, 0.08)",
-    "color-warning": "#d97706",
-    "color-success": "#16a34a",
-    "color-favorite": "#f59e0b",
-    "overlay-bg": "rgba(18, 50, 74, 0.34)",
-    "scrollbar-thumb": "rgba(89, 154, 190, 0.32)",
-    "scrollbar-thumb-hover": "rgba(44, 101, 142, 0.42)",
+    "border-subtle": "rgba(159, 143, 182, 0.32)",
+    "border-default": "#d4c6e8",
+    "border-medium": "#9f8fb6",
+    "border-strong": "rgba(34, 24, 51, 0.55)",
+    "accent-primary": "#8a58c4",
+    "accent-primary-hover": "color-mix(in srgb, #8a58c4 85%, #000000)",
+    "accent-primary-bg": "rgba(138, 88, 196, 0.13)",
+    "accent-primary-bg-light": "rgba(138, 88, 196, 0.07)",
+    "color-danger": "#c02a56",
+    "color-danger-hover": "color-mix(in srgb, #c02a56 85%, #000000)",
+    "color-danger-bg": "#f7e5eb",
+    "color-warning": "#d29a12",
+    "color-success": "#2f9a62",
+    "color-favorite": "#d29a12",
+    "overlay-bg": "rgba(34, 24, 51, 0.34)",
+    "scrollbar-thumb": "rgba(159, 143, 182, 0.55)",
+    "scrollbar-thumb-hover": "#9f8fb6",
     "z-bg-decoration": "0",
     "z-context-overlay": "99",
     "z-context-menu": "100",
@@ -112,28 +112,28 @@
     "panel-floating-min-height": "220px",
     "panel-floating-border-radius": "var(--radius-lg)",
     "panel-titlebar-height": "40px",
-    "panel-titlebar-bg": "rgba(248, 253, 255, 0.94)",
+    "panel-titlebar-bg": "#ffffff",
     "panel-body-bg": "#ffffff",
     "panel-border-color": "var(--border-default)"
   },
   "tokens": {
     "primitive": {
-      "sky-100": "#f4faff",
-      "sky-300": "#aed6f1",
-      "cloud-white": "#ffffff",
-      "sun-glow": "#fff1a8"
+      "a3-100": "#f7f3fc",
+      "a3-300": "#d3c0e9",
+      "paper-white": "#ffffff",
+      "iris-glow": "#ece4f6"
     },
     "semantic": {
-      "scene-bg": "linear-gradient(180deg, #f4faff 0%, #eaf5fc 100%)",
-      "cloud-surface": "rgba(255, 255, 255, 0.94)"
+      "scene-bg": "linear-gradient(180deg, #f7f3fc 0%, #ece4f6 100%)",
+      "paper-surface": "#ffffff"
     },
     "component": {
       "card": {
-        "background": "rgba(255, 255, 255, 0.94)",
-        "border": "rgba(89, 154, 190, 0.22)"
+        "background": "#ffffff",
+        "border": "#d4c6e8"
       },
       "sidebar": {
-        "background": "rgba(255, 255, 255, 0.88)"
+        "background": "#ffffff"
       }
     },
     "motion": {
@@ -145,11 +145,11 @@
   },
   "components": {
     "itemCard": {
-      "background": "rgba(255, 255, 255, 0.94)",
-      "border": "rgba(89, 154, 190, 0.22)"
+      "background": "#ffffff",
+      "border": "#d4c6e8"
     },
     "searchBar": {
-      "background": "rgba(255, 255, 255, 0.88)"
+      "background": "#ffffff"
     }
   },
   "variants": {
@@ -161,5 +161,5 @@
       "css": "[data-region=\"bg-decoration\"]::before, [data-region=\"bg-decoration\"]::after, [data-region=\"main\"]::before, [data-region=\"main\"]::after, [data-region=\"sidebar\"]::before { animation: none !important; }"
     }
   },
-  "css": "html { color-scheme: light; }\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"root\"] {\n  background: var(--bg-gradient) !important;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"] {\n  overflow: hidden;\n  background: var(--bg-gradient) !important;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::before,\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::after {\n  content: \"\";\n  position: absolute;\n  left: 0;\n  width: 100%;\n  pointer-events: none;\n  background-repeat: no-repeat;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::before {\n  top: 10%;\n  height: 120px;\n  opacity: 0.4;\n  background-image: radial-gradient(ellipse at 20% 50%, rgba(255,255,255,0.8) 0%, transparent 50%),\n    radial-gradient(ellipse at 60% 30%, rgba(255,255,255,0.6) 0%, transparent 50%),\n    radial-gradient(ellipse at 80% 60%, rgba(255,255,255,0.7) 0%, transparent 50%);\n  background-size: 300px 80px, 400px 100px, 350px 90px;\n  animation: sky-cloud-drift 120s linear infinite;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::after {\n  top: 60%;\n  height: 100px;\n  opacity: 0.3;\n  background-image: radial-gradient(ellipse at 30% 50%, rgba(255,255,255,0.6) 0%, transparent 50%),\n    radial-gradient(ellipse at 70% 40%, rgba(255,255,255,0.5) 0%, transparent 50%);\n  background-size: 350px 90px, 300px 80px;\n  animation: sky-cloud-drift 100s linear infinite reverse;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"main\"] {\n  isolation: isolate;\n  background: transparent !important;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"sidebar\"] {\n  background: var(--bg-surface) !important;\n  border-right: 1px solid var(--border-subtle);\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"searchbar\"] {\n  background: var(--bg-surface) !important;\n  border-bottom: 1px solid var(--border-subtle);\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"titlebar\"] {\n  background: var(--bg-surface) !important;\n  border-bottom: 1px solid var(--border-subtle);\n}\n:root[data-theme-id=\"sky-cloud\"] .surface-card,\n:root[data-theme-id=\"sky-cloud\"] .surface-card-soft,\n:root[data-theme-id=\"sky-cloud\"] .modal-surface,\n:root[data-theme-id=\"sky-cloud\"] .mod-panel-floating {\n  border-color: var(--border-default) !important;\n  background: var(--bg-card) !important;\n  box-shadow: var(--shadow-sm);\n}\n:root[data-theme-id=\"sky-cloud\"] .item-card-render-scope {\n  border-color: var(--border-default) !important;\n  background: var(--bg-card) !important;\n  box-shadow: var(--shadow-card);\n}\n:root[data-theme-id=\"sky-cloud\"] .item-card-render-scope::before {\n  display: none !important;\n}\n:root[data-theme-id=\"sky-cloud\"] .item-row-render-scope {\n  background: var(--bg-surface) !important;\n}\n:root[data-theme-id=\"sky-cloud\"] .action-button,\n:root[data-theme-id=\"sky-cloud\"] .control-chip {\n  border-color: var(--border-default);\n  background: var(--bg-input);\n}\n:root[data-theme-id=\"sky-cloud\"] .action-button-primary,\n:root[data-theme-id=\"sky-cloud\"] .control-chip-active {\n  background: var(--accent-primary) !important;\n  color: var(--text-invert);\n  border-color: var(--accent-primary);\n}\n:root[data-theme-id=\"sky-cloud\"] .empty-state-panel {\n  background: var(--bg-surface) !important;\n}\n:root[data-theme-id=\"sky-cloud\"] .text-label {\n  color: #2874a6;\n}\n@keyframes sky-cloud-drift {\n  from { transform: translateX(-100px); }\n  to { transform: translateX(100px); }\n}\n@media (prefers-reduced-motion: reduce) {\n  :root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::before,\n  :root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::after {\n    animation: none !important;\n  }\n}\n"
+  "css": "html { color-scheme: light; }\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"root\"] {\n  background: var(--bg-gradient) !important;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"] {\n  overflow: hidden;\n  background: var(--bg-gradient) !important;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::before,\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::after {\n  content: \"\";\n  position: absolute;\n  left: 0;\n  width: 100%;\n  pointer-events: none;\n  background-repeat: no-repeat;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::before {\n  top: 10%;\n  height: 120px;\n  opacity: 0.4;\n  background-image: radial-gradient(ellipse at 20% 50%, rgba(255,255,255,0.8) 0%, transparent 50%),\n    radial-gradient(ellipse at 60% 30%, rgba(255,255,255,0.6) 0%, transparent 50%),\n    radial-gradient(ellipse at 80% 60%, rgba(255,255,255,0.7) 0%, transparent 50%);\n  background-size: 300px 80px, 400px 100px, 350px 90px;\n  animation: sky-cloud-drift 120s linear infinite;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::after {\n  top: 60%;\n  height: 100px;\n  opacity: 0.3;\n  background-image: radial-gradient(ellipse at 30% 50%, rgba(255,255,255,0.6) 0%, transparent 50%),\n    radial-gradient(ellipse at 70% 40%, rgba(255,255,255,0.5) 0%, transparent 50%);\n  background-size: 350px 90px, 300px 80px;\n  animation: sky-cloud-drift 100s linear infinite reverse;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"main\"] {\n  isolation: isolate;\n  background: transparent !important;\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"sidebar\"] {\n  background: var(--bg-surface) !important;\n  border-right: 1px solid var(--border-subtle);\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"searchbar\"] {\n  background: var(--bg-surface) !important;\n  border-bottom: 1px solid var(--border-subtle);\n}\n:root[data-theme-id=\"sky-cloud\"] [data-region=\"titlebar\"] {\n  background: var(--bg-surface) !important;\n  border-bottom: 1px solid var(--border-subtle);\n}\n:root[data-theme-id=\"sky-cloud\"] .surface-card,\n:root[data-theme-id=\"sky-cloud\"] .surface-card-soft,\n:root[data-theme-id=\"sky-cloud\"] .modal-surface,\n:root[data-theme-id=\"sky-cloud\"] .mod-panel-floating {\n  border-color: var(--border-default) !important;\n  background: var(--bg-card) !important;\n  box-shadow: var(--shadow-sm);\n}\n:root[data-theme-id=\"sky-cloud\"] .item-card-render-scope {\n  border-color: var(--border-default) !important;\n  background: var(--bg-card) !important;\n  box-shadow: var(--shadow-card);\n}\n:root[data-theme-id=\"sky-cloud\"] .item-card-render-scope::before {\n  display: none !important;\n}\n:root[data-theme-id=\"sky-cloud\"] .item-row-render-scope {\n  background: var(--bg-surface) !important;\n}\n:root[data-theme-id=\"sky-cloud\"] .action-button,\n:root[data-theme-id=\"sky-cloud\"] .control-chip {\n  border-color: var(--border-default);\n  background: var(--bg-input);\n}\n:root[data-theme-id=\"sky-cloud\"] .action-button-primary,\n:root[data-theme-id=\"sky-cloud\"] .control-chip-active {\n  background: var(--accent-primary) !important;\n  color: var(--text-invert);\n  border-color: var(--accent-primary);\n}\n:root[data-theme-id=\"sky-cloud\"] .empty-state-panel {\n  background: var(--bg-surface) !important;\n}\n:root[data-theme-id=\"sky-cloud\"] .text-label {\n  color: #5e3d87;\n}\n@keyframes sky-cloud-drift {\n  from { transform: translateX(-100px); }\n  to { transform: translateX(100px); }\n}\n@media (prefers-reduced-motion: reduce) {\n  :root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::before,\n  :root[data-theme-id=\"sky-cloud\"] [data-region=\"bg-decoration\"]::after {\n    animation: none !important;\n  }\n}\n"
 }

@@ -1,3 +1,4 @@
+import { Check, Trash2 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 
@@ -43,9 +44,7 @@ export function RemoveFromAppConfirmDialog({
         >
           <div className="flex items-start gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12m-8 4v6m4-6v6M9 7l1-2h4l1 2m-8 0 1 13h8l1-13" />
-              </svg>
+              <Trash2 aria-hidden="true" size={19} strokeWidth={1.8} />
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-label">Confirm</div>
@@ -63,9 +62,7 @@ export function RemoveFromAppConfirmDialog({
           >
             <span className="inline-flex h-4 w-4 items-center justify-center rounded-[4px] border border-[var(--border-default)] bg-[var(--bg-input)]">
               {skipNextTime && (
-                <svg className="h-3 w-3 text-[var(--accent-primary)]" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="m3.5 8.5 3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                <Check aria-hidden="true" size={12} strokeWidth={2} className="text-[var(--accent-primary)]" />
               )}
             </span>
             下次不再确认
@@ -76,6 +73,7 @@ export function RemoveFromAppConfirmDialog({
               取消
             </button>
             <button type="button" onClick={() => void onConfirm()} className="action-button action-button-primary">
+              <Trash2 aria-hidden="true" size={15} strokeWidth={1.8} />
               确认移除
             </button>
           </div>

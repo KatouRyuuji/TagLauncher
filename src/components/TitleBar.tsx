@@ -13,11 +13,18 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Copy, Menu, Minus, Square, X } from "lucide-react";
 // 32x32 小图标（与 src-tauri/icons/32x32.png 同源）：完整 icon.png 有 1.5MB，
-// 作为 16px 窗口栏图标会无谓膨胀前端包体
+// 作为 18px 窗口栏图标会无谓膨胀前端包体
 import appIcon from "../assets/icon-32.png";
 
-export function TitleBar() {
+export function TitleBar({
+  sidebarOpen = false,
+  onToggleSidebar,
+}: {
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
+}) {
   const [maximized, setMaximized] = useState(false);
 
   // 同步最大化状态：初始查询一次 + 监听窗口尺寸变化（拖拽边缘、Win+方向键、
@@ -66,12 +73,33 @@ export function TitleBar() {
 
   return (
     <header data-region="titlebar" data-tauri-drag-region>
-      {/* 左侧品牌区：pointer-events 关闭使 mousedown 落在带 drag-region 的 header 上 */}
-      <div className="pointer-events-none flex min-w-0 items-center gap-2 pl-3">
-        <img src={appIcon} alt="" className="h-4 w-4 shrink-0" draggable={false} />
-        <span className="truncate text-xs font-medium tracking-wide text-[var(--text-muted)]">
-          TagLauncher
-        </span>
+      <div className="flex min-w-0 items-center self-stretch">
+        {onToggleSidebar && (
+          <button
+            type="button"
+            className="titlebar-control titlebar-mobile-toggle"
+            aria-label={sidebarOpen ? "关闭资源导航" : "打开资源导航"}
+            aria-expanded={sidebarOpen}
+            aria-controls="workspace-sidebar"
+            onClick={onToggleSidebar}
+          >
+            <Menu aria-hidden="true" size={16} strokeWidth={1.8} />
+          </button>
+        )}
+        {/* 品牌区关闭 pointer-events，使 mousedown 落在带 drag-region 的 header 上。 */}
+        <div className="pointer-events-none flex min-w-0 items-center self-stretch pl-3">
+        <div className="flex min-w-0 items-center gap-2.5 pr-3">
+          <img src={appIcon} alt="" className="h-[18px] w-[18px] shrink-0" draggable={false} />
+          <span className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+            TagLauncher
+          </span>
+        </div>
+        <span className="h-4 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
+        <div className="ml-3 flex min-w-0 items-center gap-2">
+          <span className="status-led" aria-hidden="true" />
+          <span className="instrument-label truncate">F3 / 工作台</span>
+        </div>
+        </div>
       </div>
 
       <div className="flex h-full shrink-0 items-stretch">
@@ -82,9 +110,7 @@ export function TitleBar() {
           title="最小化"
           aria-label="最小化"
         >
-          <svg className="h-2.5 w-2.5" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth={1}>
-            <path d="M0.5 5h9" />
-          </svg>
+          <Minus className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -94,14 +120,9 @@ export function TitleBar() {
           aria-label={maximized ? "还原" : "最大化"}
         >
           {maximized ? (
-            <svg className="h-2.5 w-2.5" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth={1}>
-              <path d="M2.5 2.5v-2h7v7h-2" />
-              <rect x="0.5" y="2.5" width="7" height="7" />
-            </svg>
+            <Copy className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
           ) : (
-            <svg className="h-2.5 w-2.5" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth={1}>
-              <rect x="0.5" y="0.5" width="9" height="9" />
-            </svg>
+            <Square className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
           )}
         </button>
         <button
@@ -111,9 +132,7 @@ export function TitleBar() {
           title="关闭"
           aria-label="关闭"
         >
-          <svg className="h-2.5 w-2.5" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth={1}>
-            <path d="M0.5 0.5l9 9M9.5 0.5l-9 9" />
-          </svg>
+          <X className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
         </button>
       </div>
     </header>

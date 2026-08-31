@@ -1,3 +1,4 @@
+import { Check, Sparkles, X } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import type { AiTagProgress } from "../hooks/useAiTagging";
@@ -46,9 +47,7 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
           <div className="px-6 pt-6">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-                <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
-                </svg>
+                <Sparkles aria-hidden="true" size={22} strokeWidth={1.8} />
               </div>
               <div>
                 <div className="text-label">AI Auto Tag</div>
@@ -107,10 +106,12 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
           <div className="flex justify-end gap-2 border-t border-[var(--border-subtle)] px-6 py-4">
             {progress.running ? (
               <button type="button" onClick={onCancel} className="action-button">
+                <X aria-hidden="true" size={15} strokeWidth={1.8} />
                 取消
               </button>
             ) : (
               <button type="button" onClick={onClose} className="action-button action-button-primary">
+                <Check aria-hidden="true" size={15} strokeWidth={1.9} />
                 完成
               </button>
             )}
@@ -125,8 +126,8 @@ function StatBox({ label, value, tone }: { label: string; value: number; tone: "
   const color =
     tone === "success" ? "var(--color-success)" : tone === "danger" ? "var(--color-danger)" : "var(--text-muted)";
   return (
-    <div className="surface-card-soft py-2">
-      <div className="text-xl font-semibold" style={{ color }}>
+    <div className="border border-[var(--line-hairline)] bg-[var(--surface-recessed)] py-2">
+      <div className="data-readout text-lg font-semibold" style={{ color }}>
         {value}
       </div>
       <div className="text-xs text-[var(--text-muted)]">{label}</div>

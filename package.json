@@ -1,6 +1,6 @@
 {
   "name": "tag-launcher",
-  "version": "1.6.1-beta",
+  "version": "1.6.2-beta",
   "description": "标签式文件管理器",
   "type": "module",
   "scripts": {
@@ -21,6 +21,7 @@
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-shell": "^2.3.5",
+    "lucide-react": "^1.37.0",
     "pinyin-pro": "^3.28.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

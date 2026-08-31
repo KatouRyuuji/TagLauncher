@@ -1,12 +1,13 @@
 const api = window.__tagLauncherModApi.createScope(__MOD_ID__);
 
+// 占位封面配色取 RyuujiDesign A1 暗色板（#0d1420 底 / #9aa3f5 靛 / #4dcc8a 绿）
 const AUDIO_SVG = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
 <svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320">
-  <rect width="320" height="320" rx="48" fill="#101827"/>
-  <circle cx="116" cy="222" r="34" fill="#60a5fa"/>
-  <circle cx="224" cy="190" r="34" fill="#34d399"/>
-  <path d="M250 76v114h-26V111l-82 18v93h-26V108c0-11 7-20 18-23l91-20c13-3 25 7 25 21Z" fill="#e5e7eb"/>
-  <path d="M142 129l82-18" stroke="#93c5fd" stroke-width="12" stroke-linecap="round"/>
+  <rect width="320" height="320" rx="48" fill="#0d1420"/>
+  <circle cx="116" cy="222" r="34" fill="#9aa3f5"/>
+  <circle cx="224" cy="190" r="34" fill="#4dcc8a"/>
+  <path d="M250 76v114h-26V111l-82 18v93h-26V108c0-11 7-20 18-23l91-20c13-3 25 7 25 21Z" fill="#edf1f8"/>
+  <path d="M142 129l82-18" stroke="#8c90e5" stroke-width="12" stroke-linecap="round"/>
 </svg>`);
 
 const TYPE_LABELS = {

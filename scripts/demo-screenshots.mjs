@@ -2,7 +2,7 @@
 // scripts/demo-screenshots.mjs — 演示模式自动截图工具
 // ============================================================================
 // 启动 demo 模式（浏览器内 mock 后端，见 src/demo/），用 Playwright 驱动 UI，
-// 以樱花粉主题全覆盖遍历全部功能特性截图；3 个官方主题另各截主界面并列展示。
+// 以霜纸主题全覆盖遍历全部功能特性截图；全部内置主题另各截主界面并列展示。
 //
 // 用法：
 //   npm run demo:shots            # 截图到 screenshots/（本地目录，不上云）
@@ -25,7 +25,6 @@ const argValue = (name, fallback) => {
 const OUT_DIR = path.resolve(argValue("out", "screenshots"));
 const PORT = Number(argValue("port", "5199"));
 const BASE = `http://127.0.0.1:${PORT}`;
-const THEMES = ["sakura", "dark", "cyber-cyan"];
 
 // ---- 小工具 ----
 
@@ -88,13 +87,13 @@ async function closeOverlays(page) {
 
 async function openSettings(page) {
   await page.locator('button[title="设置"]').click();
-  await page.locator('div[role="dialog"][aria-label="设置"]').waitFor();
+  await page.getByRole("dialog", { name: "设置工作台" }).waitFor();
   await settle();
 }
 
 async function closeSettings(page) {
   await closeOverlays(page);
-  await page.locator('div[role="dialog"][aria-label="设置"]').waitFor({ state: "detached" });
+  await page.getByRole("dialog", { name: "设置工作台" }).waitFor({ state: "detached" });
 }
 
 async function scrollSettingsTo(page, chipLabel) {
@@ -103,7 +102,7 @@ async function scrollSettingsTo(page, chipLabel) {
 }
 
 async function selectTheme(page, themeId) {
-  const dialog = page.locator('div[role="dialog"][aria-label="设置"]');
+  const dialog = page.getByRole("dialog", { name: "设置工作台" });
   await dialog.locator("select").first().selectOption(themeId);
   await settle(600);
 }
@@ -131,7 +130,7 @@ async function clickMenu(page, label) {
   await settle();
 }
 
-// ---- 功能特性巡演（樱花粉主题全覆盖） ----
+// ---- 功能特性巡演（霜纸主题全覆盖） ----
 
 async function featureTour(page) {
   // 01 欢迎页（首次进入自动弹出）
@@ -180,7 +179,7 @@ async function featureTour(page) {
   await settle(300);
 
   // 08-10 收藏夹 / 最近使用 / 文件柜（均在侧栏「文件夹」页签内）
-  await page.locator('[data-region="sidebar"] button:has-text("文件夹")').first().click();
+  await page.locator('[data-region="sidebar"] button:has-text("文件柜")').first().click();
   await settle(300);
 
   // 08 收藏夹
@@ -208,7 +207,7 @@ async function featureTour(page) {
   // 11 命令面板
   await page.keyboard.press("Control+k");
   await settle();
-  await page.keyboard.type("chrome", { delay: 30 });
+  await page.keyboard.type("google", { delay: 30 });
   await settle(500);
   await shot(page, "command-palette-命令面板");
   await closeOverlays(page);
@@ -249,10 +248,10 @@ async function featureTour(page) {
   await closeOverlays(page);
   await clearSelection(page);
 
-  // 17 框选批量操作（在网格空白处拖出选区）
+  // 17 框选批量操作（从网格左 padding 空白条拖出选区，起点不能落在卡片上）
   const grid = page.locator('[data-region="main"]');
   const box = await grid.boundingBox();
-  await page.mouse.move(box.x + 40, box.y + 220);
+  await page.mouse.move(box.x + 6, box.y + 220);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width - 80, box.y + 520, { steps: 12 });
   await settle(300);
@@ -265,7 +264,7 @@ async function featureTour(page) {
   await settle(300);
 
   // 18 标签图谱
-  await page.locator('[data-region="sidebar"] button:has-text("图谱")').first().click();
+  await page.locator('[data-region="sidebar"] button[aria-label="打开标签关系图"]').click();
   await settle(900);
   await shot(page, "tag-graph-标签关系图谱");
   await closeOverlays(page);
@@ -281,7 +280,7 @@ async function featureTour(page) {
   await page.getByText("打标完成").waitFor({ timeout: 60_000 });
   await settle(400);
   await shot(page, "ai-tagging-AI批量打标");
-  await page.getByRole("button", { name: "完成" }).click();
+  await page.getByRole("dialog", { name: "AI 打标进度" }).getByRole("button", { name: "完成" }).click();
   await settle();
 
   await scrollSettingsTo(page, "数据管理");
@@ -295,7 +294,7 @@ async function featureTour(page) {
   await closeSettings(page);
 
   // 26 快捷键帮助
-  await page.keyboard.press("Control+/");
+  await page.keyboard.press("?");
   await settle();
   await shot(page, "shortcuts-help-快捷键帮助");
   await closeOverlays(page);
@@ -306,16 +305,23 @@ async function featureTour(page) {
   await shot(page, "missing-relocate-失效对象找回反馈");
 }
 
-// ---- 主题巡演：仅并列展示各官方主题的主界面（功能截图由樱花粉全覆盖） ----
+// ---- 主题巡演：遍历主题下拉框中的全部内置主题，各截主界面并列展示 ----
 
 async function themeTour(page) {
-  for (const themeId of THEMES) {
+  await openSettings(page);
+  const dialog = page.getByRole("dialog", { name: "设置工作台" });
+  const themeIds = await dialog.locator("select").first().locator("option").evaluateAll(
+    (options) => options.map((option) => option.value),
+  );
+  await closeSettings(page);
+  console.log(`  共 ${themeIds.length} 套主题`);
+  for (const themeId of themeIds) {
     await openSettings(page);
     await selectTheme(page, themeId);
     await closeSettings(page);
     await shot(page, `theme-${themeId}-grid-主界面`);
   }
-  // 巡演结束后回到演示主用主题（樱花粉），便于人工接续体验
+  // 巡演结束后回到演示主用主题（霜纸），便于人工接续体验
   await openSettings(page);
   await selectTheme(page, "sakura");
   await closeSettings(page);
