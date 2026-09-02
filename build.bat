@@ -56,6 +56,18 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Packing portable zip...
+if defined TARGET (
+    call npm run pack:portable -- --target %TARGET%
+) else (
+    call npm run pack:portable
+)
+if errorlevel 1 (
+    echo [ERROR] Portable packaging failed.
+    pause
+    exit /b 1
+)
+
 if defined TARGET (
     echo Build complete! Output: src-tauri\target\%TARGET%\release\bundle\
     explorer "src-tauri\target\%TARGET%\release\bundle"

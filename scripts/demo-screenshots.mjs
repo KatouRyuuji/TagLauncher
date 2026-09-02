@@ -308,6 +308,9 @@ async function featureTour(page) {
 // ---- 主题巡演：遍历主题下拉框中的全部内置主题，各截主界面并列展示 ----
 
 async function themeTour(page) {
+  // 等上一步（失效找回）的 toast 驻留期结束，避免带入主题截图
+  await page.locator(".toast-enter").first().waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
+  await settle(500);
   await openSettings(page);
   const dialog = page.getByRole("dialog", { name: "设置工作台" });
   const themeIds = await dialog.locator("select").first().locator("option").evaluateAll(

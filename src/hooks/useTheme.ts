@@ -12,6 +12,7 @@ import {
   withDefaultThemeVariables,
 } from "../themes";
 import { applyTheme } from "../lib/theme";
+import { SHAPE_CHANGED_EVENT } from "../themes/shapeLang";
 import { notifyThemeChange } from "../lib/modApi";
 import { showToast } from "../lib/toast";
 import * as db from "../lib/db";
@@ -298,11 +299,18 @@ export function useTheme() {
 
     window.addEventListener(MOD_THEME_ADDED, handleAdded);
     window.addEventListener(MOD_THEME_REMOVED, handleRemoved);
+
+    // 造型风格（A/B 双风格）切换：不重选主题，仅按最新偏好重应用当前主题
+    const handleShapeChanged = () => {
+      applyAndBroadcast(findTheme(desiredThemeIdRef.current) ?? getDefaultTheme());
+    };
+    window.addEventListener(SHAPE_CHANGED_EVENT, handleShapeChanged);
     return () => {
       window.removeEventListener(MOD_THEME_ADDED, handleAdded);
       window.removeEventListener(MOD_THEME_REMOVED, handleRemoved);
+      window.removeEventListener(SHAPE_CHANGED_EVENT, handleShapeChanged);
     };
-  }, [applyAndBroadcast]);
+  }, [applyAndBroadcast, findTheme]);
 
   // Mod 主题统一应用：以 desiredThemeIdRef 为唯一意图来源，
   // 当意图指向的 mod 主题在 modThemes 中出现或内容更新时套用（避免在 updater 内调用 setState 的反模式）。

@@ -1,6 +1,6 @@
 {
   "name": "tag-launcher",
-  "version": "1.6.2-beta",
+  "version": "1.6.3-beta",
   "description": "标签式文件管理器",
   "type": "module",
   "scripts": {
@@ -13,6 +13,8 @@
     "test:all": "node scripts/run-tests.mjs",
     "test:unit": "vitest run",
     "demo": "vite --mode demo --host 127.0.0.1",
+    "pack:portable": "node scripts/build-portable.mjs",
+    "pack": "npm run tauri build && npm run pack:portable",
     "demo:shots": "node scripts/demo-screenshots.mjs",
     "icon": "node generate-icon.mjs"
   },

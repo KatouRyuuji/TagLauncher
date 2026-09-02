@@ -1,6 +1,6 @@
 # TagLauncher 使用手册
 
-> 适用版本：v1.6.1-beta · 面向最终用户 · 开发者请见 [PROJECT_MANUAL.md](./PROJECT_MANUAL.md) 与 [TUTORIAL.md](./TUTORIAL.md)
+> 适用版本：v1.6.3-beta · 面向最终用户 · 开发者请见 [PROJECT_MANUAL.md](./PROJECT_MANUAL.md) 与 [TUTORIAL.md](./TUTORIAL.md)
 
 TagLauncher 用「标签 + 文件柜 + 收藏 + 搜索」管理你的本地文件、文件夹、程序、脚本、图片和音频——不移动、不复制、不改动你的任何文件，只做轻量的索引与启动。
 
@@ -8,13 +8,14 @@ TagLauncher 用「标签 + 文件柜 + 收藏 + 搜索」管理你的本地文�
 
 ## 1. 安装与首次启动
 
-1. 从 [GitHub Releases](https://github.com/KatouRyuuji/TagLauncher/releases) 下载对应架构的安装包：
-   - 常规电脑选 `TagLauncher_x.y.z_x64-setup.exe`；
-   - Windows on ARM 设备（如骁龙本）选 `..._arm64-setup.exe`。
-2. 运行安装包，语言可选中文/英文；桌面快捷方式在功能选择页勾选。
-3. 首次启动会显示欢迎页；应用数据默认存放在安装目录旁的 `Save/` 文件夹（不写注册表、不放 AppData，整个目录拷走即迁移）。
+1. 从 [GitHub Releases](https://github.com/KatouRyuuji/TagLauncher/releases) 下载对应架构的版本：
+   - 常规电脑选 x64；Windows on ARM 设备（如骁龙本）选 arm64。
+   - **安装包**：`TagLauncher_x.y.z_x64-setup.exe`（NSIS 安装程序，推荐大多数用户）。
+   - **便携版**：`TagLauncher_x.y.z_x64-portable.zip`（免安装，解压到任意目录——含 U 盘——运行其中的 `tag-launcher.exe` 即可）。
+2. 安装包：运行后按向导完成，语言可选中文/英文，桌面快捷方式在功能选择页勾选。
+3. 首次启动会显示欢迎页；应用数据默认存放在程序（exe）所在目录旁的 `Save/` 文件夹（不写注册表、不放 AppData，整个目录拷走即迁移）。
 
-> 系统要求：Windows 10 1803+ / Windows 11，需要 WebView2 Runtime（安装包会自动引导安装）。
+> 系统要求：Windows 10 1803+ / Windows 11，需要 WebView2 Runtime（安装包会自动引导安装；便携版不做引导，Win11 与多数 Win10 已预装，若启动白屏请先从微软官网安装 WebView2 Runtime）。
 
 ## 1.1 界面速览
 
@@ -145,7 +146,7 @@ TagLauncher 用「标签 + 文件柜 + 收藏 + 搜索」管理你的本地文�
 
 ## 10. 主题与 Mod
 
-- **主题**：「设置 → 主题外观」切换内置/自定义/Mod 主题，支持导入导出 JSON 主题文件与主题变体；自定义主题放在 `Plugins_Theme/` 目录。
+- **主题**：「设置 → 主题外观」切换内置/自定义/Mod 主题，支持导入导出 JSON 主题文件与主题变体；自定义主题放在 `Plugins_Theme/` 目录。内置 20 套主题色值全部来自 RyuujiDesign 锁定色板；「造型风格」可在纸面 A（圆润纸感）与仪表 B（直角信号）之间独立切换，只改变圆角/阴影/动效与边缘语言，配色仍由当前主题决定。
 - **Mod**：「设置 → 扩展」管理 Mod（启用/禁用/导入/导出/卸载）；Mod 放在 `Plugins_Mods/` 目录，支持 CSS 美化、JS 功能扩展与主题包三类。
 - Mod 属**可信扩展**（非安全沙箱），请只安装来源可信的 Mod。
 - 制作主题/Mod 请参考仓库内 `ExampleTheme/` 与 `ExampleMod/` 示例，以及 [PROJECT_MANUAL.md](./PROJECT_MANUAL.md) 的「Mod 与主题开发」章节。

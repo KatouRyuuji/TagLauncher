@@ -1,6 +1,6 @@
 # TagLauncher 维护手册
 
-> 适用版本：v1.6.1-beta · 面向仓库维护者 · 覆盖 CI、发版、更新分发、数据运维与故障排查
+> 适用版本：v1.6.3-beta · 面向仓库维护者 · 覆盖 CI、发版、更新分发、数据运维与故障排查
 
 ---
 
@@ -9,8 +9,8 @@
 | 工作流 | 触发 | 产出 |
 |---|---|---|
 | `.github/workflows/ci.yml` | push 到 main / 任意 PR | 完整测试（tsc + 前端逻辑/交互测试 + cargo 单元/集成测试）+ 前端生产构建校验 |
-| `.github/workflows/release.yml` | 推送版本 tag（`*.*.*`，兼容 `v` 前缀） | Windows x64 + ARM64 NSIS 安装包，上传到**草稿 Release** |
-| `.github/workflows/release.yml`（手动） | Actions 页 workflow_dispatch | 仅构建，安装包作为 workflow artifact 供测试下载 |
+| `.github/workflows/release.yml` | 推送版本 tag（`*.*.*`，兼容 `v` 前缀） | Windows x64 + ARM64 NSIS 安装包 + 便携版 zip（单 exe），上传到**草稿 Release** |
+| `.github/workflows/release.yml`（手动） | Actions 页 workflow_dispatch | 仅构建，安装包与便携 zip 作为 workflow artifact 供测试下载 |
 
 CI 与本地 `npm run test:all` 是同一套脚本（`scripts/run-tests.mjs`），本地绿 = CI 绿。
 
@@ -38,9 +38,9 @@ git push origin main --tags
 ```
 
 5. **等待 Release 工作流完成**（约 15–25 分钟，双架构并行）；到 GitHub Releases 页检查草稿：
-   - 确认两个安装包都已上传：`TagLauncher_X.Y.Z_x64-setup.exe`、`TagLauncher_X.Y.Z_arm64-setup.exe`；
+   - 确认四个产物都已上传：`TagLauncher_X.Y.Z_x64-setup.exe`、`TagLauncher_X.Y.Z_arm64-setup.exe`、`TagLauncher_X.Y.Z_x64-portable.zip`、`TagLauncher_X.Y.Z_arm64-portable.zip`；
    - 补写 Release 说明（用户可见，会显示在应用内「检查更新」的更新说明里）；
-   - 实机安装冒烟：安装 → 启动 → 导入对象 → 打标 → 搜索 → 检查更新。
+   - 实机安装冒烟：安装 → 启动 → 导入对象 → 打标 → 搜索 → 检查更新；便携 zip 解压运行做同样冒烟。
 6. **点击 Publish** 发布。已装用户会在启动后 24h 内收到应用内更新提示。
 
 ### 版本号语义

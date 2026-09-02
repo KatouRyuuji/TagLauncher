@@ -220,7 +220,7 @@
   textarea:focus-visible,
   select:focus-visible,
   [role="button"]:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--accent-primary) 78%, white 8%);
+    outline: 2px solid var(--color-focus-ring);
     outline-offset: 2px;
   }
 
@@ -375,6 +375,21 @@
     background: var(--accent-primary-hover);
     border-color: var(--accent-primary-hover);
     color: var(--text-invert);
+  }
+
+  /* 危险按钮（RyuujiDesign v5.3 范式）：常态浅染底 + 警示色文字 + 40% 描边；
+     hover/active 反白实心，警示色收在交互瞬间。亮暗通用，无新增色值 */
+  .action-button-danger {
+    border-color: color-mix(in srgb, var(--color-danger) 40%, var(--bg-surface));
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+  }
+
+  .action-button-danger:hover:not(:disabled) {
+    border-color: transparent;
+    background: var(--color-danger);
+    color: var(--text-invert);
+    box-shadow: var(--shadow-md);
   }
 
   .modal-surface {
@@ -553,13 +568,57 @@
     background: var(--color-success);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-success) 15%, transparent);
   }
+
+  /* ------------------------------------------------------------------
+     造型语言装饰签名（严格取自 RyuujiDesign lang/{a,b}.css）
+     data-shape / data-scheme 由 lib/theme.ts applyShapeLang 写入：
+       A 纸面：工作区 80px 网格纹（--sys-grid-line 配方）+ 浮层顶唇
+       B 仪表：丝印字距 0.16em、卡片切角 4px、壳体倒角高光 + 双线内框
+     ------------------------------------------------------------------ */
+  :root[data-shape="a"] {
+    --paper-lip: inset 0 1px 0 color-mix(in srgb, #fff 86%, transparent);
+    --grid-line: color-mix(in srgb, var(--border-default) 55%, transparent);
+  }
+  :root[data-shape="a"][data-scheme="dark"] {
+    --paper-lip: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
+    --grid-line: color-mix(in srgb, var(--border-default) 40%, transparent);
+  }
+  :root[data-shape="a"] [data-region="main"] {
+    background-image:
+      linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+    background-size: 80px 80px;
+    background-attachment: local;
+  }
+  :root[data-shape="a"] .modal-surface {
+    box-shadow: var(--paper-lip), var(--shadow-overlay);
+  }
+
+  :root[data-shape="b"] {
+    --bevel: inset 0 1px 0 color-mix(in srgb, #fff 40%, var(--bg-surface));
+    --frame: inset 0 0 0 1px var(--bg-surface), inset 0 0 0 2px var(--border-medium);
+  }
+  :root[data-shape="b"][data-scheme="dark"] {
+    --bevel: inset 0 1px 0 color-mix(in srgb, #fff 16%, var(--bg-surface));
+  }
+  :root[data-shape="b"] .instrument-label,
+  :root[data-shape="b"] .data-readout {
+    letter-spacing: 0.16em;
+  }
+  :root[data-shape="b"] .item-card-render-scope {
+    clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
+  }
+  :root[data-shape="b"] [data-region="sidebar"],
+  :root[data-shape="b"] [data-region="titlebar"] {
+    box-shadow: var(--bevel), var(--frame);
+  }
 }
 
 @layer utilities {
   /* 可聚焦对象卡片/行的键盘焦点环：与全局 button/input 焦点环共用同一 token 色。
      内缩 2px 避免被虚拟化滚动容器的 overflow 裁剪（行与行、卡片与容器边缘紧邻）。 */
   .item-focus-ring:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--accent-primary) 54%, transparent);
+    outline: 2px solid var(--color-focus-ring);
     outline-offset: -2px;
   }
 

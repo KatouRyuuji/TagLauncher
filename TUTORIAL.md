@@ -1,6 +1,6 @@
 # TagLauncher 源码开发指南
 
-> 适用版本：v1.6.1-beta
+> 适用版本：v1.6.3-beta
 
 本文档面向希望二次开发 TagLauncher 的开发者。
 内容基于当前代码实现（Tauri 2 + React + TypeScript + Rust）。
@@ -220,17 +220,21 @@ src-tauri/src/
 
 ## 7.1 当前策略
 
-当前策略是生成 Windows NSIS 安装包：
+当前策略是生成 Windows NSIS 安装包 + 单 exe 便携版 zip：
 
 ```bash
-npm run tauri build
+npm run tauri build      # NSIS 安装包
+npm run pack:portable    # 便携版 zip（scripts/build-portable.mjs，调用 PowerShell Compress-Archive，无新增依赖）
 ```
 
 产物：
 
 - `src-tauri/target/release/bundle/nsis/TagLauncher_<version>_x64-setup.exe`
+- `src-tauri/target/release/bundle/TagLauncher_<version>_x64-portable.zip`
 
-ARM64 构建用 `build-arm64.bat`（`aarch64-pc-windows-msvc`，脚本会自动 `rustup target add`），产物为 `..._arm64-setup.exe`；`build.bat` 亦支持传入可选 target 参数。
+ARM64 构建用 `build-arm64.bat`（`aarch64-pc-windows-msvc`，脚本会自动 `rustup target add`），产物为对应 bundle 目录下的 `..._arm64-setup.exe` 与 `..._arm64-portable.zip`；`build.bat` 亦支持传入可选 target 参数，且构建成功后自动打便携 zip。
+
+便携版与应用数据模型天然契合：`Save/`、`synonyms.json`、`Plugins_*` 均在 exe 同级目录，解压即用、整目录可迁移；唯一前提是系统已装 WebView2 Runtime（便携版不做安装引导）。
 
 NSIS 安装包会创建开始菜单快捷方式；桌面快捷方式在安装功能选择页中作为可选项；安装语言可选 English / SimpChinese。
 

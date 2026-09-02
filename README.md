@@ -42,7 +42,7 @@
 |:---:|:---|:---|
 | 🧭 | **文件认人不认路** | 以 NTFS 文件 ID 为身份,改名、同盘移动自动追踪;跨盘移动按内容指纹自动找回;支持 NAS / 网络盘。 |
 | 🕸️ | **图状标签(DAG)** | 标签多父继承构成有向无环图:选中「水果」自动包含「苹果」;关系编辑器 + 可视化标签图谱。 |
-| 🧩 | **Mod + 主题双体系** | CSS / CSS+JS / Theme 三类 Mod,17 种权限管控与网络请求原语;主题 tokens、变体与自定义 CSS。 |
+| 🧩 | **Mod + 主题双体系** | CSS / CSS+JS / Theme 三类 Mod,17 种权限管控与网络请求原语;20 套 RyuujiDesign 锁定色板主题,A/B 双造型风格一键切换。 |
 | 🤖 | **AI 自动打标** | 兼容 Anthropic 协议(可接第三方地址),一键 / 自动打标;密钥只存本机,导出自动剔除。 |
 | 🔒 | **数据主权** | 全部本地存储;WebDAV 云备份脱敏(保留最近 10 份);自定义数据目录,一键备份 / 导出 / 导入。 |
 
@@ -52,8 +52,10 @@
 
 ### 我是用户
 
-1. 前往 [Releases](https://github.com/KatouRyuuji/TagLauncher/releases) 下载最新安装包(NSIS,约 4.8 MB,按设备选择 x64 或 ARM64)。
-2. 运行安装程序,可选桌面快捷方式,安装语言支持 English / 简体中文。
+1. 前往 [Releases](https://github.com/KatouRyuuji/TagLauncher/releases) 下载最新版本(按设备选择 x64 或 ARM64):
+   - **安装包**(NSIS,约 4.8 MB):`..._x64-setup.exe` / `..._arm64-setup.exe`;
+   - **便携版**(单 exe zip,解压即用,可放 U 盘):`..._x64-portable.zip` / `..._arm64-portable.zip`。
+2. 安装包:运行安装程序,可选桌面快捷方式,安装语言支持 English / 简体中文;便携版:解压后运行 `tag-launcher.exe`。
 3. 启动后拖入文件或文件夹,贴标签、归档、一键启动。
 
 ### 我是开发者
@@ -64,6 +66,7 @@
 npm run tauri dev      # 桌面开发模式
 npm run test:all       # 全量测试(tsc + 前端 + vitest + Rust)
 npm run tauri build    # 打包 Release(NSIS 安装包)
+npm run pack:portable  # 打便携版 zip(单 exe;build.bat 会在构建后自动完成)
 ```
 
 环境要求:Windows 10 / 11(x64 或 ARM64)· Node.js 20+ · Rust stable · Visual Studio C++ Build Tools · WebView2 Runtime。
@@ -102,7 +105,8 @@ npm run tauri build    # 打包 Release(NSIS 安装包)
 
 - 三类 Mod:CSS、CSS+JS、Theme;提供权限管控(17 种)、生命周期、工具栏按钮、侧栏 / 浮动面板、卡片与列表行对等插槽、Mod 数据存储、文件读写。
 - 受约束的网络请求原语(net.fetch,经 Rust 后端代理绕 CORS)与只读标签关系接口。
-- 主题系统:内置主题、自定义 JSON 主题、Mod 主题,支持导入 / 导出 / 刷新;应用等待主题就绪后再显示主窗口,避免启动闪烁。
+- 主题系统:20 套内置主题(色值逐值取自 RyuujiDesign 锁定色板:霜纸靛蓝 / 和红 / 藤色 / 柳染 / 水浅葱 / 樱花 × 亮暗 + 海军冰蓝 / 钢青 / 铁锈 / 青柠 × 亮暗),另支持自定义 JSON 主题、Mod 主题,导入 / 导出 / 刷新;应用等待主题就绪后再显示主窗口,避免启动闪烁。
+- 双风格切换:主题管配色,「造型风格」管形状——纸面 A(圆润纸感、网格纹、软影)与仪表 B(直角切角、丝印字距、双线内框)独立切换,结构令牌严格对齐 RyuujiDesign 语言层。
 </details>
 
 <details>
@@ -125,8 +129,8 @@ npm run tauri build    # 打包 Release(NSIS 安装包)
 <summary><b>更新与平台</b></summary>
 
 - 启动自动检查 GitHub Releases(24h 节流、同版本只提醒一次);设置页可手动检查,按当前架构(x64 / ARM64)直达安装包下载。
-- 安装包 NSIS 约 4.8 MB;支持 Windows 10 / 11,x64 与 ARM64 原生双架构。
-- 流水线:push / PR 触发 CI 全量测试;推送版本 tag 自动构建双架构安装包并生成草稿 Release。
+- 安装包 NSIS 约 4.8 MB,另有单 exe 便携版 zip(解压即用);支持 Windows 10 / 11,x64 与 ARM64 原生双架构。
+- 流水线:push / PR 触发 CI 全量测试;推送版本 tag 自动构建双架构安装包 + 便携 zip 并生成草稿 Release。
 </details>
 
 ## 文档导航
@@ -137,7 +141,7 @@ npm run tauri build    # 打包 Release(NSIS 安装包)
 | [开发手册](./PROJECT_MANUAL.md) | 架构、模块与 Mod / 主题开发 |
 | [源码开发指南](./TUTORIAL.md) | 从源码开始的开发教学 |
 | [维护手册](./MAINTENANCE.md) | 测试、发版与维护流程 |
-| [版本对比](./版本对比.md) | 1.0.0 → 1.6.1-beta 代际升级记录 |
+| [版本对比](./版本对比.md) | 1.0.0 → 1.6.3-beta 代际升级记录 |
 
 ## Star History
 

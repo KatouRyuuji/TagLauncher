@@ -1,6 +1,6 @@
 # TagLauncher 项目手册
 
-> 适用版本：v1.6.1-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
+> 适用版本：v1.6.3-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
 
 ## 一、项目简介
 
@@ -512,20 +512,27 @@ npm run tauri dev    # 启动 Tauri 开发窗口
 
 ### 生产构建
 ```bash
-npm run tauri build  # 编译 + 打包 NSIS 安装包（x64）
+npm run pack           # 一键：tauri build + 便携 zip（x64）
+npm run tauri build    # 仅编译 + 打包 NSIS 安装包（x64）
+npm run pack:portable  # 仅便携版 zip（单 exe；--target aarch64-pc-windows-msvc 打 ARM64）
 ```
 
-产物位置：`src-tauri/target/release/bundle/nsis/TagLauncher_<version>_x64-setup.exe`
+产物位置：
+- NSIS 安装包：`src-tauri/target/release/bundle/nsis/TagLauncher_<version>_x64-setup.exe`
+- 便携版 zip：`src-tauri/target/release/bundle/TagLauncher_<version>_x64-portable.zip`
 
-ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `..._arm64-setup.exe`。
+`build.bat` 在 `tauri build` 成功后自动调用 `pack:portable`（含可选 target 透传），一次产出安装包 + 便携 zip；便携版由 `scripts/build-portable.mjs` 实现（PowerShell `Compress-Archive`，无新增 npm 依赖）。
+
+ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src-tauri/target/aarch64-pc-windows-msvc/release/bundle/` 下的 `..._arm64-setup.exe` 与 `..._arm64-portable.zip`。
 
 ### CI 与发版
 
 - `.github/workflows/ci.yml`：push/PR 自动跑 `npm run test:all` + 前端生产构建校验（windows-latest，与本地同一套测试脚本）。
-- `.github/workflows/release.yml`：推送版本 tag 自动构建 x64 + ARM64 双架构安装包并生成草稿 Release；发版流程清单见 `MAINTENANCE.md`。
+- `.github/workflows/release.yml`：推送版本 tag 自动构建 x64 + ARM64 双架构安装包与便携版 zip 并生成草稿 Release；发版流程清单见 `MAINTENANCE.md`。
 
 ### 部署
 - 安装包部署：运行 NSIS `-setup.exe` 完成安装（安装语言可选 English / SimpChinese）。
+- 便携版部署：解压 `-portable.zip` 到任意目录（含 U 盘）直接运行 `tag-launcher.exe`，不写注册表；应用数据落在 exe 同级 `Save/`。便携版不引导安装 WebView2，需系统已预装。
 - 运行时依赖：Windows 10 1803+ 或 Windows 11（需要 WebView2）；支持 x64 与 ARM64。
 - 数据存储：默认 exe 同级目录的 `Save/taglauncher.db`（不是 `%APPDATA%`）；数据目录可在设置中自定义，重定向记录于 exe 旁 `datapath.json`（仅重定向 `Save/`）。
 - 同义词字典：优先 exe 同级目录的 `synonyms.json`，不可用时回退到应用数据目录（`%APPDATA%/com.taglauncher.app/synonyms.json`），首次运行自动生成。
@@ -696,7 +703,9 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 | `variants` | 主题变体：每个变体可覆盖部分 `variables` 并附加 `css`（如 SkyCloud 的「静止云层」变体关闭动画） |
 | `css` | 自定义 CSS 文本；非内置主题会经消毒（去 `@import`、中和远程 `url()`、放行 asset/ipc 协议） |
 
-内置主题（`src/themes/`）共 20 套，色值全部锁定自 RyuujiDesign 色板（`styles/palettes.css`）：3 个历史主题 `sakura`（亮色·霜纸，A1 亮）、`dark`（深色·信号红，A2 暗）、`cyber-cyan`（深色·仪表青，B2 暗）保留独立文件以兼容已持久化的主题 id；其余 17 套（A1–A6 × 亮/暗、B1–B4 × 亮/暗去重后）由 `src/themes/ryuuji.ts` 工厂按调色板数据生成，新增色板只需在工厂的 `DEFS` 加一行。自定义主题建议以 `toExportableTheme` 导出格式为准，或直接从示例主题改起。
+内置主题（`src/themes/`）共 20 套，色值全部锁定自 RyuujiDesign 色板（`styles/palettes.css`）：3 个历史主题 `sakura`（亮色·霜纸，A1 亮）、`dark`（深色·信号红，A2 暗）、`cyber-cyan`（深色·仪表青，B2 暗）保留独立文件以兼容已持久化的主题 id；其余 17 套（A1–A6 × 亮/暗、B1–B4 × 亮/暗去重后）由 `src/themes/ryuuji.ts` 工厂按调色板数据生成，新增色板只需在工厂的 `DEFS` 加一行。结构令牌（圆角/阴影/缓动/字体/空间/发丝边）严格取自 RyuujiDesign 造型语言层，单一来源为 `src/themes/shapeLang.ts`（A 纸面 = `lang/a.css`，B 仪表 = `lang/b.css`，共享原语 = `tokens.css`），主题文件一律展开复用、不手改。
+
+**双风格切换**：主题决定配色，造型语言（A 纸面 / B 仪表）可在「设置 → 主题外观 → 造型风格」独立覆盖——`lib/theme.ts` 的 `applyShapeLang` 在每次 `applyTheme` 时写入 `data-shape` / `data-scheme`（`index.css` 据此渲染装饰签名：A 的网格纹与浮层顶唇、B 的丝印字距/切角/倒角高光/双线内框），并在强制 a/b 时用 `shapeLangTokens` 覆盖结构令牌；偏好持久化于 localStorage（`taglauncher.shape-lang`），切换经 `SHAPE_CHANGED_EVENT` 触发当前主题重应用。自定义主题建议以 `toExportableTheme` 导出格式为准，或直接从示例主题改起。
 
 ### 15.7 安全说明：CSP 与 assetProtocol 的有意取舍
 

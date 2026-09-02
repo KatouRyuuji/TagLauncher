@@ -21,6 +21,12 @@ import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { showToast } from "../lib/toast";
 import { SETTINGS_SECTIONS, settingsSectionDomId } from "../lib/settingsSections";
+import {
+  getShapePreference,
+  setShapePreference,
+  SHAPE_CHANGED_EVENT,
+  type ShapePreference,
+} from "../themes/shapeLang";
 import type { ThemeDefinition, ThemeSource, ThemeVariant } from "../types/theme";
 import { AiSettingsSection } from "./AiSettingsSection";
 import { DataSettingsSection } from "./DataSettingsSection";
@@ -296,6 +302,10 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                     />
                   )}
                 </div>
+
+                <div className="mt-4">
+                  <ShapeLangSelect />
+                </div>
               </section>
 
               <div id={settingsSectionDomId("ai")} className="scroll-mt-5 pt-6 [&>section]:mt-0">
@@ -434,6 +444,34 @@ function VariantSelect({
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+/** 造型风格（RyuujiDesign 双风格）：跟随主题 / 强制纸面 A / 强制仪表 B。
+ *  切换只覆盖结构令牌（圆角/阴影/缓动/发丝边等），配色始终跟随当前主题。 */
+function ShapeLangSelect() {
+  const [pref, setPref] = useState<ShapePreference>(() => getShapePreference());
+  return (
+    <label className="block min-w-0">
+      <span className="instrument-label mb-2 block">造型风格</span>
+      <select
+        value={pref}
+        onChange={(event) => {
+          const next = event.target.value as ShapePreference;
+          setPref(next);
+          setShapePreference(next);
+          window.dispatchEvent(new CustomEvent(SHAPE_CHANGED_EVENT));
+        }}
+        className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+      >
+        <option value="theme">跟随主题（推荐）</option>
+        <option value="a">纸面 A · 圆润纸感</option>
+        <option value="b">仪表 B · 直角信号</option>
+      </select>
+      <span className="mt-1.5 block text-[11px] text-[var(--text-faint)]">
+        仅改变圆角、阴影、动效与边缘语言，配色仍由当前主题决定
+      </span>
     </label>
   );
 }

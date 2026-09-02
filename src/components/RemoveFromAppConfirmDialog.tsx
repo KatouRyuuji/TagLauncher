@@ -72,7 +72,7 @@ export function RemoveFromAppConfirmDialog({
             <button type="button" autoFocus onClick={onCancel} className="action-button">
               取消
             </button>
-            <button type="button" onClick={() => void onConfirm()} className="action-button action-button-primary">
+            <button type="button" onClick={() => void onConfirm()} className="action-button action-button-danger">
               <Trash2 aria-hidden="true" size={15} strokeWidth={1.8} />
               确认移除
             </button>

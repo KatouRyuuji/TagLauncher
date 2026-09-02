@@ -1,8 +1,9 @@
 # Release 流水线
-# - 推送版本 tag（如 1.3.0 / v1.3.0）：构建 Windows x64 + ARM64 双架构安装包，
-#   并生成草稿 Release（两架构产物上传到同一 Release，人工检查后发布）。
-# - 手动触发（Actions 页面 workflow_dispatch）：只构建，安装包以 workflow
-#   artifact 形式产出，供下载测试（不创建 Release）。
+# - 推送版本 tag（如 1.3.0 / v1.3.0）：构建 Windows x64 + ARM64 双架构安装包
+#   与便携版 zip（单 exe、解压即用），并生成草稿 Release（产物上传到同一
+#   Release，人工检查后发布）。
+# - 手动触发（Actions 页面 workflow_dispatch）：只构建，安装包与便携 zip 以
+#   workflow artifact 形式产出，供下载测试（不创建 Release）。
 # windows-latest runner 预装 MSVC ARM64 工具链与 Clang（ring/libsqlite3-sys
 # 交叉编译所需），无需额外安装组件。
 
@@ -25,8 +26,12 @@ jobs:
         include:
           - target: x86_64-pc-windows-msvc # 宿主原生构建
             args: ''
+            portableArgs: ''
+            bundleDir: src-tauri/target/release/bundle
           - target: aarch64-pc-windows-msvc # 交叉编译 ARM64
             args: '--target aarch64-pc-windows-msvc'
+            portableArgs: '--target aarch64-pc-windows-msvc'
+            bundleDir: src-tauri/target/aarch64-pc-windows-msvc/release/bundle
     runs-on: windows-latest
 
     steps:
@@ -61,7 +66,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'TagLauncher ${{ github.ref_name }}'
-          releaseBody: 'Windows installers: x64 and ARM64 (Windows on ARM, e.g. Snapdragon X Elite).'
+          releaseBody: 'Windows installers: x64 and ARM64 (Windows on ARM, e.g. Snapdragon X Elite). Portable zip: single-exe, no install required.'
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
@@ -75,3 +80,23 @@ jobs:
         with:
           uploadWorkflowArtifacts: true
           args: ${{ matrix.args }}
+
+      # 便携版 zip（单 exe，解压即用）：两种触发方式都在构建完成后打包
+      - name: Pack portable zip
+        run: node scripts/build-portable.mjs ${{ matrix.portableArgs }}
+
+      # tag 触发：便携 zip 上传到同一草稿 Release
+      - name: Upload portable zip to release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh release upload "${{ github.ref_name }}" "${{ matrix.bundleDir }}"/*-portable.zip --clobber
+
+      # 手动触发：便携 zip 作为 workflow artifact
+      - name: Upload portable zip as workflow artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: taglauncher-portable-${{ matrix.target }}
+          path: ${{ matrix.bundleDir }}/*-portable.zip
