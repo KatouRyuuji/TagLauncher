@@ -64,7 +64,11 @@ fn fresh_file_db_migrates_to_latest() {
     let t = common::temp_db();
     let conn = t.db.get_conn();
 
-    assert_eq!(schema_version(&conn), 8, "全新库应迁移到最新版本");
+    assert_eq!(
+        schema_version(&conn),
+        i64::from(tag_launcher_lib::db::migrations::latest_schema_version()),
+        "全新库应迁移到最新版本"
+    );
     assert!(has_column(&conn, "items", "volume_serial"));
     assert!(has_column(&conn, "items", "file_id"));
     assert!(has_column(&conn, "items", "is_missing"));
@@ -95,7 +99,11 @@ fn upgrade_from_v4_preserves_cascading_relations() {
     let db = Database::new(&path).expect("open & migrate v4 db");
     let conn = db.get_conn();
 
-    assert_eq!(schema_version(&conn), 8, "应升级到最新版本");
+    assert_eq!(
+        schema_version(&conn),
+        i64::from(tag_launcher_lib::db::migrations::latest_schema_version()),
+        "应升级到最新版本"
+    );
     let it: i64 = conn.query_row("SELECT COUNT(*) FROM item_tags", [], |r| r.get(0)).unwrap();
     assert_eq!(it, 1, "破坏性重建后 item_tags 关联应存活（外键在事务外被关闭）");
     let ci: i64 = conn.query_row("SELECT COUNT(*) FROM cabinet_items", [], |r| r.get(0)).unwrap();
@@ -134,12 +142,19 @@ fn reopening_migrated_db_is_idempotent() {
 
     {
         let db1 = Database::new(&path).expect("first open");
-        assert_eq!(schema_version(&db1.get_conn()), 8);
+        assert_eq!(
+            schema_version(&db1.get_conn()),
+            i64::from(tag_launcher_lib::db::migrations::latest_schema_version())
+        );
     } // 关闭第一个连接
 
     let db2 = Database::new(&path).expect("reopen");
     let conn = db2.get_conn();
-    assert_eq!(schema_version(&conn), 8, "重开版本不变");
+    assert_eq!(
+        schema_version(&conn),
+        i64::from(tag_launcher_lib::db::migrations::latest_schema_version()),
+        "重开版本不变"
+    );
     let it: i64 = conn.query_row("SELECT COUNT(*) FROM item_tags", [], |r| r.get(0)).unwrap();
     assert_eq!(it, 1, "重开数据无损");
 }

@@ -1,12 +1,7 @@
 import type { ThemeDefinition, ThemeTokenLayers } from "../types/theme";
 import { showToast } from "./toast";
 import { DEFAULT_THEME_VARIABLES, THEME_VARIABLE_KEYS } from "../themes";
-import {
-  getShapePreference,
-  inferThemeScheme,
-  resolveShapeLang,
-  shapeLangTokens,
-} from "../themes/shapeLang";
+import { inferThemeScheme, resolveShapeLang } from "../themes/shapeLang";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 const CUSTOM_CSS_ID = "__theme-css";
@@ -14,26 +9,14 @@ const THEME_FONT_CSS_ID = "__theme-font-css";
 const dynamicThemeVariableKeys = new Set<string>();
 
 /**
- * 造型语言接入（RyuujiDesign A 纸面 / B 仪表双风格）：
- * - 始终写入 data-shape / data-scheme，index.css 据此渲染装饰签名
- *   （A 的网格纹与浮层顶唇；B 的丝印字距、切角、倒角高光与双线内框）；
- * - 偏好为强制 a/b 时，以 shapeLangTokens 覆盖结构令牌（圆角/阴影/缓动/字体/
- *   空间/发丝边/侧栏宽），配色令牌一律不动；「跟随主题」或偏好与主题同语言时不覆盖，
- *   保留主题自身结构身份（如 SkyCloud 的自定义圆角）。
+ * 造型语言接入（RyuujiDesign A 纸面 / B 仪表）：
+ * 造型由主题自身声明（theme.lang），写入 data-shape / data-scheme，
+ * index.css 据此渲染装饰签名（A 的浮层顶唇；B 的丝印字距、切角、倒角高光
+ * 与双线内框）。结构令牌随主题变量烘焙进主题文件。
  */
 function applyShapeLang(root: HTMLElement, theme: ThemeDefinition): void {
-  const pref = getShapePreference();
-  const lang = resolveShapeLang(theme, pref);
-  const scheme = inferThemeScheme(theme);
-  root.setAttribute("data-shape", lang);
-  root.setAttribute("data-scheme", scheme);
-  if (pref === "theme" || lang === theme.lang) return;
-  for (const [key, value] of Object.entries(shapeLangTokens(lang, scheme))) {
-    root.style.setProperty(`--${key}`, value);
-    if (!THEME_VARIABLE_KEYS.includes(key)) {
-      dynamicThemeVariableKeys.add(key);
-    }
-  }
+  root.setAttribute("data-shape", resolveShapeLang(theme));
+  root.setAttribute("data-scheme", inferThemeScheme(theme));
 }
 
 /** applyTheme 可选项：主题包根目录（用于解析相对资源）与当前变体名 */
@@ -285,8 +268,7 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
 
   applyThemeFonts(theme, themeRoot);
 
-  // 2.5 造型语言（RyuujiDesign 双风格）：写入 data-shape/data-scheme 供 CSS 装饰签名；
-  //    偏好为强制 a/b 时，在主题变量之上覆盖结构令牌（配色不动）。
+  // 2.5 造型语言（A 纸面 / B 仪表）：写入 data-shape/data-scheme 供 CSS 装饰签名
   applyShapeLang(root, theme);
 
   // 3. 移除过渡 class（需等本帧绘制完成后再移除，否则过渡不触发）

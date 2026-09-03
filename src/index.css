@@ -2,12 +2,14 @@
 
 @layer base {
   :root {
-    --font-family: "MiSans", "Segoe UI Variable Text", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", sans-serif;
-    --font-family-mono: "JetBrains Mono", "Cascadia Mono", "Consolas", monospace;
-    --font-size-xs: 11px;
-    --font-size-sm: 13px;
-    --font-size-base: 14px;
-    --font-size-lg: 16px;
+    /* 字体方案（OFL 本地打包 + 系统兜底）：UI = Noto Sans SC、正文 = LXGW WenKai、等宽 = Cascadia Code */
+    --font-family: "Noto Sans SC Variable", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "MiSans", system-ui, sans-serif;
+    --font-family-body: "LXGW WenKai", "LXGW WenKai GB", "Kaiti SC", "STKaiti", "KaiTi", "Noto Sans SC", serif;
+    --font-family-mono: "Cascadia Code", "Cascadia Mono", "JetBrains Mono", "Consolas", monospace;
+    --font-size-xs: 12px;
+    --font-size-sm: 14px;
+    --font-size-base: 15px;
+    --font-size-lg: 17px;
     --font-size-xl: 20px;
     --font-weight-normal: 400;
     --font-weight-medium: 500;
@@ -154,6 +156,12 @@
   body,
   #root {
     height: 100%;
+  }
+
+  /* 全局字号基准：17px（rem 放大 6.25%），配合 token 字号阶梯与各处
+     绝对 px 字号的 +1 同步，实现整体放大而不改变布局比例 */
+  html {
+    font-size: 17px;
   }
 
   /* color-scheme 不写死：由各主题 css 字段按自身明暗声明（内置 light=light、dark/sakura=dark），
@@ -321,7 +329,7 @@
     background: var(--bg-input);
     color: var(--text-faint);
     font-family: inherit;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1;
     letter-spacing: 0;
   }
@@ -419,7 +427,7 @@
   }
 
   .text-label {
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 0;
     text-transform: uppercase;
     color: var(--text-faint);
@@ -533,11 +541,16 @@
   .instrument-label {
     color: var(--text-faint);
     font-family: var(--font-family-mono);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0;
     line-height: 1.2;
     text-transform: uppercase;
+  }
+
+  /* 筛选区可横向滚动且未到底时，右缘渐隐提示后续内容（类名由 SearchBar 维护） */
+  .filter-scroll-more {
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   }
 
   .toolbar-strip {
@@ -571,24 +584,15 @@
 
   /* ------------------------------------------------------------------
      造型语言装饰签名（严格取自 RyuujiDesign lang/{a,b}.css）
-     data-shape / data-scheme 由 lib/theme.ts applyShapeLang 写入：
-       A 纸面：工作区 80px 网格纹（--sys-grid-line 配方）+ 浮层顶唇
-       B 仪表：丝印字距 0.16em、卡片切角 4px、壳体倒角高光 + 双线内框
+     data-shape / data-scheme 由 lib/theme.ts applyShapeLang 写入。
+     纹样仅作点缀：A 保留浮层顶唇；B 保留丝印字距、切角、倒角高光与
+     双线内框。
      ------------------------------------------------------------------ */
   :root[data-shape="a"] {
     --paper-lip: inset 0 1px 0 color-mix(in srgb, #fff 86%, transparent);
-    --grid-line: color-mix(in srgb, var(--border-default) 55%, transparent);
   }
   :root[data-shape="a"][data-scheme="dark"] {
     --paper-lip: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
-    --grid-line: color-mix(in srgb, var(--border-default) 40%, transparent);
-  }
-  :root[data-shape="a"] [data-region="main"] {
-    background-image:
-      linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
-      linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
-    background-size: 80px 80px;
-    background-attachment: local;
   }
   :root[data-shape="a"] .modal-surface {
     box-shadow: var(--paper-lip), var(--shadow-overlay);
@@ -615,6 +619,11 @@
 }
 
 @layer utilities {
+  /* 正文（长文/问候/空状态文案）用 LXGW WenKai；UI 控件仍用 --font-family */
+  .font-body {
+    font-family: var(--font-family-body);
+  }
+
   /* 可聚焦对象卡片/行的键盘焦点环：与全局 button/input 焦点环共用同一 token 色。
      内缩 2px 避免被虚拟化滚动容器的 overflow 裁剪（行与行、卡片与容器边缘紧邻）。 */
   .item-focus-ring:focus-visible {

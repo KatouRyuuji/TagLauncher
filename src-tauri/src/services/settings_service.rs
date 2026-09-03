@@ -25,7 +25,8 @@ pub fn get_app_version() -> &'static str {
 
 /// 获取当前主题 ID
 pub fn get_current_theme(conn: &Connection) -> String {
-    get_setting(conn, "theme").unwrap_or_else(|| "dark".to_string())
+    // 缺省回退 = 默认主题霜靛·暗（前端按模式偏好解析家族，见 src/themes/index.ts）
+    get_setting(conn, "theme").unwrap_or_else(|| "8cebf811-9b9d-4c49-ac9f-1d1fa685ce93".to_string())
 }
 
 /// 设置当前主题

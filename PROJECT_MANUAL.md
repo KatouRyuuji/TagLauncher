@@ -1,6 +1,6 @@
 # TagLauncher 项目手册
 
-> 适用版本：v1.6.3-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
+> 适用版本：v1.7.1-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
 
 ## 一、项目简介
 
@@ -123,9 +123,8 @@ tag-launcher/
 │   │   ├── TitleBar.tsx          # 自绘窗口栏（decorations: false，拖拽/最小化/最大化/关闭）
 │   │   ├── AppErrorBoundary.tsx  # 顶层错误边界（崩溃时强制显示窗口 + 可复制错误详情）
 │   │   ├── Sidebar.tsx           # 左侧导航（标签/文件柜/最近使用）
-│   │   ├── SearchBar.tsx         # 顶部搜索栏（排序 / Ctrl+K）
+│   │   ├── SearchBar.tsx         # 搜索框 + 控制/筛选合并行（搜索范围/排序/视图/类型与标签筛选/导入）
 │   │   ├── SearchHighlightText.tsx # 搜索关键词高亮渲染
-│   │   ├── TagFilterBar.tsx      # 类型 chip + 标签筛选
 │   │   ├── CommandPalette.tsx    # Ctrl+K 命令面板（同名对象以路径第二行区分）
 │   │   ├── QuickPreview.tsx      # 空格快速预览
 │   │   ├── StatusBar.tsx         # 底部状态栏
@@ -144,11 +143,12 @@ tag-launcher/
 │   │   ├── WorkspaceEmptyState.tsx # 空态引导（空库/搜索无结果/筛选无结果三态）
 │   │   ├── InternalDragOverlays.tsx # 内部拖拽悬停落点提示层
 │   │   ├── ContextMenu.tsx       # 右键菜单（Portal 渲染，键盘可导航）
+│   │   ├── SelectMenu.tsx        # 主题化下拉选择器（替代原生 select，排序/主题/变体共用）
 │   │   ├── DraggableTagList.tsx  # 对象内标签重排列表
 │   │   ├── TagEditor.tsx         # 标签/文件柜编辑弹窗
 │   │   ├── TagRelationsEditor.tsx # 标签父子关系编辑器（DAG 环冲突提示）
 │   │   ├── TagGraphView.tsx      # 标签图谱视图
-│   │   ├── SettingsPanel.tsx     # 设置面板（顶部区块快速导航）
+│   │   ├── SettingsPanel.tsx     # 设置面板（左侧区块导航，窄窗口移到顶部）
 │   │   ├── AiSettingsSection.tsx # 设置 · AI 打标区
 │   │   ├── DataSettingsSection.tsx # 设置 · 数据管理区
 │   │   ├── SyncSettingsSection.tsx # 设置 · 云同步区
@@ -328,8 +328,8 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 不依赖第三方模糊搜索库，匹配策略：
 
-- 前缀匹配：从词首开始的包含匹配（`prefixMatches`），大小写不敏感。
-- 中文拼音：拼音全拼与拼音首字母匹配（pinyin-pro 生成）。
+- 前缀匹配：从词首开始的包含匹配（`prefixMatches`），大小写不敏感；CJK 查询词放宽为子串匹配（中文名常以品牌/艺术家等前缀开头）。
+- 中文拼音：拼音全拼与拼音首字母前缀匹配（pinyin-pro 生成）。
 - 英文低容错：基于编辑距离的弱容错（`isEnglishTypoMatch`），仅对 3 字符以上英文生效。
 - 同义词整词扩展：每个非严格子项命中同义词组时一并搜索同组词。
 - 表达式语法：`&&`（与）、`||`（或）、空格（OR 别名）、`()`（结合顺序）、`@`（严格匹配，关闭拼音/模糊/同义词）、`!!`（排除）。
@@ -586,7 +586,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src
 
 ## 十五、Mod 与主题开发
 
-仓库内附完整可运行示例：Mod 示例 `ExampleMod/preview/`（对象预览弹窗）、主题示例 `ExampleTheme/SkyCloudTheme/`（蓝天白云）。本节以两者为实例说明开发要点；运行期行为以 `src/lib/modApi.ts` / `src/lib/modRuntime.ts` / `src/types/mod.ts` 为准。
+仓库内附完整可运行示例：Mod 示例 `ExampleMod/preview/`（对象预览弹窗）、主题示例 `ExampleTheme/SkyCloudTheme/`（蓝天白云）。本节以两者为实例说明开发要点；完整的字段与 API 参考见 [MOD_GUIDE.md](./MOD_GUIDE.md) 与 [THEME_GUIDE.md](./THEME_GUIDE.md)，运行期行为以 `src/lib/modApi.ts` / `src/lib/modRuntime.ts` / `src/types/mod.ts` 为准。
 
 ### 15.1 Mod manifest 字段
 
@@ -683,7 +683,7 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 | `sidebar-panels` | 侧栏面板区 | Mod 面板宿主 |
 | `searchbar` | 顶部搜索/工具栏 | 搜索框、排序、视图切换 |
 | `main` | 主视图区 | 对象网格/列表所在区域 |
-| `filterbar` | 类型筛选条 | 文件夹/图片/音频/程序/脚本 chips |
+| `filterbar` | 控制/筛选合并行 | 搜索范围/排序/视图切换/类型与标签筛选 chips/导入按钮 |
 | `statusbar` | 底部状态栏 | 可见数量/范围/已选/排序 |
 | `item-grid-inner` | 网格内部容器 | 虚拟化网格内容层 |
 | `bg-decoration` | 背景装饰层 | 主题背景动画/渐变挂点（z-index 最低） |
@@ -695,7 +695,7 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 
 | 字段 | 说明 |
 |---|---|
-| `id` / `name` / `author` / `version` | 主题标识与元信息；`id` 不得使用保留字 `dark` / `sakura` / `cyber-cyan` / `light`（与内置主题冲突会被拒绝；`light` 为保留旧 id，防占用歧义） |
+| `id` / `name` / `author` / `version` | 主题标识与元信息；`id` 全局唯一（推荐 uuid），不得使用保留清单（14 套内置 uuid + 全部停用字符串 id，见 `theme_loader.rs` 的 `RESERVED_THEME_IDS` 与 [THEME_GUIDE.md](./THEME_GUIDE.md)） |
 | `isPreset` | 是否内置预设（自定义主题固定 `false`） |
 | `variables` | 扁平 CSS 变量表（颜色/字体/间距/圆角/阴影/z-index 等全量 token，缺省项由宿主默认值补齐） |
 | `tokens` | 分层 token：`primitive`（原始色板）→ `semantic`（语义层）→ `component`（组件层）→ `motion` / `layout` |
@@ -703,9 +703,9 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 | `variants` | 主题变体：每个变体可覆盖部分 `variables` 并附加 `css`（如 SkyCloud 的「静止云层」变体关闭动画） |
 | `css` | 自定义 CSS 文本；非内置主题会经消毒（去 `@import`、中和远程 `url()`、放行 asset/ipc 协议） |
 
-内置主题（`src/themes/`）共 20 套，色值全部锁定自 RyuujiDesign 色板（`styles/palettes.css`）：3 个历史主题 `sakura`（亮色·霜纸，A1 亮）、`dark`（深色·信号红，A2 暗）、`cyber-cyan`（深色·仪表青，B2 暗）保留独立文件以兼容已持久化的主题 id；其余 17 套（A1–A6 × 亮/暗、B1–B4 × 亮/暗去重后）由 `src/themes/ryuuji.ts` 工厂按调色板数据生成，新增色板只需在工厂的 `DEFS` 加一行。结构令牌（圆角/阴影/缓动/字体/空间/发丝边）严格取自 RyuujiDesign 造型语言层，单一来源为 `src/themes/shapeLang.ts`（A 纸面 = `lang/a.css`，B 仪表 = `lang/b.css`，共享原语 = `tokens.css`），主题文件一律展开复用、不手改。
+内置主题（`src/themes/`）为「配色家族 × 亮/暗模式」模型：7 个家族（霜靛 / 藤色 / 柳染 / 水浅葱 / 樱花 / 海军冰蓝 / 铁锈）注册于 `src/themes/index.ts` 的 `THEME_FAMILIES`，每个家族声明亮、暗两个具体主题 id。**主题唯一标识为固定 uuid**，与显示名、家族、功能语义完全解耦——显示名是面向用户的自由文本（同一家族亮/暗两套同名，如「霜靛」），身份识别只认 uuid；持久化的旧字符串 id 由迁移 v010 改写为 uuid（此前各代的停用 id 见 v008/v009）。7 个家族共 14 套：1 套为独立文件（`src/themes/sakura.ts`），其余 13 套由 `src/themes/ryuuji.ts` 工厂按锁定色板生成，新增色板只需在工厂的 `DEFS` 加一行（id 填新生成的 uuid）。结构令牌（圆角/阴影/缓动/字体/空间/发丝边）严格取自 RyuujiDesign 造型语言层，单一来源为 `src/themes/shapeLang.ts`（A 纸面 = `lang/a.css`，B 仪表 = `lang/b.css`，共享原语 = `tokens.css`），主题文件一律展开复用、不手改；z 层级、拖拽、标签透明度、边框与面板规格等壳层共享令牌统一来自 `src/themes/chromeTokens.ts`。
 
-**双风格切换**：主题决定配色，造型语言（A 纸面 / B 仪表）可在「设置 → 主题外观 → 造型风格」独立覆盖——`lib/theme.ts` 的 `applyShapeLang` 在每次 `applyTheme` 时写入 `data-shape` / `data-scheme`（`index.css` 据此渲染装饰签名：A 的网格纹与浮层顶唇、B 的丝印字距/切角/倒角高光/双线内框），并在强制 a/b 时用 `shapeLangTokens` 覆盖结构令牌；偏好持久化于 localStorage（`taglauncher.shape-lang`），切换经 `SHAPE_CHANGED_EVENT` 触发当前主题重应用。自定义主题建议以 `toExportableTheme` 导出格式为准，或直接从示例主题改起。
+**亮/暗模式开关**：外观模式（亮色 / 暗色 / 跟随系统）独立于主题，偏好持久化于 localStorage（`taglauncher.color-mode`，单一来源 `src/lib/colorMode.ts`）；`useTheme` 监听偏好与系统亮暗变化，把当前内置家族解析到对应模式的具体主题并持久化。自定义 / Mod 主题自带固定配色方案，外观模式仅作用于内置家族（窗口栏快捷开关对内置家族以外的主题禁用）。**造型语言由主题自身声明**（`ThemeDefinition.lang`），随主题生效——`lib/theme.ts` 的 `applyShapeLang` 在每次 `applyTheme` 时按主题声明写入 `data-shape` / `data-scheme`（`index.css` 据此渲染装饰签名：A 的浮层顶唇、B 的丝印字距/切角/倒角高光/双线内框，纹样仅作点缀）。自定义主题建议以 `toExportableTheme` 导出格式为准，或直接从示例主题改起。
 
 ### 15.7 安全说明：CSP 与 assetProtocol 的有意取舍
 
@@ -737,6 +737,6 @@ npm run demo        # 浏览器打开 http://127.0.0.1:3456 即完整应用
 npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页面
 ```
 
-`scripts/demo-screenshots.mjs` 启动 demo 服务器后用 Playwright 驱动真实 UI 交互（搜索/拼音、标签筛选、文件柜、命令面板、快速预览、右键菜单、标签编辑器、框选批量、图谱、设置各区块、AI 打标、快捷键、失效找回）——功能截图以**亮色·霜纸（sakura）主题全覆盖**；再遍历全部 20 套内置主题各截一张主界面并列对比，共约 48 张 2x 截图。
+`scripts/demo-screenshots.mjs` 启动 demo 服务器后用 Playwright 驱动真实 UI 交互（搜索/拼音、标签筛选、文件柜、命令面板、快速预览、右键菜单、标签编辑器、框选批量、图谱、设置各区块、AI 打标、快捷键、失效找回）——功能截图以**霜靛（A1 家族）主题全覆盖**；再遍历全部 7 个内置配色家族各截一张主界面并列对比。
 
 **产物边界**：截图输出到 `screenshots/`（已 gitignore，不上云）；工具本身（`src/demo/` + 脚本）随仓库分发，clone 后 `npm i && npx playwright install chromium` 即可复现同一套截图。可选参数：`--out <目录>`、`--port <端口>`。

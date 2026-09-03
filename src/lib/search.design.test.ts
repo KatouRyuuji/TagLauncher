@@ -111,6 +111,19 @@ test("B2 短词模糊容错：首字符一致才允许模糊", () => {
   assert.deepEqual(searchWithIndex(bcIndex, "bc").map((i) => i.id), []);
 });
 
+test("CJK 查询按子串匹配，拼音/首字母仍按前缀匹配", () => {
+  const cjkItems = [item(51, "周杰伦 - 晴天"), item(52, "青海湖日落"), item(53, "忍者神龟")];
+  const cjkIndex = buildSearchIndex(cjkItems, "name");
+  // 子串：名称中后段的 CJK 词也命中
+  assert.deepEqual(searchWithIndex(cjkIndex, "晴天").map((i) => i.id), [51]);
+  assert.deepEqual(searchWithIndex(cjkIndex, "神龟").map((i) => i.id), [53]);
+  // 前缀语义不受影响的反例：「伦 - 晴」这类非子串不命中
+  assert.deepEqual(searchWithIndex(cjkIndex, "伦晴").map((i) => i.id), []);
+  // 拼音/首字母仍是前缀匹配：zjl 命中（首字母串 zjlqt 的前缀），qt（中段）不命中
+  assert.deepEqual(searchWithIndex(cjkIndex, "zjl").map((i) => i.id), [51]);
+  assert.deepEqual(searchWithIndex(cjkIndex, "qt").map((i) => i.id), []);
+});
+
 test("B3 path 弱字段先剥离盘符前缀", () => {
   function pathItem(id: number, name: string, path: string): ItemWithTags {
     return { id, name, path, type: "exe", created_at: "2026-04-26 00:00:00", is_favorite: false, tags: [] };

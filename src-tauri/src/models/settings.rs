@@ -52,6 +52,9 @@ pub struct ThemeDefinition {
     /// 原始 CSS 注入字符串（用于变量无法覆盖的深度定制）
     #[serde(default)]
     pub css: Option<String>,
+    /// 造型语言：a（纸面）/ b（仪表）；缺省按 a 处理
+    #[serde(default)]
+    pub lang: Option<String>,
     /// 主题来源：preset / custom / mod
     #[serde(default)]
     pub source: Option<String>,

@@ -18,42 +18,24 @@ const PATH_VISUALS: Record<string, DemoVisual> = {
   // folder
   "C:/Users/Ryu/Documents/工作文档": { emoji: "📁", from: "#f59e0b", to: "#d97706" },
   "D:/Photos/旅行照片": { emoji: "🏞️", from: "#34d399", to: "#059669" },
-  "C:/Projects/tag-launcher": { emoji: "🚀", from: "#60a5fa", to: "#2563eb" },
   "E:/Media/影视收藏": { emoji: "🎬", from: "#f472b6", to: "#db2777" },
   // image
   "D:/Pictures/艺术收藏/蒙娜丽莎.jpg": { emoji: "🖼️", from: "#a16207", to: "#713f12" },
-  "D:/Pictures/壁纸/星空壁纸.png": { emoji: "🌌", from: "#312e81", to: "#0f172a" },
   "D:/Photos/2024-青海/青海湖日落.jpg": { emoji: "🌅", from: "#fb923c", to: "#c2410c" },
-  "C:/Users/Ryu/Pictures/表情包/猫咪表情包.gif": { emoji: "🐱", from: "#fcd34d", to: "#f59e0b" },
   // audio（专辑封面与卡片缩略图同视觉）
   "D:/Music/华语流行/周杰伦 - 晴天.mp3": { emoji: "🎵", from: "#fb7185", to: "#e11d48" },
-  "D:/Music/古典/贝多芬 - 月光奏鸣曲.mp3": { emoji: "🎹", from: "#c084fc", to: "#7e22ce" },
-  "D:/Music/J-Pop/米津玄师 - Lemon.mp3": { emoji: "🍋", from: "#fde047", to: "#a3e635" },
-  "D:/Music/电影原声/Interstellar Main Theme.flac": { emoji: "🌠", from: "#818cf8", to: "#1e1b4b" },
 };
 
 /** 缩略图缓存路径 item-<id>.png → 视觉（与 data.ts 中的对象一一对应） */
 const THUMB_VISUALS: Record<number, DemoVisual> = {
   1: { emoji: "📁", from: "#f59e0b", to: "#d97706" },
   2: { emoji: "🏞️", from: "#34d399", to: "#059669" },
-  3: { emoji: "🚀", from: "#60a5fa", to: "#2563eb" },
-  4: { emoji: "🎬", from: "#f472b6", to: "#db2777" },
-  9: { emoji: "🎵", from: "#fb7185", to: "#e11d48" },
-  10: { emoji: "🎹", from: "#c084fc", to: "#7e22ce" },
-  11: { emoji: "🍋", from: "#fde047", to: "#a3e635" },
-  12: { emoji: "🌠", from: "#818cf8", to: "#1e1b4b" },
-  13: { emoji: "📝", from: "#38bdf8", to: "#0369a1" },
-  14: { emoji: "🌐", from: "#4ade80", to: "#15803d" },
-  15: { emoji: "⛩️", from: "#fda4af", to: "#be123c" },
-  16: { emoji: "🎮", from: "#67e8f9", to: "#0e7490" },
-  17: { emoji: "🧹", from: "#d8b4fe", to: "#9333ea" },
-  18: { emoji: "💾", from: "#a5b4fc", to: "#4f46e5" },
-  19: { emoji: "⚙️", from: "#93c5fd", to: "#1d4ed8" },
-  20: { emoji: "⏰", from: "#fca5a5", to: "#dc2626" },
-  21: { emoji: "✏️", from: "#fdba74", to: "#ea580c" },
-  22: { emoji: "🖥️", from: "#f0abfc", to: "#a21caf" },
-  23: { emoji: "🔄", from: "#6ee7b7", to: "#047857" },
-  24: { emoji: "📡", from: "#5eead4", to: "#0f766e" },
+  3: { emoji: "🎬", from: "#f472b6", to: "#db2777" },
+  6: { emoji: "🎵", from: "#fb7185", to: "#e11d48" },
+  7: { emoji: "📝", from: "#38bdf8", to: "#0369a1" },
+  8: { emoji: "⛩️", from: "#fda4af", to: "#be123c" },
+  9: { emoji: "⚙️", from: "#93c5fd", to: "#1d4ed8" },
+  10: { emoji: "🔄", from: "#6ee7b7", to: "#047857" },
 };
 
 const FALLBACK_PALETTE: Array<[string, string]> = [

@@ -9,6 +9,7 @@ use std::path::Path;
 const REQUIRED_VARIABLES: &[&str] = &[
     "font-family",
     "font-family-mono",
+    "font-family-body",
     "font-size-xs",
     "font-size-sm",
     "font-size-base",
@@ -82,6 +83,7 @@ const REQUIRED_VARIABLES: &[&str] = &[
     "color-warning",
     "color-success",
     "color-favorite",
+    "color-focus-ring",
     "overlay-bg",
     "scrollbar-thumb",
     "scrollbar-thumb-hover",
@@ -92,8 +94,11 @@ const REQUIRED_VARIABLES: &[&str] = &[
     "z-drag-ghost",
     "z-welcome-modal",
     "z-floating-panel",
+    "z-quick-preview",
     "z-settings-overlay",
     "z-settings-panel",
+    "z-command-palette",
+    "z-shortcuts-help",
     "z-mod-confirm-overlay",
     "z-mod-confirm-panel",
     "z-migration-overlay",
@@ -116,9 +121,48 @@ const REQUIRED_VARIABLES: &[&str] = &[
     "panel-border-color",
 ];
 
-// "light" 为 v1.6.1 对调前的旧内置 id（现为亮色樱花的 "sakura"），继续保留防止
-// 自定义/mod 主题占用后与老配置迁移映射（"light"→"sakura"）产生歧义。
-const RESERVED_THEME_IDS: &[&str] = &["dark", "sakura", "cyber-cyan", "light"];
+// 保留 id 组成：14 套内置主题的 uuid + 迁移仍会改写的全部停用字符串 id
+// （v008/v009/v010 的输入 id）——自定义/mod 主题占用这些 id 会与内置主题或
+// 持久化配置的迁移映射产生歧义。与前端 modRuntime::RESERVED_THEME_IDS 同步。
+const RESERVED_THEME_IDS: &[&str] = &[
+    // 在架内置主题 uuid（src/themes/ryuuji.ts DEFS 与 sakura.ts）
+    "7f47aab2-74bb-4c77-b99b-550f0acf3c9c",
+    "8cebf811-9b9d-4c49-ac9f-1d1fa685ce93",
+    "668e5856-9d9f-481a-8f82-325372d2e256",
+    "65596bf6-3aaf-4322-93f2-bbb60cb94b5d",
+    "3f8ae7b3-244f-4429-a7bc-84d8bbde3ca2",
+    "cd4665e5-081f-434b-943f-bd44b49cd6ac",
+    "6794e521-fd01-4e6d-997a-c4d0f1c66de2",
+    "f2368e2a-ee19-4192-96ea-3db85f15c74d",
+    "70492696-751c-4a29-9ab4-09ad8ddff1a4",
+    "ad9b379f-0f3d-45e3-8b55-bf077b4ab97a",
+    "e0f5add7-8b67-42c9-9b2b-c7bbf49e255d",
+    "6c309a70-ec6a-4429-8299-c4cde7c0ffcc",
+    "5298ac16-455f-42f8-8bc8-e9b03ee0fdbf",
+    "cfaadcb4-7e85-460c-a8fe-52e848959719",
+    // 迁移仍会改写的停用字符串 id
+    "sakura",
+    "light",
+    "dark",
+    "cyber-cyan",
+    "ryuuji-a1-dark",
+    "ryuuji-a2-light",
+    "ryuuji-a3-light",
+    "ryuuji-a3-dark",
+    "ryuuji-a4-light",
+    "ryuuji-a4-dark",
+    "ryuuji-a5-light",
+    "ryuuji-a5-dark",
+    "ryuuji-a6-light",
+    "ryuuji-a6-dark",
+    "ryuuji-b1-light",
+    "ryuuji-b1-dark",
+    "ryuuji-b2-light",
+    "ryuuji-b3-light",
+    "ryuuji-b3-dark",
+    "ryuuji-b4-light",
+    "ryuuji-b4-dark",
+];
 
 /// 从目录加载自定义主题文件，返回成功列表与错误列表
 pub fn load_custom_themes(themes_dir: &Path) -> CustomThemesResult {

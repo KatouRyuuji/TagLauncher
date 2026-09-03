@@ -1,6 +1,6 @@
 # TagLauncher 源码开发指南
 
-> 适用版本：v1.6.3-beta
+> 适用版本：v1.7.1-beta
 
 本文档面向希望二次开发 TagLauncher 的开发者。
 内容基于当前代码实现（Tauri 2 + React + TypeScript + Rust）。

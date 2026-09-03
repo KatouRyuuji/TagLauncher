@@ -74,7 +74,7 @@ function seedState(): DemoState {
     ),
     settings: new Map([
       // 演示主用主题：樱花粉（功能巡演与截图全覆盖）
-      ["theme", "sakura"],
+      ["theme", "7f47aab2-74bb-4c77-b99b-550f0acf3c9c"],
       ["last_known_version", VERSION],
     ]),
     ai: {
@@ -495,7 +495,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "get_app_version":
       return VERSION;
     case "get_current_theme":
-      return state.settings.get("theme") ?? "dark";
+      return state.settings.get("theme") ?? "7f47aab2-74bb-4c77-b99b-550f0acf3c9c";
     case "set_current_theme":
       state.settings.set("theme", str(args.themeId));
       return null;

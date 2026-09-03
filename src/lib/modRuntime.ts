@@ -97,9 +97,47 @@ function dispatchThemeRemoved(themeId: string) {
 }
 
 /** 内置保留主题 id（与后端 theme_loader::RESERVED_THEME_IDS 同步，禁止 mod 主题占用）。
- *  "light" 为 v1.6.1 对调前的旧内置 id（现为亮色樱花的 "sakura"），继续保留防止
- *  mod 主题占用后与老配置迁移映射（"light"→"sakura"）产生歧义。 */
-const RESERVED_THEME_IDS = ["dark", "sakura", "cyber-cyan", "light"];
+ *  组成：14 套内置主题的 uuid + 迁移仍会改写的全部停用字符串 id（v008/v009/v010 的
+ *  输入 id）——mod 主题占用这些 id 会与内置主题或持久化配置的迁移映射产生歧义。 */
+const RESERVED_THEME_IDS = [
+  // 在架内置主题 uuid（src/themes/ryuuji.ts DEFS 与 sakura.ts）
+  "7f47aab2-74bb-4c77-b99b-550f0acf3c9c",
+  "8cebf811-9b9d-4c49-ac9f-1d1fa685ce93",
+  "668e5856-9d9f-481a-8f82-325372d2e256",
+  "65596bf6-3aaf-4322-93f2-bbb60cb94b5d",
+  "3f8ae7b3-244f-4429-a7bc-84d8bbde3ca2",
+  "cd4665e5-081f-434b-943f-bd44b49cd6ac",
+  "6794e521-fd01-4e6d-997a-c4d0f1c66de2",
+  "f2368e2a-ee19-4192-96ea-3db85f15c74d",
+  "70492696-751c-4a29-9ab4-09ad8ddff1a4",
+  "ad9b379f-0f3d-45e3-8b55-bf077b4ab97a",
+  "e0f5add7-8b67-42c9-9b2b-c7bbf49e255d",
+  "6c309a70-ec6a-4429-8299-c4cde7c0ffcc",
+  "5298ac16-455f-42f8-8bc8-e9b03ee0fdbf",
+  "cfaadcb4-7e85-460c-a8fe-52e848959719",
+  // 迁移仍会改写的停用字符串 id
+  "sakura",
+  "light",
+  "dark",
+  "cyber-cyan",
+  "ryuuji-a1-dark",
+  "ryuuji-a2-light",
+  "ryuuji-a3-light",
+  "ryuuji-a3-dark",
+  "ryuuji-a4-light",
+  "ryuuji-a4-dark",
+  "ryuuji-a5-light",
+  "ryuuji-a5-dark",
+  "ryuuji-a6-light",
+  "ryuuji-a6-dark",
+  "ryuuji-b1-light",
+  "ryuuji-b1-dark",
+  "ryuuji-b2-light",
+  "ryuuji-b3-light",
+  "ryuuji-b3-dark",
+  "ryuuji-b4-light",
+  "ryuuji-b4-dark",
+];
 
 /**
  * 校验 mod 主题结构（与后端 theme_loader::validate_theme_for_loading 同款口径）。

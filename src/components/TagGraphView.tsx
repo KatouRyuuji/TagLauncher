@@ -144,7 +144,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
     <div
       ref={trapRef}
       data-workspace-overlay=""
-      className="fixed inset-0 flex flex-col"
+      className="fixed inset-x-0 bottom-0 top-[var(--titlebar-height)] flex flex-col"
       style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-editor-panel)" }}
       role="dialog"
       aria-modal="true"

@@ -137,6 +137,13 @@ export function useWorkspaceHotkeys({
         return;
       }
 
+      // F3 随处搜索：与 Ctrl+F 同口径（输入中也可用），主流启动器惯例键位
+      if (!ctrl && !event.altKey && !event.shiftKey && event.key === "F3") {
+        event.preventDefault();
+        focusWorkspaceSearch();
+        return;
+      }
+
       if (ctrl && event.key === ",") {
         event.preventDefault();
         ctx.onOpenSettings();

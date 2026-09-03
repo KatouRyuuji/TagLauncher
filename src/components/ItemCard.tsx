@@ -178,7 +178,7 @@ function ItemCardComponent({
         data-selected={selected ? "true" : "false"}
         role="listitem"
         aria-label={`${item.name}${selected ? "，已选择" : ""}`}
-        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex min-h-[188px] cursor-pointer flex-col overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--surface-raised)] shadow-[var(--shadow-card)] ${
+        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-lg)] border bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-card)] ${
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
             : selected
@@ -200,31 +200,57 @@ function ItemCardComponent({
         }}
         tabIndex={0}
       >
-        <div
-          aria-hidden="true"
-          className={`h-[3px] w-full shrink-0 ${
-            tagDragOver || selected
-              ? "bg-[var(--accent-primary)]"
-              : item.is_missing
-              ? "bg-[var(--color-warning)]"
-              : "bg-[var(--line-hairline)]"
-          }`}
-        />
-
-        <div className="flex min-h-10 items-center justify-between gap-2 border-b border-[var(--line-hairline)] px-3 py-1.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="instrument-label truncate" title={getTypeLabel(item.type)}>
-              {getTypeLabel(item.type)}
-            </span>
-            <span
-              className="data-readout max-w-20 truncate rounded-[var(--radius-sm)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-1.5 py-0.5 text-[9px] text-[var(--text-muted)]"
-              title={fileSuffix}
-            >
-              {fileSuffix}
-            </span>
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-[23px]">
+            <ItemVisualIcon
+              item={item}
+              emojiClass="leading-none"
+              imageClass="h-full w-full object-cover"
+            />
           </div>
 
-          <div className="flex shrink-0 items-center gap-0.5">
+          {/* 文本列为右上角的星标/选中勾预留安全间距，任何状态下文字不与控件重叠 */}
+          <div className={`min-w-0 flex-1 ${selected ? "pr-16" : "pr-9"}`}>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
+                <SearchHighlightText text={item.name} query={searchQuery} />
+              </h3>
+              {item.is_missing && (
+                <span
+                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-[var(--color-warning)]"
+                  title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
+                >
+                  <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
+                  失效
+                </span>
+              )}
+            </div>
+            <p
+              className={`mt-0.5 truncate text-[12px] leading-4 ${
+                item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"
+              }`}
+              title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
+            >
+              {item.path}
+            </p>
+            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-[var(--text-faint)]">
+              <span className="instrument-label truncate" title={getTypeLabel(item.type)}>
+                {getTypeLabel(item.type)}
+              </span>
+              {fileSuffix !== "无后缀" && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="data-readout truncate" title={fileSuffix}>
+                    {fileSuffix}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* 右上角常驻区：仅选中勾与星标（星标非收藏时半隐，组件内处理） */}
+          <div className="absolute right-2.5 top-2.5 flex items-center gap-0.5">
+            {modSlots.header.length > 0 && <div ref={headerSlotRef} className="flex items-center gap-1" />}
             {selected && (
               <span
                 className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary)] text-[var(--text-invert)]"
@@ -235,61 +261,18 @@ function ItemCardComponent({
                 <Check className="h-3.5 w-3.5" strokeWidth={2.2} aria-hidden="true" />
               </span>
             )}
-            <ItemDragHandle onPointerDown={handleItemHandlePointerDown} />
             <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
-            {/* Mod 插槽：header */}
-            {modSlots.header.length > 0 && <div ref={headerSlotRef} className="flex items-center gap-1" />}
           </div>
         </div>
 
-        <div className="flex flex-1 flex-col px-3 py-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-[23px]">
-              <ItemVisualIcon
-                item={item}
-                emojiClass="leading-none"
-                imageClass="h-full w-full object-cover"
-              />
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <h3 className="min-w-0 flex-1 truncate text-sm font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
-                  <SearchHighlightText text={item.name} query={searchQuery} />
-                </h3>
-                {item.is_missing && (
-                  <span
-                    className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[9px] font-semibold leading-none text-[var(--color-warning)]"
-                    title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
-                  >
-                    <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
-                    失效
-                  </span>
-                )}
-              </div>
-              <p
-                className={`mt-1 line-clamp-2 min-h-8 break-all text-[11px] leading-4 ${
-                  item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"
-                }`}
-                title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
-              >
-                {item.path}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-3 min-h-6">
+        {/* 标签行：左侧标签列表，右侧启动/拖拽（悬停显现，在文档流内、不与文字重叠） */}
+        <div className="mt-2.5 flex min-h-7 items-center gap-2">
+          <div className="min-w-0 flex-1">
             <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} />
           </div>
-        </div>
-
-        <div className="flex min-h-10 items-center justify-between gap-2 border-t border-[var(--line-hairline)] px-3 py-1.5">
-          <span className="instrument-label">
-            <span className="data-readout text-[var(--text-muted)]">{item.tags.length}</span> 标签
-          </span>
-          <div className="flex min-w-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-0.5">
             {/* Mod 插槽：actions */}
-            {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="flex min-w-0 items-center gap-1" />}
+            {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="flex items-center gap-1" />}
             <button
               type="button"
               onClick={(event) => {
@@ -299,17 +282,22 @@ function ItemCardComponent({
               onDoubleClick={(event) => {
                 event.stopPropagation();
               }}
-              className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--accent-primary)_32%,var(--border-subtle))] bg-[var(--accent-primary-bg)] px-2.5 text-[11px] font-semibold text-[var(--accent-primary)] transition-colors hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-[var(--text-invert)]"
+              title="启动"
+              aria-label={`启动 ${item.name}`}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)] opacity-0 transition-[color,background-color,opacity] hover:bg-[var(--accent-primary)] hover:text-[var(--text-invert)] focus-visible:opacity-100 group-hover:opacity-100"
             >
               <Play className="h-3 w-3" fill="currentColor" aria-hidden="true" />
-              启动
             </button>
+            <ItemDragHandle
+              onPointerDown={handleItemHandlePointerDown}
+              className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            />
           </div>
         </div>
 
         {/* Mod 插槽：footer */}
         {modSlots.footer.length > 0 && (
-          <div ref={footerSlotRef} className="border-t border-[var(--line-hairline)] px-3 py-2" />
+          <div ref={footerSlotRef} className="mt-2 border-t border-[var(--line-hairline)] pt-2" />
         )}
       </article>
 

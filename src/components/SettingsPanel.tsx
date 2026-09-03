@@ -21,16 +21,13 @@ import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { showToast } from "../lib/toast";
 import { SETTINGS_SECTIONS, settingsSectionDomId } from "../lib/settingsSections";
-import {
-  getShapePreference,
-  setShapePreference,
-  SHAPE_CHANGED_EVENT,
-  type ShapePreference,
-} from "../themes/shapeLang";
-import type { ThemeDefinition, ThemeSource, ThemeVariant } from "../types/theme";
+import { THEME_FAMILIES, findFamilyByThemeId, resolveFamilyThemeId } from "../themes";
+import type { ColorMode } from "../lib/colorMode";
+import type { ThemeDefinition, ThemeVariant } from "../types/theme";
 import { AiSettingsSection } from "./AiSettingsSection";
 import { DataSettingsSection } from "./DataSettingsSection";
 import { ModManagerPanel } from "./ModManagerPanel";
+import { SelectMenu } from "./SelectMenu";
 import { SyncSettingsSection } from "./SyncSettingsSection";
 import { useThemeContext } from "./ThemeProvider";
 import { UpdateSettingsSection } from "./UpdateSettingsSection";
@@ -60,6 +57,9 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     themeDirectoryInfo,
     activeVariant,
     setActiveVariant,
+    colorMode,
+    effectiveMode,
+    changeColorMode,
   } = useThemeContext();
   const [busy, setBusy] = useState<"import" | "export" | "refresh" | "folder" | null>(null);
   const [activeSection, setActiveSection] = useState(SETTINGS_SECTIONS[0]?.id ?? "theme");
@@ -293,7 +293,12 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 </div>
 
                 <div className={`mt-5 grid gap-4 ${currentTheme.variants && Object.keys(currentTheme.variants).length > 0 ? "md:grid-cols-2" : ""}`}>
-                  <ThemeSelect themes={availableThemes} currentThemeId={currentTheme.id} onSelect={setTheme} />
+                  <ThemeSelect
+                    themes={availableThemes}
+                    currentThemeId={currentTheme.id}
+                    effectiveMode={effectiveMode}
+                    onSelect={setTheme}
+                  />
                   {currentTheme.variants && Object.keys(currentTheme.variants).length > 0 && (
                     <VariantSelect
                       variants={currentTheme.variants}
@@ -304,7 +309,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 </div>
 
                 <div className="mt-4">
-                  <ShapeLangSelect />
+                  <ColorModeSelect colorMode={colorMode} onSelect={changeColorMode} />
                 </div>
               </section>
 
@@ -384,39 +389,67 @@ function ActionButton({
 function ThemeSelect({
   themes,
   currentThemeId,
+  effectiveMode,
   onSelect,
 }: {
   themes: ThemeDefinition[];
   currentThemeId: string;
+  /** 当前生效的亮/暗模式：选择内置家族时据此解析到具体主题 */
+  effectiveMode: "light" | "dark";
   onSelect: (id: string) => Promise<void>;
 }) {
-  const groups: Array<{ source: ThemeSource; label: string; themes: ThemeDefinition[] }> = [
-    { source: "preset", label: "内置主题", themes: themes.filter((theme) => theme.source === "preset") },
-    { source: "custom", label: "自定义主题", themes: themes.filter((theme) => theme.source === "custom") },
-    { source: "mod", label: "Mod 主题", themes: themes.filter((theme) => theme.source === "mod") },
-  ];
+  // 内置主题以配色家族为粒度（亮/暗由独立开关决定）；自定义/Mod 主题按具体主题列出
+  const currentFamily = findFamilyByThemeId(currentThemeId);
+  const customThemes = themes.filter((theme) => theme.source === "custom");
+  const modThemes = themes.filter((theme) => theme.source === "mod");
+  const value = currentFamily ? `family:${currentFamily.id}` : currentThemeId;
+
+  const handleChange = (raw: string) => {
+    if (raw.startsWith("family:")) {
+      const family = THEME_FAMILIES.find((item) => item.id === raw.slice("family:".length));
+      if (family) void onSelect(resolveFamilyThemeId(family, effectiveMode));
+      return;
+    }
+    void onSelect(raw);
+  };
 
   return (
-    <label className="block min-w-0">
+    <div className="block min-w-0">
       <span className="instrument-label mb-2 block">当前主题</span>
-      <select
-        value={currentThemeId}
-        onChange={(event) => void onSelect(event.target.value)}
-        className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
-      >
-        {groups.map((group) => (
-          group.themes.length > 0 && (
-            <optgroup key={group.source} label={group.label}>
-              {group.themes.map((theme) => (
-                <option key={theme.id} value={theme.id}>
-                  {theme.name}{theme.version ? ` · v${theme.version}` : ""}{theme.author ? ` · ${theme.author}` : ""}
-                </option>
-              ))}
-            </optgroup>
-          )
-        ))}
-      </select>
-    </label>
+      <SelectMenu
+        value={value}
+        onChange={handleChange}
+        ariaLabel="当前主题"
+        groups={[
+          {
+            label: "内置主题",
+            options: THEME_FAMILIES.map((family) => ({
+              value: `family:${family.id}`,
+              label: `${family.name}${family.lang === "b" ? " · 仪表" : ""}`,
+            })),
+          },
+          ...(customThemes.length > 0
+            ? [{
+                label: "自定义主题",
+                options: customThemes.map((theme) => ({
+                  value: theme.id,
+                  label: `${theme.name}${theme.version ? ` · v${theme.version}` : ""}${theme.author ? ` · ${theme.author}` : ""}`,
+                })),
+              }]
+            : []),
+          ...(modThemes.length > 0
+            ? [{
+                label: "Mod 主题",
+                options: modThemes.map((theme) => ({
+                  value: theme.id,
+                  label: `${theme.name}${theme.version ? ` · v${theme.version}` : ""}${theme.author ? ` · ${theme.author}` : ""}`,
+                })),
+              }]
+            : []),
+        ]}
+        className="flex h-10 w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+      />
+    </div>
   );
 }
 
@@ -430,48 +463,70 @@ function VariantSelect({
   onSelect: (variant: string | undefined) => void;
 }) {
   return (
-    <label className="block min-w-0">
+    <div className="block min-w-0">
       <span className="instrument-label mb-2 block">主题变体</span>
-      <select
+      <SelectMenu
         value={activeVariant ?? ""}
-        onChange={(event) => onSelect(event.target.value || undefined)}
-        className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
-      >
-        <option value="">默认（无变体）</option>
-        {Object.entries(variants).map(([key, variant]) => (
-          <option key={key} value={key}>
-            {variant.name ?? key}
-          </option>
-        ))}
-      </select>
-    </label>
+        onChange={(next) => onSelect(next || undefined)}
+        ariaLabel="主题变体"
+        options={[
+          { value: "", label: "默认（无变体）" },
+          ...Object.entries(variants).map(([key, variant]) => ({
+            value: key,
+            label: variant.name ?? key,
+          })),
+        ]}
+        className="flex h-10 w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+      />
+    </div>
   );
 }
 
-/** 造型风格（RyuujiDesign 双风格）：跟随主题 / 强制纸面 A / 强制仪表 B。
- *  切换只覆盖结构令牌（圆角/阴影/缓动/发丝边等），配色始终跟随当前主题。 */
-function ShapeLangSelect() {
-  const [pref, setPref] = useState<ShapePreference>(() => getShapePreference());
+/** 亮色/暗色模式（独立于主题的开关）：跟随系统 / 亮色 / 暗色 三段切换。
+ *  仅内置配色家族随模式换肤；自定义/Mod 主题自带配色方案，不受模式影响。 */
+function ColorModeSelect({
+  colorMode,
+  onSelect,
+}: {
+  colorMode: ColorMode;
+  onSelect: (mode: ColorMode) => void;
+}) {
+  const OPTIONS: Array<{ value: ColorMode; label: string }> = [
+    { value: "system", label: "跟随系统" },
+    { value: "light", label: "亮色" },
+    { value: "dark", label: "暗色" },
+  ];
   return (
-    <label className="block min-w-0">
-      <span className="instrument-label mb-2 block">造型风格</span>
-      <select
-        value={pref}
-        onChange={(event) => {
-          const next = event.target.value as ShapePreference;
-          setPref(next);
-          setShapePreference(next);
-          window.dispatchEvent(new CustomEvent(SHAPE_CHANGED_EVENT));
-        }}
-        className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+    <div className="block min-w-0">
+      <span className="instrument-label mb-2 block">外观模式</span>
+      <div
+        role="radiogroup"
+        aria-label="外观模式"
+        className="inline-flex h-10 items-center gap-1 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] p-1"
       >
-        <option value="theme">跟随主题（推荐）</option>
-        <option value="a">纸面 A · 圆润纸感</option>
-        <option value="b">仪表 B · 直角信号</option>
-      </select>
+        {OPTIONS.map((option) => {
+          const active = colorMode === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onSelect(option.value)}
+              className={`h-full rounded-[calc(var(--radius-md)-2px)] px-4 text-sm transition-colors ${
+                active
+                  ? "bg-[var(--accent-primary)] font-medium text-[var(--text-invert)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
       <span className="mt-1.5 block text-[11px] text-[var(--text-faint)]">
-        仅改变圆角、阴影、动效与边缘语言，配色仍由当前主题决定
+        亮/暗仅作用于内置主题；自定义与 Mod 主题自带配色方案
       </span>
-    </label>
+    </div>
   );
 }

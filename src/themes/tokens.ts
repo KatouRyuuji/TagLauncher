@@ -1,9 +1,13 @@
 import type { ThemeDefinition } from "../types/theme";
-import { darkTheme } from "./dark";
+import { ryuujiThemes } from "./ryuuji";
 
-export const THEME_VARIABLE_KEYS = Object.keys(darkTheme.variables).sort();
+// 规范默认变量集：取自工厂生成的霜靛·暗（A 纸面暗色，键集完整）。
+const canonicalTheme =
+  ryuujiThemes.find((theme) => theme.id === "8cebf811-9b9d-4c49-ac9f-1d1fa685ce93") ?? ryuujiThemes[0];
 
-export const DEFAULT_THEME_VARIABLES = darkTheme.variables;
+export const THEME_VARIABLE_KEYS = Object.keys(canonicalTheme.variables).sort();
+
+export const DEFAULT_THEME_VARIABLES = canonicalTheme.variables;
 
 export function withDefaultThemeVariables(theme: ThemeDefinition): ThemeDefinition {
   return {

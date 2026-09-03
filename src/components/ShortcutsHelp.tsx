@@ -17,7 +17,7 @@ const GROUPS: { title: string; icon: LucideIcon; items: { keys: string; action: 
     title: "导航",
     icon: Navigation,
     items: [
-      { keys: "/ 或 Ctrl+F", action: "聚焦搜索" },
+      { keys: "F3 或 / 或 Ctrl+F", action: "聚焦搜索" },
       { keys: "Ctrl+K", action: "命令面板" },
       { keys: "↑ ↓", action: "移动选中项（网格按列）" },
       { keys: "Home / End", action: "跳到首项 / 末项" },

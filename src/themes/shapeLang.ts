@@ -7,21 +7,22 @@
 //   A 纸面：圆角 4/8/8/12、缓动 cubic-bezier(0.2,0.72,0.2,1)、Linea 双层软影、
 //           发丝边 color-mix(text 13%/24%)、浮层签名影 0 26px 70px -46px
 //   B 仪表：圆角 0/2/4/4、硬影 0 1px 0 0、缓动 cubic-bezier(0.25,0.8,0.25,1)
-// 色值中间档一律用 var() 引用的 color-mix，不做具体色假设，因此同一份令牌
-// 既能烘焙进主题文件，也能在运行时作为「造型风格」覆盖注入（见 lib/theme.ts
-// applyTheme 末尾的 applyShapeLang）。
+// 造型语言由主题自身声明（ThemeDefinition.lang），随主题生效。
+// 字体方案（v6.2）：UI = Noto Sans SC、正文 = LXGW WenKai（OFL）、
+//   等宽 = Cascadia Code（OFL），均为本地打包字体 + 系统字体兜底。
 // ============================================================================
 
 import type { ThemeDefinition } from "../types/theme";
 
 export type ShapeLang = "a" | "b";
 export type ShapeScheme = "light" | "dark";
-/** 造型风格偏好：theme = 跟随主题自身语言；a/b = 强制覆盖结构令牌（保留配色） */
-export type ShapePreference = "theme" | ShapeLang;
 
-// --sys-font-ui / --sys-font-mono（tokens.css v5.2：全面 MiSans，旧族兜底）
-const FONT_UI = "\"MiSans\", \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"Noto Sans SC\", system-ui, -apple-system, \"Segoe UI\", sans-serif";
-const FONT_MONO = "\"MiSans\", \"Cascadia Code\", \"Cascadia Mono\", \"JetBrains Mono\", \"Fira Code\", Consolas, \"Courier New\", monospace";
+// --sys-font-ui / --sys-font-body / --sys-font-mono（v6.2：Noto Sans SC + 霞鹜文楷 + Cascadia Code）
+// 打包字体族名：@fontsource-variable 注册 "Noto Sans SC Variable"（可变字重），
+// lxgw-wenkai-webfont 注册 "LXGW WenKai"，@fontsource 注册 "Cascadia Code"；其后为系统字体兜底。
+const FONT_UI = "\"Noto Sans SC Variable\", \"Noto Sans SC\", \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"MiSans\", system-ui, -apple-system, \"Segoe UI\", sans-serif";
+const FONT_BODY = "\"LXGW WenKai\", \"LXGW WenKai GB\", \"Kaiti SC\", \"STKaiti\", \"KaiTi\", \"Noto Sans SC\", serif";
+const FONT_MONO = "\"Cascadia Code\", \"Cascadia Mono\", \"JetBrains Mono\", \"Fira Code\", Consolas, \"Courier New\", monospace";
 
 const EASE_A = "cubic-bezier(0.2, 0.72, 0.2, 1)"; // lang/a.css（Linea 实测）
 const EASE_B = "cubic-bezier(0.25, 0.8, 0.25, 1)"; // tokens.css --sys-ease-smooth
@@ -29,12 +30,13 @@ const EASE_B = "cubic-bezier(0.25, 0.8, 0.25, 1)"; // tokens.css --sys-ease-smoo
 /** tokens.css 共享原语：字号 9 档取前 5、空间 4px 原子 8 级、侧栏 232 */
 const SHARED_TOKENS: Record<string, string> = {
   "font-family": FONT_UI,
+  "font-family-body": FONT_BODY,
   "font-family-mono": FONT_MONO,
-  "font-size-xs": "12px",
-  "font-size-sm": "13px",
-  "font-size-base": "14px",
-  "font-size-lg": "16px",
-  "font-size-xl": "18px",
+  "font-size-xs": "13px",
+  "font-size-sm": "14px",
+  "font-size-base": "15px",
+  "font-size-lg": "17px",
+  "font-size-xl": "19px",
   "font-weight-normal": "400",
   "font-weight-medium": "500",
   "font-weight-bold": "700",
@@ -124,35 +126,12 @@ export function shapeLangTokens(lang: ShapeLang, scheme: ShapeScheme): Record<st
   return { ...SHARED_TOKENS, ...LANG_TOKENS[lang], ...SHADOW_TOKENS[lang][scheme] };
 }
 
-// ---- 造型风格偏好（localStorage；视图偏好同款持久化思路） ----
-
-export const SHAPE_PREF_KEY = "taglauncher.shape-lang";
-/** 风格切换后由 SettingsPanel 派发、useTheme 监听以重应用当前主题 */
-export const SHAPE_CHANGED_EVENT = "taglauncher:shape-lang-changed";
-
-export function getShapePreference(): ShapePreference {
-  try {
-    const raw = localStorage.getItem(SHAPE_PREF_KEY);
-    return raw === "a" || raw === "b" ? raw : "theme";
-  } catch {
-    return "theme";
-  }
-}
-
-export function setShapePreference(pref: ShapePreference): void {
-  try {
-    localStorage.setItem(SHAPE_PREF_KEY, pref);
-  } catch {
-    // 隐私模式等场景写入失败时退化为会话内生效（事件仍会派发）
-  }
-}
-
 /** 从主题 css 推断亮暗（内置/示例主题均显式声明 color-scheme）。 */
 export function inferThemeScheme(theme: ThemeDefinition): ShapeScheme {
   return /color-scheme:\s*dark/.test(theme.css ?? "") ? "dark" : "light";
 }
 
-/** 生效造型语言：偏好为 theme 时跟随主题声明（未声明按 A 纸面）。 */
-export function resolveShapeLang(theme: ThemeDefinition, pref: ShapePreference): ShapeLang {
-  return pref === "theme" ? theme.lang ?? "a" : pref;
+/** 主题的造型语言：由主题自身声明（未声明按 A 纸面）。 */
+export function resolveShapeLang(theme: ThemeDefinition): ShapeLang {
+  return theme.lang ?? "a";
 }

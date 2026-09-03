@@ -15,7 +15,7 @@ const SKELETON_ROW_COUNT = 9;
 export function WorkspaceSkeleton({ view }: { view: "grid" | "list" }) {
   return (
     <div
-      className="flex-1 overflow-hidden p-4"
+      className={view === "grid" ? "flex-1 overflow-hidden p-4" : "flex-1 overflow-hidden"}
       role="status"
       aria-label="正在加载项目数据"
       data-region="workspace-skeleton"
@@ -34,36 +34,19 @@ function SkeletonGrid() {
       {Array.from({ length: SKELETON_CARD_COUNT }, (_, index) => (
         <div
           key={index}
-          className="flex min-h-[188px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line-hairline)] bg-[var(--surface-raised)] shadow-[var(--shadow-card)]"
+          className="flex flex-col rounded-[var(--radius-lg)] border border-[var(--line-hairline)] bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-card)]"
         >
-          <div className="h-[3px] shrink-0 bg-[var(--line-hairline)]" />
-          <div className="flex min-h-10 items-center justify-between gap-2 border-b border-[var(--line-hairline)] px-3 py-1.5">
-            <div className="flex items-center gap-2">
-              <div className="skeleton-block h-2.5 w-12" />
-              <div className="skeleton-block h-4 w-10" />
-            </div>
-            <div className="flex gap-1">
-              <div className="skeleton-block h-7 w-7 rounded-[var(--radius-md)]" />
-              <div className="skeleton-block h-7 w-7 rounded-[var(--radius-md)]" />
+          <div className="flex items-start gap-3">
+            <div className="skeleton-block h-11 w-11 shrink-0 rounded-[var(--radius-md)]" />
+            <div className="min-w-0 flex-1 space-y-2 pt-0.5">
+              <div className="skeleton-block h-3.5 w-3/4" />
+              <div className="skeleton-block h-2.5 w-full" />
+              <div className="skeleton-block h-2.5 w-1/3" />
             </div>
           </div>
-          <div className="flex flex-1 flex-col px-3 py-3">
-            <div className="flex items-start gap-3">
-              <div className="skeleton-block h-11 w-11 shrink-0 rounded-[var(--radius-md)]" />
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className="skeleton-block h-3.5 w-3/4" />
-                <div className="skeleton-block h-2.5 w-full" />
-                <div className="skeleton-block h-2.5 w-2/3" />
-              </div>
-            </div>
-            <div className="mt-3 flex gap-1.5">
-              <div className="skeleton-block h-6 w-14 rounded-[var(--radius-full)]" />
-              <div className="skeleton-block h-6 w-16 rounded-[var(--radius-full)]" />
-            </div>
-          </div>
-          <div className="flex min-h-10 items-center justify-between gap-2 border-t border-[var(--line-hairline)] px-3 py-1.5">
-            <div className="skeleton-block h-2.5 w-12" />
-            <div className="skeleton-block h-7 w-16 rounded-[var(--radius-md)]" />
+          <div className="mt-2.5 flex min-h-7 items-center gap-1.5">
+            <div className="skeleton-block h-6 w-14 rounded-[var(--radius-full)]" />
+            <div className="skeleton-block h-6 w-16 rounded-[var(--radius-full)]" />
           </div>
         </div>
       ))}
@@ -73,9 +56,9 @@ function SkeletonGrid() {
 
 function SkeletonList() {
   return (
-    <div className="workbench-panel overflow-hidden">
+    <div>
       <div
-        className="grid min-h-9 items-center gap-3 border-b border-[var(--line-hairline)] px-3"
+        className="grid h-9 items-center gap-3 border-b border-[var(--line-hairline)] px-4"
         style={{ gridTemplateColumns: ITEM_LIST_GRID_TEMPLATE }}
       >
         <span />
@@ -86,7 +69,7 @@ function SkeletonList() {
       {Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => (
         <div
           key={index}
-          className="grid items-center gap-3 border-b border-[var(--line-hairline)] px-3 py-2 last:border-b-0"
+          className="grid items-center gap-3 border-b border-[var(--line-hairline)] px-4 py-2 last:border-b-0"
           style={{ minHeight: ITEM_LIST_BASE_ROW_HEIGHT, gridTemplateColumns: ITEM_LIST_GRID_TEMPLATE }}
         >
           <div className="flex gap-1">

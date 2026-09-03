@@ -3,7 +3,6 @@ import { Import } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
 import { SearchBar } from "./components/SearchBar";
-import { TagFilterBar } from "./components/TagFilterBar";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemListView } from "./components/ItemListView";
 import { WorkspaceLoadError } from "./components/WorkspaceEmptyState";
@@ -385,7 +384,6 @@ function App() {
           TagLauncher 启动工作台
         </h1>
         <SearchBar onAddItems={addItems} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} />
-        <TagFilterBar />
         {/* 加载失败且本地无任何缓存时渲染可重试的错误面板；有缓存时保留旧列表，
             失败已由 toast 提示，避免把可用数据替换成错误页。 */}
         {loadError && !loading && allItems.length === 0 ? (

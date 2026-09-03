@@ -16,8 +16,9 @@ import { useSearch } from "../hooks/useSearch";
 import { notifySearchInput } from "../lib/modApi";
 import { useAppStore, type SearchMode } from "../stores/appStore";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
-import { SORT_OPTIONS, type SortMode } from "../lib/itemQuery";
+import { SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter, type SortMode } from "../lib/itemQuery";
 import { SEARCH_RESET_EVENT, WORKSPACE_SEARCH_ID } from "../lib/workspaceChrome";
+import { SelectMenu } from "./SelectMenu";
 import {
   getToolbarButtons,
   subscribeToolbarButtons,
@@ -52,9 +53,50 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
   const sortMode = useAppStore((state) => state.sortMode);
   const setSortMode = useAppStore((state) => state.setSortMode);
   const setCommandPaletteOpen = useAppStore((state) => state.setCommandPaletteOpen);
+  const tags = useAppStore((state) => state.tags);
+  const selectedTagIds = useAppStore((state) => state.selectedTagIds);
+  const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
+  const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
+  const typeFilter = useAppStore((state) => state.typeFilter);
+  const setTypeFilter = useAppStore((state) => state.setTypeFilter);
   const [inputValue, setInputValue] = useState("");
   const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
   const composingRef = useRef(false);
+  const filterScrollRef = useRef<HTMLDivElement>(null);
+
+  // 筛选区是水平滚动容器：把纵向滚轮转为横向滚动，标签多时不用拖动滚动条。
+  // React 的 onWheel 在根节点以 passive 注册、无法 preventDefault，须手动挂非 passive 监听。
+  useEffect(() => {
+    const el = filterScrollRef.current;
+    if (!el) return;
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY === 0 || event.deltaX !== 0 || event.shiftKey) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      el.scrollLeft += event.deltaY;
+      event.preventDefault();
+    };
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
+
+  // 右缘渐隐提示"后面还有内容"：仅在可滚且未滚到底时加 filter-scroll-more 类
+  useEffect(() => {
+    const el = filterScrollRef.current;
+    if (!el) return;
+    const update = () => {
+      const canScroll = el.scrollWidth > el.clientWidth + 1;
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+      el.classList.toggle("filter-scroll-more", canScroll && !atEnd);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     const update = () => setModButtons(getToolbarButtons());
@@ -91,16 +133,6 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
   return (
     <header data-region="searchbar" className="shrink-0">
       <div className="toolbar-strip flex h-12 items-center gap-2 px-3">
-        <div className="hidden min-w-[126px] shrink-0 items-center gap-2 border-r border-[var(--line-hairline)] pr-3 min-[1180px]:flex">
-          <span className="status-led" aria-hidden="true" />
-          <span className="min-w-0">
-            <span className="instrument-label block">Workspace</span>
-            <span className="block truncate text-xs font-semibold text-[var(--text-primary)]">
-              启动工作台
-            </span>
-          </span>
-        </div>
-
         <div
           role="search"
           className="workbench-panel flex h-8 min-w-[220px] flex-1 items-center gap-2 overflow-hidden px-2.5 shadow-none focus-within:border-[var(--accent-primary)] focus-within:ring-1 focus-within:ring-[color-mix(in_srgb,var(--accent-primary)_20%,transparent)]"
@@ -132,7 +164,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
               handleSearch(value);
               notifySearchInput(value);
             }}
-            className="h-full min-w-0 flex-1 appearance-none border-0 bg-transparent text-[13px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none [&::-webkit-search-cancel-button]:hidden"
+            className="h-full min-w-0 flex-1 appearance-none border-0 bg-transparent text-[14px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none [&::-webkit-search-cancel-button]:hidden"
           />
 
           {searchMode !== "all" && (
@@ -230,14 +262,18 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
         </div>
       </div>
 
-      <div className="flex h-10 items-center gap-2 overflow-x-auto border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 [&::-webkit-scrollbar]:hidden">
+      {/* 控制 + 筛选合并行（单行 chrome）：搜索范围、排序、视图切换、类型/标签筛选、导入 */}
+      <div
+        data-region="filterbar"
+        className="flex h-11 items-center gap-2 border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3"
+      >
         <div role="group" aria-label="搜索范围" className="segmented-control h-8 shrink-0">
           {MODES.map((mode) => (
             <button
               key={mode.value}
               type="button"
               onClick={() => setSearchMode(mode.value)}
-              className={`control-chip h-6 min-h-6 rounded-[var(--radius-sm)] border-0 px-2.5 text-[11px] font-medium ${
+              className={`control-chip h-6 min-h-6 rounded-[var(--radius-sm)] border-0 px-2.5 text-[12px] font-medium ${
                 searchMode === mode.value ? "control-chip-active" : ""
               }`}
               aria-pressed={searchMode === mode.value}
@@ -250,22 +286,17 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
 
         <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
 
-        <label className="flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[11px] text-[var(--text-secondary)]">
-          <ArrowUpDown className="h-3.5 w-3.5 text-[var(--text-faint)]" strokeWidth={1.8} aria-hidden="true" />
-          <span className="instrument-label">排序</span>
-          <select
+        <div className="flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[12px] text-[var(--text-secondary)]">
+          <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" strokeWidth={1.8} aria-hidden="true" />
+          <span className="instrument-label max-[1250px]:hidden">排序</span>
+          <SelectMenu
             value={sortMode}
-            onChange={(event) => setSortMode(event.target.value as SortMode)}
-            className="h-full bg-transparent text-[11px] text-[var(--text-primary)] outline-none"
-            aria-label="排序方式"
-          >
-            {SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={(next) => setSortMode(next as SortMode)}
+            options={SORT_OPTIONS}
+            ariaLabel="排序方式"
+            className="flex h-full min-w-14 items-center gap-1 bg-transparent text-[12px] text-[var(--text-primary)] outline-none"
+          />
+        </div>
 
         <div role="group" aria-label="显示方式" className="segmented-control h-8 shrink-0">
           <button
@@ -294,25 +325,100 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
           </button>
         </div>
 
-        <div className="flex-1" />
+        <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
 
-        <div role="group" aria-label="导入" className="flex shrink-0 items-center gap-1.5">
+        {/* 类型 + 标签筛选：占据行内弹性空间，超出横向滚动（右缘渐隐提示可滚动） */}
+        <div
+          ref={filterScrollRef}
+          className="filter-scroll flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pr-1 [&::-webkit-scrollbar]:hidden"
+        >
+          <div role="group" aria-label="文件类型筛选" className="segmented-control h-8 shrink-0">
+            {TYPE_FILTERS.map((filter) => (
+              <button
+                key={filter.value}
+                type="button"
+                onClick={() => setTypeFilter(nextTypeFilter(typeFilter, filter.value))}
+                aria-pressed={typeFilter === filter.value}
+                className={`control-chip h-6 min-h-6 shrink-0 rounded-[var(--radius-sm)] border-0 px-2.5 text-[12px] font-medium ${
+                  typeFilter === filter.value ? "control-chip-active" : ""
+                }`}
+                title={typeFilter === filter.value && filter.value !== "all" ? "再次点击取消筛选" : filter.label}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+
+          {tags.length > 0 && (
+            <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
+          )}
+
+          {tags.length > 0 && (
+            <div role="group" aria-label="标签筛选" className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSelectedTagIds([])}
+                aria-pressed={selectedTagIds.length === 0}
+                className={`control-chip h-7 min-h-7 shrink-0 px-2.5 text-[12px] font-medium ${
+                  selectedTagIds.length === 0 ? "control-chip-active" : ""
+                }`}
+              >
+                全部标签
+              </button>
+
+              {tags.map((tag) => {
+                const active = selectedTagIds.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleTagSelection(tag.id)}
+                    className="inline-flex h-7 min-h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[12px] font-medium text-[var(--text-secondary)]"
+                    aria-pressed={active}
+                    title={tag.name}
+                    style={{
+                      borderColor: active
+                        ? `color-mix(in srgb, ${tag.color} 48%, var(--border-default))`
+                        : `color-mix(in srgb, ${tag.color} 24%, var(--border-subtle))`,
+                      backgroundColor: active
+                        ? `color-mix(in srgb, ${tag.color} 17%, var(--bg-card))`
+                        : `color-mix(in srgb, ${tag.color} 7%, transparent)`,
+                      color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                      boxShadow: active ? `inset 0 -2px 0 ${tag.color}` : "none",
+                    }}
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-[1px]"
+                      style={{ backgroundColor: tag.color }}
+                      aria-hidden="true"
+                    />
+                    <span>{tag.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div role="group" aria-label="导入" className="flex shrink-0 items-center gap-1.5 border-l border-[var(--line-hairline)] pl-2">
           <button
             type="button"
             onClick={handleBrowse}
-            className="action-button h-8 min-h-8 px-2.5 text-xs"
+            className="action-button h-8 min-h-8 px-2.5 text-xs max-[1150px]:w-8 max-[1150px]:px-0"
+            title="添加文件"
           >
-            <FilePlus2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
-            添加文件
+            <FilePlus2 className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
+            <span className="max-[1150px]:hidden">添加文件</span>
           </button>
 
           <button
             type="button"
             onClick={handleBrowseFolder}
-            className="action-button action-button-primary h-8 min-h-8 px-2.5 text-xs"
+            className="action-button action-button-primary h-8 min-h-8 px-2.5 text-xs max-[1150px]:w-8 max-[1150px]:px-0"
+            title="添加文件夹"
           >
-            <FolderPlus className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
-            添加文件夹
+            <FolderPlus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
+            <span className="max-[1150px]:hidden">添加文件夹</span>
           </button>
         </div>
       </div>

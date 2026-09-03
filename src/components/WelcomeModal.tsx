@@ -179,8 +179,8 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <div className="border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-4 py-3 sm:px-6">
-            <p className="text-sm font-medium text-[var(--text-primary)]">{GREETING}</p>
-            <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
+            <p className="font-body text-sm font-medium text-[var(--text-primary)]">{GREETING}</p>
+            <p className="mt-1 font-body text-xs leading-5 text-[var(--text-muted)]">
               免费、轻量、直观、便捷。用标签、搜索与快捷操作整理并启动本地资源。
             </p>
           </div>

@@ -123,7 +123,7 @@ function ItemRowComponent({
         data-selectable-item-id={item.id}
         role="listitem"
         style={{ minHeight: ITEM_LIST_BASE_ROW_HEIGHT, gridTemplateColumns: ITEM_LIST_GRID_TEMPLATE }}
-        className={`item-row-render-scope item-focus-ring group grid items-center gap-3 border-b border-[var(--line-hairline)] px-3 py-2 transition-[background-color,box-shadow] ${
+        className={`item-row-render-scope item-focus-ring group grid items-center gap-3 border-b border-[var(--line-hairline)] px-4 py-2 transition-[background-color,box-shadow] ${
           tagDragOver
             ? "bg-[var(--accent-primary-bg-light)] shadow-[inset_3px_0_0_var(--accent-primary)]"
             : selected
@@ -145,7 +145,10 @@ function ItemRowComponent({
         tabIndex={0}
       >
         <div className="flex items-center gap-1">
-          <ItemDragHandle onPointerDown={handleItemHandlePointerDown} className="h-7 w-7" />
+          <ItemDragHandle
+            onPointerDown={handleItemHandlePointerDown}
+            className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          />
           <span className="inline-flex h-7 w-7 items-center justify-center">
             <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
           </span>
@@ -161,7 +164,7 @@ function ItemRowComponent({
             />
           </div>
           <div className="min-w-0">
-            <h3 className="flex items-center gap-1.5 truncate text-[13px] font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
+            <h3 className="flex items-center gap-1.5 truncate text-[14px] font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
               <span className="truncate">
                 <SearchHighlightText text={item.name} query={searchQuery} />
               </span>
@@ -176,7 +179,7 @@ function ItemRowComponent({
               )}
             </h3>
             <p
-              className={`mt-0.5 truncate text-[11px] leading-4 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
+              className={`mt-0.5 truncate text-[12px] leading-4 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
               title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
             >
               {item.path}
@@ -190,12 +193,14 @@ function ItemRowComponent({
 
         <div className="text-right">
           {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="mb-0.5 flex justify-end" />}
-          <p className="truncate text-xs font-semibold text-[var(--text-secondary)]" title={getTypeLabel(item.type)}>
+          <p className="truncate text-[13px] font-semibold text-[var(--text-secondary)]" title={getTypeLabel(item.type)}>
             {getTypeLabel(item.type)}
           </p>
-          <p className="data-readout mt-0.5 truncate text-[10px] text-[var(--text-faint)]" title={getFileSuffix(item)}>
-            {getFileSuffix(item)}
-          </p>
+          {getFileSuffix(item) !== "无后缀" && (
+            <p className="data-readout mt-0.5 truncate text-[11px] text-[var(--text-faint)]" title={getFileSuffix(item)}>
+              {getFileSuffix(item)}
+            </p>
+          )}
         </div>
       </div>
 

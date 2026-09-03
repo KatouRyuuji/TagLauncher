@@ -1,13 +1,13 @@
 import type { ThemeDefinition } from "../types/theme";
 import { shapeLangTokens } from "./shapeLang";
+import { CHROME_TOKENS } from "./chromeTokens";
 
 export const sakuraTheme: ThemeDefinition = {
-  // v1.6.1 起 id 由 "light" 归位为 "sakura"（本主题才是真正的樱花主题）；
-  // 老配置里的 "light" 由迁移 v008 一次性改写为 "sakura"（app_meta.theme）。
-  id: "sakura",
-  name: "亮色·霜纸靛蓝",
+  // 唯一标识为固定 uuid（已被用户配置持久化，不可变更）；显示名是自由文本
+  id: "7f47aab2-74bb-4c77-b99b-550f0acf3c9c",
+  name: "霜靛",
   author: "TagLauncher",
-  version: "5.3.0",
+  version: "6.2.0",
   isPreset: true,
   lang: "a",
   variables: {
@@ -61,40 +61,11 @@ export const sakuraTheme: ThemeDefinition = {
     "scrollbar-thumb": "rgba(156, 167, 183, 0.55)",
     "scrollbar-thumb-hover": "#9ca7b7",
 
-    "z-bg-decoration": "0",
-    "z-context-overlay": "99",
-    "z-context-menu": "100",
-    "z-context-submenu": "110",
-    "z-drag-ghost": "120",
-    "z-welcome-modal": "120",
-    "z-floating-panel": "150",
-    "z-quick-preview": "160",
-    "z-settings-overlay": "200",
-    "z-settings-panel": "201",
-    "z-command-palette": "210",
-    "z-shortcuts-help": "215",
-    "z-mod-confirm-overlay": "250",
-    "z-mod-confirm-panel": "251",
-    "z-migration-overlay": "300",
-    "z-migration-panel": "301",
-    "z-toast": "500",
+    // 壳层共享令牌（z 层级/拖拽/标签透明度/边框/面板规格），勿在此手改
+    ...CHROME_TOKENS,
 
-    "drag-ghost-offset-x": "14px",
-    "drag-ghost-offset-y": "14px",
-    "tag-color-alpha": "18%",
-    "tag-selected-alpha": "28%",
-    "tag-muted-alpha": "10%",
-    "tag-selected-border-alpha": "62%",
-    "border-width": "1px",
-    "border-style": "solid",
-
-    "panel-floating-min-width": "320px",
-    "panel-floating-min-height": "220px",
-    "panel-floating-border-radius": "var(--radius-lg)",
-    "panel-titlebar-height": "40px",
     "panel-titlebar-bg": "#ffffff",
     "panel-body-bg": "#ffffff",
-    "panel-border-color": "var(--border-default)",
   },
   css: [
     "html { color-scheme: light; }",

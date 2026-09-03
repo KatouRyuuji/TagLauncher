@@ -78,10 +78,13 @@ function SortableHeaderCell({
   column,
   label,
   align,
+  className,
 }: {
   column: ListHeaderColumn;
   label: string;
   align?: "right";
+  /** 追加到单元格按钮上的布局类（如与行内容对齐用的左内边距） */
+  className?: string;
 }) {
   const sortMode = useAppStore((state) => state.sortMode);
   const setSortMode = useAppStore((state) => state.setSortMode);
@@ -95,7 +98,7 @@ function SortableHeaderCell({
       title={active ? "再点一次回到智能排序" : `按${label}排序`}
       className={`group inline-flex h-8 items-center gap-1 text-[10px] font-semibold transition-colors ${
         align === "right" ? "justify-end text-right" : "text-left"
-      } ${active ? "text-[var(--accent-primary)]" : "text-[var(--text-faint)] hover:text-[var(--text-secondary)]"}`}
+      } ${active ? "text-[var(--accent-primary)]" : "text-[var(--text-faint)] hover:text-[var(--text-secondary)]"} ${className ?? ""}`}
     >
       {label}
       <ArrowUp
@@ -255,20 +258,22 @@ export function ItemListView({
   return (
     <SelectionCanvas
       dataRegion="item-list"
-      className="flex-1 overflow-y-auto p-4"
+      className="flex-1 overflow-y-auto"
       itemIds={itemIds}
       selectedItemIds={selectedItemIds}
       onSelectItems={onSelectItems}
       scrollElementRef={scrollRef}
       getItemRects={getItemRects}
     >
-      <div className="workbench-panel overflow-hidden">
+      {/* 全幅表格（对标资源管理器详细信息视图）：表头吸附、整行分隔线，无外层卡片 */}
+      <div>
         <div
-          className="sticky top-0 z-10 grid min-h-9 items-center gap-3 border-b border-[var(--line-hairline)] bg-[color-mix(in_srgb,var(--surface-raised)_96%,transparent)] px-3 backdrop-blur-sm"
+          className="sticky top-0 z-10 grid h-9 items-center gap-3 border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4"
           style={{ gridTemplateColumns: ITEM_LIST_GRID_TEMPLATE }}
         >
           <span aria-hidden="true" />
-          <SortableHeaderCell column="name" label="名称" />
+          {/* 名称列表头与行内名称文本对齐（让过 36px 图标 + 10px 间距） */}
+          <SortableHeaderCell column="name" label="名称" className="pl-[46px]" />
           <span className="instrument-label">标签</span>
           <SortableHeaderCell column="type" label="类型" align="right" />
         </div>

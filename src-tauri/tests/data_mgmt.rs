@@ -32,7 +32,7 @@ fn backup_snapshots_live_db_to_independent_file() {
     let ver: i64 = copy
         .query_row("SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='schema_version'", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(ver, 8);
+    assert_eq!(ver, i64::from(tag_launcher_lib::db::migrations::latest_schema_version()));
 }
 
 /// 导出原语：快照后剔除 ai.* 敏感键并 VACUUM——非敏感键保留，且明文密钥不残留于文件字节。
@@ -118,7 +118,10 @@ fn validate_importable_db_accepts_valid_rejects_invalid() {
     // 合法的 TagLauncher 库（本测试自身的库快照）→ 返回版本 7。
     let good = t.dir.join("good.db");
     snapshot_live_db(&t.db, &good).expect("snapshot");
-    assert_eq!(validate_importable_db(&good).unwrap(), 8);
+    assert_eq!(
+        validate_importable_db(&good).unwrap(),
+        tag_launcher_lib::db::migrations::latest_schema_version()
+    );
 
     // 非 SQLite 文件 → 拒绝。
     let not_db = t.dir.join("not.db");

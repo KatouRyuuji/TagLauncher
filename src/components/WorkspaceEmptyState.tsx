@@ -66,7 +66,7 @@ export function WorkspaceEmptyState({
           <h2 id="workspace-empty-title" className="break-words text-base font-semibold text-[var(--text-primary)]">
             {copy.title}
           </h2>
-          <p className="mx-auto mt-2 max-w-[420px] text-[13px] leading-5 text-[var(--text-muted)]">
+          <p className="mx-auto mt-2 max-w-[420px] font-body text-[13px] leading-5 text-[var(--text-muted)]">
             {copy.description}
           </p>
           {(copy.showClearSearch || (copy.showClearFilters && onClearFilters)) && (

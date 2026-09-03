@@ -10,9 +10,18 @@ import {
   getDefaultTheme,
   toExportableTheme,
   withDefaultThemeVariables,
+  findFamilyByThemeId,
+  resolveFamilyThemeId,
 } from "../themes";
 import { applyTheme } from "../lib/theme";
-import { SHAPE_CHANGED_EVENT } from "../themes/shapeLang";
+import {
+  getColorMode,
+  setColorMode as persistColorMode,
+  resolveColorMode,
+  onSystemColorModeChange,
+  type ColorMode,
+  type ResolvedColorMode,
+} from "../lib/colorMode";
 import { notifyThemeChange } from "../lib/modApi";
 import { showToast } from "../lib/toast";
 import * as db from "../lib/db";
@@ -68,6 +77,9 @@ export function useTheme() {
   const [themeDirectoryInfo, setThemeDirectoryInfo] = useState<ThemeDirectoryInfo | null>(null);
   const [activeVariant, setActiveVariantState] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  // 亮/暗模式（独立于主题的开关）：colorMode 为用户偏好，effectiveMode 为求值结果
+  const [colorMode, setColorModeState] = useState<ColorMode>(() => getColorMode());
+  const [effectiveMode, setEffectiveMode] = useState<ResolvedColorMode>(() => resolveColorMode(getColorMode()));
   const desiredThemeIdRef = useRef(getDefaultTheme().id);
   // 外部显式意图标记：init 完成前若已有 setTheme（含测试/快捷键等程序化调用），
   // 持久化值不得覆盖该意图——desiredThemeIdRef 是唯一意图来源。
@@ -300,15 +312,9 @@ export function useTheme() {
     window.addEventListener(MOD_THEME_ADDED, handleAdded);
     window.addEventListener(MOD_THEME_REMOVED, handleRemoved);
 
-    // 造型风格（A/B 双风格）切换：不重选主题，仅按最新偏好重应用当前主题
-    const handleShapeChanged = () => {
-      applyAndBroadcast(findTheme(desiredThemeIdRef.current) ?? getDefaultTheme());
-    };
-    window.addEventListener(SHAPE_CHANGED_EVENT, handleShapeChanged);
     return () => {
       window.removeEventListener(MOD_THEME_ADDED, handleAdded);
       window.removeEventListener(MOD_THEME_REMOVED, handleRemoved);
-      window.removeEventListener(SHAPE_CHANGED_EVENT, handleShapeChanged);
     };
   }, [applyAndBroadcast, findTheme]);
 
@@ -333,6 +339,38 @@ export function useTheme() {
     },
     [syncCurrentTheme],
   );
+
+  // 亮/暗模式切换：内置主题家族按新模式解析到具体主题 id 并持久化；
+  // 自定义/Mod 主题自带固定配色方案，模式切换仅作用于内置家族。
+  const changeColorMode = useCallback(
+    (mode: ColorMode) => {
+      persistColorMode(mode);
+      setColorModeState(mode);
+      const resolved = resolveColorMode(mode);
+      setEffectiveMode(resolved);
+      const family = findFamilyByThemeId(desiredThemeIdRef.current);
+      if (!family) return;
+      const targetId = resolveFamilyThemeId(family, resolved);
+      if (targetId !== desiredThemeIdRef.current) {
+        void syncCurrentTheme(targetId, true);
+      }
+    },
+    [syncCurrentTheme],
+  );
+
+  // 偏好为「跟随系统」时，系统亮暗变化按 changeColorMode 同一口径重解析当前主题
+  useEffect(() => {
+    if (colorMode !== "system") return;
+    return onSystemColorModeChange((resolved) => {
+      setEffectiveMode(resolved);
+      const family = findFamilyByThemeId(desiredThemeIdRef.current);
+      if (!family) return;
+      const targetId = resolveFamilyThemeId(family, resolved);
+      if (targetId !== desiredThemeIdRef.current) {
+        void syncCurrentTheme(targetId, true);
+      }
+    });
+  }, [colorMode, syncCurrentTheme]);
 
   const importTheme = useCallback(async (sourcePath: string): Promise<ThemeInstallResult> => {
     const result = await db.installThemeFile(sourcePath);
@@ -369,5 +407,8 @@ export function useTheme() {
     themeDirectoryInfo,
     activeVariant,
     setActiveVariant,
+    colorMode,
+    effectiveMode,
+    changeColorMode,
   };
 }

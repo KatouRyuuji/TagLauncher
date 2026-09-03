@@ -357,11 +357,17 @@ function isEnglishTypoMatch(source: string, query: string): boolean {
   return prev[query.length] <= 1;
 }
 
+/** CJK 统一表意文字与假名：命中即按子串匹配（见 prefixMatches） */
+const CJK_QUERY_RE = /[぀-ヿ㐀-䶿一-鿿豈-﫿]/;
+
 function prefixMatches(value: string, query: string): boolean {
   const normalizedValue = normalize(value);
   const normalizedQuery = normalize(query);
   if (!normalizedQuery) return true;
   if (normalizedValue.startsWith(normalizedQuery)) return true;
+  // CJK 查询按子串匹配：中文对象名常以品牌/艺术家等前缀开头（如「周杰伦 - 晴天」），
+  // 仅前缀匹配会漏掉名称中后段的命中；拼音/首字母通道仍保持前缀匹配以控制噪声。
+  if (CJK_QUERY_RE.test(normalizedQuery) && normalizedValue.includes(normalizedQuery)) return true;
   return isEnglishTypoMatch(normalizedValue, normalizedQuery);
 }
 

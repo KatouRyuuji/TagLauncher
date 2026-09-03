@@ -6,6 +6,8 @@ mod v005_object_identity;
 mod v006_object_signature;
 mod v007_tag_relations;
 mod v008_theme_id_realign;
+mod v009_retire_palettes;
+mod v010_theme_id_uuid;
 
 use rusqlite::Connection;
 
@@ -156,8 +158,9 @@ fn prune_old_breaking_backups(conn: &Connection, keep: &[String]) {
 /// ② 关闭外键强制——重建时 `DROP TABLE items` 若开着外键会级联删除 item_tags/cabinet_items
 /// 关联，而外键 PRAGMA 在事务内为 no-op，故须在 BEGIN 之前关闭、COMMIT 之后恢复
 /// （SQLite 表重定义标准做法）。因此各破坏性迁移自身不再自开 BEGIN / 设置外键 PRAGMA。
-pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
-    let migrations: Vec<Box<dyn Migration>> = vec![
+/// 全部迁移按版本升序注册。新增迁移在此追加，并同步 latest_schema_version 的返回值。
+fn all_migrations() -> Vec<Box<dyn Migration>> {
+    vec![
         Box::new(v001_baseline::V001Baseline),
         Box::new(v002_item_tag_position::V002ItemTagPosition),
         Box::new(v003_performance_indexes::V003PerformanceIndexes),
@@ -166,7 +169,18 @@ pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
         Box::new(v006_object_signature::V006ObjectSignature),
         Box::new(v007_tag_relations::V007TagRelations),
         Box::new(v008_theme_id_realign::V008ThemeIdRealign),
-    ];
+        Box::new(v009_retire_palettes::V009RetirePalettes),
+        Box::new(v010_theme_id_uuid::V010ThemeIdUuid),
+    ]
+}
+
+/// 注册表中的最高 schema 版本——测试与运行库以此为准，不再各自硬编码版本号。
+pub fn latest_schema_version() -> u32 {
+    all_migrations().iter().map(|m| m.version()).max().unwrap_or(0)
+}
+
+pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let migrations = all_migrations();
 
     let current_version = get_schema_version(conn);
     // 本轮新建的全部破坏性备份路径（清理旧备份时豁免，保留"升级前原始态"回滚点）。
@@ -274,7 +288,7 @@ mod tests {
 
         run_pending(&conn).expect("run_pending upgrade");
 
-        assert_eq!(get_schema_version(&conn), 8, "版本应推进到最新");
+        assert_eq!(get_schema_version(&conn), latest_schema_version(), "版本应推进到最新");
 
         let it: i64 = conn
             .query_row("SELECT COUNT(*) FROM item_tags", [], |r| r.get(0))
@@ -304,9 +318,9 @@ mod tests {
         let conn = Connection::open_in_memory().expect("open");
         seed_v4_with_cascading_relations(&conn);
         run_pending(&conn).expect("first upgrade");
-        // 再跑一次（current_version 已是 8，全部跳过）
+        // 再跑一次（current_version 已是最新，全部跳过）
         run_pending(&conn).expect("idempotent rerun");
-        assert_eq!(get_schema_version(&conn), 8);
+        assert_eq!(get_schema_version(&conn), latest_schema_version());
         let it: i64 = conn
             .query_row("SELECT COUNT(*) FROM item_tags", [], |r| r.get(0))
             .unwrap();

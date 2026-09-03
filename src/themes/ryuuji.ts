@@ -1,19 +1,21 @@
 // ============================================================================
 // themes/ryuuji.ts — RyuujiDesign 锁定色板主题工厂
 // ----------------------------------------------------------------------------
-// 色值逐值取自 RyuujiDesign styles/palettes.css 的锁定色板
-// （A1–A6 纸面语言 × 亮/暗、B1–B4 仪表语言 × 亮/暗），禁止自造新色相；
+// 色值逐值取自 RyuujiDesign styles/palettes.css 的锁定色板，禁止自造新色相；
 // 中间档仅用 rgba/color-mix 透明度派生。结构令牌按语言分叉：
-//   A = 纸面（圆角 4/6/8、纸影、MiSans + LXGW WenKai）
-//   B = 仪表（直角 2/3/4、黑影、MiSans + Segoe UI）
-// 三个历史内置主题（sakura=A1亮 / dark=A2暗 / cyber-cyan=B2暗）保留独立文件
-// 以兼容已持久化的主题 id；其余 17 套由本工厂生成。结构令牌统一走
-// themes/shapeLang.ts（严格对齐 lang/a.css 与 lang/b.css）。
+//   A = 纸面（圆角 4/8/8/12、纸影）
+//   B = 仪表（直角 0/2/4/4、硬影）
+// 主题模型：配色家族 × 亮/暗模式。本工厂按「家族 + 亮暗」生成具体主题，
+// 家族注册表（亮暗各映射一个主题 id）见 themes/index.ts 的 THEME_FAMILIES。
+// 主题唯一标识使用固定 uuid，与显示名、配色家族、功能语义完全解耦——
+// 显示名是面向用户的自由文本（亮/暗两套同名），身份识别只认 uuid。
+// sakura（A1 亮）为独立文件：其 uuid 已被用户配置持久化。
+// 结构令牌统一走 themes/shapeLang.ts（严格对齐 lang/a.css 与 lang/b.css）。
 // ============================================================================
 
 import type { ThemeDefinition } from "../types/theme";
-import { DEFAULT_THEME_VARIABLES } from "./tokens";
 import { shapeLangTokens } from "./shapeLang";
+import { CHROME_TOKENS } from "./chromeTokens";
 
 interface RyuujiPalette {
   bg: string; bg_tint: string; surface: string; surface_2: string;
@@ -26,7 +28,6 @@ interface RyuujiPalette {
 
 const PALETTES: Record<string, RyuujiPalette> = {
   "a1-dark": { bg: "#0e1118", bg_tint: "#2d3148", surface: "#161b25", surface_2: "#1d2431", border: "#272f3e", border_strong: "#5b6373", text: "#e8ecf4", text_2: "#a2abbd", text_3: "#6e7789", text_inverse: "#ffffff", primary: "#5d68e7", primary_deep: "#4f58c4", primary_ink: "#b6bbf4", signal: "#5d68e7", success: "#4cc295", warning: "#d4a838", danger: "#cb4754", success_so_shallow: "#213c3b", warning_so_shallow: "#3c3729", danger_so_shallow: "#3b2732", on_primary: "#ffffff" },
-  "a2-light": { bg: "#fff6f4", bg_tint: "#fbdce0", surface: "#ffffff", surface_2: "#fbe9e6", border: "#f3cecb", border_strong: "#b9908e", text: "#3d2b2d", text_2: "#6a3a3a", text_3: "#a06a6a", text_inverse: "#ffffff", primary: "#e3253f", primary_deep: "#c11f36", primary_ink: "#902532", signal: "#e3253f", success: "#1faa5c", warning: "#e8a008", danger: "#c2381f", success_so_shallow: "#e4f5eb", warning_so_shallow: "#fcf4e1", danger_so_shallow: "#f8e7e4", on_primary: "#ffffff" },
   "a3-light": { bg: "#faf6fe", bg_tint: "#eee3fa", surface: "#ffffff", surface_2: "#efe7fa", border: "#ddd0f0", border_strong: "#a495bb", text: "#332b40", text_2: "#564472", text_3: "#8a7aa0", text_inverse: "#ffffff", primary: "#9550e0", primary_deep: "#7f44be", primary_ink: "#683e97", signal: "#9550e0", success: "#1faa62", warning: "#e89e06", danger: "#d62a5e", success_so_shallow: "#e4f5ec", warning_so_shallow: "#fcf3e1", danger_so_shallow: "#fae5ec", on_primary: "#ffffff" },
   "a3-dark": { bg: "#12101a", bg_tint: "#383047", surface: "#1a1724", surface_2: "#221e30", border: "#2d2838", border_strong: "#615971", text: "#ece7f2", text_2: "#a99cc0", text_3: "#776d8a", text_inverse: "#ffffff", primary: "#8d5ad6", primary_deep: "#784db6", primary_ink: "#d1bcee", signal: "#8d5ad6", success: "#4cc290", warning: "#d4a838", danger: "#ce4648", success_so_shallow: "#24393a", warning_so_shallow: "#3f3428", danger_so_shallow: "#3f2530", on_primary: "#ffffff" },
   "a4-light": { bg: "#f7fceb", bg_tint: "#ebf6db", surface: "#ffffff", surface_2: "#e9f4d6", border: "#d2e3b2", border_strong: "#99ad7b", text: "#2d3523", text_2: "#4a6230", text_3: "#7a9260", text_inverse: "#ffffff", primary: "#568213", primary_deep: "#496f10", primary_ink: "#4c6d19", signal: "#568213", success: "#22ab4f", warning: "#e8a006", danger: "#cb4a26", success_so_shallow: "#e4f5ea", warning_so_shallow: "#fcf4e1", danger_so_shallow: "#f9e9e5", on_primary: "#ffffff" },
@@ -37,11 +38,8 @@ const PALETTES: Record<string, RyuujiPalette> = {
   "a6-dark": { bg: "#141017", bg_tint: "#463039", surface: "#1c1720", surface_2: "#241e28", border: "#322733", border_strong: "#6c5b66", text: "#f0e7ec", text_2: "#bda2ac", text_3: "#8a707c", text_inverse: "#ffffff", primary: "#e61d3d", primary_deep: "#c41934", primary_ink: "#f8bdc6", signal: "#e61d3d", success: "#4cc290", warning: "#d4a838", danger: "#cd4939", success_so_shallow: "#263936", warning_so_shallow: "#413425", danger_so_shallow: "#402327", on_primary: "#ffffff" },
   "b1-light": { bg: "#eaf0fd", bg_tint: "#dadfea", surface: "#ffffff", surface_2: "#d6e0fb", border: "#ccd6f2", border_strong: "#8f9ab6", text: "#262e3e", text_2: "#3a4664", text_3: "#6a7590", text_inverse: "#ffffff", primary: "#163a7a", primary_deep: "#133168", primary_ink: "#1d3561", signal: "#3053e8", success: "#10a06a", warning: "#cf8a00", danger: "#d92538", success_so_shallow: "#e2f4ed", warning_so_shallow: "#f9f1e0", danger_so_shallow: "#fae5e7", on_primary: "#ffffff" },
   "b1-dark": { bg: "#020a19", bg_tint: "#313a4a", surface: "#081120", surface_2: "#0e1a2e", border: "#1c2c4a", border_strong: "#4e5f82", text: "#dae3fa", text_2: "#93a5cf", text_3: "#5d6d8e", text_inverse: "#ffffff", primary: "#3f70dd", primary_deep: "#365fbc", primary_ink: "#e3eafa", signal: "#3f70dd", success: "#52c878", warning: "#e0ae30", danger: "#cd4747", success_so_shallow: "#173632", warning_so_shallow: "#333023", danger_so_shallow: "#301e2a", on_primary: "#ffffff" },
-  "b2-light": { bg: "#f1fafb", bg_tint: "#d8ecf0", surface: "#ffffff", surface_2: "#d9eef2", border: "#bedbe0", border_strong: "#87a4aa", text: "#27373d", text_2: "#3a5860", text_3: "#6a888e", text_inverse: "#ffffff", primary: "#0d8198", primary_deep: "#0b6e81", primary_ink: "#165d6b", signal: "#f5b800", success: "#14a86c", warning: "#f5b800", danger: "#d92e1c", success_so_shallow: "#e3f5ed", warning_so_shallow: "#fef6e0", danger_so_shallow: "#fae6e4", on_primary: "#ffffff" },
   "b3-light": { bg: "#fff6f0", bg_tint: "#f8e0dd", surface: "#ffffff", surface_2: "#fae6db", border: "#f2cec2", border_strong: "#b99288", text: "#392a29", text_2: "#6a3e38", text_3: "#a07870", text_inverse: "#ffffff", primary: "#d63e2d", primary_deep: "#b63526", primary_ink: "#8c3329", signal: "#b95b05", success: "#22ab4f", warning: "#f97d0a", danger: "#c01428", success_so_shallow: "#e4f5ea", warning_so_shallow: "#feefe2", danger_so_shallow: "#f7e3e5", on_primary: "#ffffff" },
-  "b3-dark": { bg: "#131010", bg_tint: "#412e2d", surface: "#1b1715", surface_2: "#241e1b", border: "#302723", border_strong: "#6a5c56", text: "#f0e8e4", text_2: "#b9a49c", text_3: "#7d6d68", text_inverse: "#ffffff", primary: "#d14338", primary_deep: "#b23930", primary_ink: "#edb5b1", signal: "#bd5908", success: "#4cc290", warning: "#f6852a", danger: "#ce4832", success_so_shallow: "#25392e", warning_so_shallow: "#472d19", danger_so_shallow: "#3f221c", on_primary: "#ffffff" },
-  "b4-light": { bg: "#f7faee", bg_tint: "#f1f8da", surface: "#ffffff", surface_2: "#eaf0d8", border: "#d4dcc2", border_strong: "#9aa38b", text: "#2b3027", text_2: "#4a5440", text_3: "#7a846c", text_inverse: "#ffffff", primary: "#627f0e", primary_deep: "#536c0c", primary_ink: "#586f17", signal: "#c0e832", success: "#22ab4f", warning: "#e8a006", danger: "#d01f2a", success_so_shallow: "#e4f5ea", warning_so_shallow: "#fcf4e1", danger_so_shallow: "#f9e4e5", on_primary: "#ffffff" },
-  "b4-dark": { bg: "#10140f", bg_tint: "#34401c", surface: "#171c17", surface_2: "#1e241e", border: "#283026", border_strong: "#5a6554", text: "#e9efe6", text_2: "#9fae94", text_3: "#6f7d68", text_inverse: "#ffffff", primary: "#637f1a", primary_deep: "#546c16", primary_ink: "#c8e47e", signal: "#c2e664", success: "#52c878", warning: "#d4a838", danger: "#cc4747", success_so_shallow: "#233e2a", warning_so_shallow: "#3d381e", danger_so_shallow: "#3c2622", on_primary: "#ffffff" }
+  "b3-dark": { bg: "#131010", bg_tint: "#412e2d", surface: "#1b1715", surface_2: "#241e1b", border: "#302723", border_strong: "#6a5c56", text: "#f0e8e4", text_2: "#b9a49c", text_3: "#7d6d68", text_inverse: "#ffffff", primary: "#d14338", primary_deep: "#b23930", primary_ink: "#edb5b1", signal: "#bd5908", success: "#4cc290", warning: "#f6852a", danger: "#ce4832", success_so_shallow: "#25392e", warning_so_shallow: "#472d19", danger_so_shallow: "#3f221c", on_primary: "#ffffff" }
 };
 
 interface RyuujiThemeDef {
@@ -53,29 +51,24 @@ interface RyuujiThemeDef {
 }
 
 const DEFS: RyuujiThemeDef[] = [
-  { palette: "a1-dark", id: "ryuuji-a1-dark", name: "深色·霜靛", lang: "a", scheme: "dark" },
-  { palette: "a2-light", id: "ryuuji-a2-light", name: "亮色·和红", lang: "a", scheme: "light" },
-  { palette: "a3-light", id: "ryuuji-a3-light", name: "亮色·藤色", lang: "a", scheme: "light" },
-  { palette: "a3-dark", id: "ryuuji-a3-dark", name: "深色·藤色", lang: "a", scheme: "dark" },
-  { palette: "a4-light", id: "ryuuji-a4-light", name: "亮色·柳染", lang: "a", scheme: "light" },
-  { palette: "a4-dark", id: "ryuuji-a4-dark", name: "深色·柳染", lang: "a", scheme: "dark" },
-  { palette: "a5-light", id: "ryuuji-a5-light", name: "亮色·水浅葱", lang: "a", scheme: "light" },
-  { palette: "a5-dark", id: "ryuuji-a5-dark", name: "深色·水浅葱", lang: "a", scheme: "dark" },
-  { palette: "a6-light", id: "ryuuji-a6-light", name: "亮色·樱花", lang: "a", scheme: "light" },
-  { palette: "a6-dark", id: "ryuuji-a6-dark", name: "深色·樱花", lang: "a", scheme: "dark" },
-  { palette: "b1-light", id: "ryuuji-b1-light", name: "亮色·海军冰蓝", lang: "b", scheme: "light" },
-  { palette: "b1-dark", id: "ryuuji-b1-dark", name: "深色·海军冰蓝", lang: "b", scheme: "dark" },
-  { palette: "b2-light", id: "ryuuji-b2-light", name: "亮色·钢青", lang: "b", scheme: "light" },
-  { palette: "b3-light", id: "ryuuji-b3-light", name: "亮色·铁锈", lang: "b", scheme: "light" },
-  { palette: "b3-dark", id: "ryuuji-b3-dark", name: "深色·铁锈", lang: "b", scheme: "dark" },
-  { palette: "b4-light", id: "ryuuji-b4-light", name: "亮色·青柠", lang: "b", scheme: "light" },
-  { palette: "b4-dark", id: "ryuuji-b4-dark", name: "深色·青柠", lang: "b", scheme: "dark" }
+  { palette: "a1-dark", id: "8cebf811-9b9d-4c49-ac9f-1d1fa685ce93", name: "霜靛", lang: "a", scheme: "dark" },
+  { palette: "a3-light", id: "668e5856-9d9f-481a-8f82-325372d2e256", name: "藤色", lang: "a", scheme: "light" },
+  { palette: "a3-dark", id: "65596bf6-3aaf-4322-93f2-bbb60cb94b5d", name: "藤色", lang: "a", scheme: "dark" },
+  { palette: "a4-light", id: "3f8ae7b3-244f-4429-a7bc-84d8bbde3ca2", name: "柳染", lang: "a", scheme: "light" },
+  { palette: "a4-dark", id: "cd4665e5-081f-434b-943f-bd44b49cd6ac", name: "柳染", lang: "a", scheme: "dark" },
+  { palette: "a5-light", id: "6794e521-fd01-4e6d-997a-c4d0f1c66de2", name: "水浅葱", lang: "a", scheme: "light" },
+  { palette: "a5-dark", id: "f2368e2a-ee19-4192-96ea-3db85f15c74d", name: "水浅葱", lang: "a", scheme: "dark" },
+  { palette: "a6-light", id: "70492696-751c-4a29-9ab4-09ad8ddff1a4", name: "樱花", lang: "a", scheme: "light" },
+  { palette: "a6-dark", id: "ad9b379f-0f3d-45e3-8b55-bf077b4ab97a", name: "樱花", lang: "a", scheme: "dark" },
+  { palette: "b1-light", id: "e0f5add7-8b67-42c9-9b2b-c7bbf49e255d", name: "海军冰蓝", lang: "b", scheme: "light" },
+  { palette: "b1-dark", id: "6c309a70-ec6a-4429-8299-c4cde7c0ffcc", name: "海军冰蓝", lang: "b", scheme: "dark" },
+  { palette: "b3-light", id: "5298ac16-455f-42f8-8bc8-e9b03ee0fdbf", name: "铁锈", lang: "b", scheme: "light" },
+  { palette: "b3-dark", id: "cfaadcb4-7e85-460c-a8fe-52e848959719", name: "铁锈", lang: "b", scheme: "dark" }
 ];
 
 // 标签预设色 = 同语言同亮暗的全部 primary + 语义色，当前主题色提到首位
 const TAGS: Record<string, string> = {
   "a1-dark": "#5d68e7,#e42435,#8d5ad6,#617f26,#21827e,#e61d3d,#d4a838,#4cc295",
-  "a2-light": "#e3253f,#4a51e8,#9550e0,#568213,#108289,#e7134b,#e8a008,#1faa5c",
   "a3-light": "#9550e0,#4a51e8,#e3253f,#568213,#108289,#e7134b,#e89e06,#1faa62",
   "a3-dark": "#8d5ad6,#5d68e7,#e42435,#617f26,#21827e,#e61d3d,#d4a838,#4cc290",
   "a4-light": "#568213,#4a51e8,#e3253f,#9550e0,#108289,#e7134b,#e8a006,#22ab4f",
@@ -86,11 +79,8 @@ const TAGS: Record<string, string> = {
   "a6-dark": "#e61d3d,#5d68e7,#e42435,#8d5ad6,#617f26,#21827e,#d4a838,#4cc290",
   "b1-light": "#163a7a,#0d8198,#d63e2d,#627f0e,#cf8a00,#10a06a,#d92538,#3053e8",
   "b1-dark": "#3f70dd,#2b808e,#d14338,#637f1a,#e0ae30,#52c878,#cd4747,#8aa4ec",
-  "b2-light": "#0d8198,#163a7a,#d63e2d,#627f0e,#f5b800,#14a86c,#d92e1c,#1674c8",
   "b3-light": "#d63e2d,#163a7a,#0d8198,#627f0e,#f97d0a,#22ab4f,#c01428,#1674c8",
-  "b3-dark": "#d14338,#3f70dd,#2b808e,#637f1a,#f6852a,#4cc290,#ce4832,#63a8e8",
-  "b4-light": "#627f0e,#163a7a,#0d8198,#d63e2d,#e8a006,#22ab4f,#d01f2a,#1674c8",
-  "b4-dark": "#637f1a,#3f70dd,#2b808e,#d14338,#d4a838,#52c878,#cc4747,#63a8e8"
+  "b3-dark": "#d14338,#3f70dd,#2b808e,#637f1a,#f6852a,#4cc290,#ce4832,#63a8e8"
 };
 
 function rgba(hex: string, alpha: number): string {
@@ -105,7 +95,6 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
   const favorite = !light && def.lang === "b" && p.signal !== p.primary ? p.signal : p.warning;
 
   return {
-    ...DEFAULT_THEME_VARIABLES,
     // 结构令牌严格取自 RyuujiDesign 造型语言层（themes/shapeLang.ts）
     ...shapeLangTokens(def.lang, def.scheme),
 
@@ -121,6 +110,8 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
     "status-warning-bg": p.warning_so_shallow,
     "status-success-bg": p.success_so_shallow,
     "tag-preset-colors": tags,
+
+    "grid-col-min": "224px",
 
     "bg-base": p.bg,
     "bg-surface": p.surface,
@@ -171,6 +162,9 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
 
     "panel-titlebar-bg": p.surface,
     "panel-body-bg": light ? p.surface : p.bg,
+
+    // 壳层共享令牌（z 层级/拖拽/标签透明度/边框/面板规格）
+    ...CHROME_TOKENS,
   };
 }
 
@@ -180,7 +174,7 @@ function buildTheme(def: RyuujiThemeDef): ThemeDefinition {
     id: def.id,
     name: def.name,
     author: "TagLauncher",
-    version: "5.3.0",
+    version: "6.2.0",
     isPreset: true,
     lang: def.lang,
     variables: buildVariables(def, p),

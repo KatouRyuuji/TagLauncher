@@ -2,7 +2,7 @@
 // hooks/useTags.ts — 标签数据管理 Hook
 // ============================================================================
 // 封装标签的 CRUD 操作，每次操作后自动刷新标签列表。
-// 标签数据存储在 Zustand Store 中，供 Sidebar、TagFilterBar 等组件使用。
+// 标签数据存储在 Zustand Store 中，供 Sidebar、SearchBar 等组件使用。
 // ============================================================================
 
 import { useState, useEffect, useCallback } from "react";
