@@ -1,6 +1,6 @@
 {
   "name": "tag-launcher",
-  "version": "1.7.1-beta",
+  "version": "1.7.2-beta",
   "description": "标签式文件管理器",
   "type": "module",
   "scripts": {
