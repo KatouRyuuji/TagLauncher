@@ -284,6 +284,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `remove_item` | id: i64 | () | 删除项目 |
 | `get_items` | - | Vec\<ItemWithTags\> | 获取所有项目（含标签） |
 | `toggle_favorite` | id: i64 | bool | 切换收藏状态 |
+| `set_favorites` | ids: Vec\<i64\>, favorite: bool | () | 批量设置收藏状态（单事务，原子、幂等） |
 | `get_tags` | - | Vec\<Tag\> | 获取所有标签 |
 | `add_tag` | name, color | Tag | 新建标签 |
 | `update_tag` | id, name, color | () | 更新标签 |
@@ -300,6 +301,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `add_item_to_cabinet` | cabinet_id, item_id | () | 添加项目到文件柜 |
 | `remove_item_from_cabinet` | cabinet_id, item_id | () | 从文件柜移除项目 |
 | `get_cabinet_items` | cabinet_id: i64 | Vec\<ItemWithTags\> | 获取文件柜内的项目 |
+| `get_cabinet_item_counts` | - | Vec\<(i64, i64)\> | 各文件柜成员计数（单次 GROUP BY 查询，侧栏徽标用，不做对账与图标补齐） |
 
 ---
 

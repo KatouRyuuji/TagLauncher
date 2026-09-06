@@ -95,11 +95,11 @@ export function TitleBar({
           </button>
         )}
         {/* 品牌区关闭 pointer-events，使 mousedown 落在带 drag-region 的 header 上。
-            与侧栏品牌区同一规格：icon 底与文字基线底部对齐（items-end）。 */}
+            logo 取标题栏高度的 3/4（40px 栏配 30px 图标），与文字一同垂直居中。 */}
         <div className="pointer-events-none flex min-w-0 items-center self-stretch pl-3">
-        <div className="flex min-w-0 items-end gap-2.5 pb-[7px] pr-3">
-          <img src={appIcon} alt="" className="h-[26px] w-[26px] shrink-0" draggable={false} />
-          <span className="truncate pb-px text-[14px] font-semibold leading-4 text-[var(--text-primary)]">
+        <div className="flex min-w-0 items-center gap-2.5 pr-3">
+          <img src={appIcon} alt="" className="h-[30px] w-[30px] shrink-0" draggable={false} />
+          <span className="truncate text-[14px] font-semibold leading-4 text-[var(--text-primary)]">
             TagLauncher
           </span>
         </div>

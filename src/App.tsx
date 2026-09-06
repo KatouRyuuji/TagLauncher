@@ -59,6 +59,7 @@ function App() {
     setManyItemTags,
     launchItem,
     toggleFavorite,
+    setFavorites,
     addItemToCabinet,
     addItemsToCabinet,
     removeItemFromCabinet,
@@ -276,12 +277,8 @@ function App() {
     const idSet = new Set(selectedItemIds);
     const selected = items.filter((item) => idSet.has(item.id));
     const ids = idsNeedingFavoriteToggle(selected);
-    void (async () => {
-      for (const id of ids) {
-        await toggleFavorite(id).catch(() => {});
-      }
-    })();
-  }, [items, selectedItemIds, toggleFavorite]);
+    void setFavorites(ids, selectedNeedsFavorite);
+  }, [items, selectedItemIds, selectedNeedsFavorite, setFavorites]);
 
   useWorkspaceHotkeys({
     blocked: overlaysBlocked,

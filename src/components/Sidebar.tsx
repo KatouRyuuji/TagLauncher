@@ -139,17 +139,12 @@ export function Sidebar({
     }
     let cancelled = false;
     const reload = async () => {
-      const pairs = await Promise.all(
-        cabinets.map(async (cabinet) => {
-          try {
-            const items = await db.getCabinetItems(cabinet.id);
-            return [cabinet.id, items.length] as const;
-          } catch {
-            return [cabinet.id, 0] as const;
-          }
-        }),
-      );
-      if (!cancelled) setItemCountByCabinet(new Map(pairs));
+      try {
+        const counts = await db.getCabinetItemCounts();
+        if (!cancelled) setItemCountByCabinet(counts);
+      } catch {
+        if (!cancelled) setItemCountByCabinet(new Map());
+      }
     };
     void reload();
     const unsubCabinetItems = onCabinetItemsChanged(() => { void reload(); });

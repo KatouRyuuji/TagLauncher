@@ -313,6 +313,11 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       item.is_favorite = !item.is_favorite;
       return item.is_favorite;
     }
+    case "set_favorites": {
+      const favorite = args.favorite === true;
+      for (const id of ids(args.ids)) requireItem(id).is_favorite = favorite;
+      return null;
+    }
     case "relocate_missing":
       // 演示集中没有可找回的盘符，模拟「未找到」
       return 0;
@@ -489,6 +494,11 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "get_cabinet_items": {
       const members = state.cabinetItems.get(num(args.cabinetId)) ?? new Set<number>();
       return sortItems(state.items.filter((item) => members.has(item.id))).map(withTags);
+    }
+    case "get_cabinet_item_counts": {
+      const pairs: [number, number][] = [];
+      for (const [cabinetId, members] of state.cabinetItems) pairs.push([cabinetId, members.size]);
+      return pairs;
     }
 
     // ---- 设置 ----

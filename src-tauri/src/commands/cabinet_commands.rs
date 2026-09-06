@@ -75,6 +75,13 @@ pub fn remove_items_from_cabinet(
     cabinet_service::remove_items_from_cabinet(&conn, cabinet_id, &item_ids)
 }
 
+/// 各文件柜成员计数（轻量单查询，侧栏徽标热路径，不做对账与图标补齐）
+#[tauri::command]
+pub fn get_cabinet_item_counts(db: State<Database>) -> Result<Vec<(i64, i64)>, String> {
+    let conn = db.get_conn();
+    cabinet_service::get_cabinet_item_counts(&conn)
+}
+
 // 与 get_items 对等：同样会串行抽图标 + 对账重 IO，用 (async) 放到工作线程避免冻结 UI；
 // 函数体全同步（无 await），DB 锁只在各短临界区内持有并随即释放，无跨 await 持锁。
 #[tauri::command(async)]

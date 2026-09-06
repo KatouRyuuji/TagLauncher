@@ -202,6 +202,28 @@ export function SelectionCanvas({
     }
   }, []);
 
+  // pointermove 高频触发（60-120Hz），每次全量构建命中 Map 太贵；
+  // 用 rAF 合并：一帧内多次 move 只按最新坐标算一次。
+  const selectionRafRef = useRef<number | null>(null);
+  const pendingPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const scheduleApplySelectionAt = useCallback((clientX: number, clientY: number) => {
+    pendingPointerRef.current = { x: clientX, y: clientY };
+    if (selectionRafRef.current !== null) return;
+    selectionRafRef.current = requestAnimationFrame(() => {
+      selectionRafRef.current = null;
+      const pending = pendingPointerRef.current;
+      if (pending) applySelectionAt(pending.x, pending.y);
+    });
+  }, [applySelectionAt]);
+
+  const cancelScheduledSelection = useCallback(() => {
+    if (selectionRafRef.current !== null) {
+      cancelAnimationFrame(selectionRafRef.current);
+      selectionRafRef.current = null;
+    }
+    pendingPointerRef.current = null;
+  }, []);
+
   // 自动滚动帧：按指针距边缘深度决定速度，滚动后用最新指针位置重算命中（并集累积）。
   const autoScrollStep = useCallback(() => {
     autoScrollRafRef.current = null;
@@ -266,12 +288,16 @@ export function SelectionCanvas({
     drag.lastX = event.clientX;
     drag.lastY = event.clientY;
 
-    applySelectionAt(event.clientX, event.clientY);
+    scheduleApplySelectionAt(event.clientX, event.clientY);
     maybeStartAutoScroll();
   };
 
   const endDrag = () => {
     stopAutoScroll();
+    // 结算前先把排队的帧按最新坐标同步 flush，保证 pointerup 时刻选中集完整
+    cancelScheduledSelection();
+    const drag = dragRef.current;
+    if (drag?.active) applySelectionAt(drag.lastX, drag.lastY);
     setSelectionBox(null);
     dragRef.current = null;
   };
@@ -356,7 +382,10 @@ export function SelectionCanvas({
     }
   };
 
-  useEffect(() => stopAutoScroll, [stopAutoScroll]);
+  useEffect(() => () => {
+    stopAutoScroll();
+    cancelScheduledSelection();
+  }, [stopAutoScroll, cancelScheduledSelection]);
 
   return (
     <div

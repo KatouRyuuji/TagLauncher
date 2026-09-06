@@ -229,6 +229,7 @@ pub fn run() {
             open_in_explorer_by_id,
             // 收藏
             toggle_favorite,
+            set_favorites,
             // 跨盘符兜底找回
             relocate_missing,
             // 文件柜
@@ -241,6 +242,7 @@ pub fn run() {
             add_items_to_cabinet,
             remove_items_from_cabinet,
             get_cabinet_items,
+            get_cabinet_item_counts,
             // 同义词
             read_synonyms,
             // 设置

@@ -159,3 +159,26 @@ fn get_items_by_ids_dedups_and_orders() {
     assert_eq!(got[0].item.id, c.id, "收藏项排最前");
     assert!(got.iter().all(|i| i.item.id != b.id), "未请求的 b 不应出现");
 }
+
+/// set_favorites：批量设置幂等、只影响指定 id、空列表为 no-op。
+#[test]
+fn set_favorites_batch_and_idempotent() {
+    let t = common::temp_db();
+    let conn = t.db.get_conn();
+    let a = item_service::add_item(&conn, &common::write_file(&t.dir, "sf-a.exe", b"a")).unwrap();
+    let b = item_service::add_item(&conn, &common::write_file(&t.dir, "sf-b.exe", b"b")).unwrap();
+    let c = item_service::add_item(&conn, &common::write_file(&t.dir, "sf-c.exe", b"c")).unwrap();
+
+    item_service::set_favorites(&conn, &[a.id, b.id], true).expect("batch favorite");
+    item_service::set_favorites(&conn, &[a.id, b.id], true).expect("idempotent");
+    let fav_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM items WHERE is_favorite = 1", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(fav_count, 2, "a/b 收藏、c 不受影响");
+
+    item_service::set_favorites(&conn, &[a.id], false).expect("batch unfavorite");
+    let got = item_service::get_items_by_ids(&conn, &[a.id, b.id, c.id]).expect("by ids");
+    assert_eq!(got[0].item.id, b.id, "仅 b 仍收藏排最前");
+
+    item_service::set_favorites(&conn, &[], true).expect("empty is no-op");
+}

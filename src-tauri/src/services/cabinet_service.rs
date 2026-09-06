@@ -165,6 +165,20 @@ pub fn remove_items_from_cabinet(
     Ok(())
 }
 
+/// 各文件柜成员计数（一次 GROUP BY 查询，供侧栏徽标使用，
+/// 避免逐柜调用 get_cabinet_items 引发的全库对账 + 图标补齐重 IO）
+pub fn get_cabinet_item_counts(conn: &Connection) -> Result<Vec<(i64, i64)>, String> {
+    let mut stmt = conn
+        .prepare("SELECT cabinet_id, COUNT(*) FROM cabinet_items GROUP BY cabinet_id")
+        .map_err(|e| e.to_string())?;
+    let counts = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|e| e.to_string())?
+        .filter_map(crate::services::item_service::skip_err_with_log("get_cabinet_item_counts"))
+        .collect();
+    Ok(counts)
+}
+
 /// 获取文件柜内的所有项目
 pub fn get_cabinet_items(
     conn: &Connection,
@@ -228,5 +242,22 @@ mod tests {
         let left = get_cabinet_items(&conn, cab.id).unwrap();
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].item.id, b.id);
+    }
+
+    #[test]
+    fn cabinet_item_counts_group_by_cabinet() {
+        let conn = setup();
+        let cab_a = add_cabinet(&conn, "Games", "#fff").expect("add cabinet a");
+        let cab_b = add_cabinet(&conn, "Tools", "#000").expect("add cabinet b");
+        let x = item_service::add_item(&conn, r"D:\__c__\1.exe").unwrap();
+        let y = item_service::add_item(&conn, r"D:\__c__\2.exe").unwrap();
+
+        add_items_to_cabinet(&conn, cab_a.id, &[x.id, y.id]).expect("batch add a");
+        add_items_to_cabinet(&conn, cab_b.id, &[y.id]).expect("batch add b");
+
+        let counts: std::collections::HashMap<i64, i64> =
+            get_cabinet_item_counts(&conn).unwrap().into_iter().collect();
+        assert_eq!(counts.get(&cab_a.id), Some(&2));
+        assert_eq!(counts.get(&cab_b.id), Some(&1));
     }
 }

@@ -216,6 +216,11 @@ export async function toggleFavorite(id: number): Promise<boolean> {
   return invokeCmd("toggle_favorite", { id });
 }
 
+/** 批量设置收藏状态（后端单事务，原子、幂等） */
+export async function setFavorites(ids: number[], favorite: boolean): Promise<void> {
+  return invokeCmd("set_favorites", { ids, favorite });
+}
+
 // ---- 跨盘符兜底找回 ----
 
 /** 对失效对象按内容签名做跨盘找回，返回成功找回数量（扫描在后端锁外进行） */
@@ -293,6 +298,12 @@ export async function removeItemsFromCabinet(cabinetId: number, itemIds: number[
 /** 获取文件柜内的所有项目（含标签信息） */
 export async function getCabinetItems(cabinetId: number): Promise<ItemWithTags[]> {
   return invokeCmd("get_cabinet_items", { cabinetId });
+}
+
+/** 各文件柜成员计数（轻量单查询，侧栏徽标用） */
+export async function getCabinetItemCounts(): Promise<Map<number, number>> {
+  const pairs = await invokeCmd("get_cabinet_item_counts") as [number, number][];
+  return new Map(pairs);
 }
 
 // ---- 设置 ----

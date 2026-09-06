@@ -518,6 +518,31 @@ pub fn toggle_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
     Ok(new_val != 0)
 }
 
+/// 批量设置收藏状态（按 500 分块多条 IN 语句 + 单事务，整体原子、幂等）。
+/// 批量收藏的热路径：避免逐项 toggle 的 2M 次 IPC 往返。
+pub fn set_favorites(conn: &Connection, ids: &[i64], favorite: bool) -> Result<(), String> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let val = if favorite { 1 } else { 0 };
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    for chunk in ids.chunks(500) {
+        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "UPDATE items SET is_favorite = {} WHERE id IN ({})",
+            val, placeholders
+        );
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len());
+        for id in chunk {
+            params.push(id);
+        }
+        tx.execute(&sql, params.as_slice())
+            .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 惰性对账：刷新时检测每个对象的文件是否仍在原路径，
 /// - 在原路径 → 视为有效；缺身份则回填文件ID；曾失效则清除失效标记。
 /// - 不在原路径但有文件ID → 用文件ID重定位（同盘移动/重命名），成功则更新 path/name，失败标记失效。

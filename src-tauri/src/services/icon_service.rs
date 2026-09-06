@@ -54,8 +54,18 @@ fn auto_visual_path(app: &AppHandle, item: &Item) -> Option<String> {
             return Some(cached_path.to_string_lossy().to_string());
         }
 
-        if extract_associated_icon_to_png(&item.path, &cached_path).ok()? {
-            return Some(cached_path.to_string_lossy().to_string());
+        // 提取失败的负缓存：失败对象不再每次刷新都重起 PowerShell 进程。
+        // 标记键与图标键同源（含文件大小+mtime），文件变化后自动失效重试。
+        let none_marker = cache_dir.join(format!("{}.none", icon_cache_key(&item.path)));
+        if none_marker.exists() {
+            return None;
+        }
+
+        match extract_associated_icon_to_png(&item.path, &cached_path) {
+            Ok(true) => return Some(cached_path.to_string_lossy().to_string()),
+            Ok(false) | Err(_) => {
+                let _ = std::fs::write(none_marker, []);
+            }
         }
     }
 

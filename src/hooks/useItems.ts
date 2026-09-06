@@ -373,6 +373,16 @@ export function useItems() {
     });
   }, [refreshItemById]);
 
+  // 批量收藏/取消：后端单事务翻转 + 一次批量回灌，替代逐项 toggle 的串行 IPC
+  const setFavorites = useCallback(async (ids: number[], favorite: boolean) => {
+    if (ids.length === 0) return;
+    await withErrorToast("批量切换收藏", async () => {
+      await db.setFavorites(ids, favorite);
+      const changedItems = await db.getItemsByIds(ids);
+      applyChangedItems(changedItems);
+    });
+  }, [applyChangedItems]);
+
   // 柜成员操作：await 后用 useAppStore.getState() 读最新选中柜（同 useTags 范式），
   // 避免等待期间用户切柜后按调用时刻的捕获值写错 cabinetItems 列表。
   const addItemToCabinet = useCallback(async (cabinetId: number, itemId: number) => {
@@ -446,6 +456,7 @@ export function useItems() {
     setManyItemTags,
     launchItem,
     toggleFavorite,
+    setFavorites,
     addItemToCabinet,
     addItemsToCabinet,
     removeItemFromCabinet,

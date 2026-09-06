@@ -26,7 +26,19 @@ export interface SearchIndex {
   mode: SearchMode;
 }
 
-const searchFieldsCache = new WeakMap<ItemWithTags, SearchableFields>();
+// 拼音字段缓存：按对象 id 键控而非对象身份。loadAll 全量刷新后所有对象换新引用，
+// WeakMap 会全 miss 导致主线程全量重算拼音；按 id + 内容指纹（名称/路径/标签）校验
+// 即可跨刷新复用。标签指纹随条目保存，内容变了自然重算。
+interface SearchFieldsCacheEntry {
+  name: string;
+  path: string;
+  tagsKey: string;
+  fields: SearchableFields;
+}
+
+const searchFieldsCache = new Map<number, SearchFieldsCacheEntry>();
+/** 缓存上限：超出即清空重建，避免对象删除后条目残留 */
+const SEARCH_FIELDS_CACHE_LIMIT = 20000;
 const queryExprCache = new Map<string, Expr | null>();
 
 type Token =
@@ -50,9 +62,10 @@ function normalize(value: string): string {
 }
 
 function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
-  const cachedFields = searchFieldsCache.get(item);
-  if (cachedFields) {
-    return { item, fields: cachedFields };
+  const tagsKey = item.tags.map((tag) => `${tag.id}:${tag.name}`).join("|");
+  const cached = searchFieldsCache.get(item.id);
+  if (cached && cached.name === item.name && cached.path === item.path && cached.tagsKey === tagsKey) {
+    return { item, fields: cached.fields };
   }
 
   const tagEntries = item.tags.map((tag) => ({
@@ -69,7 +82,8 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
     tagEntries,
   };
 
-  searchFieldsCache.set(item, fields);
+  if (searchFieldsCache.size >= SEARCH_FIELDS_CACHE_LIMIT) searchFieldsCache.clear();
+  searchFieldsCache.set(item.id, { name: item.name, path: item.path, tagsKey, fields });
 
   return {
     item,

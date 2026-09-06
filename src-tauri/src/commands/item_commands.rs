@@ -132,6 +132,13 @@ pub fn toggle_favorite(db: State<Database>, id: i64) -> Result<bool, String> {
     item_service::toggle_favorite(&conn, id)
 }
 
+/// 批量设置收藏状态（单事务，批量收藏热路径）
+#[tauri::command]
+pub fn set_favorites(db: State<Database>, ids: Vec<i64>, favorite: bool) -> Result<(), String> {
+    let conn = db.get_conn();
+    item_service::set_favorites(&conn, &ids, favorite)
+}
+
 /// 对失效对象按内容签名做跨盘符兜底找回，返回成功找回数量。
 /// 扫描阶段在锁外执行：先取数据释放锁 → 扫描候选盘 → 再加锁回写，避免长扫描阻塞其它命令。
 /// 全盘扫描是重 IO，用 (async) 放到工作线程；函数体无 await，DB 锁只在取数据/回写两小段内持有。

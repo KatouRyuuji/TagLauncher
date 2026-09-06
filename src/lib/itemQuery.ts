@@ -270,13 +270,24 @@ function commandSearchHaystack(title: string, keywords: string): string {
   return `${title} ${keywords} ${pinyinTitle} ${pinyinInitials}`.toLowerCase();
 }
 
+// 命令面板的命令列表由调用方 useMemo 稳定引用，按对象身份缓存拼音 haystack，
+// 避免每次输入都对全部命令重跑 pinyin-pro。
+const commandHaystackCache = new WeakMap<{ title: string; keywords: string }, string>();
+
 export function filterCommandsByQuery<T extends { title: string; keywords: string }>(
   commands: T[],
   query: string,
 ): T[] {
   const q = query.trim().toLowerCase();
   if (!q) return commands;
-  return commands.filter((command) => commandSearchHaystack(command.title, command.keywords).includes(q));
+  return commands.filter((command) => {
+    let haystack = commandHaystackCache.get(command);
+    if (!haystack) {
+      haystack = commandSearchHaystack(command.title, command.keywords);
+      commandHaystackCache.set(command, haystack);
+    }
+    return haystack.includes(q);
+  });
 }
 
 export function isTypingTarget(target: EventTarget | null): boolean {
