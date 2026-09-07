@@ -505,6 +505,7 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 - `setup.bat`：一键检测并安装 Node / Rust(rustup) / VS C++ BuildTools / WebView2，并执行 `npm install`（全英文 + UTF-8 + CRLF）。
 - `dev.bat` / `build.bat`：自动注入 `%USERPROFILE%\.cargo\bin` 到 PATH 并做环境前置检查；`build.bat` 支持可选 target 参数。
 - `build-arm64.bat`：面向 `aarch64-pc-windows-msvc` 的 ARM64 构建，会自动 `rustup target add`。
+- `pack-all.bat`：一键全量打包——宿主架构原生构建 + 另一架构 `--target` 交叉构建，一次产出 x64/ARM64 的 NSIS 安装包与便携 zip（对齐 CI release 流水线产物）。
 
 ### 开发模式
 ```bash
