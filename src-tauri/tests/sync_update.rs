@@ -152,9 +152,9 @@ fn update_parse_handles_realistic_github_payload() {
         "html_url": "https://github.com/KatouRyuuji/TagLauncher/releases/tag/v2.0.0",
         "body": "## What's New\n- Cloud sync",
         "assets": [
-            {"name": "TagLauncher_2.0.0_x64-setup.exe.sig", "browser_download_url": "https://example.com/x64.sig", "size": 100},
-            {"name": "TagLauncher_2.0.0_x64-setup.exe", "browser_download_url": "https://example.com/x64-setup.exe", "size": 9000000},
-            {"name": "TagLauncher_2.0.0_arm64-setup.exe", "browser_download_url": "https://example.com/arm64-setup.exe", "size": 8500000}
+            {"name": "TagLauncher_2.0.0_x64-setup.exe.sig", "browser_download_url": "https://github.com/KatouRyuuji/TagLauncher/releases/download/v2.0.0/x64.sig", "size": 100},
+            {"name": "TagLauncher_2.0.0_x64-setup.exe", "browser_download_url": "https://github.com/KatouRyuuji/TagLauncher/releases/download/v2.0.0/x64-setup.exe", "size": 9000000},
+            {"name": "TagLauncher_2.0.0_arm64-setup.exe", "browser_download_url": "https://github.com/KatouRyuuji/TagLauncher/releases/download/v2.0.0/arm64-setup.exe", "size": 8500000}
         ]
     }"###;
     let info = parse_release_response(payload, "1.4.0").expect("parse");

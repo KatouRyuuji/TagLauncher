@@ -1,6 +1,6 @@
 # TagLauncher 项目手册
 
-> 适用版本：v1.7.1-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
+> 适用版本：v1.7.3-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
 
 ## 一、项目简介
 
@@ -71,7 +71,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands/  ← 90 个 Tauri 命令         │  │
+│  │  commands/  ← 92 个 Tauri 命令         │  │
 │  │             (按 item/cabinet/tag/mod/   │  │
 │  │              net/ai/data/settings/      │  │
 │  │              synonym/launch/            │  │
@@ -168,7 +168,7 @@ tag-launcher/
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── commands/             # Tauri 命令（按业务域分模块，90 个）
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，92 个）
 │   │   │   ├── item_commands.rs
 │   │   │   ├── cabinet_commands.rs
 │   │   │   ├── tag_commands.rs
@@ -276,7 +276,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ## 五、Tauri 命令清单
 
-后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 90 个 `#[tauri::command]`（含 `#[tauri::command(async)]` 变体），按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
+后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 92 个 `#[tauri::command]`（含 `#[tauri::command(async)]` 变体），按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
 
 | 命令名 | 参数 | 返回值 | 说明 |
 |--------|------|--------|------|

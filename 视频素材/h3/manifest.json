@@ -1,0 +1,116 @@
+{
+  "product": "TagLauncher",
+  "version": "1.7.3-beta",
+  "slogan": "现代 | 轻量 | 极速 | 标签化管理",
+  "model": "MiniMax-H3",
+  "aspect": "16:9",
+  "zip_root": "视频素材",
+  "prompt_char_limit": 7000,
+  "duration_range_s": [4, 15],
+  "total_duration_s": 118,
+  "clips": [
+    {
+      "clip_id": "C01",
+      "act": "开场",
+      "duration_s": 8,
+      "mode": "first+last",
+      "prompt_file": "h3/prompts/C01_open_logo.txt",
+      "files": [
+        {"role": "first_frame", "path": "角色与品牌/open-first.jpg"},
+        {"role": "last_frame", "path": "角色与品牌/open-last.jpg"}
+      ]
+    },
+    {
+      "clip_id": "C02",
+      "act": "第一幕打招呼（龙儿）",
+      "duration_s": 15,
+      "mode": "first-frame",
+      "prompt_file": "h3/prompts/C02_greet_longer.txt",
+      "files": [
+        {"role": "first_frame", "path": "角色与品牌/greet-longer-frame.jpg"}
+      ]
+    },
+    {
+      "clip_id": "C03",
+      "act": "第一幕打招呼（喵星喵三连）",
+      "duration_s": 12,
+      "mode": "first+last",
+      "prompt_file": "h3/prompts/C03_greet_miao_sanlian.txt",
+      "files": [
+        {"role": "first_frame", "path": "角色与品牌/greet-miao-sanlian-frame.jpg"},
+        {"role": "last_frame", "path": "角色与品牌/greet-miao-sanlian-last.jpg"}
+      ]
+    },
+    {
+      "clip_id": "C04",
+      "act": "第二幕 功能特性速览",
+      "duration_s": 15,
+      "mode": "first-frame",
+      "prompt_file": "h3/prompts/C04_feature_cards.txt",
+      "files": [
+        {"role": "first_frame", "path": "功能特性卡片/00-平铺总览.jpg"}
+      ]
+    },
+    {
+      "clip_id": "C05",
+      "act": "第三幕 核心功能 · 标签筛选",
+      "duration_s": 12,
+      "mode": "first-frame",
+      "prompt_file": "h3/prompts/C05_core_tags.txt",
+      "files": [
+        {"role": "first_frame", "path": "软件截图/03-tag-filter-parent.png"}
+      ]
+    },
+    {
+      "clip_id": "C06",
+      "act": "第三幕 核心功能 · 再收窄",
+      "duration_s": 10,
+      "mode": "first-frame",
+      "prompt_file": "h3/prompts/C06_core_narrow.txt",
+      "files": [
+        {"role": "first_frame", "path": "软件截图/04-tag-filter-multi.png"}
+      ]
+    },
+    {
+      "clip_id": "C07",
+      "act": "第四幕 智能搜索",
+      "duration_s": 12,
+      "mode": "first-frame",
+      "prompt_file": "h3/prompts/C07_search.txt",
+      "files": [
+        {"role": "first_frame", "path": "软件截图/05-search-keyword.png"}
+      ]
+    },
+    {
+      "clip_id": "C08",
+      "act": "第五幕 易用化设计",
+      "duration_s": 12,
+      "mode": "first+last",
+      "prompt_file": "h3/prompts/C08_ux_theme.txt",
+      "files": [
+        {"role": "first_frame", "path": "软件截图/02-grid-light.png"},
+        {"role": "last_frame", "path": "软件截图/08-grid-dark.png"}
+      ]
+    },
+    {
+      "clip_id": "C09",
+      "act": "第六幕 高级功能",
+      "duration_s": 12,
+      "mode": "first-frame",
+      "prompt_file": "h3/prompts/C09_advanced.txt",
+      "files": [
+        {"role": "first_frame", "path": "软件截图/07-tag-graph.png"}
+      ]
+    },
+    {
+      "clip_id": "C10",
+      "act": "结尾",
+      "duration_s": 10,
+      "mode": "first-frame",
+      "prompt_file": "h3/prompts/C10_ending.txt",
+      "files": [
+        {"role": "first_frame", "path": "角色与品牌/ending-composed.jpg"}
+      ]
+    }
+  ]
+}

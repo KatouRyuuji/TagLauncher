@@ -59,9 +59,10 @@ export function useMods() {
 
       if (!mod.is_compatible) {
         showToast(
-          `Mod "${mod.name}" 不兼容当前版本：${mod.incompatible_reason ?? "版本不满足"}`,
-          "warning",
+          `Mod "${mod.name}" 不兼容当前版本，已拒绝启用：${mod.incompatible_reason ?? "版本不满足"}`,
+          "error",
         );
+        return;
       }
 
       try {

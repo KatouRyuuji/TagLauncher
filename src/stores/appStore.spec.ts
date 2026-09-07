@@ -5,7 +5,8 @@
 // Zustand store 不依赖 Tauri，适合作为 vitest 首个落地用例。
 // ============================================================================
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { SEARCH_RESET_EVENT } from "../lib/workspaceChrome";
 import { useAppStore } from "./appStore";
 
 describe("appStore", () => {
@@ -142,6 +143,14 @@ describe("appStore", () => {
     expect(useAppStore.getState().searchQuery).toBe("");
     expect(useAppStore.getState().searchInputValue).toBe("");
     expect(useAppStore.getState().sortMode).toBe("name");
+  });
+
+  it("clearWorkspaceFilters 派发搜索框重置事件", () => {
+    const listener = vi.fn();
+    window.addEventListener(SEARCH_RESET_EVENT, listener);
+    useAppStore.getState().clearWorkspaceFilters();
+    window.removeEventListener(SEARCH_RESET_EVENT, listener);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it("setSortMode / setTypeFilter 更新工作台偏好", () => {

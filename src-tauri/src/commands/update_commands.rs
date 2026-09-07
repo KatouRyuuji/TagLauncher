@@ -84,7 +84,12 @@ pub fn parse_release_response(json: &str, current_version: &str) -> Result<Updat
     // 兼容 "v1.4.0" 与 "1.4.0" 两种 tag 风格
     let latest = tag.trim_start_matches(['v', 'V']).to_string();
 
-    let release_url = value["html_url"].as_str().unwrap_or("").to_string();
+    let release_url_raw = value["html_url"].as_str().unwrap_or("");
+    let release_url = if is_allowed_download_url(release_url_raw) {
+        release_url_raw.to_string()
+    } else {
+        format!("https://github.com/{}/releases/latest", GITHUB_REPO)
+    };
     let release_notes = value["body"].as_str().unwrap_or("").to_string();
 
     // has_update = current 语义上早于 latest（beta 当前版本也会收到同号正式版提示）
@@ -140,7 +145,7 @@ fn pick_installer_asset(assets: &[serde_json::Value], arch: &str) -> (String, u6
         let name = asset["name"].as_str().unwrap_or("");
         let url = asset["browser_download_url"].as_str().unwrap_or("");
         let size = asset["size"].as_u64().unwrap_or(0);
-        if url.is_empty() {
+        if url.is_empty() || !is_allowed_download_url(url) {
             continue;
         }
         let lower = name.to_ascii_lowercase();
@@ -156,6 +161,24 @@ fn pick_installer_asset(assets: &[serde_json::Value], arch: &str) -> (String, u6
         .unwrap_or((String::new(), 0))
 }
 
+/// 只允许打开 GitHub / GitHub 资产域名的 https 链接，避免 Release JSON 被篡改后打开任意 URL。
+fn is_allowed_download_url(url: &str) -> bool {
+    let url = url.trim();
+    let rest = match url.get(..8) {
+        Some(prefix) if prefix.eq_ignore_ascii_case("https://") => &url[8..],
+        _ => return false,
+    };
+    let host = rest.split('/').next().unwrap_or("").to_ascii_lowercase();
+    matches!(
+        host.as_str(),
+        "github.com"
+            | "www.github.com"
+            | "objects.githubusercontent.com"
+            | "release-assets.githubusercontent.com"
+            | "github-releases.githubusercontent.com"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,8 +190,8 @@ mod tests {
                 "html_url": "https://github.com/KatouRyuuji/TagLauncher/releases/tag/{tag}",
                 "body": "## 新特性 - WebDAV 云同步",
                 "assets": [
-                    {{"name": "TagLauncher_9.9.9_arm64-setup.exe", "browser_download_url": "https://example.com/arm64.exe", "size": 111}},
-                    {{"name": "TagLauncher_9.9.9_x64-setup.exe", "browser_download_url": "https://example.com/x64.exe", "size": 222}}
+                    {{"name": "TagLauncher_9.9.9_arm64-setup.exe", "browser_download_url": "https://github.com/KatouRyuuji/TagLauncher/releases/download/{tag}/arm64.exe", "size": 111}},
+                    {{"name": "TagLauncher_9.9.9_x64-setup.exe", "browser_download_url": "https://github.com/KatouRyuuji/TagLauncher/releases/download/{tag}/x64.exe", "size": 222}}
                 ]
             }}"###
         )
@@ -207,11 +230,17 @@ mod tests {
         let assets = json["assets"].as_array().unwrap().as_slice();
 
         let (url, size) = pick_installer_asset(assets, "x86_64");
-        assert_eq!(url, "https://example.com/x64.exe");
+        assert_eq!(
+            url,
+            "https://github.com/KatouRyuuji/TagLauncher/releases/download/2.0.0/x64.exe"
+        );
         assert_eq!(size, 222);
 
         let (url, size) = pick_installer_asset(assets, "aarch64");
-        assert_eq!(url, "https://example.com/arm64.exe");
+        assert_eq!(
+            url,
+            "https://github.com/KatouRyuuji/TagLauncher/releases/download/2.0.0/arm64.exe"
+        );
         assert_eq!(size, 111);
     }
 
@@ -221,7 +250,28 @@ mod tests {
             serde_json::from_str(&sample_release("2.0.0")).unwrap();
         let assets = json["assets"].as_array().unwrap().as_slice();
         let (url, _) = pick_installer_asset(assets, "riscv64");
-        assert_eq!(url, "https://example.com/arm64.exe");
+        assert_eq!(
+            url,
+            "https://github.com/KatouRyuuji/TagLauncher/releases/download/2.0.0/arm64.exe"
+        );
+    }
+
+    #[test]
+    fn rejects_non_github_installer_host() {
+        let json = r#"{
+            "tag_name": "2.0.0",
+            "html_url": "https://evil.example/release",
+            "body": "",
+            "assets": [
+                {"name": "TagLauncher_2.0.0_x64-setup.exe", "browser_download_url": "https://evil.example/x.exe", "size": 1}
+            ]
+        }"#;
+        let info = parse_release_response(json, "1.0.0").unwrap();
+        assert_eq!(info.installer_url, "");
+        assert_eq!(
+            info.release_url,
+            "https://github.com/KatouRyuuji/TagLauncher/releases/latest"
+        );
     }
 
     #[test]
@@ -240,6 +290,9 @@ mod tests {
         assert!(info.has_update);
         assert_eq!(info.installer_url, "");
         assert_eq!(info.installer_size, 0);
-        assert_eq!(info.release_url, "https://x");
+        assert_eq!(
+            info.release_url,
+            "https://github.com/KatouRyuuji/TagLauncher/releases/latest"
+        );
     }
 }

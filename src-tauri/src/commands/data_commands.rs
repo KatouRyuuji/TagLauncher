@@ -200,6 +200,9 @@ pub fn import_data(
         backups_dir.join(format!("taglauncher_pre_import_{}.db", utc_timestamp_compact()));
     snapshot_live_db(&db, &safety_backup)?;
 
+    // 与云恢复同一策略：导入后保留本机 AI / WebDAV 凭据，避免被来源库覆盖。
+    let local_secrets = crate::commands::sync_commands::read_local_secrets(&db)?;
+
     // 用 Backup API 把来源库内容灌入"当前打开的连接"（避免 Windows 文件占用/页缓存不一致）。
     // 一旦覆盖失败，立即用安全备份把实库回滚到导入前状态，再返回错误。
     if let Err(e) = overwrite_live_from(&db, &source) {
@@ -213,6 +216,8 @@ pub fn import_data(
             )),
         };
     }
+
+    crate::commands::sync_commands::reapply_local_secrets(&db, &local_secrets)?;
 
     Ok(safety_backup.to_string_lossy().to_string())
 }

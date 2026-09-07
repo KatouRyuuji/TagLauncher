@@ -1,12 +1,17 @@
 @import "tailwindcss";
 
+@theme {
+  --text-xs: 13px;
+  --text-xs--line-height: 1.3;
+}
+
 @layer base {
   :root {
     /* 字体方案（OFL 本地打包 + 系统兜底）：UI = Noto Sans SC、正文 = LXGW WenKai、等宽 = Cascadia Code */
     --font-family: "Noto Sans SC Variable", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "MiSans", system-ui, sans-serif;
     --font-family-body: "LXGW WenKai", "LXGW WenKai GB", "Kaiti SC", "STKaiti", "KaiTi", "Noto Sans SC", serif;
     --font-family-mono: "Cascadia Code", "Cascadia Mono", "JetBrains Mono", "Consolas", monospace;
-    --font-size-xs: 12px;
+    --font-size-xs: 13px;
     --font-size-sm: 14px;
     --font-size-base: 15px;
     --font-size-lg: 17px;
@@ -54,7 +59,7 @@
     --tag-preset-colors: #e11d48,#ea580c,#ca8a04,#16a34a,#0d9488,#3db8bf,#2563eb,#7c3aed;
 
     --sidebar-width: 236px;
-    --grid-col-min: 224px;
+    --grid-col-min: 256px;
     --titlebar-height: 40px;
 
     /* 层级约定：100 以下保留给组件内局部层级，全局浮层从 100 起编排 */
@@ -158,10 +163,9 @@
     height: 100%;
   }
 
-  /* 全局字号基准：17px（rem 放大 6.25%），配合 token 字号阶梯与各处
-     绝对 px 字号的 +1 同步，实现整体放大而不改变布局比例 */
+  /* rem 基准保持 16px，字号一律走 token / 明确 px，避免 rem 放大与绝对 px 两套尺子 */
   html {
-    font-size: 17px;
+    font-size: 16px;
   }
 
   /* color-scheme 不写死：由各主题 css 字段按自身明暗声明（内置 light=light、dark/sakura=dark），
@@ -175,7 +179,8 @@
     color: var(--text-primary);
     font-family: var(--font-family);
     text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
+    /* Windows WebView2 上 antialiased 会把 13px 级中文抹成发虚灰字 */
+    -webkit-font-smoothing: auto;
   }
 
   h1,
@@ -329,7 +334,7 @@
     background: var(--bg-input);
     color: var(--text-faint);
     font-family: inherit;
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1;
     letter-spacing: 0;
   }
@@ -385,7 +390,7 @@
     color: var(--text-invert);
   }
 
-  /* 危险按钮（RyuujiDesign v5.3 范式）：常态浅染底 + 警示色文字 + 40% 描边；
+  /* 危险按钮（RyuujiDesign 范式）：常态浅染底 + 警示色文字 + 40% 描边；
      hover/active 反白实心，警示色收在交互瞬间。亮暗通用，无新增色值 */
   .action-button-danger {
     border-color: color-mix(in srgb, var(--color-danger) 40%, var(--bg-surface));
@@ -427,7 +432,7 @@
   }
 
   .text-label {
-    font-size: 12px;
+    font-size: 13px;
     letter-spacing: 0;
     text-transform: uppercase;
     color: var(--text-faint);
@@ -541,7 +546,7 @@
   .instrument-label {
     color: var(--text-faint);
     font-family: var(--font-family-mono);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: 0;
     line-height: 1.2;

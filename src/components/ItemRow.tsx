@@ -19,9 +19,9 @@ import { SearchHighlightText } from "./SearchHighlightText";
 import type { ItemCardProps } from "./ItemCard";
 
 /** 表头、数据行与骨架共同消费同一列模板，避免列宽漂移。 */
-export const ITEM_LIST_GRID_TEMPLATE = "64px minmax(0,1fr) minmax(140px,280px) 96px";
+export const ITEM_LIST_GRID_TEMPLATE = "72px minmax(0,1fr) minmax(160px,300px) 112px";
 /** 普通行的稳定基准高度；Mod footer 与多行标签仍由虚拟化器动态测量。 */
-export const ITEM_LIST_BASE_ROW_HEIGHT = 60;
+export const ITEM_LIST_BASE_ROW_HEIGHT = 68;
 
 function ItemRowComponent({
   item,
@@ -156,7 +156,7 @@ function ItemRowComponent({
         </div>
 
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-xl">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-xl">
             <ItemVisualIcon
               item={item}
               emojiClass="leading-none"
@@ -170,7 +170,7 @@ function ItemRowComponent({
               </span>
               {item.is_missing && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1 py-0.5 text-[9px] font-semibold leading-none text-[var(--color-warning)]"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning)]"
                   title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
                 >
                   <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
@@ -179,7 +179,7 @@ function ItemRowComponent({
               )}
             </h3>
             <p
-              className={`mt-0.5 truncate text-[12px] leading-4 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
+              className={`mt-0.5 truncate text-[13px] leading-4 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
               title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
             >
               {item.path}
@@ -197,7 +197,7 @@ function ItemRowComponent({
             {getTypeLabel(item.type)}
           </p>
           {getFileSuffix(item) !== "无后缀" && (
-            <p className="data-readout mt-0.5 truncate text-[11px] text-[var(--text-faint)]" title={getFileSuffix(item)}>
+            <p className="data-readout mt-0.5 truncate text-[13px] text-[var(--text-faint)]" title={getFileSuffix(item)}>
               {getFileSuffix(item)}
             </p>
           )}

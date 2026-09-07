@@ -75,7 +75,7 @@ export function MigrationDialog({
                   <h3 id="migration-notes-title" className="instrument-label text-[var(--text-secondary)]">
                     本次迁移
                   </h3>
-                  <span className="data-readout text-[10px] text-[var(--text-faint)]">
+                  <span className="data-readout text-[13px] text-[var(--text-faint)]">
                     {String(appliedMigrations.length).padStart(2, "0")} ITEMS
                   </span>
                 </div>

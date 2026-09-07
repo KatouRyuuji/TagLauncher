@@ -130,7 +130,7 @@ export function DataSettingsSection() {
           <span className="text-xs font-semibold text-[var(--text-muted)]">当前数据目录</span>
           <span className="flex items-center gap-2">
             {info?.isCustom && (
-              <span className="rounded-none bg-[var(--accent-primary-bg)] px-2 py-0.5 text-[11px] font-medium text-[var(--accent-primary)]">
+              <span className="rounded-none bg-[var(--accent-primary-bg)] px-2 py-0.5 text-[13px] font-medium text-[var(--accent-primary)]">
                 自定义
               </span>
             )}

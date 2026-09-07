@@ -161,7 +161,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {appVersion && (
-              <span className="data-readout hidden rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--surface-recessed)] px-2 py-1 text-[11px] text-[var(--text-muted)] sm:inline">
+              <span className="data-readout hidden rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--surface-recessed)] px-2 py-1 text-[13px] text-[var(--text-muted)] sm:inline">
                 v{appVersion}
               </span>
             )}
@@ -194,7 +194,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
                     工作区能力
                   </h3>
                 </div>
-                <span className="data-readout text-[11px] text-[var(--text-faint)]">10 MODULES</span>
+                <span className="data-readout text-[13px] text-[var(--text-faint)]">10 MODULES</span>
               </div>
 
               <ul className="mt-3 grid border-l border-t border-[var(--line-hairline)] sm:grid-cols-2">
@@ -212,7 +212,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-semibold text-[var(--text-primary)]">{feature.title}</span>
                           {feature.isNew && (
-                            <span className="data-readout bg-[var(--accent-primary-bg)] px-1.5 py-0.5 text-[9px] text-[var(--accent-primary)]">
+                            <span className="data-readout bg-[var(--accent-primary-bg)] px-1.5 py-0.5 text-[13px] text-[var(--accent-primary)]">
                               NEW
                             </span>
                           )}

@@ -10,7 +10,8 @@ use std::path::Path;
 use tag_launcher_lib::db::Database;
 use tag_launcher_lib::services::{item_service, path_service, settings_service};
 use tag_launcher_lib::{
-    overwrite_live_from, snapshot_live_db, strip_sensitive_keys, validate_importable_db,
+    overwrite_live_from, read_local_secrets, reapply_local_secrets, snapshot_live_db,
+    strip_sensitive_keys, validate_importable_db,
 };
 
 /// 备份原语：把在线库整库快照到目标文件，目标可独立打开且数据完整。
@@ -171,6 +172,46 @@ fn import_overwrite_and_rollback_via_safety_backup() {
     overwrite_live_from(&live.db, &safety).expect("rollback from safety backup");
     assert!(has_item_named(&live.db, "marker_A.exe"), "回滚后应恢复到 A");
     assert!(!has_item_named(&live.db, "marker_B.exe"), "B 应被回滚移除");
+}
+
+/// 导入覆盖后回填本机凭据：与 import_data 同一原语，避免来源库覆盖 AI / WebDAV 密钥。
+#[test]
+fn import_overwrite_reapplies_local_secrets() {
+    let live = common::temp_db();
+    {
+        let conn = live.db.get_conn();
+        settings_service::set_setting(&conn, "ai.api_key", "local-key").unwrap();
+        settings_service::set_setting(&conn, "sync.password", "local-dav").unwrap();
+        settings_service::set_setting(&conn, "theme", "sakura").unwrap();
+    }
+    let local_secrets = read_local_secrets(&live.db).expect("read local secrets");
+
+    let src = common::TempDir::new("import-src");
+    let src_path = src.path.join("source.db");
+    {
+        let src_db = Database::new(&src_path).unwrap();
+        let conn = src_db.get_conn();
+        settings_service::set_setting(&conn, "ai.api_key", "imported-key").unwrap();
+        settings_service::set_setting(&conn, "sync.password", "imported-dav").unwrap();
+        settings_service::set_setting(&conn, "theme", "dark").unwrap();
+    }
+
+    overwrite_live_from(&live.db, &src_path).expect("overwrite from source");
+    reapply_local_secrets(&live.db, &local_secrets).expect("reapply");
+
+    let conn = live.db.get_conn();
+    let ai_key: String = conn
+        .query_row("SELECT value FROM app_meta WHERE key='ai.api_key'", [], |r| r.get(0))
+        .unwrap();
+    let dav: String = conn
+        .query_row("SELECT value FROM app_meta WHERE key='sync.password'", [], |r| r.get(0))
+        .unwrap();
+    let theme: String = conn
+        .query_row("SELECT value FROM app_meta WHERE key='theme'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(ai_key, "local-key");
+    assert_eq!(dav, "local-dav");
+    assert_eq!(theme, "dark", "非凭据设置应保留来源库");
 }
 
 /// 数据目录重定向读写：写入 datapath.json → 读回；清除 → 回退默认。

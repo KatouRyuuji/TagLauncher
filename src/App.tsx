@@ -136,7 +136,9 @@ function App() {
     void loadSynonyms();
     initModApi();
     // 初始化 mod 运行时：注入所有已启用 mod 的 CSS / JS / Theme
-    void db.getMods().then(initModRuntime);
+    void db.getMods().then(initModRuntime).catch(() => {
+      window.dispatchEvent(new Event("taglauncher:mods-settled"));
+    });
   }, []);
 
   useEffect(() => {

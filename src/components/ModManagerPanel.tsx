@@ -64,6 +64,13 @@ export function ModManagerPanel() {
     try {
       const mod = mods.find((item) => item.id === modId);
       if (!mod) return;
+      if (mod.is_compatible === false) {
+        showToast(
+          `Mod "${mod.name}" 不兼容当前版本，已拒绝加载：${mod.incompatible_reason ?? "版本不满足"}`,
+          "error",
+        );
+        return;
+      }
       if (mod.type === "css+js") {
         await reloadModRuntime(mod);
       } else {
@@ -158,14 +165,14 @@ export function ModManagerPanel() {
                   <span className="text-base font-semibold text-[var(--text-primary)]">{mod.name}</span>
                   <TypeBadge type={mod.type} />
                   {mod.enabled && (
-                    <span className="rounded-[var(--radius-full)] bg-[var(--status-success-bg)] px-2 py-1 text-[10px] font-semibold text-[var(--color-success)]">
+                    <span className="rounded-[var(--radius-full)] bg-[var(--status-success-bg)] px-2 py-1 text-[13px] font-semibold text-[var(--color-success)]">
                       已启用
                     </span>
                   )}
                   {mod.is_compatible === false && (
                     <span
                       title={mod.incompatible_reason ?? "与当前应用版本不兼容"}
-                      className="rounded-[var(--radius-full)] bg-[var(--color-danger-bg)] px-2 py-1 text-[10px] font-semibold text-[var(--color-danger)]"
+                      className="rounded-[var(--radius-full)] bg-[var(--color-danger-bg)] px-2 py-1 text-[13px] font-semibold text-[var(--color-danger)]"
                     >
                       不兼容
                     </span>
@@ -221,7 +228,7 @@ export function ModManagerPanel() {
                   return (
                     <span
                       key={permission}
-                      className="rounded-[var(--radius-full)] border px-2.5 py-1 text-[11px] font-medium"
+                      className="rounded-[var(--radius-full)] border px-2.5 py-1 text-[13px] font-medium"
                       style={{
                         color: meta.color,
                         borderColor: `color-mix(in srgb, ${meta.color} 26%, transparent)`,
@@ -281,7 +288,7 @@ export function ModManagerPanel() {
                         return (
                           <span
                             key={permission}
-                            className="rounded-[var(--radius-full)] border px-2.5 py-1 text-[11px] font-medium"
+                            className="rounded-[var(--radius-full)] border px-2.5 py-1 text-[13px] font-medium"
                             style={{
                               color: meta.color,
                               borderColor: `color-mix(in srgb, ${meta.color} 26%, transparent)`,
@@ -328,7 +335,7 @@ function TypeBadge({ type }: { type: string }) {
 
   return (
     <span
-      className="rounded-[var(--radius-full)] px-2.5 py-1 text-[11px] font-medium"
+      className="rounded-[var(--radius-full)] px-2.5 py-1 text-[13px] font-medium"
       style={{ color: style.color, backgroundColor: style.bg }}
     >
       {style.label}

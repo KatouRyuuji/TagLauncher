@@ -14,6 +14,7 @@ import {
   type SortMode,
   type TypeFilter,
 } from "../lib/itemQuery";
+import { SEARCH_RESET_EVENT } from "../lib/workspaceChrome";
 
 function sameTags(a: Tag[], b: Tag[]): boolean {
   return a.length === b.length && a.every((tag, index) =>
@@ -273,6 +274,9 @@ export const useAppStore = create<AppState>((set, get) => {
       searchInputValue: "",
     });
     persistNow();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(SEARCH_RESET_EVENT));
+    }
   },
   };
 });

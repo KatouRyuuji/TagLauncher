@@ -1,0 +1,20 @@
+【提交参数】
+model: MiniMax-H3
+duration: 10
+resolution: 2K
+mode: first_frame
+first_frame: 角色与品牌/ending-composed.jpg
+ratio: 跟随输入图（16:9）
+不要上传 last_frame，不要再传立绘作为 reference
+
+【提示词正文】
+For the target video, at 0.00 seconds into the target video, Picture 1 is fully referenced.
+
+Warm dusk study with a wooden desk and sunset window. Left: silver-lavender bob girl with glasses, cream cardigan, hugging a book. Right: pink twin-bun girl in mint-and-white floral dress, green eyes, one hand waving. Bottom text KatouRyuuji/TagLauncher must stay readable.
+
+Animate only: the pink-haired girl waves; the silver-haired girl gives a small nod. Camera locked. Keep both identities exactly as in the first frame — same faces, same outfits. Do not add more people. Do not cover the GitHub text.
+
+Spoken voice, young female Mandarin, warm, 10 seconds:
+能看到这儿的都是自己人。GitHub 上帮 KatouRyuuji/TagLauncher 点一颗星。安装包在评论区，需要自取。
+
+Soft room tone, faint evening ambience, no lyric music.

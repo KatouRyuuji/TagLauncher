@@ -227,7 +227,7 @@ export function Sidebar({
       {activeDragKind === "item" && sidebarTab !== "cabinets" && (
         <div
           role="status"
-          className="mx-2 mt-2 flex shrink-0 items-center gap-2 border-l-2 border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] px-2.5 py-2 text-[12px] leading-4 text-[var(--accent-primary)]"
+          className="mx-2 mt-2 flex shrink-0 items-center gap-2 border-l-2 border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] px-2.5 py-2 text-[13px] leading-4 text-[var(--accent-primary)]"
         >
           <Info className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
           <span>项目拖拽中，已显示归档目标</span>
@@ -330,7 +330,7 @@ export function Sidebar({
                       />
                       <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{tag.name}</span>
                       {parentCountByTag.get(tag.id) || childCountByTag.get(tag.id) ? (
-                        <span className="data-readout flex shrink-0 items-center gap-1 text-[10px] text-[var(--text-faint)]">
+                        <span className="data-readout flex shrink-0 items-center gap-1 text-[13px] text-[var(--text-faint)]">
                           {parentCountByTag.get(tag.id) ? (
                             <span title={`${parentCountByTag.get(tag.id)} 个父标签`}>⊂{parentCountByTag.get(tag.id)}</span>
                           ) : null}
@@ -346,7 +346,7 @@ export function Sidebar({
               </div>
 
               {tags.length === 0 && (
-                <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[12px] leading-5 text-[var(--text-muted)]">
+                <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[13px] leading-5 text-[var(--text-muted)]">
                   暂无标签
                 </div>
               )}
@@ -441,7 +441,7 @@ export function Sidebar({
               </div>
 
               {cabinets.length === 0 && (
-                <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[12px] leading-5 text-[var(--text-muted)]">
+                <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[13px] leading-5 text-[var(--text-muted)]">
                   暂无文件柜
                 </div>
               )}
@@ -470,7 +470,7 @@ export function Sidebar({
 
       <div
         data-region="sidebar-hint"
-        className="flex min-h-10 shrink-0 items-start gap-2 border-t border-[var(--line-hairline)] px-3 py-2.5 text-[11px] leading-4 text-[var(--text-faint)]"
+        className="flex min-h-10 shrink-0 items-start gap-2 border-t border-[var(--line-hairline)] px-3 py-2.5 text-[13px] leading-4 text-[var(--text-faint)]"
       >
         <Info className="mt-px h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" strokeWidth={1.8} aria-hidden="true" />
         <span>
@@ -550,7 +550,7 @@ function CountReadout({ value, label }: { value: number; label: string }) {
       <strong className="data-readout truncate text-[13px] font-semibold text-[var(--text-primary)]">
         {value}
       </strong>
-      <span className="truncate text-[10px] text-[var(--text-faint)]">{label}</span>
+      <span className="truncate text-[13px] text-[var(--text-faint)]">{label}</span>
     </div>
   );
 }
@@ -572,7 +572,7 @@ function SectionHeader({
         {label}
       </h2>
       {typeof count === "number" && (
-        <span className="data-readout text-[10px] text-[var(--text-faint)]">{count}</span>
+        <span className="data-readout text-[13px] text-[var(--text-faint)]">{count}</span>
       )}
       {children && <div className="ml-auto flex shrink-0 items-center gap-0.5">{children}</div>}
     </div>
@@ -606,7 +606,7 @@ function SidebarIconButton({
 
 function NavCount({ value }: { value: number }) {
   return (
-    <span className="data-readout inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-recessed)] px-1 text-[10px] text-[var(--text-faint)]">
+    <span className="data-readout inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-recessed)] px-1 text-[13px] text-[var(--text-faint)]">
       {value}
     </span>
   );
@@ -617,7 +617,7 @@ function AddRowButton({ label, onClick }: { label: string; onClick: () => void }
     <button
       type="button"
       onClick={onClick}
-      className="mt-1.5 flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-dashed border-[var(--border-default)] px-2 text-[12px] font-medium text-[var(--text-tertiary)] hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-bg-light)] hover:text-[var(--accent-primary)]"
+      className="mt-1.5 flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-dashed border-[var(--border-default)] px-2 text-[13px] font-medium text-[var(--text-tertiary)] hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-bg-light)] hover:text-[var(--accent-primary)]"
     >
       <Plus className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
       <span>{label}</span>
@@ -641,7 +641,7 @@ function SidebarTabButton({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-[12px] font-medium transition-colors ${
+      className={`flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-[13px] font-medium transition-colors ${
         active
           ? "bg-[var(--surface-raised)] text-[var(--accent-primary)] shadow-[inset_0_-2px_0_var(--accent-primary),var(--shadow-sm)]"
           : "text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
@@ -722,7 +722,7 @@ function SidebarPanelSlot({ panel }: { panel: PanelDescriptor }) {
           type="button"
           aria-expanded={!collapsed}
           onClick={() => setCollapsed((value) => !value)}
-          className="flex h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          className="flex h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
           {collapsed ? (
             <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" strokeWidth={1.8} aria-hidden="true" />
@@ -732,7 +732,7 @@ function SidebarPanelSlot({ panel }: { panel: PanelDescriptor }) {
           <span className="truncate font-medium">{panel.title}</span>
         </button>
       ) : (
-        <div className="flex h-8 items-center gap-2 px-2 text-[12px] text-[var(--text-secondary)]">
+        <div className="flex h-8 items-center gap-2 px-2 text-[13px] text-[var(--text-secondary)]">
           <span className="min-w-0 flex-1 truncate font-medium">{panel.title}</span>
           <button
             type="button"

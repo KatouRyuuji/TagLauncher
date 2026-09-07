@@ -23,7 +23,7 @@ export const sakuraTheme: ThemeDefinition = {
     "status-success-bg": "#e2f3ee",
     "tag-preset-colors": "#4a51e8,#e3253f,#9550e0,#568213,#108289,#e7134b,#ee9708,#0e9f6e",
 
-    "grid-col-min": "224px",
+    "grid-col-min": "256px",
 
     "bg-base": "#f3f7fc",
     "bg-surface": "#ffffff",

@@ -17,7 +17,7 @@
 import type { ModInfo } from "../types/mod";
 import type { ThemeDefinition } from "../types/theme";
 import * as db from "./db";
-import { MOD_THEME_ADDED, MOD_THEME_REMOVED } from "../hooks/useTheme";
+import { MOD_THEME_ADDED, MOD_THEME_REMOVED, MODS_RUNTIME_SETTLED } from "../hooks/useTheme";
 import {
   registerModPermissions,
   registerModApiVersion,
@@ -216,6 +216,9 @@ function enqueueModOp(modId: string, op: () => Promise<void>): Promise<void> {
 /** 启用单个 mod：注册元信息，读取入口文件，按类型注入（经 per-mod 队列串行）。 */
 export function enableModRuntime(mod: ModInfo): Promise<void> {
   return enqueueModOp(mod.id, async () => {
+    if (mod.is_compatible === false) {
+      throw new Error(mod.incompatible_reason ?? "与当前应用版本不兼容");
+    }
     // 幂等守卫：运行时已激活（已注入且未禁用/回滚）时跳过重复注入——
     // 重复 enable 会让 trackModStart 重置追踪状态，使首批监听器脱管泄漏。
     if (isModRuntimeActive(mod.id)) return;
@@ -488,6 +491,16 @@ export function initModRuntime(mods: ModInfo[]): Promise<void> {
     // 先校验依赖并过滤出可加载的 mod
     const validMods: ModInfo[] = [];
     for (const mod of enabled) {
+      if (mod.is_compatible === false) {
+        console.warn(
+          `[modRuntime] Mod "${mod.id}" 不兼容，跳过加载：${mod.incompatible_reason ?? "版本不满足"}`,
+        );
+        showToast(
+          `Mod "${mod.name}" 不兼容当前版本，已跳过加载：${mod.incompatible_reason ?? "版本不满足"}`,
+          "warning",
+        );
+        continue;
+      }
       const check = checkDependencySatisfied(mod, enabled);
       if (check.satisfied) {
         validMods.push(mod);
@@ -517,6 +530,8 @@ export function initModRuntime(mods: ModInfo[]): Promise<void> {
         console.error(`[modRuntime] Failed to enable mod "${mod.id}" during init:`, err);
       }
     }
-  })();
+  })().finally(() => {
+    window.dispatchEvent(new Event(MODS_RUNTIME_SETTLED));
+  });
   return initModRuntimePromise;
 }

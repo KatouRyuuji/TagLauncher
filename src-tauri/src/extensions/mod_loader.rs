@@ -192,6 +192,9 @@ pub fn semver_satisfies(version: &str, range: &str) -> bool {
     version == range
 }
 
+/// 与 Mod 文件 API 同一上限，防止超大入口撑爆内存 / IPC。
+pub const MAX_MOD_ENTRY_BYTES: u64 = 32 * 1024 * 1024;
+
 /// 读取 mod 的入口文件内容
 pub fn read_mod_entrypoint(mod_dir: &Path, filename: &str) -> Result<String, String> {
     let file_path = mod_dir.join(filename);
@@ -203,6 +206,15 @@ pub fn read_mod_entrypoint(mod_dir: &Path, filename: &str) -> Result<String, Str
     let canonical_file = file_path.canonicalize().map_err(|e| e.to_string())?;
     if !canonical_file.starts_with(&canonical_dir) {
         return Err("Path traversal detected".to_string());
+    }
+    let len = std::fs::metadata(&file_path)
+        .map_err(|e| e.to_string())?
+        .len();
+    if len > MAX_MOD_ENTRY_BYTES {
+        return Err(format!(
+            "Mod 入口文件超过大小上限（{} / {} 字节）",
+            len, MAX_MOD_ENTRY_BYTES
+        ));
     }
     std::fs::read_to_string(&file_path).map_err(|e| e.to_string())
 }

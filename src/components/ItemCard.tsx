@@ -201,7 +201,7 @@ function ItemCardComponent({
         tabIndex={0}
       >
         <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-[23px]">
+          <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-[26px]">
             <ItemVisualIcon
               item={item}
               emojiClass="leading-none"
@@ -217,7 +217,7 @@ function ItemCardComponent({
               </h3>
               {item.is_missing && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-[var(--color-warning)]"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning)]"
                   title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
                 >
                   <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
@@ -226,14 +226,14 @@ function ItemCardComponent({
               )}
             </div>
             <p
-              className={`mt-0.5 truncate text-[12px] leading-4 ${
+              className={`mt-0.5 truncate text-[13px] leading-4 ${
                 item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"
               }`}
               title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
             >
               {item.path}
             </p>
-            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-[var(--text-faint)]">
+            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[13px] leading-4 text-[var(--text-faint)]">
               <span className="instrument-label truncate" title={getTypeLabel(item.type)}>
                 {getTypeLabel(item.type)}
               </span>

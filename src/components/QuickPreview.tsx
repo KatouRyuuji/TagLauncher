@@ -62,7 +62,7 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
               <h2 className="mt-1 truncate text-base font-semibold text-[var(--text-primary)]" title={item.name}>
                 {item.name}
               </h2>
-              <p className="data-readout mt-1 truncate text-[10px] text-[var(--text-faint)]" title={item.path}>
+              <p className="data-readout mt-1 truncate text-[13px] text-[var(--text-faint)]" title={item.path}>
                 {item.path}
               </p>
             </div>
@@ -90,7 +90,7 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
         </div>
 
         <footer className="flex min-h-[56px] flex-wrap items-center justify-between gap-2 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-2.5 sm:px-5">
-          <p className="flex items-center gap-2 text-[11px] text-[var(--text-faint)]"><span className="status-led" aria-hidden="true" />本地对象预览</p>
+          <p className="flex items-center gap-2 text-[13px] text-[var(--text-faint)]"><span className="status-led" aria-hidden="true" />本地对象预览</p>
           <div className="flex items-center gap-2">
             <button type="button" className="action-button" onClick={() => void copyText(item.path, "已复制路径")}>
               <Copy aria-hidden="true" size={15} strokeWidth={1.8} />
@@ -242,7 +242,7 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
                   type="button"
                   title={`按「${tag.name}」筛选`}
                   onClick={() => onTagSelect(tag.id)}
-                  className="rounded-[var(--radius-full)] px-2 py-0.5 text-[11px] transition-opacity hover:opacity-80"
+                  className="rounded-[var(--radius-full)] px-2 py-0.5 text-[13px] transition-opacity hover:opacity-80"
                   style={{ backgroundColor: `color-mix(in srgb, ${tag.color} 18%, transparent)`, color: tag.color }}
                 >
                   {tag.name}

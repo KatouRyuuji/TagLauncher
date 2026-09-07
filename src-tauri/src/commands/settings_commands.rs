@@ -74,6 +74,7 @@ pub fn export_theme_file(
 /// sync_get_config 均不下发明文），通用原语不得成为绕过脱敏的旁路（纵深防御）。
 /// 前端当前仅用本命令读写 last_known_version 等非敏感键，收紧不影响既有功能。
 fn is_sensitive_setting_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
     key.starts_with("ai.") || key.starts_with("sync.")
 }
 
@@ -81,6 +82,7 @@ fn is_sensitive_setting_key(key: &str) -> bool {
 /// enabled_mods 由 enable_mod/disable_mod/delete_mod 专属通道维护（含损坏保护逻辑）。
 /// 放任通用 set_setting 写入会破坏迁移判定与 mod 启用状态的一致性，必须拦截。
 fn is_integrity_setting_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
     key == "schema_version"
         || key == "app_version"
         || key == "enabled_mods"
@@ -122,8 +124,8 @@ mod tests {
         assert!(!is_sensitive_setting_key("last_known_version"));
         assert!(!is_sensitive_setting_key("theme"));
         assert!(!is_sensitive_setting_key("enabled_mods"));
-        // 注意大小写敏感：配置键约定为小写，大写变体落不到敏感键上，无需拦
-        assert!(!is_sensitive_setting_key("AI.api_key"));
+        assert!(is_sensitive_setting_key("AI.api_key"));
+        assert!(is_sensitive_setting_key("SYNC.password"));
     }
 
     #[test]
@@ -133,6 +135,8 @@ mod tests {
         assert!(is_integrity_setting_key("enabled_mods"));
         assert!(is_integrity_setting_key("migration::8::description"));
         assert!(is_integrity_setting_key("migration::8::is_breaking"));
+        assert!(is_integrity_setting_key("SCHEMA_VERSION"));
+        assert!(is_integrity_setting_key("Enabled_Mods"));
         // 普通业务键不受影响
         assert!(!is_integrity_setting_key("last_known_version"));
         assert!(!is_integrity_setting_key("theme"));

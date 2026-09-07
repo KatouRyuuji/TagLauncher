@@ -37,6 +37,26 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
+const SETTINGS_SECTION_KEY = "taglauncher.settings_section";
+
+function loadSettingsSection(): string {
+  try {
+    const raw = localStorage.getItem(SETTINGS_SECTION_KEY);
+    if (raw && SETTINGS_SECTIONS.some((section) => section.id === raw)) return raw;
+  } catch {
+    // 隐私模式或配额不足时忽略
+  }
+  return SETTINGS_SECTIONS[0]?.id ?? "theme";
+}
+
+function persistSettingsSection(id: string): void {
+  try {
+    localStorage.setItem(SETTINGS_SECTION_KEY, id);
+  } catch {
+    // ignore
+  }
+}
+
 const SECTION_ICONS: Record<string, LucideIcon> = {
   theme: Palette,
   ai: Sparkles,
@@ -62,13 +82,18 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     changeColorMode,
   } = useThemeContext();
   const [busy, setBusy] = useState<"import" | "export" | "refresh" | "folder" | null>(null);
-  const [activeSection, setActiveSection] = useState(SETTINGS_SECTIONS[0]?.id ?? "theme");
+  const [activeSection, setActiveSection] = useState(loadSettingsSection);
   const trapRef = useFocusTrap<HTMLElement>({ active: open });
 
   useEscapeKey(onClose, open);
 
   useLayoutEffect(() => {
-    if (open) setActiveSection(SETTINGS_SECTIONS[0]?.id ?? "theme");
+    if (!open) return;
+    const section = loadSettingsSection();
+    setActiveSection(section);
+    requestAnimationFrame(() => {
+      document.getElementById(settingsSectionDomId(section))?.scrollIntoView({ block: "start" });
+    });
   }, [open]);
 
   if (!open) return null;
@@ -140,6 +165,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
   const navigateToSection = (sectionId: string) => {
     setActiveSection(sectionId);
+    persistSettingsSection(sectionId);
     document
       .getElementById(settingsSectionDomId(sectionId))
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -149,7 +175,11 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
     if (scrollTop + clientHeight >= scrollHeight - 4) {
       const lastSection = SETTINGS_SECTIONS.at(-1)?.id ?? "theme";
-      setActiveSection((current) => (current === lastSection ? current : lastSection));
+      setActiveSection((current) => {
+        if (current === lastSection) return current;
+        persistSettingsSection(lastSection);
+        return lastSection;
+      });
       return;
     }
 
@@ -163,7 +193,11 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
       }
     }
 
-    setActiveSection((current) => (current === nextSection ? current : nextSection));
+    setActiveSection((current) => {
+      if (current === nextSection) return current;
+      persistSettingsSection(nextSection);
+      return nextSection;
+    });
   };
 
   return (
@@ -230,7 +264,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   >
                     <Icon aria-hidden="true" size={16} strokeWidth={1.8} />
                     <span>{section.label}</span>
-                    <span className="data-readout ml-auto hidden text-[10px] text-[var(--text-faint)] sm:inline">
+                    <span className="data-readout ml-auto hidden text-[13px] text-[var(--text-faint)] sm:inline">
                       {String(index + 1).padStart(2, "0")}
                     </span>
                   </button>
@@ -257,7 +291,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                       当前使用 <span className="font-semibold text-[var(--text-primary)]">{currentTheme.name}</span>
                     </p>
                     {themeDirectoryInfo?.themes_dir && (
-                      <p className="data-readout mt-1 truncate text-[11px] text-[var(--text-faint)]" title={themeDirectoryInfo.themes_dir}>
+                      <p className="data-readout mt-1 truncate text-[13px] text-[var(--text-faint)]" title={themeDirectoryInfo.themes_dir}>
                         {themeDirectoryInfo.themes_dir}
                       </p>
                     )}
@@ -524,7 +558,7 @@ function ColorModeSelect({
           );
         })}
       </div>
-      <span className="mt-1.5 block text-[11px] text-[var(--text-faint)]">
+      <span className="mt-1.5 block text-[13px] text-[var(--text-faint)]">
         亮/暗仅作用于内置主题；自定义与 Mod 主题自带配色方案
       </span>
     </div>

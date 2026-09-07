@@ -143,7 +143,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
                   >
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
                     <span>{tag.name}</span>
-                    {selected && <span className="text-[10px]">✓</span>}
+                    {selected && <span className="text-[13px]">✓</span>}
                   </button>
                 );
               })}

@@ -1,6 +1,6 @@
 # TagLauncher 源码开发指南
 
-> 适用版本：v1.7.1-beta
+> 适用版本：v1.7.3-beta
 
 本文档面向希望二次开发 TagLauncher 的开发者。
 内容基于当前代码实现（Tauri 2 + React + TypeScript + Rust）。
@@ -107,7 +107,7 @@ src-tauri/src/
 
 ## 4.2 `commands/`（命令实现，按域分模块）
 
-实际 90 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/net/ai/data/sync/update/settings/synonym/launch/object_preview/search），命令体一般转调 `services/` 下的业务服务。主要命令组（节选）：
+实际 92 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/net/ai/data/sync/update/settings/synonym/launch/object_preview/search），命令体一般转调 `services/` 下的业务服务。主要命令组（节选）：
 
 - 对象：`add_item` / `add_items` / `remove_item` / `get_items` / `launch_item` / `update_item_icon`
 - 标签：`get_tags` / `add_tag` / `update_tag` / `remove_tag` / `set_item_tags` / `get_tag_relations` / `add_tag_relation` / `remove_tag_relation`

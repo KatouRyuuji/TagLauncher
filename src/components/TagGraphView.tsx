@@ -233,13 +233,13 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                 </svg>
 
                 {/* 分层节点 */}
-                <div className="relative flex flex-col gap-12">
+                <div className="relative flex min-w-max flex-col gap-16">
                   {layers.map(({ level, tags: layerTags }) => (
-                    <div key={level} className="flex items-center gap-5">
-                      <div className="w-16 shrink-0 text-right text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
+                    <div key={level} className="flex items-center gap-6">
+                      <div className="w-20 shrink-0 text-right text-[13px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
                         Level {level}
                       </div>
-                      <div className="flex flex-wrap gap-5">
+                      <div className="flex flex-nowrap gap-6">
                         {layerTags.map((tag) => {
                           const active = selectedNodeId === tag.id;
                           const count = itemsByTag.get(tag.id)?.length ?? 0;
@@ -253,7 +253,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                               }}
                               onClick={() => setSelectedNodeId(tag.id)}
                               onDoubleClick={() => applyFilter(tag.id)}
-                              className="relative flex items-center gap-2 rounded-[var(--radius-md)] border px-4 py-2.5 text-sm shadow-[var(--shadow-card)]"
+                              className="relative flex items-center gap-2.5 rounded-[var(--radius-md)] border px-5 py-3 text-base shadow-[var(--shadow-card)]"
                               style={{
                                 borderColor: active
                                   ? tag.color
@@ -269,7 +269,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                               <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
                               <span className="max-w-[180px] truncate">{tag.name}</span>
                               <span
-                                className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-[var(--radius-full)] px-1.5 text-[11px] font-semibold"
+                                className="ml-1 inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-full)] px-1.5 text-[13px] font-semibold"
                                 style={{
                                   backgroundColor: `color-mix(in srgb, ${tag.color} 18%, var(--bg-elevated))`,
                                   color: tag.color,

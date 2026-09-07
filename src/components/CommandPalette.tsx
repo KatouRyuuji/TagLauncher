@@ -83,6 +83,7 @@ export function CommandPalette({
   const setShortcutsHelpOpen = useAppStore((state) => state.setShortcutsHelpOpen);
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
   const clearWorkspaceFilters = useAppStore((state) => state.clearWorkspaceFilters);
+  const searchMode = useAppStore((state) => state.searchMode);
 
   const [query, setQuery] = useState("");
   const [filterQuery, setFilterQuery] = useState("");
@@ -145,8 +146,8 @@ export function CommandPalette({
     return filterCommandsByQuery(commands, q);
   }, [commands, filterQuery]);
   const searchIndex = useMemo(
-    () => (open ? buildSearchIndex(items, "all") : { entries: [], mode: "all" as const }),
-    [open, items],
+    () => (open ? buildSearchIndex(items, searchMode) : { entries: [], mode: searchMode }),
+    [open, items, searchMode],
   );
   const matchedItems = useMemo(() => {
     if (!filterQuery.trim()) return [];
@@ -292,7 +293,7 @@ export function CommandPalette({
         </div>
         <div className="flex items-center justify-between border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-4 py-2">
           <span className="instrument-label">Commands / Objects</span>
-          <span className="data-readout text-[10px] text-[var(--text-faint)]">{rows.length.toString().padStart(2, "0")}</span>
+          <span className="data-readout text-[13px] text-[var(--text-faint)]">{rows.length.toString().padStart(2, "0")}</span>
         </div>
         <div ref={listRef} className="max-h-[min(56vh,460px)] overflow-y-auto p-2">
           {rows.length === 0 && (
@@ -335,16 +336,16 @@ export function CommandPalette({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{row.item.name}</span>
                   {/* 第二行展示中段折叠的路径：同名对象靠位置区分（盘符 + 文件名信息量最高） */}
-                  <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--text-faint)]">
+                  <span className="mt-0.5 block truncate text-[13px] leading-4 text-[var(--text-faint)]">
                     {truncatePathMiddle(row.item.path)}
                   </span>
                 </span>
-                <span className="shrink-0 text-[11px] text-[var(--text-faint)]">{getTypeLabel(row.item.type)}</span>
+                <span className="shrink-0 text-[13px] text-[var(--text-faint)]">{getTypeLabel(row.item.type)}</span>
               </button>
             );
           })}
         </div>
-        <div className="flex min-h-9 items-center justify-between border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 text-[11px] text-[var(--text-faint)]">
+        <div className="flex min-h-9 items-center justify-between border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 text-[13px] text-[var(--text-faint)]">
           <span className="flex items-center gap-2"><span className="status-led" aria-hidden="true" />命令索引就绪</span>
           <span className="data-readout">{matchedCommands.length} CMD · {matchedItems.length} OBJ</span>
         </div>

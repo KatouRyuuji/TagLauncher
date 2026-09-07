@@ -110,7 +110,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
           data-reorder-tag-idx={idx}
           onPointerDown={(event) => handleTagPointerDown(event, idx)}
           className={`inline-flex items-center rounded-[var(--radius-full)] border font-medium cursor-grab active:cursor-grabbing transition-all group/tag ${
-            compact ? "gap-1 px-2 py-0.5 text-[10px]" : "gap-1.5 px-2.5 py-1 text-[11px]"
+            compact ? "gap-1 px-2 py-0.5 text-[13px]" : "gap-1.5 px-2.5 py-1 text-[13px]"
           } ${
             dragIdx === idx ? "opacity-40" : ""
           } ${overIdx === idx && dragIdx !== null && dragIdx !== idx ? "ring-1 ring-[var(--accent-primary)]" : ""}`}
@@ -137,7 +137,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
       {dragIdx !== null && (
         <span
           data-reorder-remove-item-id={item.id}
-          className={`inline-flex items-center rounded-[var(--radius-full)] border border-dashed px-2.5 py-1 text-[11px] font-medium transition-all ${
+          className={`inline-flex items-center rounded-[var(--radius-full)] border border-dashed px-2.5 py-1 text-[13px] font-medium transition-all ${
             removeZoneActive
               ? "border-[var(--color-danger)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]"
               : "border-[var(--border-medium)] text-[var(--text-faint)]"

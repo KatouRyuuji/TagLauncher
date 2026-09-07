@@ -59,6 +59,10 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
   const typeFilter = useAppStore((state) => state.typeFilter);
   const setTypeFilter = useAppStore((state) => state.setTypeFilter);
+  const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
+  const showFavorites = useAppStore((state) => state.showFavorites);
+  const showRecent = useAppStore((state) => state.showRecent);
+  const tagFilterAvailable = selectedCabinetId === null && !showFavorites && !showRecent;
   const [inputValue, setInputValue] = useState("");
   const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
   const composingRef = useRef(false);
@@ -172,7 +176,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
               type="button"
               data-testid="search-mode-badge"
               onClick={() => setSearchMode("all")}
-              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent-primary)_36%,transparent)] bg-[var(--accent-primary-bg)] px-1.5 text-[10px] font-semibold text-[var(--accent-primary)] hover:border-[var(--accent-primary)]"
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent-primary)_36%,transparent)] bg-[var(--accent-primary-bg)] px-1.5 text-[13px] font-semibold text-[var(--accent-primary)] hover:border-[var(--accent-primary)]"
               title={`当前只搜${MODES.find((mode) => mode.value === searchMode)?.label}；点击恢复为“全部”`}
             >
               仅{MODES.find((mode) => mode.value === searchMode)?.label}
@@ -262,10 +266,10 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
         </div>
       </div>
 
-      {/* 控制 + 筛选合并行（单行 chrome）：搜索范围、排序、视图切换、类型/标签筛选、导入 */}
+      {/* 控制 + 筛选：允许换行，避免类型芯片被单行 overflow 裁成「音…」 */}
       <div
         data-region="filterbar"
-        className="flex h-11 items-center gap-2 border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3"
+        className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 py-1.5"
       >
         <div role="group" aria-label="搜索范围" className="segmented-control h-8 shrink-0">
           {MODES.map((mode) => (
@@ -273,7 +277,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
               key={mode.value}
               type="button"
               onClick={() => setSearchMode(mode.value)}
-              className={`control-chip h-6 min-h-6 rounded-[var(--radius-sm)] border-0 px-2.5 text-[12px] font-medium ${
+              className={`control-chip h-6 min-h-6 rounded-[var(--radius-sm)] border-0 px-2.5 text-[13px] font-medium ${
                 searchMode === mode.value ? "control-chip-active" : ""
               }`}
               aria-pressed={searchMode === mode.value}
@@ -286,7 +290,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
 
         <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
 
-        <div className="flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[12px] text-[var(--text-secondary)]">
+        <div className="flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[13px] text-[var(--text-secondary)]">
           <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" strokeWidth={1.8} aria-hidden="true" />
           <span className="instrument-label max-[1250px]:hidden">排序</span>
           <SelectMenu
@@ -294,7 +298,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
             onChange={(next) => setSortMode(next as SortMode)}
             options={SORT_OPTIONS}
             ariaLabel="排序方式"
-            className="flex h-full min-w-14 items-center gap-1 bg-transparent text-[12px] text-[var(--text-primary)] outline-none"
+            className="flex h-full min-w-14 items-center gap-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none"
           />
         </div>
 
@@ -327,10 +331,10 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
 
         <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
 
-        {/* 类型 + 标签筛选：占据行内弹性空间，超出横向滚动（右缘渐隐提示可滚动） */}
+        {/* 类型始终完整展示；标签仅在标签筛选模式下出现，避免文件柜里误点「全部标签」退出 */}
         <div
           ref={filterScrollRef}
-          className="filter-scroll flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pr-1 [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
         >
           <div role="group" aria-label="文件类型筛选" className="segmented-control h-8 shrink-0">
             {TYPE_FILTERS.map((filter) => (
@@ -339,7 +343,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
                 type="button"
                 onClick={() => setTypeFilter(nextTypeFilter(typeFilter, filter.value))}
                 aria-pressed={typeFilter === filter.value}
-                className={`control-chip h-6 min-h-6 shrink-0 rounded-[var(--radius-sm)] border-0 px-2.5 text-[12px] font-medium ${
+                className={`control-chip h-6 min-h-6 shrink-0 rounded-[var(--radius-sm)] border-0 px-2.5 text-[13px] font-medium ${
                   typeFilter === filter.value ? "control-chip-active" : ""
                 }`}
                 title={typeFilter === filter.value && filter.value !== "all" ? "再次点击取消筛选" : filter.label}
@@ -349,17 +353,17 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
             ))}
           </div>
 
-          {tags.length > 0 && (
+          {tagFilterAvailable && tags.length > 0 && (
             <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
           )}
 
-          {tags.length > 0 && (
-            <div role="group" aria-label="标签筛选" className="flex shrink-0 items-center gap-1.5">
+          {tagFilterAvailable && tags.length > 0 && (
+            <div role="group" aria-label="标签筛选" className="flex min-w-0 flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setSelectedTagIds([])}
                 aria-pressed={selectedTagIds.length === 0}
-                className={`control-chip h-7 min-h-7 shrink-0 px-2.5 text-[12px] font-medium ${
+                className={`control-chip h-7 min-h-7 shrink-0 px-2.5 text-[13px] font-medium ${
                   selectedTagIds.length === 0 ? "control-chip-active" : ""
                 }`}
               >
@@ -373,7 +377,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
                     key={tag.id}
                     type="button"
                     onClick={() => toggleTagSelection(tag.id)}
-                    className="inline-flex h-7 min-h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[12px] font-medium text-[var(--text-secondary)]"
+                    className="inline-flex h-7 min-h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[13px] font-medium text-[var(--text-secondary)]"
                     aria-pressed={active}
                     title={tag.name}
                     style={{

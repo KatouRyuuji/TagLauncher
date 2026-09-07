@@ -28,6 +28,7 @@ import * as db from "../lib/db";
 
 export const MOD_THEME_ADDED = "mod-theme-added";
 export const MOD_THEME_REMOVED = "mod-theme-removed";
+export const MODS_RUNTIME_SETTLED = "taglauncher:mods-settled";
 
 /** 启动 FOUC 门控超时兜底（毫秒）：到时仍未就绪则强制套用默认主题并放行窗口显示 */
 const INIT_TIMEOUT_MS = 2000;
@@ -85,6 +86,9 @@ export function useTheme() {
   // 持久化值不得覆盖该意图——desiredThemeIdRef 是唯一意图来源。
   const hasExternalIntentRef = useRef(false);
   const customThemesRef = useRef<ThemeDefinition[]>([]);
+  const modThemesRef = useRef<ThemeDefinition[]>([]);
+  const modsSettledRef = useRef(false);
+  const themeCatalogReadyRef = useRef(false);
   const loadErrorSignatureRef = useRef("");
   // 以下 ref 用于让 applyAndBroadcast 保持稳定引用的同时读取最新的目录信息与变体
   const themeDirectoryInfoRef = useRef<ThemeDirectoryInfo | null>(null);
@@ -114,7 +118,8 @@ export function useTheme() {
   const findTheme = useCallback(
     (id: string): ThemeDefinition | undefined =>
       availableThemesRef.current.find((theme) => theme.id === id) ??
-      customThemesRef.current.find((theme) => theme.id === id),
+      customThemesRef.current.find((theme) => theme.id === id) ??
+      modThemesRef.current.find((theme) => theme.id === id),
     [],
   );
 
@@ -206,6 +211,35 @@ export function useTheme() {
   }, [customThemes]);
 
   useEffect(() => {
+    modThemesRef.current = modThemes;
+  }, [modThemes]);
+
+  const persistFallbackIfDesiredMissing = useCallback(() => {
+    // 自定义主题目录未就绪时不能写回：否则会把尚未加载的 custom 主题误判为丢失。
+    if (!modsSettledRef.current || !themeCatalogReadyRef.current) return;
+    const desired = desiredThemeIdRef.current;
+    if (findTheme(desired) || presetThemes.some((theme) => theme.id === desired)) return;
+    const fallback = getDefaultTheme();
+    if (desired === fallback.id) return;
+    desiredThemeIdRef.current = fallback.id;
+    setCurrentThemeId(fallback.id);
+    applyAndBroadcast(fallback);
+    void db.setCurrentTheme(fallback.id).catch(() => {});
+  }, [applyAndBroadcast, findTheme]);
+
+  const persistFallbackRef = useRef(persistFallbackIfDesiredMissing);
+  persistFallbackRef.current = persistFallbackIfDesiredMissing;
+
+  useEffect(() => {
+    const onSettled = () => {
+      modsSettledRef.current = true;
+      persistFallbackIfDesiredMissing();
+    };
+    window.addEventListener(MODS_RUNTIME_SETTLED, onSettled);
+    return () => window.removeEventListener(MODS_RUNTIME_SETTLED, onSettled);
+  }, [persistFallbackIfDesiredMissing]);
+
+  useEffect(() => {
     themeDirectoryInfoRef.current = themeDirectoryInfo;
   }, [themeDirectoryInfo]);
 
@@ -264,11 +298,14 @@ export function useTheme() {
           getDefaultTheme();
         setCurrentThemeId(theme.id);
         applyAndBroadcast(theme);
+        themeCatalogReadyRef.current = true;
       } catch {
         if (!settled) applyAndBroadcast(getDefaultTheme());
+        themeCatalogReadyRef.current = true;
       } finally {
         window.clearTimeout(timer);
         finish();
+        persistFallbackRef.current();
       }
     };
     void init();
@@ -292,13 +329,19 @@ export function useTheme() {
       // 纯状态更新：是否应用由下方监听 modThemes 的 effect 依据 desiredThemeIdRef 统一决定
       setModThemes((prev) => {
         const exists = prev.some((t) => t.id === theme.id);
-        return exists ? prev.map((t) => (t.id === theme.id ? theme : t)) : [...prev, theme];
+        const next = exists ? prev.map((t) => (t.id === theme.id ? theme : t)) : [...prev, theme];
+        modThemesRef.current = next;
+        return next;
       });
     };
 
     const handleRemoved = (e: Event) => {
       const themeId = (e as CustomEvent<string>).detail;
-      setModThemes((prev) => prev.filter((theme) => theme.id !== themeId));
+      setModThemes((prev) => {
+        const next = prev.filter((theme) => theme.id !== themeId);
+        modThemesRef.current = next;
+        return next;
+      });
       // 以 desiredThemeIdRef 为唯一意图来源：被移除的正是当前意图主题时回退到默认主题
       if (desiredThemeIdRef.current === themeId) {
         const fallback = getDefaultTheme();
@@ -325,13 +368,14 @@ export function useTheme() {
     const target = modThemes.find((t) => t.id === desired);
     if (!target) {
       lastAppliedModThemeRef.current = null;
+      persistFallbackIfDesiredMissing();
       return;
     }
     if (lastAppliedModThemeRef.current === target) return; // 引用未变，无需重套
     lastAppliedModThemeRef.current = target;
     setCurrentThemeId(target.id);
     applyAndBroadcast(target);
-  }, [modThemes, applyAndBroadcast]);
+  }, [modThemes, applyAndBroadcast, persistFallbackIfDesiredMissing]);
 
   const setTheme = useCallback(
     async (themeId: string) => {

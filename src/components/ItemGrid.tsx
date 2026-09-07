@@ -14,10 +14,10 @@ const GRID_ROW_EST = 200;
 
 /**
  * 列最小宽度：唯一来源是 index.css --grid-col-min（主题可覆盖，骨架屏按它渲染），
- * JS 侧读取同一变量保证真实网格与骨架屏一致；读取失败回退 224。
- * 注意：主题运行时切换该变量不会触发 lanes 重算（resize 才会），内置主题均为 224，可接受。
+ * JS 侧读取同一变量保证真实网格与骨架屏一致；读取失败回退 256。
+ * 注意：主题运行时切换该变量不会触发 lanes 重算（resize 才会），内置主题均为 256，可接受。
  */
-const FALLBACK_COL_MIN = 224;
+const FALLBACK_COL_MIN = 256;
 function gridColMin(): number {
   if (typeof window === "undefined") return FALLBACK_COL_MIN;
   const raw = getComputedStyle(document.documentElement).getPropertyValue("--grid-col-min").trim();
@@ -205,7 +205,7 @@ export function ItemGrid({
   // lanes 变化后行数重排，旧行索引的度量对应到错误的行，清空等待重新测量，避免框选短暂错位
   useLayoutEffect(() => {
     rowMetricsRef.current.clear();
-  }, [lanes]);
+  }, [lanes, items]);
 
   // lanes/items 变化后，同一行索引对应的内容与高度已失效，但虚拟化器按索引缓存测量值、
   // 且 key 相同不会重新触发 measureElement：必须主动清空测量缓存强制重测，

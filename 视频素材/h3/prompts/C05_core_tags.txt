@@ -1,0 +1,20 @@
+【提交参数】
+model: MiniMax-H3
+duration: 12
+resolution: 2K
+mode: first_frame
+first_frame: 软件截图/03-tag-filter-parent.png
+ratio: 跟随输入图（16:9）
+不要上传 last_frame 或任何 reference_* 文件
+
+【提示词正文】
+For the target video, at 0.00 seconds into the target video, Picture 1 is fully referenced.
+
+This is a real Windows screenshot of TagLauncher. Keep every chrome pixel stable: title bar TagLauncher, sidebar with 娱乐 highlighted in pink, three cards 周杰伦-晴天 / 原神 / 影视收藏. Do not invent extra cards. Do not change tag names.
+
+Only allowed motion: a blinking caret in the search field, and an extremely slow zoom toward the three cards. A pointer may rest on the 娱乐 row. Do not redraw buttons.
+
+Spoken voice, young female Mandarin, 12 seconds:
+选择困难最怕交叉分类：怪物猎人算 act 还是 arpg？这边标签能多选叠加。先点「娱乐」，范围马上收窄，游戏、音乐、影视各归各的。
+
+Soft click once at 1 second. No lyrics.

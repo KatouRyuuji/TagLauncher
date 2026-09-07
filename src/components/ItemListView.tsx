@@ -96,7 +96,7 @@ function SortableHeaderCell({
       aria-pressed={active}
       onClick={() => setSortMode(toggleHeaderSort(sortMode, column))}
       title={active ? "再点一次回到智能排序" : `按${label}排序`}
-      className={`group inline-flex h-8 items-center gap-1 text-[10px] font-semibold transition-colors ${
+      className={`group inline-flex h-8 items-center gap-1 text-[13px] font-semibold transition-colors ${
         align === "right" ? "justify-end text-right" : "text-left"
       } ${active ? "text-[var(--accent-primary)]" : "text-[var(--text-faint)] hover:text-[var(--text-secondary)]"} ${className ?? ""}`}
     >
@@ -190,6 +190,7 @@ export function ItemListView({
   // 且 key 相同不会重新触发 measureElement：必须主动清空测量缓存强制重测，
   // 否则滚动总高度与行位置按旧高度计算（滚动错乱、未渲染区域尺寸错误）。
   useLayoutEffect(() => {
+    rowMetricsRef.current.clear();
     virtualizer.measure();
   }, [virtualizer, items]);
 

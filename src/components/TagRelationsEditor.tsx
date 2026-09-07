@@ -88,7 +88,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
     >
       <div
         ref={contentRef}
-        className="modal-surface flex max-h-[85vh] w-[560px] max-w-[calc(100vw-2rem)] flex-col"
+        className="modal-surface flex max-h-[85vh] w-[min(880px,calc(100vw-2rem))] flex-col"
         role="dialog"
         aria-modal="true"
         aria-label="标签关系"
@@ -123,11 +123,10 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
             </p>
           </div>
         ) : (
-          <>
-            {/* 选择当前标签 */}
-            <div className="mt-5">
+          <div className="mt-2 grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
+            <div>
               <div className="text-label">选择标签</div>
-              <div className="mt-2 flex max-h-[140px] flex-wrap gap-2 overflow-y-auto">
+              <div className="mt-2 flex max-h-[280px] flex-wrap content-start gap-2 overflow-y-auto">
                 {tags.map((tag) => {
                   const active = tag.id === focusedId;
                   return (
@@ -156,8 +155,8 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
             </div>
 
             {focused && (
-              <>
-              <div className="mt-5 rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_70%,transparent)] p-4">
+              <div>
+              <div className="rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_70%,transparent)] p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
                   <span className="h-3 w-3 rounded-full" style={{ backgroundColor: focused.color }} />
                   <span className="truncate">{focused.name}</span>
@@ -260,9 +259,9 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                   </div>
                 )}
               </div>
-              </>
+              </div>
             )}
-          </>
+          </div>
         )}
         </div>
 

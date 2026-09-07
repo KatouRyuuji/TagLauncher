@@ -1,0 +1,21 @@
+【提交参数】
+model: MiniMax-H3
+duration: 12
+resolution: 2K
+mode: first_last_frame
+first_frame: 角色与品牌/greet-miao-sanlian-frame.jpg
+last_frame: 角色与品牌/greet-miao-sanlian-last.jpg
+ratio: 跟随输入图（16:9）
+不要上传 reference_image / reference_video / reference_audio
+
+【提示词正文】
+How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot 1) aligns with the 12.00-second mark of the target video.
+
+Picture 1: pale paper background, three large matte blue-grey circles (thumbs-up, star, coin) without glow, a pink-haired girl in a mint-and-white floral dress standing on the right (twin buns with mint flowers, green eyes), galgame subtitles at lower left named 喵星喵. Picture 2: same layout, the three circles glowing cyan, subtitle 记得一键三连！拜托了！这对我们很重要！
+
+Single continuous shot. 0–3s the girl on the right gives a small wave. 3–8s the three circles light up one by one left to right with a small bounce. 8–12s all three stay lit, matching Picture 2. Do not change her costume or face. Do not add extra people.
+
+Spoken voice, young clear female, slightly playful Mandarin, finishing inside 12 seconds:
+大家好，我是本期超专业超可爱的解说喵星喵。由我介绍正式发布的 TagLauncher，喜欢的话请关注我和龙儿，记得一键三连！拜托了！
+
+Soft UI pops when each circle lights. No other music.

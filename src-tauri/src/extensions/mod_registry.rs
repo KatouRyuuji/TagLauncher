@@ -107,6 +107,13 @@ impl ModRegistry {
         }
     }
 
+    /// 读取兼容性标记（enable_mod 拒绝加载不兼容 Mod）。
+    pub fn compatibility(&self, mod_id: &str) -> Option<(bool, Option<String>)> {
+        let mods = self.mods.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        mods.get(mod_id)
+            .map(|entry| (entry.is_compatible, entry.incompatible_reason.clone()))
+    }
+
     /// 获取指定 mod 的 manifest（用于依赖检查）
     pub fn get_mod_manifest(&self, mod_id: &str) -> Option<ModManifest> {
         let mods = self.mods.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

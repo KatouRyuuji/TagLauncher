@@ -73,7 +73,7 @@ export function StatusBar({
     <footer
       data-region="statusbar"
       aria-label="工作区状态"
-      className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[color-mix(in_srgb,var(--bg-card)_88%,transparent)] px-3 text-[12px] text-[var(--text-faint)]"
+      className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[color-mix(in_srgb,var(--bg-card)_88%,transparent)] px-3 text-[13px] text-[var(--text-faint)]"
     >
       <div className="flex min-w-0 items-center gap-2">
         <span className="status-led shrink-0" aria-hidden="true" />

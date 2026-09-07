@@ -52,6 +52,9 @@ pub fn enable_mod(
     if registry.get_mod_path(&mod_id).is_none() {
         return Err(format!("Mod '{}' not found", mod_id));
     }
+    if let Some((false, reason)) = registry.compatibility(&mod_id) {
+        return Err(reason.unwrap_or_else(|| format!("Mod '{}' 与当前应用版本不兼容", mod_id)));
+    }
     {
         let conn = db.get_conn();
         let (mut enabled, parse_err) = settings_service::get_enabled_mods(&conn);

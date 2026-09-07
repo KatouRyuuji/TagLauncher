@@ -1,0 +1,18 @@
+【提交参数】
+model: MiniMax-H3
+duration: 12
+resolution: 2K
+mode: first_frame
+first_frame: 软件截图/07-tag-graph.png
+ratio: 跟随输入图（16:9）
+不要上传 last_frame 或其它截图
+
+【提示词正文】
+For the target video, at 0.00 seconds into the target video, Picture 1 is fully referenced.
+
+Keep the TagLauncher 层级图谱 dialog exactly: LEVEL 0–2 colored tag chips (工作 开发 娱乐 游戏 开放世界 and the rest) connected by thin lines. Do not rearrange nodes. Only allowed motion: an extremely slow pan from left to right across the graph. Title 层级图谱 stays readable.
+
+Spoken voice, young female Mandarin, 12 seconds:
+再往下挖：分级标签和谱系图谱、AI 打标、数据导入导出。最重磅是 Mod，欢迎一起做好玩的扩展。
+
+Soft airy bed. No extra speakers.

@@ -107,7 +107,7 @@ export function ShortcutsHelp() {
                   <div className="flex items-center gap-2 border-b border-[var(--line-hairline)] pb-2">
                     <Icon aria-hidden="true" size={15} strokeWidth={1.8} className="text-[var(--accent-primary)]" />
                     <h3 className="instrument-label text-[var(--text-secondary)]">{group.title}</h3>
-                    <span className="data-readout ml-auto text-[10px] text-[var(--text-faint)]">
+                    <span className="data-readout ml-auto text-[13px] text-[var(--text-faint)]">
                       {String(group.items.length).padStart(2, "0")}
                     </span>
                   </div>

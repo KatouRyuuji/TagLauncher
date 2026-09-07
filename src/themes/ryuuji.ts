@@ -111,7 +111,7 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
     "status-success-bg": p.success_so_shallow,
     "tag-preset-colors": tags,
 
-    "grid-col-min": "224px",
+    "grid-col-min": "256px",
 
     "bg-base": p.bg,
     "bg-surface": p.surface,

@@ -323,9 +323,14 @@ fn normalize_remote_dir(dir: &str) -> Result<String, String> {
 // 内部：WebDAV 原语（ureq）
 // ---------------------------------------------------------------------------
 
+/// 禁用自动重定向：ureq 跟随 3xx 时会把 Authorization: Basic 带到新主机。
+fn dav_agent() -> ureq::Agent {
+    ureq::AgentBuilder::new().redirects(0).build()
+}
+
 fn dav_request(ctx: &DavContext, method: &str, path: &str) -> ureq::Request {
     let url = build_url(&ctx.base_url, &ctx.remote_dir, path);
-    let mut req = ureq::AgentBuilder::new().build().request(method, &url);
+    let mut req = dav_agent().request(method, &url);
     if let Some(auth) = &ctx.auth_header {
         req = req.set("Authorization", auth);
     }
@@ -340,8 +345,7 @@ fn dav_propfind(ctx: &DavContext, path: &str, depth: u8) -> Result<String, Strin
     } else {
         build_url(&ctx.base_url, &ctx.remote_dir, path)
     };
-    let mut req = ureq::AgentBuilder::new()
-        .build()
+    let mut req = dav_agent()
         .request("PROPFIND", &url)
         .set("Depth", &depth.to_string())
         .timeout(CONTROL_TIMEOUT);
@@ -371,8 +375,7 @@ fn ensure_remote_dir(ctx: &DavContext) -> Result<(), String> {
             ctx.base_url,
             encode_path_segments(&current)
         );
-        let mut req = ureq::AgentBuilder::new()
-            .build()
+        let mut req = dav_agent()
             .request("MKCOL", &url)
             .timeout(CONTROL_TIMEOUT);
         if let Some(auth) = &ctx.auth_header {
@@ -380,9 +383,12 @@ fn ensure_remote_dir(ctx: &DavContext) -> Result<(), String> {
         }
         match req.call() {
             Ok(_) => {}
-            // 405 Method Not Allowed = 集合已存在，视为成功。
-            // （ureq 默认跟随重定向，301/302 不会以 Err::Status 浮出水面，无需特判）
-            Err(ureq::Error::Status(405, _)) => {}
+            // 405 = 集合已存在；禁重定向后 3xx 会以 Status 浮出，同样视为已存在。
+            Err(ureq::Error::Status(405, _))
+            | Err(ureq::Error::Status(301, _))
+            | Err(ureq::Error::Status(302, _))
+            | Err(ureq::Error::Status(307, _))
+            | Err(ureq::Error::Status(308, _)) => {}
             Err(e) => return Err(map_dav_error(e)),
         }
     }
