@@ -60,6 +60,24 @@ export function getPresetTheme(id: string): ThemeDefinition | undefined {
   return presetThemes.find((t) => t.id === id);
 }
 
+/** 首页官方主题色点：家族名、当前模式对应的主题 id、代表色（取该家族亮色 accent） */
+export interface OfficialFamilySwatch {
+  id: string;
+  name: string;
+  themeId: string;
+  swatchColor: string;
+}
+
+export function listOfficialFamilySwatches(mode: ResolvedColorMode): OfficialFamilySwatch[] {
+  return THEME_FAMILIES.map((family) => {
+    const themeId = resolveFamilyThemeId(family, mode);
+    const representative = getPresetTheme(family.light) ?? getPresetTheme(themeId);
+    const swatchColor =
+      representative?.variables["accent-primary"] ?? representative?.variables["signal"] ?? "#808080";
+    return { id: family.id, name: family.name, themeId, swatchColor };
+  });
+}
+
 /** 默认主题：霜靛家族，亮暗跟随当前模式偏好（未设置时跟随系统） */
 export function getDefaultTheme(mode: ResolvedColorMode = resolveColorMode(getColorMode())): ThemeDefinition {
   return getPresetTheme(resolveFamilyThemeId(DEFAULT_FAMILY, mode)) ?? presetThemes[0];

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { TagEditor } from "./TagEditor";
 import { TagRelationsEditor } from "./TagRelationsEditor";
+import { SidebarThemeSwitcher } from "./SidebarThemeSwitcher";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
 import { onCabinetItemsChanged } from "../lib/modApi";
 import * as db from "../lib/db";
@@ -468,9 +469,11 @@ export function Sidebar({
         </div>
       )}
 
+      <SidebarThemeSwitcher />
+
       <div
         data-region="sidebar-hint"
-        className="flex min-h-10 shrink-0 items-start gap-2 border-t border-[var(--line-hairline)] px-3 py-2.5 text-[13px] leading-4 text-[var(--text-faint)]"
+        className="flex min-h-10 shrink-0 items-start gap-2 px-3 pb-2.5 pt-0 text-[13px] leading-4 text-[var(--text-faint)]"
       >
         <Info className="mt-px h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" strokeWidth={1.8} aria-hidden="true" />
         <span>

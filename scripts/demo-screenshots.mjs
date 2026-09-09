@@ -194,6 +194,32 @@ async function featureTour(page) {
   await check("状态栏计数 10 项", (await statusText(page))?.includes("10 项"));
   await check("失效对象徽标可见", page.locator("[data-selectable-item-id]").filter({ hasText: "影视收藏" }).getByText("失效", { exact: true }).isVisible());
 
+  // 02b 首页侧栏官方主题色点 + 亮/暗分段（用完后回到霜靛亮，避免污染后续巡演）
+  const themeDock = page.locator('[data-region="sidebar-theme"]');
+  await check("侧栏主题快捷切换可见", themeDock.isVisible());
+  const familyRadios = themeDock.getByRole("radiogroup", { name: "官方主题" }).getByRole("radio");
+  await check("官方主题色点不少于 7 个", (await familyRadios.count()) >= 7);
+  const themeIdBefore = await page.locator("html").getAttribute("data-theme-id");
+  await themeDock.locator('[role="radio"][aria-checked="false"]').first().click();
+  await settle(500);
+  const themeIdAfterFamily = await page.locator("html").getAttribute("data-theme-id");
+  await check("点击色点后 data-theme-id 变化", Boolean(themeIdAfterFamily && themeIdAfterFamily !== themeIdBefore));
+  const accentBeforeMode = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--accent-primary").trim(),
+  );
+  await themeDock.getByRole("radio", { name: "暗色" }).click();
+  await settle(500);
+  const accentAfterMode = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--accent-primary").trim(),
+  );
+  await check("点击暗色后 data-scheme 为 dark", (await page.locator("html").getAttribute("data-scheme")) === "dark");
+  await check("点击暗色后 --accent-primary 变化", accentAfterMode !== accentBeforeMode);
+  await themeDock.getByRole("radio", { name: "霜靛" }).click();
+  await settle(400);
+  await themeDock.getByRole("radio", { name: "亮色" }).click();
+  await settle(500);
+  await check("恢复霜靛亮色", (await page.locator("html").getAttribute("data-scheme")) === "light");
+
   // 03 列表视图（全幅表格 + 表头）
   await page.locator('button[title="列表视图"]').click();
   await settle();
