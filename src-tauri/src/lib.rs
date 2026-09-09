@@ -102,9 +102,22 @@ pub fn run() {
                 }
             }
             let database = Database::new(&db_path).map_err(|e| {
+                // 库损坏且无安全备份可自愈时走到这里；若旧版本留底仍健康，
+                // 在报错中给出可操作的恢复指引（复制旧 Save 内容到数据目录）。
+                let hint = find_legacy_db(&app_dir, &app_paths.root_dir)
+                    .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                    .filter(|dir| *dir != app_paths.save_dir)
+                    .map(|dir| {
+                        format!(
+                            "。检测到旧版本数据目录 {} 仍完好，可关闭应用后将其内容复制到数据目录 {} 再启动",
+                            dir.display(),
+                            app_paths.save_dir.display()
+                        )
+                    })
+                    .unwrap_or_default();
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    format!("Failed to initialize database: {}", e),
+                    format!("Failed to initialize database: {}{}", e, hint),
                 )
             })?;
 
@@ -416,17 +429,17 @@ fn probe_db(db_path: &std::path::Path) -> DbState {
         Err(_) => DbState::Corrupt,
         Ok(0) => DbState::Debris,
         Ok(_) => {
-            let version: u32 = conn
-                .query_row(
-                    "SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='schema_version'",
-                    [],
-                    |r| r.get(0),
-                )
-                .unwrap_or(0);
-            if version > 0 {
-                DbState::Healthy
-            } else {
-                DbState::Debris
+            // 版本查询的 Err 不能折叠为 0：sqlite_master 可读而 app_meta 数据页损坏
+            // 时此处报 Err——那是真损坏（Corrupt），误判 Debris 会被 legacy 静默覆盖。
+            match conn.query_row(
+                "SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='schema_version'",
+                [],
+                |r| r.get::<_, u32>(0),
+            ) {
+                Ok(version) if version > 0 => DbState::Healthy,
+                // 表在但无版本行（建表后迁移中断的残骸）：可覆盖
+                Ok(_) | Err(rusqlite::Error::QueryReturnedNoRows) => DbState::Debris,
+                Err(_) => DbState::Corrupt,
             }
         }
     }
@@ -501,6 +514,60 @@ mod tests {
         let healthy = base.join("healthy.db");
         seed_healthy_db(&healthy);
         assert_eq!(probe_db(&healthy), DbState::Healthy);
+
+        cleanup(&base);
+    }
+
+    /// 残骸细分：app_meta 表存在但无版本行（建表后迁移中断）→ Debris；
+    /// app_meta 数据页损坏但 sqlite_master 可读（中间页损坏）→ Corrupt，
+    /// 绝不能误判 Debris 而被 legacy 覆盖回退。
+    #[test]
+    fn probe_db_distinguishes_debris_from_mid_page_corruption() {
+        let base = std::env::temp_dir().join(format!("tl_probe_mid_{}", std::process::id()));
+        cleanup(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        // 残骸：有 app_meta 表、无 schema_version 行
+        let debris = base.join("debris_no_version.db");
+        {
+            let conn = rusqlite::Connection::open(&debris).unwrap();
+            conn.execute_batch("CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);")
+                .unwrap();
+        }
+        assert_eq!(probe_db(&debris), DbState::Debris);
+
+        // 中间页损坏：seed 健康库 → 查出 app_meta 根页号 → 填零该页（保持文件长度，
+        // sqlite_master 页不动）→ 版本查询必报损坏 → Corrupt
+        let corrupt = base.join("mid_corrupt.db");
+        seed_healthy_db(&corrupt);
+        let app_meta_root = {
+            let conn = rusqlite::Connection::open(&corrupt).unwrap();
+            let page_size: i64 = conn
+                .query_row("PRAGMA page_size", [], |r| r.get(0))
+                .unwrap();
+            let root_page: i64 = conn
+                .query_row(
+                    "SELECT rootpage FROM sqlite_master WHERE name='app_meta'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            drop(conn);
+            (root_page, page_size)
+        };
+        let (root_page, page_size) = app_meta_root;
+        {
+            use std::io::{Seek, SeekFrom, Write};
+            let mut f = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&corrupt)
+                .unwrap();
+            f.seek(SeekFrom::Start(((root_page - 1) * page_size) as u64))
+                .unwrap();
+            f.write_all(&vec![0u8; page_size as usize]).unwrap();
+        }
+        assert_eq!(probe_db(&corrupt), DbState::Corrupt);
 
         cleanup(&base);
     }
