@@ -55,7 +55,7 @@
 1. 前往 [Releases](https://github.com/KatouRyuuji/TagLauncher/releases) 下载最新版本(按设备选择 x64 或 ARM64):
    - **安装包**(NSIS,约 4.8 MB):`..._x64-setup.exe` / `..._arm64-setup.exe`;
    - **便携版**(单 exe zip,解压即用,可放 U 盘):`..._x64-portable.zip` / `..._arm64-portable.zip`。
-2. 安装包:运行安装程序,可选桌面快捷方式,安装语言支持 English / 简体中文;便携版:解压后运行 `tag-launcher.exe`。
+2. 安装包:运行安装程序,可选桌面快捷方式,安装语言支持 English / 简体中文;便携版:解压后运行 `tag-launcher.exe`(数据在 exe 同级 `Save/` 目录,升级新版本请覆盖解压到原目录)。
 3. 启动后拖入文件或文件夹,贴标签、归档、一键启动。
 
 ### 我是开发者

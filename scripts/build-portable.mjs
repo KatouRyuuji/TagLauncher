@@ -1,4 +1,7 @@
 // 便携版打包：把 release 单 exe 打成 zip（解压即用，数据落在 exe 同级 Save/）。
+// zip 内固定顶层目录 TagLauncher/（不带版本号）：解压覆盖到同一位置时新旧版本
+// 合并进同一目录、exe 被替换而 Save/ 数据目录保留——避免按 zip 名（带版本号）
+// 解压成并列目录导致换版本后"数据丢失"。
 // 用法：node scripts/build-portable.mjs [--target <rust-triple>]
 //   无参     → x64：src-tauri/target/release/tag-launcher.exe
 //   --target aarch64-pc-windows-msvc → src-tauri/target/<triple>/release/tag-launcher.exe
@@ -6,7 +9,7 @@
 // 依赖 Windows 自带 PowerShell Compress-Archive，无需新增 npm 依赖。
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,15 +41,26 @@ const bundleDir = join(releaseDir, 'bundle');
 mkdirSync(bundleDir, { recursive: true });
 const zipPath = join(bundleDir, `TagLauncher_${version}_${arch}-portable.zip`);
 
-execFileSync(
-  'powershell',
-  [
-    '-NoProfile',
-    '-Command',
-    `Compress-Archive -LiteralPath '${exePath}' -DestinationPath '${zipPath}' -Force`,
-  ],
-  { stdio: 'inherit' },
-);
+// 暂存为 TagLauncher/tag-launcher.exe 再压缩，使 zip 内带固定顶层目录
+const stagingDir = join(releaseDir, '.portable-staging');
+const stagedRoot = join(stagingDir, 'TagLauncher');
+rmSync(stagingDir, { recursive: true, force: true });
+mkdirSync(stagedRoot, { recursive: true });
+copyFileSync(exePath, join(stagedRoot, 'tag-launcher.exe'));
+
+try {
+  execFileSync(
+    'powershell',
+    [
+      '-NoProfile',
+      '-Command',
+      `Compress-Archive -LiteralPath '${stagedRoot}' -DestinationPath '${zipPath}' -Force`,
+    ],
+    { stdio: 'inherit' },
+  );
+} finally {
+  rmSync(stagingDir, { recursive: true, force: true });
+}
 
 const sizeMB = (statSync(zipPath).size / 1024 / 1024).toFixed(1);
 console.log(`[OK] Portable package: ${zipPath} (${sizeMB} MB)`);
