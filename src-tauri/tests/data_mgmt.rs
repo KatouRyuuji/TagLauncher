@@ -222,7 +222,17 @@ fn data_directory_redirect_read_write() {
 
     // 初始无重定向文件。
     assert!(path_service::read_data_dir_redirect(&root.path).is_none());
-    assert_eq!(path_service::default_save_dir(&root.path), root.path.join("Save"));
+    // 默认目录 = %LOCALAPPDATA%\TagLauncher\Save（LOCALAPPDATA 缺失时兜底 root/Save）
+    match std::env::var_os("LOCALAPPDATA") {
+        Some(local) if std::path::Path::new(&local).is_absolute() => assert_eq!(
+            path_service::default_save_dir(&root.path),
+            std::path::PathBuf::from(local).join("TagLauncher").join("Save")
+        ),
+        _ => assert_eq!(
+            path_service::default_save_dir(&root.path),
+            root.path.join("Save")
+        ),
+    }
 
     // 写入自定义目录 → 读回一致。
     path_service::write_data_dir_redirect(&root.path, Some(&custom.path)).expect("write redirect");

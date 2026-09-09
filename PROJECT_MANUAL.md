@@ -26,7 +26,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - 顶层错误边界：`AppErrorBoundary.tsx` 捕获渲染期崩溃，替代白屏为可操作错误页（复制错误详情/重新加载）；崩溃早于主题就绪时强制移除 FOUC 门控并显示窗口，避免进程挂死不可见。列表加载失败时工作台呈现可重试错误面板而非"暂无项目"假象。
 - Mod 扩展系统：支持 `css` / `css+js` / `theme` 三类 Mod，提供权限声明（能力/意图标注 + API 误用防呆，**非安全沙箱**——Mod 属可信扩展，JS 以完全权限运行于主 realm，启用前须确认来源可信）、生命周期回调、工具栏按钮、侧栏/浮动面板、卡片与列表行对等插槽、Mod 数据存储、文件读写、受约束的网络请求原语（`net.fetch` 经 Rust 后端代理）、只读标签关系等接口（API 版本 3.2.0）。
 - AI 自动打标：兼容 Anthropic Messages API（官方或第三方兼容地址），在设置中填写 base URL / API key / 模型后，可为全部或未打标对象批量打标，支持「新对象自动打标」「允许创建新标签」「每对象最多标签数」等选项；后端仅提供无状态「建议标签」原语，批量遍历/并发/进度/取消由前端编排。
-- 数据管理：数据目录可自定义（exe 旁 `datapath.json` 记录重定向，仅重定向 `Save/`）；支持一键备份、导出、导入，统一走 SQLite Online Backup API（页级一致快照），导入前自动安全备份、可回退；切换目录或导入后自动重启生效。
+- 数据管理：默认数据目录为 `%LOCALAPPDATA%\TagLauncher\Save\`（与程序目录解耦，升级/重装不丢数据）；数据目录可自定义（exe 旁 `datapath.json` 记录重定向，仅重定向 `Save/`）；旧版本（exe 同级 `Save/`）数据首次启动自动复制到用户目录、原位置留底；支持一键备份、导出、导入，统一走 SQLite Online Backup API（页级一致快照），导入前自动安全备份、可回退；切换目录或导入后自动重启生效。
 - 云同步（WebDAV）：备份/恢复到任意 WebDAV 服务（NAS/Nextcloud/坚果云），云端副本剔除敏感配置（`ai.*`/`sync.*`），恢复保留本机凭据；远端保留最近 10 份；可选启动时自动备份（24h 节流）。详见 §十一。
 - 在线更新（GitHub Releases）：`update_check` 拉取 latest release，语义版本比较 + 按架构匹配安装包资产；设置页手动检查 + 启动后台自动检查（24h 节流、同版本只提示一次）。详见 §十一。
 - NAS/UNC/软链接场景：对象身份重定位支持 UNC 共享根与扩展前缀路径形态（`\\server\share\`、`\\?\C:\`、`\\?\UNC\`）作为卷句柄候选；网络文件系统无文件 ID 时优雅回退按路径管理。
@@ -84,7 +84,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  │  main.rs    ← 入口                      │  │
 │  │                                         │  │
 │  │  ┌───────────────────────────────────┐  │  │
-│  │  │  SQLite (Save/taglauncher.db)     │  │  │
+│  │  │  SQLite (数据目录/taglauncher.db) │  │  │
 │  │  │  items / tags / item_tags         │  │  │
 │  │  │  cabinets / cabinet_items         │  │  │
 │  │  │  items_fts (FTS5 全文搜索)        │  │  │
@@ -443,7 +443,8 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 
 ### 10.1 数据目录重定向
 
-- 默认数据目录为 exe 同级 `Save/`。用户可切换到自定义目录，重定向路径记录在 exe 旁 `datapath.json`（`path_service` 的 `read_data_dir_redirect` / `write_data_dir_redirect` / `default_save_dir`）。
+- 默认数据目录为 `%LOCALAPPDATA%\TagLauncher\Save\`（`path_service::default_save_dir`；数据与程序目录解耦，升级/重装/删除程序目录均不影响数据；`LOCALAPPDATA` 缺失时兜底 exe 同级 `Save/`）。用户可切换到自定义目录，重定向路径记录在 exe 旁 `datapath.json`（`read_data_dir_redirect` / `write_data_dir_redirect`）。
+- 从旧版本（v1.0~1.7.4，默认 exe 同级 `Save/`）升级：新版首次启动在默认位置无库时，自动从旧位置复制最新库到用户目录（`lib.rs::find_legacy_db` + `migrate_legacy_db`，原位置留底不删）。
 - **仅重定向 `Save/`**（应用原生数据：数据库、备份等）；`Builtin/`、`Plugins_Theme/`、`Plugins_Mods/` 仍固定 exe 同级。
 - 切换目录或导入数据后需**重启应用**生效（命令内部调用 `app.restart()`）。
 
@@ -534,10 +535,10 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src
 - `.github/workflows/release.yml`：推送版本 tag 自动构建 x64 + ARM64 双架构安装包与便携版 zip 并生成草稿 Release；发版流程清单见 `MAINTENANCE.md`。
 
 ### 部署
-- 安装包部署：运行 NSIS `-setup.exe` 完成安装（安装语言可选 English / SimpChinese）。
-- 便携版部署：解压 `-portable.zip` 到任意目录（含 U 盘）直接运行 `tag-launcher.exe`，不写注册表；应用数据落在 exe 同级 `Save/`。便携版不引导安装 WebView2，需系统已预装。
+- 安装包部署：运行 NSIS `-setup.exe` 完成安装（安装语言可选 English / SimpChinese，`installMode: currentUser` 免管理员）。
+- 便携版部署：解压 `-portable.zip` 到任意目录直接运行 `tag-launcher.exe`（zip 内固定顶层目录 `TagLauncher/`，覆盖解压到原位置即升级），不写注册表；应用数据落在用户数据目录，与解压位置无关。便携版不引导安装 WebView2，需系统已预装。
 - 运行时依赖：Windows 10 1803+ 或 Windows 11（需要 WebView2）；支持 x64 与 ARM64。
-- 数据存储：默认 exe 同级目录的 `Save/taglauncher.db`（不是 `%APPDATA%`）；数据目录可在设置中自定义，重定向记录于 exe 旁 `datapath.json`（仅重定向 `Save/`）。
+- 数据存储：默认 `%LOCALAPPDATA%\TagLauncher\Save\taglauncher.db`；数据目录可在设置中自定义（U 盘随身携带等场景），重定向记录于 exe 旁 `datapath.json`（仅重定向 `Save/`）。
 - 同义词字典：优先 exe 同级目录的 `synonyms.json`，不可用时回退到应用数据目录（`%APPDATA%/com.taglauncher.app/synonyms.json`），首次运行自动生成。
 - 开始菜单快捷方式默认创建，桌面快捷方式可在安装功能选择页中选择。
 

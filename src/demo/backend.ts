@@ -523,19 +523,22 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return null;
 
     // ---- 数据目录 / 备份 ----
-    case "get_data_directory_info":
+    case "get_data_directory_info": {
+      // 与真实后端的默认数据目录口径一致（%LOCALAPPDATA%\TagLauncher\Save）
+      const defaultDir = "C:\\Users\\Demo\\AppData\\Local\\TagLauncher\\Save";
       return {
-        saveDir: `${DATA_DIR}\\Save`,
-        defaultSaveDir: `${DATA_DIR}\\Save`,
+        saveDir: defaultDir,
+        defaultSaveDir: defaultDir,
         isCustom: false,
         dbSizeBytes: 188_416,
-        backupsDir: `${DATA_DIR}\\Save\\Backups`,
+        backupsDir: `${defaultDir}\\Backups`,
       };
+    }
     case "set_data_directory":
     case "reset_data_directory":
       return null;
     case "backup_data":
-      return `${DATA_DIR}\\Save\\Backups\\taglauncher-backup-${Date.now()}.db`;
+      return `C:\\Users\\Demo\\AppData\\Local\\TagLauncher\\Save\\Backups\\taglauncher-backup-${Date.now()}.db`;
     case "export_data":
       return null;
     case "import_data":

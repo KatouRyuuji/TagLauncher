@@ -26,7 +26,7 @@ const MIGRATING_FILE_NAME: &str = "taglauncher.db.migrating";
 pub struct DataDirectoryInfo {
     /// 当前生效的数据目录
     pub save_dir: String,
-    /// 默认数据目录（exe 同级 Save/）
+    /// 默认数据目录（%LOCALAPPDATA%\TagLauncher\Save\）
     pub default_save_dir: String,
     /// 是否使用了自定义目录
     pub is_custom: bool,
@@ -133,7 +133,7 @@ pub fn set_data_directory(
     Ok(())
 }
 
-/// 恢复默认数据目录（exe 同级 Save/）。返回后需重启生效。
+/// 恢复默认数据目录（%LOCALAPPDATA%\TagLauncher\Save\）。返回后需重启生效。
 #[tauri::command]
 pub fn reset_data_directory(app: tauri::AppHandle, db: State<Database>) -> Result<(), String> {
     crate::db::ensure_writes_allowed()?;

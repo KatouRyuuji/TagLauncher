@@ -77,15 +77,16 @@ pub fn run() {
                 std::io::Error::new(std::io::ErrorKind::Other, e)
             })?;
 
-            // 初始化数据库：新架构使用 Save/ 存放应用原生数据。
-            // 若用户来自旧版本（AppData/Program Files MSI 安装等位置）首次启动时自动
-            // 扫描所有历史可能位置，复制最新修改的 db 到 Save/。
+            // 初始化数据库：数据落在 %LOCALAPPDATA%\TagLauncher\Save\（见 path_service）。
+            // 若用户来自旧版本（exe 同级 Save/、老 AppData、Program Files MSI 等位置）
+            // 首次启动时自动扫描所有历史可能位置，复制最新修改的 db 到当前数据目录
+            // （原位置留底不删，用户确认无误后可自行清理）。
             // 若当前 db 是历史失败启动留下的未完成迁移残骸（schema_version=0），
             // 也尝试重新扫描历史位置覆盖之，避免要求用户手动清理。
             let db_path = app_paths.save_dir.join("taglauncher.db");
             let needs_legacy_scan = !db_path.exists() || !is_db_healthy(&db_path);
             if needs_legacy_scan {
-                if let Some(src) = find_legacy_db(&app_dir) {
+                if let Some(src) = find_legacy_db(&app_dir, &app_paths.root_dir) {
                     if src != db_path {
                         migrate_legacy_db(&src, &db_path).map_err(|e| {
                             std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -315,14 +316,18 @@ pub fn run() {
 }
 
 /// 扫描所有可能存放旧版本数据库的位置，返回最近修改的那个。
-/// 涵盖：老 AppData 路径、MSI per-machine 安装位置（Program Files / Program Files (x86)）。
-fn find_legacy_db(app_data_dir: &PathBuf) -> Option<PathBuf> {
+/// 涵盖：exe 同级 Save/（v1.0~1.7.4 的默认位置）、老 AppData roaming 位置、
+/// MSI per-machine 安装位置（Program Files / Program Files (x86)）。
+fn find_legacy_db(app_data_dir: &PathBuf, root_dir: &PathBuf) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
-    // 1. 老 AppData roaming 位置（v1.0.x 之前的默认位置）
+    // 1. exe 同级 Save/（v1.0~1.7.4 默认位置；升级后数据由此自动复制到用户目录）
+    candidates.push(root_dir.join("Save").join("taglauncher.db"));
+
+    // 2. 老 AppData roaming 位置（v1.0.x 之前的默认位置）
     candidates.push(app_data_dir.join("taglauncher.db"));
 
-    // 2. MSI per-machine 安装位置（Program Files\TagLauncher\Save\）
+    // 3. MSI per-machine 安装位置（Program Files\TagLauncher\Save\）
     // 64 位进程下 ProgramFiles 已指向真实 Program Files; ProgramFiles(x86) 用于兼容
     // 32 位安装残留。无需检查 ProgramW6432（在 64 位进程中与 ProgramFiles 重复）。
     for env_key in ["ProgramFiles", "ProgramFiles(x86)"] {
@@ -361,4 +366,26 @@ fn is_db_healthy(db_path: &std::path::Path) -> bool {
         )
         .unwrap_or(0);
     version > 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// find_legacy_db 候选必须覆盖 exe 同级 Save/（v1.0~1.7.4 默认位置）：
+    /// 旧版便携/安装用户升级到用户目录数据模型后，数据由该候选被发现并复制。
+    #[test]
+    fn find_legacy_db_discovers_exe_side_save() {
+        let base = std::env::temp_dir().join(format!("tl_legacy_{}", std::process::id()));
+        let root = base.join("root");
+        let roaming = base.join("roaming");
+        std::fs::create_dir_all(root.join("Save")).unwrap();
+        std::fs::create_dir_all(&roaming).unwrap();
+        let exe_side = root.join("Save").join("taglauncher.db");
+        std::fs::write(&exe_side, b"db").unwrap();
+
+        assert_eq!(find_legacy_db(&roaming, &root), Some(exe_side));
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

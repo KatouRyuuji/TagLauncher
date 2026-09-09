@@ -360,7 +360,7 @@ export async function setDataDirectory(newDir: string, migrate: boolean): Promis
   return invokeCmd("set_data_directory", { newDir, migrate });
 }
 
-/** 恢复默认数据目录（exe 同级 Save/）。返回后需重启生效。 */
+/** 恢复默认数据目录（%LOCALAPPDATA%\TagLauncher\Save\）。返回后需重启生效。 */
 export async function resetDataDirectory(): Promise<void> {
   return invokeCmd("reset_data_directory");
 }

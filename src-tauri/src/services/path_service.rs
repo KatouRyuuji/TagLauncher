@@ -34,7 +34,7 @@ pub fn resolve_app_paths(app: &AppHandle) -> AppPaths {
 
     // 数据目录重定向：exe 旁的 datapath.json 可将 Save/ 指向自定义位置。
     // 仅影响应用原生数据（Save/），Builtin / Plugins 仍固定在 exe 同级。
-    let save_dir = read_data_dir_redirect(&root_dir).unwrap_or_else(|| root_dir.join("Save"));
+    let save_dir = read_data_dir_redirect(&root_dir).unwrap_or_else(|| default_save_dir(&root_dir));
 
     AppPaths {
         builtin_dir: root_dir.join("Builtin"),
@@ -45,9 +45,17 @@ pub fn resolve_app_paths(app: &AppHandle) -> AppPaths {
     }
 }
 
-/// 默认数据目录（exe 同级 Save/，忽略重定向）。
+/// 默认数据目录：`%LOCALAPPDATA%\TagLauncher\Save\`。
+/// 数据与程序目录解耦（对标主流桌面应用：Chrome/JetBrains/Joplin 等均把数据库
+/// 放在本机用户数据目录）——升级版本、重装、删除程序目录都不再影响数据；
+/// 数据库内容含本机文件路径索引（机器相关），故用 Local 而非 Roaming。
+/// LOCALAPPDATA 缺失（损坏环境）时兜底 exe 同级 Save/。
 pub fn default_save_dir(root_dir: &std::path::Path) -> PathBuf {
-    root_dir.join("Save")
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .map(|p| p.join("TagLauncher").join("Save"))
+        .unwrap_or_else(|| root_dir.join("Save"))
 }
 
 const DATA_REDIRECT_FILE: &str = "datapath.json";

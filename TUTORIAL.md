@@ -234,7 +234,7 @@ npm run pack:portable    # 便携版 zip（scripts/build-portable.mjs，调用 P
 
 ARM64 构建用 `build-arm64.bat`（`aarch64-pc-windows-msvc`，脚本会自动 `rustup target add`），产物为对应 bundle 目录下的 `..._arm64-setup.exe` 与 `..._arm64-portable.zip`；`build.bat` 亦支持传入可选 target 参数，且构建成功后自动打便携 zip。
 
-便携版与应用数据模型天然契合：`Save/`、`synonyms.json`、`Plugins_*` 均在 exe 同级目录，解压即用、整目录可迁移；唯一前提是系统已装 WebView2 Runtime（便携版不做安装引导）。
+便携版解压即用（zip 内固定顶层目录 `TagLauncher/`，覆盖解压即升级）；应用数据默认落在 `%LOCALAPPDATA%\TagLauncher\Save\`，与解压位置无关，换版本/换目录不丢数据；exe 同级的 `synonyms.json`、`Plugins_*`（自定义主题与 Mod）跟随程序目录，故建议覆盖解压到原位置。唯一前提是系统已装 WebView2 Runtime（便携版不做安装引导）。
 
 NSIS 安装包会创建开始菜单快捷方式；桌面快捷方式在安装功能选择页中作为可选项；安装语言可选 English / SimpChinese。
 
