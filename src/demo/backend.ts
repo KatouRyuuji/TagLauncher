@@ -261,9 +261,12 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       const paths = cmd === "add_item" ? [str(args.path)] : (args.paths as string[]);
       const added: Item[] = [];
       const failed: Array<{ path: string; error: string }> = [];
+      let createdCount = 0;
       for (const path of paths) {
-        if (state.items.some((item) => item.path === path)) {
-          failed.push({ path, error: "该对象已在库中" });
+        // 与真实后端同口径：重复路径合并既有记录（计入 items 但非新建），不算失败
+        const existing = state.items.find((item) => item.path === path);
+        if (existing) {
+          added.push(withTags(existing));
           continue;
         }
         const item: DemoItemSeed = {
@@ -278,8 +281,9 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         };
         state.items.push(item);
         added.push(withTags(item));
+        createdCount += 1;
       }
-      return cmd === "add_item" ? added[0] : { items: added, failed };
+      return cmd === "add_item" ? added[0] : { items: added, failed, createdCount };
     }
     case "remove_item":
     case "remove_items": {
@@ -513,6 +517,9 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return state.settings.get(str(args.key)) ?? null;
     case "set_setting":
       state.settings.set(str(args.key), str(args.value));
+      return null;
+    case "check_version_migration":
+      // 演示模式无版本变迁，永不弹迁移提示
       return null;
 
     // ---- 数据目录 / 备份 ----

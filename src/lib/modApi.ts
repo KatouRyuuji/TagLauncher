@@ -469,12 +469,15 @@ export async function purgeModResources(modId: string, skipClearLifecycle?: bool
   // 6. 注销所有 ItemCard 插槽
   unregisterAllItemSlots(modId);
 
-  // 7. 清理生命周期注册表（可选跳过）
+  // 7. 还原该 mod 通过 setThemeVariable 写入的主题变量
+  restoreModThemeVariables(modId);
+
+  // 8. 清理生命周期注册表（可选跳过）
   if (!skipClearLifecycle) {
     clearModLifecycle(modId);
   }
 
-  // 8. 移除权限和 API 版本注册
+  // 9. 移除权限和 API 版本注册
   modPermissionsMap.delete(modId);
   modApiVersionMap.delete(modId);
 }
@@ -521,6 +524,40 @@ function getThemeVariable(n: string) {
 }
 function setThemeVariable(n: string, v: string) {
   document.documentElement.style.setProperty(`--${n}`, v);
+}
+
+/**
+ * setThemeVariable 副作用追踪：记录各 mod 首次改写某变量前的原值，
+ * 禁用/卸载（purgeModResources）时还原，避免 mod 移除后其变量改动残留。
+ * 原值为空字符串表示改写前未设置（内联样式无此属性），还原时移除该属性。
+ * 注意：若改写后发生过主题切换，还原的是改写前的旧值——主题切换本身会清理
+ * 契约内变量，此处仅兜底 mod 的越约写入，语义按「撤销 mod 的改动」处理。
+ */
+const modThemeVarBackups = new Map<string, Map<string, string>>();
+
+function setThemeVariableTracked(modId: string, name: string, value: string) {
+  let backups = modThemeVarBackups.get(modId);
+  if (!backups) {
+    backups = new Map();
+    modThemeVarBackups.set(modId, backups);
+  }
+  if (!backups.has(name)) {
+    backups.set(name, document.documentElement.style.getPropertyValue(`--${name}`));
+  }
+  setThemeVariable(name, value);
+}
+
+function restoreModThemeVariables(modId: string) {
+  const backups = modThemeVarBackups.get(modId);
+  if (!backups) return;
+  modThemeVarBackups.delete(modId);
+  for (const [name, prev] of backups) {
+    if (prev === "") {
+      document.documentElement.style.removeProperty(`--${name}`);
+    } else {
+      document.documentElement.style.setProperty(`--${name}`, prev);
+    }
+  }
 }
 function getThemeId() {
   return document.documentElement.getAttribute("data-theme-id") ?? "";
@@ -818,9 +855,11 @@ function createScope(modId: string): ModScope {
       delete: guarded("data", "data.delete", data.delete),
     },
 
-    // 主题（读取无权限要求，写入需要 theme 权限）
+    // 主题（读取无权限要求，写入需要 theme 权限；写入按 mod 追踪，禁用时还原）
     getThemeVariable,
-    setThemeVariable: guarded("theme", "setThemeVariable", setThemeVariable),
+    setThemeVariable: guarded("theme", "setThemeVariable", (n: string, v: string) =>
+      setThemeVariableTracked(modId, n, v)
+    ),
     getThemeId,
     onThemeChange: scopedOnThemeChange,
 

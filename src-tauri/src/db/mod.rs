@@ -5,6 +5,34 @@ pub mod schema;
 pub use connection::Database;
 
 use rusqlite::Connection;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// 写入冻结标志：切换数据目录 / 导入数据 / 云端恢复成功后、重启前的窗口内，
+/// 对旧库的一切写入都将在重启后丢失，故冻结并由各写入口统一报错（读不受影响）。
+/// 用全局标志而非 Database 实例字段：service 层写路径只持有 &Connection，拿不到实例。
+static WRITES_FROZEN: AtomicBool = AtomicBool::new(false);
+
+/// 冻结后各写入口的统一报错文案。
+pub(crate) const WRITES_FROZEN_MSG: &str = "操作已完成，请重启应用生效";
+
+/// 冻结写入（仅 data/sync 命令在切换/导入/恢复成功后调用）。
+pub fn freeze_writes() {
+    WRITES_FROZEN.store(true, Ordering::SeqCst);
+}
+
+/// 当前是否处于写入冻结窗口。
+pub fn writes_frozen() -> bool {
+    WRITES_FROZEN.load(Ordering::SeqCst)
+}
+
+/// 写命令 / 写 service 入口检查：冻结后拒绝写入。
+pub(crate) fn ensure_writes_allowed() -> Result<(), String> {
+    if writes_frozen() {
+        Err(WRITES_FROZEN_MSG.to_string())
+    } else {
+        Ok(())
+    }
+}
 
 /// 判断表是否含某列（供 schema 与各迁移条件创建依赖该列的索引/DDL 复用）。
 /// 表名/列名均为代码内常量、非用户输入，故此处 format! 拼接无 SQL 注入风险。

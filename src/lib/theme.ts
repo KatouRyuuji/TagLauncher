@@ -255,12 +255,16 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
   }
   dynamicThemeVariableKeys.clear();
   for (const [key, value] of Object.entries(variables)) {
+    // 防御：非字符串值（JSON 可携带数字/对象）无法消毒也无法作为 CSS 变量写入，
+    // 跳过而非抛错——mod 主题在注册前已做值类型校验，此处兜底持久化/旧数据场景
+    if (typeof value !== "string") continue;
     root.style.setProperty(`--${key}`, sanitizeVar(value));
     if (!THEME_VARIABLE_KEYS.includes(key)) {
       dynamicThemeVariableKeys.add(key);
     }
   }
   for (const [key, value] of Object.entries(theme.assets ?? {})) {
+    if (typeof value !== "string") continue;
     const variableKey = `asset-${key}`;
     root.style.setProperty(`--${variableKey}`, cssUrl(sanitizeAsset(value), themeRoot));
     dynamicThemeVariableKeys.add(variableKey);
@@ -281,8 +285,9 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
   // 4. 注入主题自定义 CSS（用于变量无法覆盖的深度定制：布局、图标、选择器级样式）
   //    变体的 css 追加在主题 css 之后，使其能覆盖基础样式
   let styleEl = document.getElementById(CUSTOM_CSS_ID) as HTMLStyleElement | null;
+  // 防御性跳过非字符串值（mod 主题 JSON 校验之外的直达路径兜底）
   const rawCombinedCss = [theme.css, variant?.css]
-    .filter((part): part is string => !!part?.trim())
+    .filter((part): part is string => typeof part === "string" && !!part.trim())
     .join("\n");
   // 内置主题 CSS 可信直接注入；custom / mod 主题 CSS 视为不可信，注入前基本消毒
   const combinedCss = theme.isPreset ? rawCombinedCss : sanitizeThemeCss(rawCombinedCss);

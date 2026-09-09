@@ -48,6 +48,7 @@ pub fn enable_mod(
     registry: State<ModRegistry>,
     mod_id: String,
 ) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     // 先确认存在、先落库、最后改内存注册表：任一失败都不留"内存已启用但重启回退"的不一致。
     if registry.get_mod_path(&mod_id).is_none() {
         return Err(format!("Mod '{}' not found", mod_id));
@@ -144,6 +145,7 @@ pub fn disable_mod(
     registry: State<ModRegistry>,
     mod_id: String,
 ) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     // 同 enable_mod：先落库、后改内存，避免失败路径留下不一致状态。
     if registry.get_mod_path(&mod_id).is_none() {
         return Err(format!("Mod '{}' not found", mod_id));
@@ -171,6 +173,7 @@ pub fn delete_mod(
     registry: State<ModRegistry>,
     mod_id: String,
 ) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     // 1. 确保 mod 存在
     let mod_path = registry
         .get_mod_path(&mod_id)
@@ -234,6 +237,7 @@ pub fn mark_mod_version(
     mod_id: String,
     version: String,
 ) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let conn = db.get_conn();
     let key = format!("mod_version::{}", mod_id);
     settings_service::set_setting(&conn, &key, &version)
@@ -287,6 +291,7 @@ pub fn mod_kv_set(
     value: String,
 ) -> Result<(), String> {
     ensure_valid_mod_id(&registry, &mod_id)?;
+    crate::db::ensure_writes_allowed()?;
     let conn = db.get_conn();
     conn.execute(
         "INSERT OR REPLACE INTO mod_kv (mod_id, key, value, updated_at) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)",
@@ -304,6 +309,7 @@ pub fn mod_kv_remove(
     key: String,
 ) -> Result<(), String> {
     ensure_valid_mod_id(&registry, &mod_id)?;
+    crate::db::ensure_writes_allowed()?;
     let conn = db.get_conn();
     conn.execute("DELETE FROM mod_kv WHERE mod_id = ?1 AND key = ?2", [&mod_id, &key])
         .map_err(|e| e.to_string())?;
@@ -338,6 +344,7 @@ pub fn mod_record_put(
     value: String,
 ) -> Result<(), String> {
     ensure_valid_mod_id(&registry, &mod_id)?;
+    crate::db::ensure_writes_allowed()?;
     let conn = db.get_conn();
     conn.execute(
         "INSERT OR REPLACE INTO mod_records (mod_id, collection, id, value, updated_at) VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP)",
@@ -356,6 +363,7 @@ pub fn mod_record_remove(
     id: String,
 ) -> Result<(), String> {
     ensure_valid_mod_id(&registry, &mod_id)?;
+    crate::db::ensure_writes_allowed()?;
     let conn = db.get_conn();
     conn.execute(
         "DELETE FROM mod_records WHERE mod_id = ?1 AND collection = ?2 AND id = ?3",

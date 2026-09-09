@@ -16,7 +16,8 @@ export async function save(): Promise<null> {
 export async function message(): Promise<void> {}
 
 export async function ask(): Promise<boolean> {
-  return false;
+  // 演示模式以走完流程为目标：确认类询问一律视为「确认」（如 AI 全量打标的数量确认）
+  return true;
 }
 
 export async function confirm(): Promise<boolean> {

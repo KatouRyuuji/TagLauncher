@@ -39,6 +39,24 @@ const EDGE_ZONE = 48;
 /** 自动滚动每帧最大像素 */
 const MAX_SCROLL_SPEED = 20;
 
+// ── 键盘导航滚动跟随标记 ────────────────────────────────────────────────────
+// 仅键盘单步导航（方向键/Home/End/Shift 扩展，见 useWorkspaceHotkeys）设置跟随目标；
+// Ctrl+A 全选、框选、批量选择不设置。ItemGrid/ItemListView 的虚拟化滚动效果据此
+// 决定 lastSelectedId 变化时是否 scrollToIndex 跟随，避免全选把视图强拉到列表末尾。
+let scrollFollowTargetId: number | null = null;
+
+/** 键盘导航选中变化前调用：声明本次选中变化需要滚动跟随。 */
+export function requestSelectionScrollFollow(itemId: number): void {
+  scrollFollowTargetId = itemId;
+}
+
+/** 视图滚动效果消费一次标记：返回 null 表示本次选中变化无需滚动跟随。 */
+export function consumeSelectionScrollFollow(): number | null {
+  const id = scrollFollowTargetId;
+  scrollFollowTargetId = null;
+  return id;
+}
+
 function clientRectToContentRect(rect: Rect, container: HTMLElement): Rect {
   const containerRect = container.getBoundingClientRect();
   return {
@@ -109,6 +127,8 @@ export function SelectionCanvas({
     lastY: number;
     active: boolean;
     selected: Set<number>;
+    /** 框选开始前的选中集快照：pointercancel 中断时恢复，放弃本次框选 */
+    prevSelected: number[];
   } | null>(null);
   const selectedItemIdsRef = useRef(selectedItemIds);
   const itemIdsRef = useRef(itemIds);
@@ -273,6 +293,7 @@ export function SelectionCanvas({
       lastY: event.clientY,
       active: false,
       selected: new Set<number>(),
+      prevSelected: selectedItemIdsRef.current,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -325,7 +346,16 @@ export function SelectionCanvas({
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
 
-    endDrag();
+    // pointercancel 是中断而非提交：放弃本次框选，恢复框选前的选中集，
+    // 不把指针位移过程中累积的半成品并集写回。
+    stopAutoScroll();
+    cancelScheduledSelection();
+    if (drag.active) {
+      selectedItemIdsRef.current = drag.prevSelected;
+      onSelectItemsRef.current(drag.prevSelected);
+    }
+    setSelectionBox(null);
+    dragRef.current = null;
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
 

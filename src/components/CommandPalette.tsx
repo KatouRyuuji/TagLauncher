@@ -23,8 +23,11 @@ import {
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
-import { filterCommandsByQuery, isImeKeyboardEvent, SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter } from "../lib/itemQuery";
-import { buildSearchIndex, searchWithIndex } from "../lib/search";
+import { filterCommandsByQuery, isImeKeyboardEvent, SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter, applyTypeFilter } from "../lib/itemQuery";
+import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
+import { buildDescendantsMap } from "../lib/tagGraph";
+import { getCabinetItems } from "../lib/db";
+import { onCabinetItemsChanged } from "../lib/modApi";
 import { focusWorkspaceSearch, resetWorkspaceSearchInput } from "../lib/workspaceChrome";
 import { useAppStore } from "../stores/appStore";
 import { getTypeLabel, truncatePathMiddle } from "../lib/itemUtils";
@@ -83,7 +86,9 @@ export function CommandPalette({
   const setShortcutsHelpOpen = useAppStore((state) => state.setShortcutsHelpOpen);
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
   const clearWorkspaceFilters = useAppStore((state) => state.clearWorkspaceFilters);
-  const searchMode = useAppStore((state) => state.searchMode);
+  const selectedTagIds = useAppStore((state) => state.selectedTagIds);
+  const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
+  const tagRelations = useAppStore((state) => state.tagRelations);
 
   const [query, setQuery] = useState("");
   const [filterQuery, setFilterQuery] = useState("");
@@ -93,6 +98,52 @@ export function CommandPalette({
   const composingRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open, autoFocus: false });
+
+  const [cabinetItemIds, setCabinetItemIds] = useState<Set<number> | null>(null);
+
+  // 命令面板的对象候选跟随工作台筛选：选中文件柜时先拉取柜内对象 id 集做收窄。
+  // 新柜数据到达前先收窄为空，避免闪现上一个柜（或全量）的内容（与 useItems 的归属判定同理）。
+  // 面板打开期间柜成员增删经 onCabinetItemsChanged 即时同步。
+  useEffect(() => {
+    if (!open || selectedCabinetId === null) {
+      setCabinetItemIds(null);
+      return;
+    }
+    let cancelled = false;
+    setCabinetItemIds(new Set());
+    void getCabinetItems(selectedCabinetId)
+      .then((cabinetItems) => {
+        if (!cancelled) setCabinetItemIds(new Set(cabinetItems.map((item) => item.id)));
+      })
+      .catch(() => {
+        if (!cancelled) setCabinetItemIds(null);
+      });
+    const unsubscribe = onCabinetItemsChanged((cabinetId, itemIds) => {
+      if (!cancelled && cabinetId === selectedCabinetId) {
+        setCabinetItemIds(new Set(itemIds));
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [open, selectedCabinetId]);
+
+  // 对象候选收窄与工作台 useItems 同一口径：收藏 > 最近使用 > 文件柜 > 全量，
+  // 再按选中标签（含后代闭包）与类型筛选过滤。
+  const descendantsMap = useMemo(() => buildDescendantsMap(tagRelations), [tagRelations]);
+  const scopedItems = useMemo(() => {
+    let base = items;
+    if (showFavorites) {
+      base = items.filter((item) => item.is_favorite);
+    } else if (showRecent) {
+      base = items.filter((item) => Boolean(item.last_used_at));
+    } else if (selectedCabinetId !== null) {
+      base = cabinetItemIds ? items.filter((item) => cabinetItemIds.has(item.id)) : [];
+    }
+    const tagScoped = filterItemsByTags(base, selectedTagIds, (id) => descendantsMap.get(id) ?? new Set([id]));
+    return applyTypeFilter(tagScoped, typeFilter);
+  }, [items, showFavorites, showRecent, selectedCabinetId, cabinetItemIds, selectedTagIds, descendantsMap, typeFilter]);
 
   const commands = useMemo<CommandDef[]>(() => [
     { id: "search", title: "聚焦搜索", hint: "/", keywords: "search 搜索 find", icon: Search, run: () => focusWorkspaceSearch() },
@@ -145,9 +196,11 @@ export function CommandPalette({
     if (!q) return commands.filter((command) => PALETTE_PRIMARY.has(command.id));
     return filterCommandsByQuery(commands, q);
   }, [commands, filterQuery]);
+  // 对象候选搜索固定用「全部」模式（名称+标签均可命中），不跟随工作台的「仅标签」类模式，
+  // 否则切到「仅标签」后在面板里输对象名命中不了对象。
   const searchIndex = useMemo(
-    () => (open ? buildSearchIndex(items, searchMode) : { entries: [], mode: searchMode }),
-    [open, items, searchMode],
+    () => (open ? buildSearchIndex(scopedItems, "all") : { entries: [], mode: "all" as const }),
+    [open, scopedItems],
   );
   const matchedItems = useMemo(() => {
     if (!filterQuery.trim()) return [];
@@ -285,7 +338,11 @@ export function CommandPalette({
               scheduleFilterQuery(value);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="搜索命令或项目…"
+            placeholder={
+              selectedCabinetId !== null || selectedTagIds.length > 0 || showFavorites || showRecent || typeFilter !== "all"
+                ? "在当前筛选范围内搜索命令或项目…"
+                : "搜索命令或项目…"
+            }
             aria-label="搜索命令或项目"
             className="min-w-0 flex-1 bg-transparent text-[15px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none"
           />

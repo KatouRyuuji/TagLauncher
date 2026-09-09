@@ -170,7 +170,7 @@ export function SelectMenu({ value, onChange, ariaLabel, options, groups, classN
                 left: menuPos.left,
                 minWidth: menuPos.minWidth,
                 maxHeight: menuPos.maxHeight,
-                zIndex: "var(--z-context-menu)",
+                zIndex: "var(--z-select-menu)",
               }}
               className="w-max max-w-80 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] py-1 shadow-[var(--shadow-overlay)]"
             >

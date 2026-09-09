@@ -67,6 +67,15 @@ function executeJs(modId: string, jsContent: string) {
   script.id = jsTagId(modId);
   // 注入 __MOD_ID__ 常量，供 mod 调用 createScope(__MOD_ID__) 获取专属作用域
   script.textContent = `(function(){const __MOD_ID__=${JSON.stringify(modId)};\n${jsContent}\n})();`;
+  // 内联 script 的语法错误/顶层异常不经 appendChild 抛出，而是同步派发 window
+  // error 事件——注入窗口期挂临时监听捕获，把失败转为异常交给启用流程回滚，
+  // 避免 mod 呈「半启用」态。该同步窗口内只有本 script 执行，错误可归因到本 mod。
+  // （unhandledrejection 在同步窗口内不会派发，异步 rejection 无法归因，不在此捕获）
+  let capturedError: string | null = null;
+  const onError = (e: ErrorEvent) => {
+    capturedError = e.message || "脚本执行错误";
+  };
+  window.addEventListener("error", onError);
   // 绑定当前执行 mod：内联 script 在 appendChild 时同步执行其顶层代码，
   // 期间 mod 通常调用 createScope(__MOD_ID__)，据此校验其不冒用他人 id。
   // 执行结束（同步）后立即清除；异步回调阶段无法归因，createScope 仅校验注册。
@@ -75,6 +84,11 @@ function executeJs(modId: string, jsContent: string) {
     document.head.appendChild(script);
   } finally {
     setExecutingModId(null);
+    window.removeEventListener("error", onError);
+  }
+  if (capturedError !== null) {
+    removeJs(modId);
+    throw new Error(`脚本执行失败：${capturedError}`);
   }
 }
 
@@ -140,6 +154,18 @@ const RESERVED_THEME_IDS = [
 ];
 
 /**
+ * 校验一层 token 键值表的值全部为字符串（JSON 可携带数字/对象/布尔等非字符串值，
+ * 下游消毒按 string 处理，非字符串值会在 applyTheme 抛 TypeError）。
+ */
+function findNonStringValue(record: Record<string, unknown> | undefined): string | null {
+  if (!record || typeof record !== "object") return null;
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value !== "string") return key;
+  }
+  return null;
+}
+
+/**
  * 校验 mod 主题结构（与后端 theme_loader::validate_theme_for_loading 同款口径）。
  * 通过返回 null，不通过返回错误描述字符串。
  */
@@ -154,6 +180,70 @@ function validateModTheme(theme: ThemeDefinition): string | null {
   const badKey = Object.keys(variables).find((k) => k.trim() === "" || k.startsWith("--"));
   if (badKey !== undefined) {
     return `变量名 "${badKey}" 无效（不能为空且不应包含 -- 前缀）`;
+  }
+  const badValueKey = findNonStringValue(variables);
+  if (badValueKey !== null) {
+    return `变量 "${badValueKey}" 的值必须是字符串`;
+  }
+  // tokens 各层（primitive/semantic/motion/layout 一层，component 两层）同样须为字符串值
+  const badToken = validateTokensLayer(theme.tokens, "主题");
+  if (badToken !== null) return badToken;
+  // 顶层 components（两层）与 assets/fonts（一层）同口径校验
+  if (theme.components && typeof theme.components === "object") {
+    for (const [component, slots] of Object.entries(theme.components)) {
+      const badSlot = findNonStringValue(slots);
+      if (badSlot !== null) {
+        return `组件 "${component}" 契约 "${badSlot}" 的值必须是字符串`;
+      }
+    }
+  }
+  for (const [field, table] of [["assets", theme.assets], ["fonts", theme.fonts]] as const) {
+    const badEntry = findNonStringValue(table);
+    if (badEntry !== null) {
+      return `${field} 条目 "${badEntry}" 的值必须是字符串`;
+    }
+  }
+  // css 自定义样式字段必须为字符串（theme/variant 两层同口径）
+  if (theme.css !== undefined && typeof theme.css !== "string") {
+    return "css 必须是字符串";
+  }
+  // variants 内的 variables / tokens 同样须为字符串值（component 层为两层结构）
+  if (theme.variants && typeof theme.variants === "object") {
+    for (const [variantName, variant] of Object.entries(theme.variants)) {
+      if (!variant || typeof variant !== "object") continue;
+      const badVariantVar = findNonStringValue(variant.variables);
+      if (badVariantVar !== null) {
+        return `变体 "${variantName}" 变量 "${badVariantVar}" 的值必须是字符串`;
+      }
+      const badVariantToken = validateTokensLayer(variant.tokens, `变体 "${variantName}"`);
+      if (badVariantToken !== null) return badVariantToken;
+      if (variant.css !== undefined && typeof variant.css !== "string") {
+        return `变体 "${variantName}" 的 css 必须是字符串`;
+      }
+    }
+  }
+  return null;
+}
+
+/** 校验 tokens 对象各层值均为字符串；通过返回 null，否则返回错误描述。 */
+function validateTokensLayer(
+  tokens: ThemeDefinition["tokens"],
+  owner: string,
+): string | null {
+  if (!tokens) return null;
+  for (const layerName of ["primitive", "semantic", "motion", "layout"] as const) {
+    const badToken = findNonStringValue(tokens[layerName]);
+    if (badToken !== null) {
+      return `${owner} token "${badToken}" 的值必须是字符串`;
+    }
+  }
+  if (tokens.component && typeof tokens.component === "object") {
+    for (const [component, slots] of Object.entries(tokens.component)) {
+      const badSlot = findNonStringValue(slots);
+      if (badSlot !== null) {
+        return `${owner} 组件 "${component}" token "${badSlot}" 的值必须是字符串`;
+      }
+    }
   }
   return null;
 }

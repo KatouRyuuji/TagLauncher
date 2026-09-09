@@ -58,7 +58,7 @@ fn get_tags_for_items(
 
     let mut tags_by_item: HashMap<i64, Vec<Tag>> = HashMap::new();
 
-    for chunk in item_ids.chunks(500) {
+    for chunk in item_ids.chunks(crate::services::item_service::IN_CHUNK) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
             "SELECT it.item_id, t.id, t.name, t.color
@@ -129,7 +129,11 @@ fn friendly_name_err(e: rusqlite::Error) -> String {
 
 /// 新建标签
 pub fn add_tag(conn: &Connection, name: &str, color: &str) -> Result<Tag, String> {
-    if name.trim().is_empty() {
+    crate::db::ensure_writes_allowed()?;
+    // 校验与落库统一使用 trim 后的值：否则 " 工具 " 校验通过却按原样落库，
+    // 与已有 "工具" 判定为不同名（UNIQUE 按原始字节比较）
+    let name = name.trim();
+    if name.is_empty() {
         return Err("标签名称不能为空".to_string());
     }
     conn.execute(
@@ -148,6 +152,12 @@ pub fn add_tag(conn: &Connection, name: &str, color: &str) -> Result<Tag, String
 
 /// 更新标签
 pub fn update_tag(conn: &Connection, id: i64, name: &str, color: &str) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
+    // 与 add_tag 同一口径：trim 后落库，空名拒绝
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("标签名称不能为空".to_string());
+    }
     let affected = conn
         .execute(
             "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
@@ -163,6 +173,7 @@ pub fn update_tag(conn: &Connection, id: i64, name: &str, color: &str) -> Result
 
 /// 删除标签
 pub fn remove_tag(conn: &Connection, id: i64) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let affected = conn
         .execute("DELETE FROM tags WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
@@ -174,10 +185,20 @@ pub fn remove_tag(conn: &Connection, id: i64) -> Result<(), String> {
 
 /// 全量替换单个对象标签的核心逻辑（不含事务，供 set_item_tags 与 set_many_item_tags 复用）。
 fn set_item_tags_core(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
+    // 入口去重（保序）：前端合并视图等路径可能带上重复 tag_id，
+    // 重复值会撞 item_tags 主键，抛裸 UNIQUE 错误
+    let mut seen = HashSet::new();
+    let tag_ids: Vec<i64> = tag_ids
+        .iter()
+        .copied()
+        .filter(|id| seen.insert(*id))
+        .collect();
+
     // 先校验对象与全部标签存在：否则 DELETE 之后 INSERT 才撞 FK，把裸约束错误抛给前端
     // （事务保证回滚无脏数据，但报错文案用户看不懂）。UI 量级下单条 SELECT 开销可忽略。
     ensure_exists(conn, "items", item_id, "对象")?;
-    for tag_id in tag_ids {
+    for tag_id in &tag_ids {
         ensure_exists(conn, "tags", *tag_id, "标签")?;
     }
 
@@ -277,6 +298,7 @@ pub(crate) fn ensure_exists(conn: &Connection, table: &str, id: i64, label: &str
 
 /// 新增父子关系：禁止自环；禁止形成环（parent 已是 child 的后代时拒绝）；重复添加幂等。
 pub fn add_tag_relation(conn: &Connection, parent_id: i64, child_id: i64) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     if parent_id == child_id {
         return Err("标签不能成为自己的父级".to_string());
     }
@@ -296,6 +318,7 @@ pub fn add_tag_relation(conn: &Connection, parent_id: i64, child_id: i64) -> Res
 
 /// 删除父子关系。
 pub fn remove_tag_relation(conn: &Connection, parent_id: i64, child_id: i64) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     conn.execute(
         "DELETE FROM tag_relations WHERE parent_id = ?1 AND child_id = ?2",
         params![parent_id, child_id],

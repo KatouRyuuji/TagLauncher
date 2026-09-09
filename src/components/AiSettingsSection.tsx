@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ask } from "@tauri-apps/plugin-dialog";
 import * as db from "../lib/db";
 import type { AiConfig } from "../lib/db";
 import { showToast } from "../lib/toast";
@@ -82,11 +83,37 @@ export function AiSettingsSection() {
     }
   };
 
-  const requestTagAll = (scope: AiTagAllDetail["scope"]) => {
-    if (!configured) {
+  const requestTagAll = async (scope: AiTagAllDetail["scope"]) => {
+    // 校验后端已保存配置（而非本地未保存的输入），口径与 flushQueuedAutoTag 一致
+    let saved: AiConfig;
+    try {
+      saved = await db.aiGetConfig();
+    } catch (e) {
+      showToast(`读取 AI 配置失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      return;
+    }
+    if (!saved.baseUrl.trim() || saved.hasApiKey !== true || !saved.model.trim()) {
       showToast("请先填写并保存 API 配置", "warning");
       return;
     }
+    // 先统计待打标对象数并弹确认：每个对象 1 次 API 调用，批量打标可能产生可观耗时与费用
+    let count: number;
+    try {
+      const items = await db.getItems();
+      count = scope === "untagged" ? items.filter((item) => item.tags.length === 0).length : items.length;
+    } catch (e) {
+      showToast(`统计对象失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      return;
+    }
+    if (count === 0) {
+      showToast(scope === "untagged" ? "没有未打标的对象" : "当前没有对象", "info");
+      return;
+    }
+    const confirmed = await ask(
+      `将为 ${count} 个对象调用 AI 打标，预计发起 ${count} 次 API 请求。是否继续？`,
+      { title: "AI 批量打标", kind: "info" },
+    );
+    if (!confirmed) return;
     window.dispatchEvent(new CustomEvent<AiTagAllDetail>(AI_TAG_ALL_EVENT, { detail: { scope } }));
   };
 
@@ -169,7 +196,7 @@ export function AiSettingsSection() {
             <input
               type="range"
               min={1}
-              max={12}
+              max={20}
               value={config.maxTags}
               onChange={(e) => update("maxTags", Number(e.target.value))}
               className="mt-3 w-full accent-[var(--accent-primary)]"
@@ -214,10 +241,10 @@ export function AiSettingsSection() {
           </button>
         )}
         <div className="mx-1 h-6 w-px bg-[var(--border-subtle)]" />
-        <button type="button" onClick={() => requestTagAll("untagged")} disabled={!configured} className="action-button px-4 text-xs disabled:opacity-50">
+        <button type="button" onClick={() => void requestTagAll("untagged")} disabled={!configured} className="action-button px-4 text-xs disabled:opacity-50">
           为未打标对象打标
         </button>
-        <button type="button" onClick={() => requestTagAll("all")} disabled={!configured} className="action-button px-4 text-xs disabled:opacity-50">
+        <button type="button" onClick={() => void requestTagAll("all")} disabled={!configured} className="action-button px-4 text-xs disabled:opacity-50">
           为全部对象打标
         </button>
       </div>

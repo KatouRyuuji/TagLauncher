@@ -183,6 +183,10 @@ test("B9 @ 严格模式绕过同义词扩展", () => {
   assert.deepEqual(searchWithIndex(allIndex, "@四小王八").map((i) => i.id), []);
 });
 
+test("B11 单输 @ 返回空结果（无意义输入不降级为全量）", () => {
+  assert.deepEqual(searchWithIndex(allIndex, "@").map((i) => i.id), []);
+});
+
 test("B10 多层级标签闭包（两跳后代）", () => {
   const multiLevelDescMap = buildDescendantsMap([{ parentId: 100, childId: 10 }, { parentId: 10, childId: 1 }]);
   const multiLevelExpand = (id: number) => multiLevelDescMap.get(id) ?? new Set([id]);

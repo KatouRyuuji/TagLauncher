@@ -22,6 +22,9 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
   const [name, setName] = useState(tag?.name || "");
   const [color, setColor] = useState(tag?.color || presetColors[5] || presetColors[0]);
   const [saving, setSaving] = useState(false);
+  // 删除为不可撤销的级联操作（标签会从所有对象上移除）：两步内联确认，
+  // 与 DataSettingsSection 的内联确认同模式，避免再叠一层模态焦点陷阱。
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEscapeKey(onClose);
   const contentRef = useFocusTrap<HTMLDivElement>({ active: true });
@@ -120,10 +123,10 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
           </div>
 
           <div className="mt-6 flex items-center gap-2">
-            {onDelete && (
+            {onDelete && !confirmingDelete && (
               <button
                 type="button"
-                onClick={onDelete}
+                onClick={() => setConfirmingDelete(true)}
                 className="action-button"
                 style={{
                   color: "var(--color-danger)",
@@ -133,6 +136,27 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
               >
                 删除
               </button>
+            )}
+            {onDelete && confirmingDelete && (
+              <>
+                <span className="text-xs text-[var(--color-danger)]">
+                  {label === "文件柜" ? "确认删除？柜内对象会保留在库中" : "确认删除？将从所有对象上移除"}
+                </span>
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  className="action-button action-button-danger"
+                >
+                  确认删除
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  className="action-button"
+                >
+                  取消
+                </button>
+              </>
             )}
 
             <div className="flex-1" />

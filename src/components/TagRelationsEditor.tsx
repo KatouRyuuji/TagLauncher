@@ -232,12 +232,12 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                 )}
               </div>
 
-              {/* 该标签关联的对象（图标 + 名称） */}
-              <div className="mt-4 rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_70%,transparent)] p-4">
-                <div className="text-label">关联对象 · {focusedItems.length}</div>
-                {focusedItems.length === 0 ? (
-                  <p className="mt-2 text-xs text-[var(--text-faint)]">还没有对象打上此标签</p>
-                ) : (
+              {/* 该标签关联的对象（图标 + 名称）；空态用一行提示，不渲染大空盒 */}
+              {focusedItems.length === 0 ? (
+                <p className="mt-4 text-xs text-[var(--text-faint)]">关联对象 · 0 —— 还没有对象打上此标签</p>
+              ) : (
+                <div className="mt-4 rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_70%,transparent)] p-4">
+                  <div className="text-label">关联对象 · {focusedItems.length}</div>
                   <div className="mt-2 grid max-h-[180px] grid-cols-2 gap-2 overflow-y-auto">
                     {focusedItems.slice(0, 30).map((it) => (
                       <div
@@ -257,8 +257,8 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                       </div>
                     )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
               </div>
             )}
           </div>

@@ -21,6 +21,8 @@ import {
   setWorkspaceSelectionAnchor,
 } from "../lib/workspaceChrome";
 import { useAppStore } from "../stores/appStore";
+import { useInternalDragStore } from "../stores/internalDragStore";
+import { requestSelectionScrollFollow } from "../components/SelectionCanvas";
 import type { ItemWithTags } from "../types";
 
 interface WorkspaceHotkeysOptions {
@@ -116,11 +118,18 @@ export function useWorkspaceHotkeys({
       const ctrl = event.ctrlKey || event.metaKey;
       const composing = event.isComposing || event.key === "Process";
 
+      // Ctrl+K 有意保持在所有守卫之前（含内部拖拽与遮罩守卫）：
+      // 命令面板/帮助打开时也需 Ctrl+K 关闭，全局可用是设计而非疏漏。
       if (ctrl && event.key.toLowerCase() === "k") {
         event.preventDefault();
         ctx.setCommandPaletteOpen(!ctx.commandPaletteOpen);
         return;
       }
+
+      // 内部拖拽（标签/对象拖动）进行中，其余工作台热键整体让路：
+      // 避免拖拽中 Esc 清空选中、Delete 弹移除确认等击穿。
+      // 拖拽本身的 Esc 取消由 internalPointerDrag 在捕获阶段处理（并阻断传播）。
+      if (useInternalDragStore.getState().drag !== null) return;
 
       // 尊重内层组件已消费的按键（preventDefault），避免双重响应；
       // 位于 Ctrl+K 之后：命令面板开关保持全局可用（面板打开时也需 Ctrl+K 关闭）。
@@ -130,25 +139,6 @@ export function useWorkspaceHotkeys({
       if (isModModalOpen()) return;
       if (isTransientMenuOpen()) return;
       if (ctx.blocked) return;
-
-      if (ctrl && event.key.toLowerCase() === "f") {
-        event.preventDefault();
-        focusWorkspaceSearch();
-        return;
-      }
-
-      // F3 随处搜索：与 Ctrl+F 同口径（输入中也可用），主流启动器惯例键位
-      if (!ctrl && !event.altKey && !event.shiftKey && event.key === "F3") {
-        event.preventDefault();
-        focusWorkspaceSearch();
-        return;
-      }
-
-      if (ctrl && event.key === ",") {
-        event.preventDefault();
-        ctx.onOpenSettings();
-        return;
-      }
 
       // 快速预览分支必须位于遮罩守卫与背景组合键之前：QuickPreview 自身带
       // data-workspace-overlay（会被守卫拦截），且预览打开时 Ctrl+A/C/D 应
@@ -209,6 +199,27 @@ export function useWorkspaceHotkeys({
       // Delete / Ctrl+A / G / L / 方向键等不得穿透到工作台选中集。
       if (isWorkspaceOverlayOpen()) return;
 
+      // Ctrl+F / F3 / Ctrl+, 位于遮罩守卫之后：组件内弹窗打开时不得击穿焦点陷阱
+      // 去聚焦背景搜索框或开设置（Ctrl+K 是有意豁免的唯一组合键，见上方注释）。
+      if (ctrl && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        focusWorkspaceSearch();
+        return;
+      }
+
+      // F3 随处搜索：与 Ctrl+F 同口径（输入中也可用），主流启动器惯例键位
+      if (!ctrl && !event.altKey && !event.shiftKey && event.key === "F3") {
+        event.preventDefault();
+        focusWorkspaceSearch();
+        return;
+      }
+
+      if (ctrl && event.key === ",") {
+        event.preventDefault();
+        ctx.onOpenSettings();
+        return;
+      }
+
       if (ctrl && event.key.toLowerCase() === "a" && !typing) {
         event.preventDefault();
         ctx.setSelectedItemIds(ctx.items.map((item) => item.id));
@@ -238,12 +249,13 @@ export function useWorkspaceHotkeys({
 
       if (typing) {
         if (event.key === "Escape" && event.target instanceof HTMLElement && event.target.id === "workspace-search") {
+          event.preventDefault();
           if (ctx.searchQuery || (event.target instanceof HTMLInputElement && event.target.value)) {
-            event.preventDefault();
             ctx.setSearchQuery("");
             resetWorkspaceSearchInput();
-            event.target.blur();
           }
+          // 空查询聚焦时 Esc 也要有着落：仅移出焦点，回到全局热键语境
+          event.target.blur();
         }
         return;
       }
@@ -377,6 +389,7 @@ function selectVisible(
   setSelectedItemIds: (ids: number[]) => void,
 ): void {
   if (!visible.some((entry) => entry.id === item.id)) return;
+  requestSelectionScrollFollow(item.id);
   setSelectedItemIds([item.id]);
   scrollItemIntoView(item.id);
 }
@@ -388,6 +401,7 @@ function jumpSelection(
 ): void {
   const next = items[index];
   if (!next) return;
+  requestSelectionScrollFollow(next.id);
   setSelectedItemIds([next.id]);
   scrollItemIntoView(next.id);
 }
@@ -421,6 +435,7 @@ function extendSelection(
   }
   const ids = rangeSelectionIds(items, anchor, focus.id);
   if (ids.length === 0) return;
+  requestSelectionScrollFollow(focus.id);
   setSelectedItemIds(ids);
   scrollItemIntoView(focus.id);
 }

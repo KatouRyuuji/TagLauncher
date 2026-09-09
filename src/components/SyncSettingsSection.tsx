@@ -4,6 +4,7 @@ import type { SyncConfig, RemoteBackup } from "../lib/db";
 import { formatBytes } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
 import { SettingsField, inputClass } from "./SettingsField";
+import { useAppStore } from "../stores/appStore";
 
 const EMPTY_CONFIG: SyncConfig = {
   url: "",
@@ -25,6 +26,7 @@ export function SyncSettingsSection() {
   const [config, setConfig] = useState<SyncConfig>(EMPTY_CONFIG);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<BusyAction>(null);
+  const beginRestart = useAppStore((s) => s.beginRestart);
   const [showPassword, setShowPassword] = useState(false);
   const [backups, setBackups] = useState<RemoteBackup[] | null>(null);
   /** 待确认恢复的云端文件名（内联确认，恢复会覆盖本机数据） */
@@ -125,10 +127,8 @@ export function SyncSettingsSection() {
     setBusy("restore");
     try {
       const safety = await db.syncRestore(name);
-      showToast(`已从云端恢复（原数据已备份到 ${safety}），应用即将重启`, "success");
-      window.setTimeout(() => {
-        void db.restartApp().catch(() => showToast("请手动重启应用以生效", "warning"));
-      }, 1500);
+      // 后端写入已冻结：阻断遮罩 + 自动重启（busy 不再复位，遮罩阻断一切交互）
+      beginRestart(`已从云端恢复（原数据已备份到 ${safety}）`);
     } catch (e) {
       showToast(`恢复失败：${e instanceof Error ? e.message : String(e)}`, "error");
       setBusy(null);

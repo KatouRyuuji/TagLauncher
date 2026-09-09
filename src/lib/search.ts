@@ -37,7 +37,7 @@ interface SearchFieldsCacheEntry {
 }
 
 const searchFieldsCache = new Map<number, SearchFieldsCacheEntry>();
-/** 缓存上限：超出即清空重建，避免对象删除后条目残留 */
+/** 缓存上限：超限淘汰最旧一半（保留热点），同时避免对象删除后条目长期残留 */
 const SEARCH_FIELDS_CACHE_LIMIT = 20000;
 const queryExprCache = new Map<string, Expr | null>();
 
@@ -65,6 +65,9 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
   const tagsKey = item.tags.map((tag) => `${tag.id}:${tag.name}`).join("|");
   const cached = searchFieldsCache.get(item.id);
   if (cached && cached.name === item.name && cached.path === item.path && cached.tagsKey === tagsKey) {
+    // 命中即刷新热度（Map 按插入序迭代，重插移到最新位），超限淘汰才落在真正冷门的条目上
+    searchFieldsCache.delete(item.id);
+    searchFieldsCache.set(item.id, cached);
     return { item, fields: cached.fields };
   }
 
@@ -82,7 +85,15 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
     tagEntries,
   };
 
-  if (searchFieldsCache.size >= SEARCH_FIELDS_CACHE_LIMIT) searchFieldsCache.clear();
+  if (searchFieldsCache.size >= SEARCH_FIELDS_CACHE_LIMIT) {
+    // 超限淘汰最旧一半：Map 按插入序迭代，头部即最冷条目（整体 clear 会连热点一起清掉）
+    let evictCount = Math.floor(SEARCH_FIELDS_CACHE_LIMIT / 2);
+    for (const key of searchFieldsCache.keys()) {
+      if (evictCount <= 0) break;
+      searchFieldsCache.delete(key);
+      evictCount -= 1;
+    }
+  }
   searchFieldsCache.set(item.id, { name: item.name, path: item.path, tagsKey, fields });
 
   return {
@@ -441,6 +452,10 @@ function evaluateExpr(entry: SearchIndexEntry, expr: Expr, mode: SearchMode): bo
 export function searchWithIndex(index: SearchIndex, query: string): ItemWithTags[] {
   const normalized = query.trim();
   if (!normalized) return index.entries.map((entry) => entry.item);
+
+  // 单输 @ 属明确无意义输入（严格前缀后无词项）：返回空而非全量。
+  // 其它残缺表达式（如 "tag&&"）保持宽松降级，不崩即可。
+  if (normalized === "@") return [];
 
   const expr = parseQuery(normalized);
   if (!expr) return index.entries.map((entry) => entry.item);

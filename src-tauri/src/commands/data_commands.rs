@@ -18,6 +18,8 @@ use tauri::State;
 
 const DB_FILE_NAME: &str = "taglauncher.db";
 const BACKUPS_DIR_NAME: &str = "Backups";
+/// 迁移中的临时文件名（同目录先写临时名再 rename 为终名，保证迁移原子性）
+const MIGRATING_FILE_NAME: &str = "taglauncher.db.migrating";
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +66,7 @@ pub fn set_data_directory(
     new_dir: String,
     migrate: bool,
 ) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let paths = path_service::resolve_app_paths(&app);
     let raw_dir = PathBuf::from(new_dir.trim());
     if raw_dir.as_os_str().is_empty() {
@@ -95,7 +98,19 @@ pub fn set_data_directory(
                     .to_string(),
             );
         }
-        snapshot_live_db(&db, &target_db)?;
+        // 原子迁移：先快照到同目录临时文件再 rename 落位。直接以终名写入时断电/崩溃
+        // 会留下半成品 taglauncher.db——此后既不能迁移（目标已存在）也不能采用（库不完整）。
+        let temp_db = new_dir.join(MIGRATING_FILE_NAME);
+        // 进入迁移前清理上次中断残留的同名临时文件（含 WAL 旁文件）
+        let temp_str = temp_db.to_string_lossy().to_string();
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", temp_str, suffix));
+        }
+        snapshot_live_db(&db, &temp_db)?;
+        if let Err(e) = std::fs::rename(&temp_db, &target_db) {
+            let _ = std::fs::remove_file(&temp_db);
+            return Err(format!("迁移失败：无法将快照落位到目标目录: {}", e));
+        }
     } else if target_db.exists() {
         // 采用目标目录已有库：先校验它是合法的 TagLauncher 库，
         // 否则重定向后下次启动会因损坏/不兼容库直接起不来。
@@ -113,14 +128,20 @@ pub fn set_data_directory(
     let default_dir = path_service::default_save_dir(&paths.root_dir);
     let redirect = if new_dir == default_dir { None } else { Some(new_dir.as_path()) };
     path_service::write_data_dir_redirect(&paths.root_dir, redirect)?;
+    // 重定向已生效：重启前对当前（旧）库的写入都会随重启丢失，冻结写入
+    db.freeze_writes();
     Ok(())
 }
 
 /// 恢复默认数据目录（exe 同级 Save/）。返回后需重启生效。
 #[tauri::command]
-pub fn reset_data_directory(app: tauri::AppHandle) -> Result<(), String> {
+pub fn reset_data_directory(app: tauri::AppHandle, db: State<Database>) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let paths = path_service::resolve_app_paths(&app);
-    path_service::write_data_dir_redirect(&paths.root_dir, None)
+    path_service::write_data_dir_redirect(&paths.root_dir, None)?;
+    // 与 set_data_directory 同理：重启前对当前库的写入都会随重启丢失，冻结写入
+    db.freeze_writes();
+    Ok(())
 }
 
 /// 一键备份：把当前库快照到 Save/Backups/taglauncher_backup_<UTC时间戳>.db，返回备份文件路径。
@@ -172,15 +193,41 @@ pub fn import_data(
     db: State<Database>,
     source_path: String,
 ) -> Result<String, String> {
+    crate::db::ensure_writes_allowed()?;
     let source = PathBuf::from(source_path.trim());
-    let source_version = validate_importable_db(&source)?;
 
     // 防御：来源就是实库自身时，"先快照安全备份 → 再覆盖实库"会变成自己灌自己（no-op），
-    // 用户以为导入了数据其实什么都没发生（与 export 侧 :153 的自身防御同理）。
+    // 用户以为导入了数据其实什么都没发生（与 export 侧的自身防御同理）。
     let live_path = path_service::resolve_app_paths(&app).save_dir.join(DB_FILE_NAME);
     if source == live_path {
         return Err("导入来源不能是当前正在使用的数据库文件".to_string());
     }
+
+    // 先把来源拷到临时文件再校验/灌库：直接打开用户选中的文件会拒绝只读位置
+    // （只读共享盘/只读属性），且 WAL 来源在读写打开时会被恢复+checkpoint 静默改写。
+    // WAL/SHM 旁文件一并暂存：WAL 模式下来源库的最近提交可能还在 -wal 里，
+    // 只拷主文件会静默丢掉这部分数据；暂存后 WAL 在临时副本上回放，不碰用户原文件。
+    let staged = std::env::temp_dir().join(format!(
+        "taglauncher_import_{}_{}.db",
+        std::process::id(),
+        utc_timestamp_compact()
+    ));
+    // 暂存守卫先于一切写入建立：任一步失败（含主文件 copy 半截）都清理暂存
+    let staged_guard = StagedFile(staged.clone());
+    std::fs::copy(&source, &staged).map_err(|e| format!("无法读取来源文件: {}", e))?;
+    let source_str = source.to_string_lossy().to_string();
+    let staged_str = staged.to_string_lossy().to_string();
+    for suffix in ["-wal", "-shm"] {
+        let side = format!("{}{}", source_str, suffix);
+        if Path::new(&side).exists()
+            && std::fs::copy(&side, format!("{}{}", staged_str, suffix)).is_err()
+        {
+            // WAL 暂存失败 = 来源最近提交可能缺失：留痕，不静默
+            eprintln!("[import] 来源旁文件 {:?} 暂存失败，导入内容可能缺少最近提交", side);
+        }
+    }
+    let source_version = validate_importable_db(&staged)?;
+    let source = staged;
 
     // 版本区间校验：来源库 schema 不得高于当前应用支持的版本（= 当前实库已迁移到的版本），
     // 否则导入后可能触发不兼容 / 破坏性迁移。
@@ -217,9 +264,33 @@ pub fn import_data(
         };
     }
 
-    crate::commands::sync_commands::reapply_local_secrets(&db, &local_secrets)?;
+    // 凭据回填失败不影响导入本身（数据已覆盖完成）：与 sync_restore 同口径——
+    // 先冻结写入再返回说明文案，避免前端走"导入失败"分支让用户在已被覆盖的新库上继续操作。
+    if let Err(e) = crate::commands::sync_commands::reapply_local_secrets(&db, &local_secrets) {
+        db.freeze_writes();
+        return Err(format!(
+            "数据已导入，但保留本机凭据失败（{}），AI/云同步凭据需在重启后重新填写。原数据备份：{}",
+            e,
+            safety_backup.to_string_lossy()
+        ));
+    }
+    drop(staged_guard);
 
+    // 实库内容已被来源库覆盖：重启前的一切后续写入都会随重启丢失，冻结写入
+    db.freeze_writes();
     Ok(safety_backup.to_string_lossy().to_string())
+}
+
+/// 暂存文件清理守卫：作用域结束即删（导入用的来源副本，含 WAL/SHM 旁文件）。
+struct StagedFile(PathBuf);
+impl Drop for StagedFile {
+    fn drop(&mut self) {
+        let s = self.0.to_string_lossy().to_string();
+        let _ = std::fs::remove_file(&self.0);
+        for suffix in ["-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", s, suffix));
+        }
+    }
 }
 
 /// 重启应用（数据目录切换 / 导入完成后调用）。
@@ -295,7 +366,9 @@ pub fn validate_importable_db(source: &Path) -> Result<u32, String> {
     if !source.exists() {
         return Err("来源文件不存在".to_string());
     }
-    let conn = Connection::open_with_flags(source, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    // 读写打开：quick_check 校验 FTS5 反向索引需要可写连接（只读/query_only 会误报
+    // "unable to validate the inverted index ... readonly database"）。校验本身不改库内容。
+    let conn = Connection::open(source)
         .map_err(|e| format!("无法打开来源文件（不是有效的 SQLite 数据库？）: {}", e))?;
     let version: u32 = conn
         .query_row(
@@ -306,6 +379,15 @@ pub fn validate_importable_db(source: &Path) -> Result<u32, String> {
         .unwrap_or(0);
     if version == 0 {
         return Err("来源文件不是有效的 TagLauncher 数据库（缺少 schema_version）".to_string());
+    }
+    // 完整性校验：损坏库（截断/写坏）即使读得出 schema_version，覆盖实库后会让应用
+    // 起不来。导入与云端恢复共用本校验（quick_check 通过时恰返回单行 "ok"）。
+    let healthy = conn
+        .query_row("PRAGMA quick_check", [], |r| r.get::<_, String>(0))
+        .map(|first| first == "ok")
+        .unwrap_or(false);
+    if !healthy {
+        return Err("来源数据库已损坏（完整性校验未通过）".to_string());
     }
     Ok(version)
 }

@@ -326,22 +326,22 @@ export function useTheme() {
         return;
       }
 
-      // 纯状态更新：是否应用由下方监听 modThemes 的 effect 依据 desiredThemeIdRef 统一决定
-      setModThemes((prev) => {
-        const exists = prev.some((t) => t.id === theme.id);
-        const next = exists ? prev.map((t) => (t.id === theme.id ? theme : t)) : [...prev, theme];
-        modThemesRef.current = next;
-        return next;
-      });
+      // 以 modThemesRef 为 prev 镜像同步计算 next 并先更新 ref（领先一拍），
+      // 与 custom 路径 refreshCustomThemes 同一口径：修复「MOD_THEME_ADDED 后同一
+      // 微任务链里立即 setTheme(mod主题)」时渲染尚未 flush、findTheme miss 而错误
+      // 回退默认主题并持久化的竞态（回归测试：useTheme.race.test.tsx）。
+      const prev = modThemesRef.current;
+      const exists = prev.some((t) => t.id === theme.id);
+      const next = exists ? prev.map((t) => (t.id === theme.id ? theme : t)) : [...prev, theme];
+      modThemesRef.current = next;
+      setModThemes(next);
     };
 
     const handleRemoved = (e: Event) => {
       const themeId = (e as CustomEvent<string>).detail;
-      setModThemes((prev) => {
-        const next = prev.filter((theme) => theme.id !== themeId);
-        modThemesRef.current = next;
-        return next;
-      });
+      const next = modThemesRef.current.filter((theme) => theme.id !== themeId);
+      modThemesRef.current = next;
+      setModThemes(next);
       // 以 desiredThemeIdRef 为唯一意图来源：被移除的正是当前意图主题时回退到默认主题
       if (desiredThemeIdRef.current === themeId) {
         const fallback = getDefaultTheme();

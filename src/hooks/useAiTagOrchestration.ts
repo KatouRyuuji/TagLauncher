@@ -56,14 +56,21 @@ export function useAiTagOrchestration({
     rawCancel();
   }, [rawCancel]);
 
-  // 按名称查找或创建标签，返回 id。直接读 store 保证同一串行批次内的最新态。
+  // 当前批次的 allowNewTags 配置（每次启动前从后端已保存配置刷新）：
+  // ensureTag 据此决定词表外标签是创建还是跳过
+  const allowNewTagsRef = useRef(true);
+
+  // 按名称查找或创建标签，返回 id；禁止新建且不在词表时返回 null（跳过，不创建）。
+  // 直接读 store 保证同一串行批次内的最新态。
   const ensureTagByName = useCallback(
-    async (name: string): Promise<number> => {
+    async (name: string): Promise<number | null> => {
       const normalized = name.trim();
       const existing = useAppStore
         .getState()
         .tags.find((t) => t.name.toLowerCase() === normalized.toLowerCase());
       if (existing) return existing.id;
+      // 后端已按词表过滤（allow_new_tags=false 时），此处是第二道防线
+      if (!allowNewTagsRef.current) return null;
       const created = await addTag(normalized, pickRandomTagColor());
       return created.id;
     },
@@ -81,24 +88,34 @@ export function useAiTagOrchestration({
 
   // 设置页触发的"一键打标"
   useEffect(() => {
-    const onTagAll = (event: Event) => {
+    const onTagAll = async (event: Event) => {
       const detail = (event as CustomEvent<AiTagAllDetail>).detail;
       const scope = detail?.scope ?? "all";
+      // 与 flushQueuedAutoTag 同口径：启动前校验后端已保存配置，
+      // 防止把设置页未保存的输入当作已配置
+      const cfg = await db.aiGetConfig().catch(() => null);
+      if (!cfg || !cfg.baseUrl.trim() || !cfg.hasApiKey || !cfg.model.trim()) {
+        showToast("请先填写并保存 API 配置", "warning");
+        return;
+      }
+      allowNewTagsRef.current = cfg.allowNewTags;
       const all = allItemsSnapshotRef.current;
       const targets = scope === "untagged" ? all.filter((item) => item.tags.length === 0) : all;
       if (targets.length === 0) {
         showToast(scope === "untagged" ? "没有未打标的对象" : "当前没有对象", "info");
         return;
       }
-      if (state.running) {
-        showToast("已有打标任务在进行中", "warning");
+      // 运行态用同步 isRunning() 判断：渲染态 state.running 有镜像滞后，
+      // 会竞态静默吞掉紧挨着发起的第二批请求
+      if (isRunning()) {
+        showToast("打标正在进行中", "warning");
         return;
       }
       void start(targets, aiPrimitives);
     };
     window.addEventListener(AI_TAG_ALL_EVENT, onTagAll);
     return () => window.removeEventListener(AI_TAG_ALL_EVENT, onTagAll);
-  }, [start, aiPrimitives, state.running]);
+  }, [start, aiPrimitives, isRunning]);
 
   // 排队新对象的统一排水：去重/去已打标后检查配置并启动静默打标。
   // 启动前用同步 isRunning() 复核（aiGetConfig 的 await 间隙可能已有任务启动），
@@ -116,19 +133,39 @@ export function useAiTagOrchestration({
       .filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)));
     if (targets.length === 0) return;
 
+    // 取配置失败（DB 暂不可读等瞬态）或配置不完整：恢复队列不丢该批对象，
+    // 待下次事件/任务结束后的补跑再试。autoTagOnAdd 关闭是用户显式意图，不回排。
+    let cfg;
     try {
-      const cfg = await db.aiGetConfig();
-      // 后端不再下发明文密钥，用 hasApiKey 判断是否已配置（apiKey 恒为空串）。
-      if (!cfg.autoTagOnAdd) return;
-      if (!cfg.baseUrl.trim() || !cfg.hasApiKey || !cfg.model.trim()) return;
-      if (isRunning()) {
-        pendingAutoTagRef.current.push(...targets);
-        return;
+      cfg = await db.aiGetConfig();
+    } catch (e) {
+      console.warn("[AI 自动打标] 读取配置失败，待打标对象已回排", e);
+      pendingAutoTagRef.current.push(...targets);
+      return;
+    }
+    // 后端不再下发明文密钥，用 hasApiKey 判断是否已配置（apiKey 恒为空串）。
+    if (!cfg.autoTagOnAdd) return;
+    if (!cfg.baseUrl.trim() || !cfg.hasApiKey || !cfg.model.trim()) {
+      pendingAutoTagRef.current.push(...targets);
+      return;
+    }
+    allowNewTagsRef.current = cfg.allowNewTags;
+    if (isRunning()) {
+      pendingAutoTagRef.current.push(...targets);
+      return;
+    }
+    try {
+      const result = await start(targets, aiPrimitives, { silent: true });
+      if (result.tagged > 0) showToast(`AI 已为 ${result.tagged} 个新对象自动打标`, "success");
+      // silent 批次不弹进度框：失败必须可见——汇总 toast + console 留痕
+      if (result.failed > 0) {
+        console.warn(`[AI 自动打标] ${result.failed} 个对象自动打标失败`, result.failures);
+        showToast(`自动打标失败 ${result.failed} 个对象`, "error");
       }
-      const tagged = await start(targets, aiPrimitives, { silent: true });
-      if (tagged > 0) showToast(`AI 已为 ${tagged} 个新对象自动打标`, "success");
-    } catch {
-      // 自动打标失败静默处理，不打扰用户导入流程
+    } catch (e) {
+      // start 自身异常（区别于单对象失败）：回排该批对象并留痕，不静默丢弃
+      console.warn("[AI 自动打标] 自动打标批次异常中断，待打标对象已回排", e);
+      pendingAutoTagRef.current.push(...targets);
     }
   }, [isRunning, start, aiPrimitives]);
 

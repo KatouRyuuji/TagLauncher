@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import * as db from "../lib/db";
+import { checkVersionMigration } from "../lib/db";
 
 interface MigrationStatus {
   show: boolean;
@@ -17,28 +17,28 @@ export function useVersionCheck() {
   });
 
   useEffect(() => {
+    // 卸载保护：组件销毁后不再 setState
+    let cancelled = false;
     const checkVersion = async () => {
       try {
-        const currentVersion = await db.getAppVersion();
-        const storedVersion = await db.getSetting("last_known_version");
-
-        if (storedVersion && storedVersion !== currentVersion) {
-          // 版本已更新
-          setMigration({
-            show: true,
-            appliedMigrations: ["检测到版本更新"],
-            fromVersion: storedVersion,
-            toVersion: currentVersion,
-          });
-        }
-
-        // 更新存储的版本号
-        await db.setSetting("last_known_version", currentVersion);
+        // 后端单命令原子完成"读旧版本 → 比较 → 写新版本"，
+        // 替代原先 读-比-写 三步 IPC（并发/中途失败会留下错误的版本记录）。
+        const result = await checkVersionMigration();
+        if (cancelled || !result) return;
+        setMigration({
+          show: true,
+          appliedMigrations: ["检测到版本更新"],
+          fromVersion: result.fromVersion,
+          toVersion: result.toVersion,
+        });
       } catch {
         // 静默失败（首次启动时 app_meta 可能还没有数据）
       }
     };
     void checkVersion();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const dismissMigration = () => {

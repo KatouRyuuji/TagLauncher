@@ -11,6 +11,7 @@ import {
   findClosestNumberDataAttribute,
 } from "../lib/internalPointerDrag";
 import { getFileSuffix, getTypeLabel } from "../lib/itemUtils";
+import { showToast } from "../lib/toast";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
@@ -18,8 +19,9 @@ import { useSlotContainer } from "./ItemCard";
 import { SearchHighlightText } from "./SearchHighlightText";
 import type { ItemCardProps } from "./ItemCard";
 
-/** 表头、数据行与骨架共同消费同一列模板，避免列宽漂移。 */
-export const ITEM_LIST_GRID_TEMPLATE = "72px minmax(0,1fr) minmax(160px,300px) 112px";
+/** 表头、数据行与骨架共同消费同一列模板，避免列宽漂移。
+ *  名称列下限 120px、标签列下限 96px：保证最小窗口（800px）下名称可读、表头不竖排。 */
+export const ITEM_LIST_GRID_TEMPLATE = "72px minmax(120px,1fr) minmax(96px,300px) 112px";
 /** 普通行的稳定基准高度；Mod footer 与多行标签仍由虚拟化器动态测量。 */
 export const ITEM_LIST_BASE_ROW_HEIGHT = 68;
 
@@ -40,6 +42,7 @@ function ItemRowComponent({
   onRequestRemoveFromApp,
   onUpdateThumbnail,
   selected,
+  contextSelection,
 }: ItemCardProps) {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [showTagEditor, setShowTagEditor] = useState(false);
@@ -98,10 +101,17 @@ function ItemRowComponent({
       },
       onDrop: async (target) => {
         if (target?.kind === "item-favorites") {
+          // 已收藏时拖到收藏区不再静默无效
           if (!item.is_favorite) await onToggleFavorite();
+          else showToast(`「${item.name}」已在收藏中`, "info");
           return;
         }
         if (target?.kind === "item-cabinet") {
+          // 前端可确定的重复（拖到当前所在柜）直接提示，不发请求
+          if (target.cabinetId === currentCabinetId) {
+            showToast(`「${item.name}」已在此文件柜中`, "info");
+            return;
+          }
           await onAddItemToCabinet(target.cabinetId, item.id);
           return;
         }
@@ -214,6 +224,7 @@ function ItemRowComponent({
           cabinets={cabinets}
           currentCabinetId={currentCabinetId}
           currentCabinetName={currentCabinetName}
+          contextSelection={contextSelection}
           position={menuPos}
           onClose={() => setMenuPos(null)}
           onLaunch={onLaunch}

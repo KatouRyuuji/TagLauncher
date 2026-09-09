@@ -60,6 +60,8 @@ export async function addItem(path: string): Promise<Item> {
 export interface AddItemsResult {
   items: Item[];
   failed: Array<{ path: string; error: string }>;
+  /** 本批实际新建记录数（items 中其余为命中既有记录的合并/重定位） */
+  createdCount: number;
 }
 
 /** 批量添加项目，单条失败不会阻断整批导入 */
@@ -331,6 +333,11 @@ export async function getSetting(key: string): Promise<string | null> {
 /** 写入设置值 */
 export async function setSetting(key: string, value: string): Promise<void> {
   return invokeCmd("set_setting", { key, value });
+}
+
+/** 版本迁移检查：后端原子完成"读旧版本 → 比较 → 写新版本"，有版本变更时返回区间 */
+export async function checkVersionMigration(): Promise<{ fromVersion: string; toVersion: string } | null> {
+  return invokeCmd("check_version_migration");
 }
 
 // ---- 数据目录 / 导入导出备份 ----

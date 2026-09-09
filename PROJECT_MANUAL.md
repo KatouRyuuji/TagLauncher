@@ -1,6 +1,6 @@
 # TagLauncher 项目手册
 
-> 适用版本：v1.7.3-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
+> 适用版本：v1.7.4-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
 
 ## 一、项目简介
 
@@ -71,7 +71,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands/  ← 92 个 Tauri 命令         │  │
+│  │  commands/  ← 93 个 Tauri 命令         │  │
 │  │             (按 item/cabinet/tag/mod/   │  │
 │  │              net/ai/data/settings/      │  │
 │  │              synonym/launch/            │  │
@@ -168,7 +168,7 @@ tag-launcher/
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── commands/             # Tauri 命令（按业务域分模块，92 个）
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，93 个）
 │   │   │   ├── item_commands.rs
 │   │   │   ├── cabinet_commands.rs
 │   │   │   ├── tag_commands.rs
@@ -276,7 +276,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ## 五、Tauri 命令清单
 
-后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 92 个 `#[tauri::command]`（含 `#[tauri::command(async)]` 变体），按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
+后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 93 个 `#[tauri::command]`（含 `#[tauri::command(async)]` 变体），按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
 
 | 命令名 | 参数 | 返回值 | 说明 |
 |--------|------|--------|------|
@@ -620,10 +620,10 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src
 | `entrypoints` | 是 | 入口文件：`css?` / `js?` / `theme?`（按 type 提供对应入口） |
 | `api_version` | 否 | 针对的 Mod API 版本（当前 3.2.0）；不声明则跳过版本协商 |
 | `permissions` | 否 | 权限声明列表（见 §15.2）；未声明不限、空数组 `[]` 则经 createScope 的调用无任何权限 |
-| `min_app_version` / `max_app_version` | 否 | 兼容的宿主版本区间（max 为 exclusive，超出由后端标记不兼容） |
+| `min_app_version` / `max_app_version` | 否 | 兼容的宿主版本区间（边界值本身兼容，即 min/max 均为 inclusive；超出由后端标记不兼容） |
 | `events` | 否 | Mod 间通信事件约定：`exports`（会发出的事件名）/ `imports`（会监听的事件名） |
 | `dependencies` | 否 | 依赖的其他 mod（modId → 语义版本表达式），加载时校验已启用 mod 是否满足 |
-| `contributes` | 否 | 宿主 UI 贡献点声明：菜单、路由、状态栏、设置页、快捷键、后台任务等 |
+| `contributes` | 否 | 宿主 UI 贡献点声明（菜单、路由、状态栏、设置页、快捷键、后台任务等）；当前仅作声明保留，宿主尚无消费方，实际 UI 贡献走 `createPanel` / `createToolbarButton` / `registerItemSlot` 等 API |
 
 ### 15.2 api_version 兼容规则（当前 3.2.0）
 
@@ -716,6 +716,7 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 
 - **CSP 保留 `script-src 'unsafe-inline'`**：Mod JS 经内联 `<script>` 注入执行（`src/lib/modRuntime.ts`），去掉 `unsafe-inline` 会破坏整个 Mod 体系。在「Mod 属可信扩展」的信任模型下（见 §十四），这是可接受的；CSP 其余条目（`default-src 'self'`、`object-src 'none'`、`frame-src 'none'` 等）仍作为纵深防御保留。
 - **`assetProtocol.scope: ["**"]`**：对象预览需要读取任意磁盘路径的图片/音频/图标（文件管理器核心功能），故 asset 协议不限定目录范围。该能力仅用于本地资源加载，不开放网络来源。
+- **`dangerousDisableAssetCspModification: ["script-src", "style-src"]`**：默认情况下 Tauri 会把 CSP 合并进 asset 协议响应，使 `asset:` 来源的脚本/样式被 CSP 阻断；Mod 主题包与预览资源需要经 asset 协议加载样式/脚本，故对这两项豁免。豁免仅限 asset 协议响应头，主文档 CSP 不受影响。
 
 
 

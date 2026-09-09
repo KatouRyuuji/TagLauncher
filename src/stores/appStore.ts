@@ -8,6 +8,7 @@
 
 import { create } from "zustand";
 import type { Tag, Cabinet, TagRelation } from "../types";
+import * as db from "../lib/db";
 import {
   isSortMode,
   isTypeFilter,
@@ -88,6 +89,14 @@ function persistWorkspacePrefs(prefs: Required<WorkspacePrefs>): void {
 
 const initialPrefs = loadWorkspacePrefs();
 
+/** 阻断式重启遮罩状态（数据目录切换 / 导入 / 云端恢复成功后激活） */
+export interface RestartOverlayState {
+  /** 操作结果说明（如"数据目录已切换"） */
+  message: string;
+  /** 自动重启失败：转为提示用户手动重启，不再放回主界面 */
+  restartFailed: boolean;
+}
+
 interface AppState {
   // ---- 数据缓存 ----
   tags: Tag[];
@@ -116,6 +125,12 @@ interface AppState {
   commandPaletteOpen: boolean;
   shortcutsHelpOpen: boolean;
   previewItemId: number | null;
+  /**
+   * 阻断式重启遮罩：切换数据目录 / 导入数据 / 云端恢复成功后激活。
+   * 这些操作后旧库写入已冻结、重启才生效，遮罩阻断一切交互并自动重启，
+   * 避免 1.x 秒窗口内用户的操作被静默丢弃。
+   */
+  restartOverlay: RestartOverlayState | null;
 
   // ---- Actions ----
   setTags: (tags: Tag[]) => void;
@@ -137,6 +152,8 @@ interface AppState {
   setCommandPaletteOpen: (open: boolean) => void;
   setShortcutsHelpOpen: (open: boolean) => void;
   setPreviewItemId: (id: number | null) => void;
+  /** 激活重启遮罩并自动重启；重启失败时遮罩转为"请手动重启" */
+  beginRestart: (message: string) => void;
   clearWorkspaceFilters: () => void;
 }
 
@@ -170,6 +187,7 @@ export const useAppStore = create<AppState>((set, get) => {
   commandPaletteOpen: false,
   shortcutsHelpOpen: false,
   previewItemId: null,
+  restartOverlay: null,
 
   setTags: (tags) => set((state) => sameTags(state.tags, tags) ? state : { tags }),
   setTagRelations: (relations) => set((state) => sameRelations(state.tagRelations, relations) ? state : { tagRelations: relations }),
@@ -263,6 +281,18 @@ export const useAppStore = create<AppState>((set, get) => {
   setCommandPaletteOpen: (open) => set((state) => state.commandPaletteOpen === open ? state : { commandPaletteOpen: open }),
   setShortcutsHelpOpen: (open) => set((state) => state.shortcutsHelpOpen === open ? state : { shortcutsHelpOpen: open }),
   setPreviewItemId: (id) => set((state) => state.previewItemId === id ? state : { previewItemId: id }),
+  beginRestart: (message) => {
+    set({ restartOverlay: { message, restartFailed: false } });
+    // 自动重启；失败时遮罩切换为"请手动重启"，不再放回主界面
+    //（后端写入已冻结，放回主界面只会让用户操作被静默丢弃）
+    void db.restartApp().catch(() =>
+      set((state) =>
+        state.restartOverlay
+          ? { restartOverlay: { ...state.restartOverlay, restartFailed: true } }
+          : state,
+      ),
+    );
+  },
   clearWorkspaceFilters: () => {
     set({
       selectedTagIds: [],

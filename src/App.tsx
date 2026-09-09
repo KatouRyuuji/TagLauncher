@@ -75,6 +75,7 @@ function App() {
   const tagGraphOpen = useAppStore((state) => state.tagGraphOpen);
   const commandPaletteOpen = useAppStore((state) => state.commandPaletteOpen);
   const shortcutsHelpOpen = useAppStore((state) => state.shortcutsHelpOpen);
+  const restartOverlay = useAppStore((state) => state.restartOverlay);
   const clearWorkspaceFilters = useAppStore((state) => state.clearWorkspaceFilters);
   const cabinets = useAppStore((state) => state.cabinets);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
@@ -253,7 +254,8 @@ function App() {
     migration.show ||
     aiModalOpen ||
     commandPaletteOpen ||
-    shortcutsHelpOpen;
+    shortcutsHelpOpen ||
+    restartOverlay !== null;
 
   useEffect(() => {
     if (!mobileSidebarOpen) return;
@@ -459,6 +461,25 @@ function App() {
       {tagGraphOpen && <TagGraphView allItems={allItems} />}
       <FloatingPanels />
       <ToastContainer />
+      {/* 阻断式重启遮罩：数据目录切换/导入/云端恢复成功后激活，自动重启；
+          层级低于 titlebar（窗口仍可拖动/关闭）、高于全部业务浮层（含 toast）。 */}
+      {restartOverlay && (
+        <div
+          data-region="restart-overlay"
+          role="alertdialog"
+          aria-modal="true"
+          aria-live="assertive"
+          className="fixed inset-0 flex items-center justify-center bg-[var(--bg-base)]"
+          style={{ zIndex: "calc(var(--z-titlebar) - 10)" }}
+        >
+          <div className="surface-card max-w-md px-8 py-7 text-center">
+            <p className="text-base font-semibold text-[var(--text-primary)]">
+              {restartOverlay.restartFailed ? "请手动重启应用以生效" : "操作完成，应用将重启"}
+            </p>
+            <p className="mt-2 break-all text-sm text-[var(--text-muted)]">{restartOverlay.message}</p>
+          </div>
+        </div>
+      )}
       <MigrationDialog
         open={migration.show}
         appliedMigrations={migration.appliedMigrations}

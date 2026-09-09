@@ -1,6 +1,6 @@
 # TagLauncher Mod 开发指南
 
-> 适用版本：v1.7.3-beta · Mod API v3.2.0
+> 适用版本：v1.7.4-beta · Mod API v3.2.0
 > 相关文档：[PROJECT_MANUAL.md](./PROJECT_MANUAL.md)（架构总览）· [THEME_GUIDE.md](./THEME_GUIDE.md)（主题开发）
 > 可运行示例：仓库根目录 `ExampleMod/preview/`
 
@@ -43,7 +43,7 @@ Mod 是**可信扩展**：Mod 的 JS 以内联 `<script>` 在应用主 realm 内
 | `events` | object | | Mod 间通信约定：`{ "exports": [...], "imports": [...] }` |
 | `dependencies` | object | | 依赖：`{ "modId": "^1.0.0" }`，支持 `^` / `>=` / 精确匹配。未满足的 Mod 跳过加载并告警 |
 | `load_after` | string[] | | 无版本约束的加载顺序声明 |
-| `contributes` | object | | 宿主 UI 贡献点声明（routes / menuItems / commands / statusItems / settingsPages / shortcuts / backgroundTasks / notifications） |
+| `contributes` | object | | 宿主 UI 贡献点声明（routes / menuItems / commands / statusItems / settingsPages / shortcuts / backgroundTasks / notifications）。当前仅作声明保留，宿主尚无消费方；实际 UI 贡献请用 `createPanel` / `createToolbarButton` / `registerItemSlot` 等 API |
 
 启动时所有已启用 Mod 按 `dependencies` + `load_after` 拓扑排序后串行加载；检测到循环依赖时按原始顺序追加并弹告警。
 

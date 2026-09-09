@@ -8,6 +8,7 @@ use tauri::State;
 
 #[tauri::command(async)]
 pub fn launch_item(db: State<Database>, id: i64) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let conn = db.get_conn();
     launch_service::launch_item(&conn, id)
 }

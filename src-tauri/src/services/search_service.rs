@@ -60,10 +60,26 @@ fn query_items_by_text(conn: &Connection, query: &str) -> Result<Vec<Item>, Stri
     }
 }
 
+/// LIKE 回退的"包含"匹配模式：转义用户输入中的 %/_（及转义符 \ 自身）后再包 %，
+/// 避免通配符改变匹配语义（如搜 "100%" 原样会匹配任意含 "100" 的条目）。
+/// 配合 SQL 侧的 ESCAPE '\' 子句生效。
+fn like_contains_pattern(query: &str) -> String {
+    let mut pattern = String::with_capacity(query.len() + 2);
+    pattern.push('%');
+    for c in query.chars() {
+        if c == '\\' || c == '%' || c == '_' {
+            pattern.push('\\');
+        }
+        pattern.push(c);
+    }
+    pattern.push('%');
+    pattern
+}
+
 fn query_items_by_text_like(conn: &Connection, query: &str) -> Result<Vec<Item>, String> {
-    let search_query = format!("%{}%", query);
+    let search_query = like_contains_pattern(query);
     let sql = format!(
-        "SELECT {} FROM items WHERE name LIKE ?1 OR path LIKE ?1 ORDER BY {}",
+        "SELECT {} FROM items WHERE name LIKE ?1 ESCAPE '\\' OR path LIKE ?1 ESCAPE '\\' ORDER BY {}",
         ITEM_COLS, ITEM_ORDER
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
@@ -162,12 +178,12 @@ fn query_items_by_text_and_tags_like(
     query: &str,
     tag_ids: &[i64],
 ) -> Result<Vec<Item>, String> {
-    let search_query = format!("%{}%", query);
+    let search_query = like_contains_pattern(query);
     let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
     let sql = format!(
         "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
          FROM items i
-         WHERE (i.name LIKE ?1 OR i.path LIKE ?1)
+         WHERE (i.name LIKE ?1 ESCAPE '\\' OR i.path LIKE ?1 ESCAPE '\\')
          AND {}
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
         clause
@@ -275,6 +291,25 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "foo(bar).exe");
+    }
+
+    #[test]
+    fn like_fallback_escapes_wildcards() {
+        let conn = setup_conn();
+        insert_item(&conn, "100% 完成.exe", r"D:\100% 完成.exe");
+        insert_item(&conn, "1000.exe", r"D:\1000.exe");
+        insert_item(&conn, "a_b.exe", r"D:\a_b.exe");
+        insert_item(&conn, "axb.exe", r"D:\axb.exe");
+
+        // "%" 按字面匹配，不再当通配符
+        let items = query_items_by_text_like(&conn, "100%").expect("like %");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "100% 完成.exe");
+
+        // "_" 按字面匹配
+        let items = query_items_by_text_like(&conn, "a_b").expect("like _");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "a_b.exe");
     }
 
     #[test]

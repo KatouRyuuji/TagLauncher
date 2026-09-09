@@ -141,14 +141,13 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         )?;
     }
 
-    // 幂等回填 FTS 索引：老库可能 items 已有数据但 items_fts 为空
-    // （历史版本跳过了表重建 / 触发器只对增删改生效，不回填历史行）。
-    // 仅在 items_fts 为空且 items 有数据时执行 external-content FTS5 的 rebuild，
-    // 避免每次启动都重建造成开销。
+    // 幂等自愈 FTS 索引：触发器只对增删改生效，历史版本的表重建 / 备份恢复等路径可能
+    // 让 items_fts 与 items 行数不一致（检索结果悄悄缺行）。行数不一致即对
+    // external-content FTS5 执行 rebuild；正常启动两者相等，零开销。
     let fts_count: i64 =
         conn.query_row("SELECT count(*) FROM items_fts", [], |r| r.get(0))?;
     let items_count: i64 = conn.query_row("SELECT count(*) FROM items", [], |r| r.get(0))?;
-    if fts_count == 0 && items_count > 0 {
+    if fts_count != items_count {
         conn.execute("INSERT INTO items_fts(items_fts) VALUES('rebuild')", [])?;
     }
 

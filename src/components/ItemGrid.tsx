@@ -2,10 +2,11 @@ import type { ItemViewProps } from "../types";
 import { ItemCard } from "./ItemCard";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
-import { SelectionCanvas, type Rect } from "./SelectionCanvas";
+import { SelectionCanvas, consumeSelectionScrollFollow, type Rect } from "./SelectionCanvas";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { gridOverscanRows, setWorkspaceGridLanes } from "../lib/workspaceChrome";
+import type { ContextSelectionInfo } from "./ItemCard";
 
 /** 网格行间距（12px），与骨架屏的 gap-3 保持一致。 */
 const GRID_GAP = 12;
@@ -47,10 +48,12 @@ const ItemGridCard = memo(function ItemGridCard({
   item,
   viewProps,
   selected,
+  contextSelection,
 }: {
   item: ItemViewProps["items"][number];
   viewProps: ItemCardViewProps;
   selected: boolean;
+  contextSelection: ContextSelectionInfo | null;
 }) {
   const {
     tags,
@@ -89,6 +92,7 @@ const ItemGridCard = memo(function ItemGridCard({
       onRequestRemoveFromApp={onRequestRemoveFromApp}
       onUpdateThumbnail={onUpdateThumbnail}
       selected={selected}
+      contextSelection={contextSelection}
     />
   );
 });
@@ -189,6 +193,14 @@ export function ItemGrid({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => GRID_ROW_EST,
+    // 行 key 用内容身份（首项 id + 列数）而非默认行索引：换柜/筛选/排序/列数变化后
+    // 行 key 随之变化，React 重建行 DOM 触发 measureElement 重测，缓存未命中时
+    // 同步读真实行高。索引复用的 key 会让旧行高残留在 itemSizeCache 里
+    // （v3 同步测量命中缓存即不读 DOM），表现为行间间隙/重叠。
+    getItemKey: (index) => {
+      const first = items[index * lanes];
+      return first ? `${first.id}@${lanes}` : index;
+    },
     // 列数自适应 overscan：一行卡片越多预渲染越贵，行数相应减少
     overscan: gridOverscanRows(lanes),
   });
@@ -207,12 +219,10 @@ export function ItemGrid({
     rowMetricsRef.current.clear();
   }, [lanes, items]);
 
-  // lanes/items 变化后，同一行索引对应的内容与高度已失效，但虚拟化器按索引缓存测量值、
-  // 且 key 相同不会重新触发 measureElement：必须主动清空测量缓存强制重测，
-  // 否则滚动总高度与行位置按旧高度计算，出现滚动条长度不符、快速滚动空白/跳变。
-  useLayoutEffect(() => {
-    virtualizer.measure();
-  }, [virtualizer, lanes, items]);
+  // 行高重测无需 virtualizer.measure()：getItemKey 已按内容身份变化触发
+  // measureElement 重测；同 key 行的纯高度变化（编辑标签等）由虚拟器内部
+  // ResizeObserver 自动校正。measure() 会清空 itemSizeCache 且复用的行 DOM
+  // 不会重新触发 ref，高度未变的行将永久停留在 estimateSize（间隙/重叠）。
 
   const lastSelectedId = selectedItemIds[selectedItemIds.length - 1];
   const skipScrollRef = useRef(true);
@@ -229,10 +239,26 @@ export function ItemGrid({
     }
     if (lastScrolledIdRef.current === lastSelectedId) return;
     lastScrolledIdRef.current = lastSelectedId;
+    // 仅键盘单步导航（方向键/Home/End/Shift 扩展）跟随滚动；Ctrl+A 全选、
+    // 框选、批量选择不设置跟随标记，视图保持原地（SelectionCanvas 顶部有标记说明）。
+    if (consumeSelectionScrollFollow() !== lastSelectedId) return;
     const index = items.findIndex((item) => item.id === lastSelectedId);
     if (index < 0) return;
     virtualizer.scrollToIndex(Math.floor(index / Math.max(1, lanes)), { align: "auto" });
   }, [lastSelectedId, items, lanes, virtualizer]);
+
+  // 右键命中多选集时，右键菜单的删除/收藏/复制路径作用于整个选中集；
+  // 仅多选（>1）时构造，单选/未选中为 null（菜单回退单对象语义）。
+  const contextSelectionInfo = useMemo<ContextSelectionInfo | null>(() => {
+    if (selectedItemIds.length <= 1) return null;
+    const idSet = new Set(selectedItemIds);
+    const selected = items.filter((item) => idSet.has(item.id));
+    return {
+      ids: selected.map((item) => item.id),
+      paths: selected.map((item) => item.path),
+      favoriteTarget: selected.some((item) => !item.is_favorite),
+    };
+  }, [items, selectedItemIds]);
 
   // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
   // 已渲染行使用真实测量值，未渲染行用 estimateSize 估算，从而支持跨屏框选。
@@ -322,6 +348,7 @@ export function ItemGrid({
                   item={item}
                   viewProps={viewProps}
                   selected={selectedItemIdSet.has(item.id)}
+                  contextSelection={selectedItemIdSet.has(item.id) ? contextSelectionInfo : null}
                 />
               ))}
             </div>

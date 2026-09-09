@@ -113,11 +113,42 @@ pub fn get_name(path: &str) -> String {
         .to_string()
 }
 
+/// 单文件元数据（锁外预采集）：get_identity(FFI) / compute_signature(读文件) /
+/// detect_type(文件系统) 是重 IO，与库写入分离后可在不持有全局 DB 锁时采集。
+struct AddFileMeta {
+    path: String,
+    name: String,
+    item_type: &'static str,
+    identity: Option<FileIdentity>,
+    sig: Option<file_identity::FileSignature>,
+}
+
+/// 采集单文件元数据（纯文件系统/FFI 访问，不触碰数据库）。
+fn collect_add_meta(path: &str) -> AddFileMeta {
+    AddFileMeta {
+        path: path.to_string(),
+        name: get_name(path),
+        item_type: detect_type(path),
+        identity: file_identity::get_identity(path),
+        sig: file_identity::compute_signature(path),
+    }
+}
+
 /// 添加项目：以文件身份(卷序列号+文件ID)为唯一键去重；取不到身份时回退按 path 去重。
 fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
-    let identity = file_identity::get_identity(path);
+    add_one_with_meta(conn, &collect_add_meta(path)).map(|(item, _created)| item)
+}
+
+/// 用预采集的元数据落库（add_one 与批量导入共用同一去重/冲突决策逻辑）。
+/// 返回 (item, created)：created=false 表示命中既有记录的合并/重定位（导入反馈据此区分新旧）。
+fn add_one_with_meta(conn: &Connection, meta: &AddFileMeta) -> Result<(Item, bool), String> {
+    let path = meta.path.as_str();
+    let identity = meta.identity;
     // 内容签名（仅文件有效）：用于跨盘兜底重定位，也用于身份命中时的二次校验。
-    let sig = file_identity::compute_signature(path);
+    let sig = meta.sig;
+    // 名称/类型已在锁外采集阶段算好（detect_type 含 FS IO），此处直接复用
+    let name = meta.name.as_str();
+    let item_type = meta.item_type;
     // 有效身份：默认取捕获到的身份；若与既有同身份记录发生签名冲突（克隆盘卷序列号重复），
     // 降级为无身份处理，避免改写既有记录、也避开身份唯一索引冲突。
     let mut effective_identity = identity;
@@ -160,8 +191,8 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
                              sig_size = ?4, sig_head = ?5, sig_tail = ?6 WHERE id = ?7",
                             params![
                                 path,
-                                get_name(path),
-                                detect_type(path),
+                                name,
+                                item_type,
                                 ns.size as i64,
                                 ns.head_hash as i64,
                                 ns.tail_hash as i64,
@@ -172,20 +203,20 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
                     } else {
                         conn.execute(
                             "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0 WHERE id = ?4",
-                            params![path, get_name(path), detect_type(path), existing_id],
+                            params![path, name, item_type, existing_id],
                         )
                         .map_err(|e| e.to_string())?;
                     }
-                    return select_item_by_id(conn, existing_id);
+                    return select_item_by_id(conn, existing_id).map(|item| (item, false));
                 }
             } else {
                 // 已管理同一文件（即使被改名/移动过）→ 更新到最新位置、清除失效标记后返回。
                 conn.execute(
                     "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0 WHERE id = ?4",
-                    params![path, get_name(path), detect_type(path), existing_id],
+                    params![path, name, item_type, existing_id],
                 )
                 .map_err(|e| e.to_string())?;
-                return select_item_by_id(conn, existing_id);
+                return select_item_by_id(conn, existing_id).map(|item| (item, false));
             }
         }
     }
@@ -218,8 +249,8 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
                          volume_serial = ?3, file_id = ?4, sig_size = ?5, sig_head = ?6, sig_tail = ?7 \
                          WHERE id = ?8",
                         params![
-                            get_name(path),
-                            detect_type(path),
+                            name,
+                            item_type,
                             idn.volume_serial as i64,
                             idn.file_id_hex(),
                             sig.map(|s| s.size as i64),
@@ -229,22 +260,20 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
                         ],
                     )
                     .map_err(|e| e.to_string())?;
-                    return select_item_by_id(conn, existing_id);
+                    return select_item_by_id(conn, existing_id).map(|item| (item, false));
                 }
             }
             // 其余合并情形（本次无身份或身份冲突降级）：刷新名称并清除失效标记，
             // 不触碰其已有身份列。type 同步刷新（同路径文件可能已被替换）。
             conn.execute(
                 "UPDATE items SET name = ?1, type = ?2, is_missing = 0 WHERE id = ?3",
-                params![get_name(path), detect_type(path), existing_id],
+                params![name, item_type, existing_id],
             )
             .map_err(|e| e.to_string())?;
-            return select_item_by_id(conn, existing_id);
+            return select_item_by_id(conn, existing_id).map(|item| (item, false));
         }
     }
 
-    let name = get_name(path);
-    let item_type = detect_type(path);
     let (vol, fid) = match effective_identity {
         Some(i) => (Some(i.volume_serial as i64), Some(i.file_id_hex())),
         None => (None, None),
@@ -265,11 +294,12 @@ fn add_one(conn: &Connection, path: &str) -> Result<Item, String> {
     )
     .map_err(|e| e.to_string())?;
 
-    select_item_by_id(conn, conn.last_insert_rowid())
+    select_item_by_id(conn, conn.last_insert_rowid()).map(|item| (item, true))
 }
 
 /// 添加项目
 pub fn add_item(conn: &Connection, path: &str) -> Result<Item, String> {
+    crate::db::ensure_writes_allowed()?;
     // 与 add_items 的单项校验同一口径：空路径不落库（单条命令入口此前无此防御，
     // 空串会落成 name="" 的 exe 记录）
     if path.trim().is_empty() {
@@ -278,14 +308,13 @@ pub fn add_item(conn: &Connection, path: &str) -> Result<Item, String> {
     add_one(conn, path)
 }
 
-fn add_item_in_tx(tx: &rusqlite::Transaction<'_>, path: &str) -> Result<Item, String> {
-    add_one(tx, path)
-}
-
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AddItemsResult {
     pub items: Vec<Item>,
     pub failed: Vec<AddItemFailure>,
+    /// 本批实际新建记录数（items 中其余为命中既有记录的合并/重定位），供导入反馈区分新旧
+    pub created_count: usize,
 }
 
 #[derive(Serialize)]
@@ -294,27 +323,29 @@ pub struct AddItemFailure {
     pub error: String,
 }
 
-/// 批量添加项目（逐条隔离失败，避免单条异常影响整批导入）
-pub fn add_items(conn: &mut Connection, paths: Vec<String>) -> AddItemsResult {
-    let mut items = Vec::new();
+/// 批量添加项目（逐条隔离失败，避免单条异常影响整批导入）。
+/// 两段式与对账三段式同一取向：先在锁外逐文件采集元数据（get_identity FFI /
+/// compute_signature 读文件 / detect_type 是重 IO），再进锁内单事务批量写库——
+/// 重 IO 不再把全局 DB 锁持有整个导入过程。故入参是 &Database 而非连接。
+pub fn add_items(db: &crate::db::Database, paths: Vec<String>) -> AddItemsResult {
+    // 写入冻结窗口：整批按失败返回，给出统一文案
+    if let Err(error) = crate::db::ensure_writes_allowed() {
+        return AddItemsResult {
+            items: Vec::new(),
+            created_count: 0,
+            failed: paths
+                .into_iter()
+                .map(|path| AddItemFailure {
+                    path,
+                    error: error.clone(),
+                })
+                .collect(),
+        };
+    }
+
+    // ① 锁外采集（含空路径预检，非法项不进写库段）
+    let mut metas = Vec::with_capacity(paths.len());
     let mut failed = Vec::new();
-
-    let tx = match conn.transaction() {
-        Ok(tx) => tx,
-        Err(error) => {
-            return AddItemsResult {
-                items,
-                failed: paths
-                    .into_iter()
-                    .map(|path| AddItemFailure {
-                        path,
-                        error: error.to_string(),
-                    })
-                    .collect(),
-            };
-        }
-    };
-
     for path in paths {
         if path.trim().is_empty() {
             failed.push(AddItemFailure {
@@ -323,10 +354,44 @@ pub fn add_items(conn: &mut Connection, paths: Vec<String>) -> AddItemsResult {
             });
             continue;
         }
+        metas.push(collect_add_meta(&path));
+    }
 
-        match add_item_in_tx(&tx, &path) {
-            Ok(item) => items.push(item),
-            Err(error) => failed.push(AddItemFailure { path, error }),
+    // ② 锁内单事务批量写库
+    let mut conn = db.get_conn();
+    let mut items = Vec::new();
+    let tx = match conn.transaction() {
+        Ok(tx) => tx,
+        Err(error) => {
+            let error = error.to_string();
+            return AddItemsResult {
+                items,
+                created_count: 0,
+                failed: metas
+                    .into_iter()
+                    .map(|meta| AddItemFailure {
+                        path: meta.path,
+                        error: error.clone(),
+                    })
+                    .chain(failed)
+                    .collect(),
+            };
+        }
+    };
+
+    let mut created_count = 0usize;
+    for meta in &metas {
+        match add_one_with_meta(&tx, meta) {
+            Ok((item, created)) => {
+                if created {
+                    created_count += 1;
+                }
+                items.push(item);
+            }
+            Err(error) => failed.push(AddItemFailure {
+                path: meta.path.clone(),
+                error,
+            }),
         }
     }
 
@@ -335,6 +400,7 @@ pub fn add_items(conn: &mut Connection, paths: Vec<String>) -> AddItemsResult {
         // 而原本成功却被回滚的项加上"批量回滚: "前缀，便于前端区分两类失败。
         return AddItemsResult {
             items: Vec::new(),
+            created_count: 0,
             failed: failed
                 .into_iter()
                 .chain(items.into_iter().map(|item| AddItemFailure {
@@ -345,15 +411,20 @@ pub fn add_items(conn: &mut Connection, paths: Vec<String>) -> AddItemsResult {
         };
     }
 
-    AddItemsResult { items, failed }
+    AddItemsResult {
+        items,
+        failed,
+        created_count,
+    }
 }
 
-/// SQL `IN (...)` 占位符分块大小（对齐 tag_service::get_tags_for_items，
+/// SQL `IN (...)` 占位符分块大小（供各分块查询/写入复用，
 /// 避免超过 SQLite 变量数上限；大批量选择/删除时按块执行）。
-const IN_CHUNK: usize = 500;
+pub(crate) const IN_CHUNK: usize = 500;
 
 /// 批量删除项目：按 IN_CHUNK 分块，多块包在单事务里保持整体原子。
 pub fn remove_items(conn: &Connection, ids: &[i64]) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     if ids.is_empty() {
         return Ok(());
     }
@@ -374,6 +445,7 @@ pub fn remove_items(conn: &Connection, ids: &[i64]) -> Result<(), String> {
 
 /// 删除项目
 pub fn remove_item(conn: &Connection, id: i64) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     conn.execute("DELETE FROM items WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -385,6 +457,7 @@ pub fn update_item_icon(
     item_id: i64,
     icon_path: Option<String>,
 ) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let normalized = icon_path.and_then(|p| {
         let trimmed = p.trim();
         if trimmed.is_empty() {
@@ -501,6 +574,7 @@ pub fn get_items_by_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<ItemWithTa
 
 /// 切换收藏状态
 pub fn toggle_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
+    crate::db::ensure_writes_allowed()?;
     // UPDATE ... RETURNING 一次完成翻转并取回新值（省去二次 SELECT 往返）。
     // id 不存在时 RETURNING 无行返回：映射为友好文案，不把裸 rusqlite 错误抛给前端。
     let new_val: i64 = conn
@@ -518,15 +592,16 @@ pub fn toggle_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
     Ok(new_val != 0)
 }
 
-/// 批量设置收藏状态（按 500 分块多条 IN 语句 + 单事务，整体原子、幂等）。
+/// 批量设置收藏状态（按 IN_CHUNK 分块多条 IN 语句 + 单事务，整体原子、幂等）。
 /// 批量收藏的热路径：避免逐项 toggle 的 2M 次 IPC 往返。
 pub fn set_favorites(conn: &Connection, ids: &[i64], favorite: bool) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     if ids.is_empty() {
         return Ok(());
     }
     let val = if favorite { 1 } else { 0 };
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    for chunk in ids.chunks(500) {
+    for chunk in ids.chunks(IN_CHUNK) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
             "UPDATE items SET is_favorite = {} WHERE id IN ({})",
@@ -573,18 +648,33 @@ pub struct ReconcileRow {
     sig_size: Option<i64>,
 }
 
+/// 计划生成时的行快照（path + is_missing）：回写时与当前行比对，不一致说明
+/// 用户在对账窗口内重新拖入/移动过该对象，跳过本条过期写入（防止旧计划覆盖新状态）。
+#[derive(Clone)]
+pub struct ReconcileGuard {
+    path: String,
+    is_missing: i64,
+}
+
 /// 对账写入项：锁外 IO 阶段生成的写入计划，锁内批量原子回写。
 pub enum ReconcileWrite {
     /// 回填文件身份（卷序列号 + 文件ID）。
-    BackfillIdentity { id: i64, volume_serial: i64, file_id: String },
+    BackfillIdentity { id: i64, volume_serial: i64, file_id: String, expected: ReconcileGuard },
     /// 惰性回填内容签名（大小 + 首/尾哈希）。
-    BackfillSignature { id: i64, size: i64, head: i64, tail: i64 },
+    BackfillSignature { id: i64, size: i64, head: i64, tail: i64, expected: ReconcileGuard },
     /// 文件在原路径且曾失效 → 清除失效标记。
-    ClearMissing { id: i64 },
-    /// 按文件ID重定位到新路径并清除失效标记（new_type 在锁外 IO 阶段用 detect_type 预计算）。
-    Relocate { id: i64, new_path: String, new_name: String, new_type: &'static str },
+    ClearMissing { id: i64, expected: ReconcileGuard },
+    /// 按文件ID重定位到新路径并清除失效标记（new_type / new_sig 在锁外 IO 阶段预计算）。
+    Relocate {
+        id: i64,
+        new_path: String,
+        new_name: String,
+        new_type: &'static str,
+        new_sig: Option<(i64, i64, i64)>,
+        expected: ReconcileGuard,
+    },
     /// 文件找不到 → 标记失效。
-    MarkMissing { id: i64 },
+    MarkMissing { id: i64, expected: ReconcileGuard },
 }
 
 /// 【对账·第一段】锁内一次性读出对账所需快照（不做任何文件 IO）。
@@ -617,6 +707,11 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
     for row in rows {
         let exists = Path::new(&row.path).exists();
         let identity = row_identity(row.volume_serial, row.file_id);
+        // 快照随每条写入携带，回写时比对防过期覆盖
+        let expected = || ReconcileGuard {
+            path: row.path.clone(),
+            is_missing: row.is_missing,
+        };
 
         if exists {
             // 口径说明（有意取舍）：路径仍在时不校验"该处文件是否已被替换成另一个文件"
@@ -631,6 +726,7 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
                         id: row.id,
                         volume_serial: newid.volume_serial as i64,
                         file_id: newid.file_id_hex(),
+                        expected: expected(),
                     });
                 }
             }
@@ -642,11 +738,15 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
                         size: sig.size as i64,
                         head: sig.head_hash as i64,
                         tail: sig.tail_hash as i64,
+                        expected: expected(),
                     });
                 }
             }
             if row.is_missing != 0 {
-                writes.push(ReconcileWrite::ClearMissing { id: row.id });
+                writes.push(ReconcileWrite::ClearMissing {
+                    id: row.id,
+                    expected: expected(),
+                });
             }
         } else if let Some(idn) = identity {
             match file_identity::resolve_path(idn, &row.path) {
@@ -654,20 +754,31 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
                     let new_name = get_name(&new_path);
                     // 重定位后扩展名可能已变，锁外预计算 type（detect_type 含 FS IO，不进锁内回写段）
                     let new_type = detect_type(&new_path);
+                    // 内容可能在移动前后被编辑：签名随路径一并刷新（与 add_one 冲突路径口径一致）
+                    let new_sig = file_identity::compute_signature(&new_path)
+                        .map(|s| (s.size as i64, s.head_hash as i64, s.tail_hash as i64));
                     writes.push(ReconcileWrite::Relocate {
                         id: row.id,
                         new_path,
                         new_name,
                         new_type,
+                        new_sig,
+                        expected: expected(),
                     });
                 }
                 None if row.is_missing == 0 => {
-                    writes.push(ReconcileWrite::MarkMissing { id: row.id });
+                    writes.push(ReconcileWrite::MarkMissing {
+                        id: row.id,
+                        expected: expected(),
+                    });
                 }
                 None => {}
             }
         } else if row.is_missing == 0 {
-            writes.push(ReconcileWrite::MarkMissing { id: row.id });
+            writes.push(ReconcileWrite::MarkMissing {
+                id: row.id,
+                expected: expected(),
+            });
         }
     }
     writes
@@ -675,35 +786,62 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
 
 /// 【对账·第三段】锁内批量回写：把写入计划包在单个事务里原子应用。
 /// 各条写入的容错策略与原内联实现一致：身份回填失败记日志、其余静默忽略。
+/// 每条写入带计划期快照守卫（WHERE path/is_missing 等于快照值）：不一致说明
+/// 用户在对账窗口内重新拖入/移动过该对象，本条过期写入自然落空（0 行受影响）。
 pub fn apply_reconcile(conn: &Connection, writes: &[ReconcileWrite]) -> Result<(), String> {
+    if writes.is_empty() {
+        return Ok(());
+    }
+    crate::db::ensure_writes_allowed()?;
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     for w in writes {
         match w {
-            ReconcileWrite::BackfillIdentity { id, volume_serial, file_id } => {
+            ReconcileWrite::BackfillIdentity { id, volume_serial, file_id, expected } => {
                 if let Err(e) = tx.execute(
-                    "UPDATE items SET volume_serial = ?1, file_id = ?2 WHERE id = ?3",
-                    params![volume_serial, file_id, id],
+                    "UPDATE items SET volume_serial = ?1, file_id = ?2 \
+                     WHERE id = ?3 AND path = ?4 AND is_missing = ?5",
+                    params![volume_serial, file_id, id, expected.path, expected.is_missing],
                 ) {
                     eprintln!("[reconcile] 回填 file_id 失败 (item {}): {}", id, e);
                 }
             }
-            ReconcileWrite::BackfillSignature { id, size, head, tail } => {
+            ReconcileWrite::BackfillSignature { id, size, head, tail, expected } => {
                 let _ = tx.execute(
-                    "UPDATE items SET sig_size = ?1, sig_head = ?2, sig_tail = ?3 WHERE id = ?4",
-                    params![size, head, tail, id],
+                    "UPDATE items SET sig_size = ?1, sig_head = ?2, sig_tail = ?3 \
+                     WHERE id = ?4 AND path = ?5 AND is_missing = ?6",
+                    params![size, head, tail, id, expected.path, expected.is_missing],
                 );
             }
-            ReconcileWrite::ClearMissing { id } => {
-                let _ = tx.execute("UPDATE items SET is_missing = 0 WHERE id = ?1", [id]);
-            }
-            ReconcileWrite::Relocate { id, new_path, new_name, new_type } => {
+            ReconcileWrite::ClearMissing { id, expected } => {
                 let _ = tx.execute(
-                    "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0 WHERE id = ?4",
-                    params![new_path, new_name, new_type, id],
+                    "UPDATE items SET is_missing = 0 WHERE id = ?1 AND path = ?2 AND is_missing = ?3",
+                    params![id, expected.path, expected.is_missing],
                 );
             }
-            ReconcileWrite::MarkMissing { id } => {
-                let _ = tx.execute("UPDATE items SET is_missing = 1 WHERE id = ?1", [id]);
+            ReconcileWrite::Relocate { id, new_path, new_name, new_type, new_sig, expected } => {
+                // 重定位时若已采到内容签名则一并刷新（见 plan_reconcile）
+                let _ = match new_sig {
+                    Some((size, head, tail)) => tx.execute(
+                        "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0, \
+                         sig_size = ?4, sig_head = ?5, sig_tail = ?6 \
+                         WHERE id = ?7 AND path = ?8 AND is_missing = ?9",
+                        params![
+                            new_path, new_name, new_type, size, head, tail, id,
+                            expected.path, expected.is_missing
+                        ],
+                    ),
+                    None => tx.execute(
+                        "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0 \
+                         WHERE id = ?4 AND path = ?5 AND is_missing = ?6",
+                        params![new_path, new_name, new_type, id, expected.path, expected.is_missing],
+                    ),
+                };
+            }
+            ReconcileWrite::MarkMissing { id, expected } => {
+                let _ = tx.execute(
+                    "UPDATE items SET is_missing = 1 WHERE id = ?1 AND path = ?2 AND is_missing = ?3",
+                    params![id, expected.path, expected.is_missing],
+                );
             }
         }
     }
@@ -714,11 +852,12 @@ pub fn apply_reconcile(conn: &Connection, writes: &[ReconcileWrite]) -> Result<(
 /// 取对象当前真实路径（用于启动 / 打开所在文件夹）：
 /// 路径有效直接返回；失效则用文件ID重定位并持久化新路径；彻底找不到则标记失效并返回错误。
 pub fn resolve_current_path(conn: &Connection, id: i64) -> Result<String, String> {
-    let (path, vol, fid): (String, Option<i64>, Option<String>) = conn
+    crate::db::ensure_writes_allowed()?;
+    let (path, vol, fid, is_missing): (String, Option<i64>, Option<String>, i64) = conn
         .query_row(
-            "SELECT path, volume_serial, file_id FROM items WHERE id = ?1",
+            "SELECT path, volume_serial, file_id, is_missing FROM items WHERE id = ?1",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => {
@@ -736,7 +875,13 @@ pub fn resolve_current_path(conn: &Connection, id: i64) -> Result<String, String
             Some(idn) if file_identity::get_identity(&path) != Some(idn) => {
                 // 路径已被其它文件占用 → 落到下方按文件ID重定位真正的对象
             }
-            _ => return Ok(path),
+            _ => {
+                // 路径处文件确认无误：曾因短暂失联被标记失效时顺手愈合标记
+                if is_missing != 0 {
+                    let _ = conn.execute("UPDATE items SET is_missing = 0 WHERE id = ?1", [id]);
+                }
+                return Ok(path);
+            }
         }
     }
 
@@ -922,6 +1067,7 @@ pub fn apply_signature_relocations(
     conn: &Connection,
     found: &[(i64, String)],
 ) -> Result<usize, String> {
+    crate::db::ensure_writes_allowed()?;
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     let mut count = 0usize;
     for (id, new_path) in found {

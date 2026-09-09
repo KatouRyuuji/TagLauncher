@@ -3,7 +3,7 @@ import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { useMods } from "../hooks/useMods";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { enableModRuntime, reloadModRuntime } from "../lib/modRuntime";
+import { reloadModRuntime } from "../lib/modRuntime";
 import { importMod, exportMod } from "../lib/db";
 import { showToast } from "../lib/toast";
 import type { ModPermission } from "../types/mod";
@@ -29,12 +29,18 @@ const PERMISSION_META: Record<ModPermission, { label: string; color: string }> =
 };
 
 export function ModManagerPanel() {
-  const { mods, enableMod, disableMod, refresh } = useMods();
+  const { mods, enableMod, disableMod, uninstallMod, refresh } = useMods();
   const [confirmJsMod, setConfirmJsMod] = useState<string | null>(null);
+  const [confirmUninstallMod, setConfirmUninstallMod] = useState<string | null>(null);
   const [reloading, setReloading] = useState<string | null>(null);
   // 确认弹窗可访问性：焦点陷阱 + 栈式 Esc（后注册于 SettingsPanel，Esc 只关确认框不关设置）
-  const confirmTrapRef = useFocusTrap<HTMLDivElement>({ active: confirmJsMod !== null });
-  useEscapeKey(() => setConfirmJsMod(null), confirmJsMod !== null);
+  // 启用脚本/卸载两个确认框互斥（不会同时打开），共用同一套 trap/Esc
+  const anyConfirmOpen = confirmJsMod !== null || confirmUninstallMod !== null;
+  const confirmTrapRef = useFocusTrap<HTMLDivElement>({ active: anyConfirmOpen });
+  useEscapeKey(() => {
+    setConfirmJsMod(null);
+    setConfirmUninstallMod(null);
+  }, anyConfirmOpen);
 
   const handleToggle = async (modId: string, modType: string, currentlyEnabled: boolean) => {
     if (currentlyEnabled) {
@@ -55,6 +61,13 @@ export function ModManagerPanel() {
     }
   };
 
+  const handleConfirmUninstall = async () => {
+    if (confirmUninstallMod) {
+      await uninstallMod(confirmUninstallMod);
+      setConfirmUninstallMod(null);
+    }
+  };
+
   // useMods 的 enable/disable 内部已 toast 并刷新列表，这里只吞掉 rejection 避免未处理拒绝噪音
   const runQuietly = (action: () => Promise<void>) => {
     void action().catch(() => {});
@@ -71,11 +84,9 @@ export function ModManagerPanel() {
         );
         return;
       }
-      if (mod.type === "css+js") {
-        await reloadModRuntime(mod);
-      } else {
-        await enableModRuntime(mod);
-      }
+      // css 与 css+js 统一走 reload（先清理旧注入再重建）：
+      // 纯 css 走 enableModRuntime 会被幂等守卫跳过，热重载成为空操作
+      await reloadModRuntime(mod);
     } catch {
       // 失败提示已由 modRuntime 统一 toast，这里只吞掉 rejection 避免未处理拒绝噪音
     } finally {
@@ -218,6 +229,18 @@ export function ModManagerPanel() {
                 >
                   {mod.enabled ? "禁用" : "启用"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmUninstallMod(mod.id)}
+                  className="action-button min-h-[36px] px-3 text-xs"
+                  style={{
+                    color: "var(--color-danger)",
+                    borderColor: "color-mix(in srgb, var(--color-danger) 24%, transparent)",
+                    backgroundColor: "var(--color-danger-bg)",
+                  }}
+                >
+                  卸载
+                </button>
               </div>
             </div>
 
@@ -314,6 +337,55 @@ export function ModManagerPanel() {
                   </button>
                   <button type="button" onClick={() => runQuietly(handleConfirmEnable)} className="action-button action-button-primary">
                     我信任此扩展
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
+      {confirmUninstallMod && (() => {
+        const mod = mods.find((item) => item.id === confirmUninstallMod);
+        return (
+          <>
+            <div
+              data-workspace-overlay=""
+              className="fixed inset-0"
+              style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-mod-confirm-overlay)" }}
+              onClick={() => setConfirmUninstallMod(null)}
+            />
+            <div
+              className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
+              style={{ zIndex: "var(--z-mod-confirm-panel)" }}
+            >
+              <div
+                ref={confirmTrapRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="卸载扩展"
+                className="modal-surface pointer-events-auto w-[420px] max-w-[92vw] p-6"
+              >
+                <div className="text-label">Uninstall</div>
+                <h3 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">卸载扩展</h3>
+                <p className="mt-3 text-sm leading-7 text-[var(--text-secondary)]">
+                  将删除扩展「{mod?.name ?? confirmUninstallMod}」的全部文件与其本地存储数据，此操作不可恢复。
+                </p>
+                <div className="mt-6 flex justify-end gap-2">
+                  <button type="button" onClick={() => setConfirmUninstallMod(null)} className="action-button">
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runQuietly(handleConfirmUninstall)}
+                    className="action-button"
+                    style={{
+                      color: "var(--color-danger)",
+                      borderColor: "color-mix(in srgb, var(--color-danger) 24%, transparent)",
+                      backgroundColor: "var(--color-danger-bg)",
+                    }}
+                  >
+                    确认卸载
                   </button>
                 </div>
               </div>

@@ -6,6 +6,25 @@ import {
 } from "../stores/internalDragStore";
 
 const DRAG_THRESHOLD = 6;
+/** 距滚动容器上/下边缘多少 px 内触发拖拽自动滚动（与 SelectionCanvas 框选同口径） */
+const EDGE_ZONE = 48;
+/** 自动滚动每帧最大像素 */
+const MAX_SCROLL_SPEED = 20;
+
+/** 指针位置向上找最近的纵向可滚动祖先（拖拽落点滚动跟随用）。 */
+function findScrollableAncestor(pointX: number, pointY: number): HTMLElement | null {
+  let element = document.elementFromPoint(pointX, pointY);
+  while (element) {
+    if (element instanceof HTMLElement) {
+      const overflowY = getComputedStyle(element).overflowY;
+      if ((overflowY === "auto" || overflowY === "scroll") && element.scrollHeight > element.clientHeight) {
+        return element;
+      }
+    }
+    element = element.parentElement;
+  }
+  return null;
+}
 
 interface BeginInternalPointerDragOptions {
   event: ReactPointerEvent<HTMLElement>;
@@ -33,16 +52,31 @@ export function beginInternalPointerDrag({
   let finished = false;
   let rafId: number | null = null;
   let pendingMove: PointerEvent | null = null;
+  // 最近一次指针位置：自动滚动/滚轮滚动导致内容位移后，按静止指针坐标重算悬停落点
+  let lastMoveEvent: PointerEvent | null = null;
+  let hoverRafId: number | null = null;
+  let autoScrollRafId: number | null = null;
 
   const cleanup = () => {
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
       rafId = null;
     }
+    if (hoverRafId !== null) {
+      cancelAnimationFrame(hoverRafId);
+      hoverRafId = null;
+    }
+    if (autoScrollRafId !== null) {
+      cancelAnimationFrame(autoScrollRafId);
+      autoScrollRafId = null;
+    }
     pendingMove = null;
+    lastMoveEvent = null;
     window.removeEventListener("pointermove", handlePointerMove, true);
     window.removeEventListener("pointerup", handlePointerUp, true);
     window.removeEventListener("pointercancel", handlePointerCancel, true);
+    window.removeEventListener("keydown", handleKeyDown, true);
+    window.removeEventListener("scroll", handleScrollCapture, true);
     window.removeEventListener("blur", handleWindowBlur);
     if (sourceElement.hasPointerCapture?.(pointerId)) {
       sourceElement.releasePointerCapture?.(pointerId);
@@ -58,8 +92,61 @@ export function beginInternalPointerDrag({
     if (!moveEvent || finished || !activated) {
       return;
     }
+    lastMoveEvent = moveEvent;
     useInternalDragStore.getState().updateDrag(moveEvent.clientX, moveEvent.clientY);
     useInternalDragStore.getState().setHoverTarget(findHoverTarget(moveEvent));
+    maybeStartAutoScroll(moveEvent);
+  };
+
+  // 自动滚动帧：按指针距容器边缘深度决定速度，滚动后用静止指针坐标重算落点。
+  // 滚动容器按指针位置动态判定（对象列表/侧栏等任意可滚动区域都适用）。
+  const autoScrollStep = () => {
+    autoScrollRafId = null;
+    const moveEvent = lastMoveEvent;
+    if (finished || !activated || !moveEvent) return;
+
+    const container = findScrollableAncestor(moveEvent.clientX, moveEvent.clientY);
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    let vel = 0;
+    if (moveEvent.clientY < rect.top + EDGE_ZONE) {
+      const depth = Math.min(1, (rect.top + EDGE_ZONE - moveEvent.clientY) / EDGE_ZONE);
+      vel = -Math.ceil(depth * MAX_SCROLL_SPEED);
+    } else if (moveEvent.clientY > rect.bottom - EDGE_ZONE) {
+      const depth = Math.min(1, (moveEvent.clientY - (rect.bottom - EDGE_ZONE)) / EDGE_ZONE);
+      vel = Math.ceil(depth * MAX_SCROLL_SPEED);
+    }
+    if (vel === 0) return;
+
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    const nextTop = Math.max(0, Math.min(maxScroll, container.scrollTop + vel));
+    if (nextTop === container.scrollTop) return; // 已到顶/底
+
+    container.scrollTop = nextTop;
+    useInternalDragStore.getState().setHoverTarget(findHoverTarget(moveEvent));
+    autoScrollRafId = requestAnimationFrame(autoScrollStep);
+  };
+
+  const maybeStartAutoScroll = (moveEvent: PointerEvent) => {
+    if (autoScrollRafId !== null) return;
+    const container = findScrollableAncestor(moveEvent.clientX, moveEvent.clientY);
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    if (moveEvent.clientY < rect.top + EDGE_ZONE || moveEvent.clientY > rect.bottom - EDGE_ZONE) {
+      autoScrollRafId = requestAnimationFrame(autoScrollStep);
+    }
+  };
+
+  // 拖拽期间滚轮/触控板滚动不走 pointermove：监听滚动（捕获阶段覆盖任意容器），
+  // 下一帧按静止指针坐标重算悬停落点，避免高亮与实际落点错位。
+  const handleScrollCapture = () => {
+    if (finished || !activated || !lastMoveEvent || hoverRafId !== null) return;
+    hoverRafId = requestAnimationFrame(() => {
+      hoverRafId = null;
+      if (finished || !activated || !lastMoveEvent) return;
+      useInternalDragStore.getState().setHoverTarget(findHoverTarget(lastMoveEvent));
+    });
   };
 
   const finish = async (target: InternalDragHoverTarget) => {
@@ -98,9 +185,11 @@ export function beginInternalPointerDrag({
     if (!activated) {
       // 激活帧立即处理，保证拖拽起始视觉与落点无延迟
       activated = true;
+      lastMoveEvent = moveEvent;
       document.body.style.userSelect = "none";
       useInternalDragStore.getState().startDrag(payload, moveEvent.clientX, moveEvent.clientY);
       useInternalDragStore.getState().setHoverTarget(findHoverTarget(moveEvent));
+      maybeStartAutoScroll(moveEvent);
     } else {
       // 后续移动合并到下一帧统一处理
       pendingMove = moveEvent;
@@ -132,9 +221,20 @@ export function beginInternalPointerDrag({
     void finish(null);
   };
 
+  // 拖拽期间 Esc 取消（不触发落点）。捕获阶段拦截并阻断传播，
+  // 避免冒泡阶段的工作台热键把同一按键再解释为「清空选中」等动作。
+  const handleKeyDown = (keyEvent: KeyboardEvent) => {
+    if (keyEvent.key !== "Escape" || !activated || finished) return;
+    keyEvent.preventDefault();
+    keyEvent.stopPropagation();
+    void finish(null);
+  };
+
   window.addEventListener("pointermove", handlePointerMove, true);
   window.addEventListener("pointerup", handlePointerUp, true);
   window.addEventListener("pointercancel", handlePointerCancel, true);
+  window.addEventListener("keydown", handleKeyDown, true);
+  window.addEventListener("scroll", handleScrollCapture, true);
   window.addEventListener("blur", handleWindowBlur);
   sourceElement.setPointerCapture?.(pointerId);
   event.preventDefault();

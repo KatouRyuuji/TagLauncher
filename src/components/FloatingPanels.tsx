@@ -244,6 +244,58 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
     dragCleanupsRef.current.add(onUp);
   }, []);
 
+  // 键盘移动（标题栏聚焦时方向键移动面板，Shift=大步进，Esc/Enter 结束并移出焦点）
+  const handleTitleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    // 内部关闭按钮的按键不劫持（Enter 应触发其 click 而非结束移动）
+    if (e.target !== e.currentTarget) return;
+    const el = wrapperRef.current;
+    if (!el) return;
+    if (e.key === "Escape" || e.key === "Enter") {
+      e.preventDefault();
+      e.currentTarget.blur();
+      return;
+    }
+    const step = e.shiftKey ? 32 : 8;
+    let dx = 0;
+    let dy = 0;
+    if (e.key === "ArrowLeft") dx = -step;
+    else if (e.key === "ArrowRight") dx = step;
+    else if (e.key === "ArrowUp") dy = -step;
+    else if (e.key === "ArrowDown") dy = step;
+    else return;
+    e.preventDefault();
+    onBringToFront();
+    const x = Math.max(0, Math.min(window.innerWidth - el.offsetWidth, el.offsetLeft + dx));
+    const y = Math.max(0, Math.min(window.innerHeight - el.offsetHeight, el.offsetTop + dy));
+    el.style.left = x + "px";
+    el.style.top = y + "px";
+  }, [onBringToFront]);
+
+  // 键盘调整大小（手柄聚焦时方向键增减宽高，Shift=大步进，Esc/Enter 结束并移出焦点）
+  const handleResizeKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return;
+    const el = wrapperRef.current;
+    if (!el) return;
+    if (e.key === "Escape" || e.key === "Enter") {
+      e.preventDefault();
+      e.currentTarget.blur();
+      return;
+    }
+    const step = e.shiftKey ? 32 : 8;
+    let dw = 0;
+    let dh = 0;
+    if (e.key === "ArrowLeft") dw = -step;
+    else if (e.key === "ArrowRight") dw = step;
+    else if (e.key === "ArrowUp") dh = -step;
+    else if (e.key === "ArrowDown") dh = step;
+    else return;
+    e.preventDefault();
+    const minW = parsePxCssVar("--panel-floating-min-width", 200);
+    const minH = parsePxCssVar("--panel-floating-min-height", 150);
+    el.style.width = Math.max(minW, el.offsetWidth + dw) + "px";
+    el.style.height = Math.max(minH, el.offsetHeight + dh) + "px";
+  }, []);
+
   // z-index = 基础层(CSS var) + 序号（最大 49，不超过 settings-overlay 200）
   const zIndexBase = "var(--z-floating-panel)";
 
@@ -261,10 +313,15 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
       }}
       onMouseDown={onBringToFront}
     >
-      {/* 标题栏 */}
+      {/* 标题栏（可聚焦：方向键移动，Shift 大步进，Esc/Enter 结束） */}
       <div
         className="mod-panel-titlebar"
         onMouseDown={handleTitleMouseDown}
+        onKeyDown={handleTitleKeyDown}
+        tabIndex={0}
+        role="button"
+        data-esc-local
+        aria-label="移动面板（方向键移动，Shift 大步进，Enter 或 Esc 结束）"
       >
         <span
           className="flex-1 text-xs font-medium truncate"
@@ -290,12 +347,17 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
         style={{ color: "var(--text-primary)", fontSize: "var(--font-size-sm)" }}
       />
 
-      {/* Resize 句柄 */}
+      {/* Resize 句柄（可聚焦：方向键调整大小，Shift 大步进，Esc/Enter 结束） */}
       {panel.resizable && (
         <div
           className="mod-panel-resize-handle"
           style={{ opacity: 0.3, color: "var(--text-muted)" }}
           onMouseDown={handleResizeMouseDown}
+          onKeyDown={handleResizeKeyDown}
+          tabIndex={0}
+          role="separator"
+          data-esc-local
+          aria-label="调整面板大小（方向键调整，Shift 大步进，Enter 或 Esc 结束）"
         >
           <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
             <path d="M9 1L1 9M9 5L5 9M9 9L9 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>

@@ -89,6 +89,7 @@ pub fn ai_get_config(db: State<Database>) -> AiConfig {
 
 #[tauri::command]
 pub fn ai_set_config(db: State<Database>, config: AiConfig) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     // 安全：非 https 的 base_url 会让 API 密钥明文过网络；仅放行本机 http（localhost/回环）。
     if base_url_is_insecure(&config.base_url) {
         return Err(
@@ -126,6 +127,7 @@ pub fn ai_is_configured(db: State<Database>) -> bool {
 /// ai_set_config 的"密钥留空=不修改"语义下前端无法删除已存密钥，故提供独立清除通道。
 #[tauri::command]
 pub fn ai_clear_api_key(db: State<Database>) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let conn = db.get_conn();
     set_setting(&conn, KEY_API_KEY, "")
 }
@@ -174,6 +176,13 @@ pub fn ai_suggest_tags(
     let user = build_user_prompt(&name, &path, &item_type, &existing_tags);
     let reply = call_messages(&config, &system, &user, 512)?;
     let tags = parse_tag_list(&reply, config.max_tags as usize);
+    // allow_new_tags=false 时提示词只是软约束：散文回复经回退切分仍会产出词表外标签。
+    // 返回前按本次词表（大小写不敏感）硬性过滤，词表外的一律丢弃。
+    if !config.allow_new_tags {
+        let vocab: std::collections::HashSet<String> =
+            existing_tags.iter().map(|t| t.to_lowercase()).collect();
+        return Ok(tags.into_iter().filter(|t| vocab.contains(&t.to_lowercase())).collect());
+    }
     Ok(tags)
 }
 
@@ -249,12 +258,16 @@ fn base_url_is_insecure(base_url: &str) -> bool {
         Some(r) => r,
         None => return false, // https / 空 / 其它前缀：此处不拦
     };
+    // 先剥离 userinfo（"user:pass@" 段）：不剥则 "http://localhost:1@evil.com"
+    // 会把 @ 前的 localhost 误判为 host，绕过本机 http 白名单。
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let authority = authority.rsplit('@').next().unwrap_or(authority);
     // host 可能是 `[::1]` 形式的 IPv6 字面量：须先剥离方括号再比对，
     // 否则按 ':' 切分得到的是 "["，本机回环端点会被误拦。
-    let host = if let Some(after_bracket) = rest.strip_prefix('[') {
+    let host = if let Some(after_bracket) = authority.strip_prefix('[') {
         after_bracket.split(']').next().unwrap_or("")
     } else {
-        rest.split(['/', ':', '?', '#']).next().unwrap_or("")
+        authority.split(':').next().unwrap_or("")
     };
     !matches!(host, "localhost" | "127.0.0.1" | "::1")
 }
@@ -272,45 +285,73 @@ fn call_messages(config: &AiConfig, system: &str, user: &str, max_tokens: u32) -
     // 转发到新主机，被劫持/恶意的兼容网关可 302 把密钥引到第三方。改为显式报出重定向，
     // 由用户核对 base_url。（不做私网拦截：base_url 是用户自配，本地/局域网网关属合法场景。）
     let agent = ureq::AgentBuilder::new().redirects(0).build();
-    let response = agent
-        .post(&endpoint)
-        .set("content-type", "application/json")
-        // 收敛鉴权头：Anthropic 协议标准是 x-api-key；不再额外发送 Authorization: Bearer，
-        // 避免把密钥暴露给会记录 Authorization 头的第三方兼容网关（缩小泄露面）。
-        .set("x-api-key", config.api_key.trim())
-        .set("anthropic-version", ANTHROPIC_VERSION)
-        .timeout(std::time::Duration::from_secs(60))
-        .send_string(&body.to_string());
 
-    match response {
-        Ok(resp) => {
-            let status = resp.status();
-            if (300..400).contains(&status) {
-                return Err(format!(
-                    "端点返回重定向（{}）。出于密钥安全不自动跟随，请检查 API 地址是否正确",
-                    status
-                ));
+    // 限流（429）与网关/过载错误（500/502/503/529）多为瞬态：有限重试（最多 2 次，
+    // 指数退避 1s/3s），最终仍失败才计为该对象失败。
+    let mut attempt = 0u32;
+    loop {
+        let response = agent
+            .post(&endpoint)
+            .set("content-type", "application/json")
+            // 收敛鉴权头：Anthropic 协议标准是 x-api-key；不再额外发送 Authorization: Bearer，
+            // 避免把密钥暴露给会记录 Authorization 头的第三方兼容网关（缩小泄露面）。
+            .set("x-api-key", config.api_key.trim())
+            .set("anthropic-version", ANTHROPIC_VERSION)
+            .timeout(std::time::Duration::from_secs(60))
+            .send_string(&body.to_string());
+
+        match response {
+            Ok(resp) => {
+                let status = resp.status();
+                if (300..400).contains(&status) {
+                    return Err(format!(
+                        "端点返回重定向（{}）。出于密钥安全不自动跟随，请检查 API 地址是否正确",
+                        status
+                    ));
+                }
+                // 网关强制流式（SSE）时响应体不是 JSON 而是事件流：提前识别并说明原因，
+                // 否则用户只会看到莫名其妙的 JSON 解析错误
+                let content_type = resp.header("content-type").unwrap_or_default().to_ascii_lowercase();
+                if content_type.contains("text/event-stream") {
+                    return Err("网关返回了流式(SSE)响应，本应用仅支持非流式".to_string());
+                }
+                // 上限 +1 字节探测：超过 4MB 明确报"响应过大"，而不是静默截断后
+                // 让用户面对莫名其妙的 JSON 解析错误（分不清是响应太大还是格式错误）
+                const MAX_RESPONSE_BYTES: u64 = 4 * 1_048_576;
+                let mut buf = String::new();
+                resp
+                    .into_reader()
+                    .take(MAX_RESPONSE_BYTES + 1)
+                    .read_to_string(&mut buf)
+                    .map_err(|e| format!("读取响应失败: {}", e))?;
+                if buf.len() as u64 > MAX_RESPONSE_BYTES {
+                    return Err("AI 响应体超过 4MB 上限，已中止（可能是代理/网关返回异常内容）".to_string());
+                }
+                return extract_text(&buf);
             }
-            // 上限 +1 字节探测：超过 4MB 明确报"响应过大"，而不是静默截断后
-            // 让用户面对莫名其妙的 JSON 解析错误（分不清是响应太大还是格式错误）
-            const MAX_RESPONSE_BYTES: u64 = 4 * 1_048_576;
-            let mut buf = String::new();
-            resp
-                .into_reader()
-                .take(MAX_RESPONSE_BYTES + 1)
-                .read_to_string(&mut buf)
-                .map_err(|e| format!("读取响应失败: {}", e))?;
-            if buf.len() as u64 > MAX_RESPONSE_BYTES {
-                return Err("AI 响应体超过 4MB 上限，已中止（可能是代理/网关返回异常内容）".to_string());
+            Err(ureq::Error::Status(code, resp)) => {
+                if matches!(code, 429 | 500 | 502 | 503 | 529) && attempt < 2 {
+                    attempt += 1;
+                    std::thread::sleep(std::time::Duration::from_secs(if attempt == 1 { 1 } else { 3 }));
+                    continue;
+                }
+                // 网关常在错误体里回显请求（含 x-api-key 头）：先抹掉密钥再截断，避免密钥入前端
+                let detail = redact_api_key(&resp.into_string().unwrap_or_default(), &config.api_key);
+                return Err(format!("API 返回 {}：{}", code, truncate(&detail, 300)));
             }
-            extract_text(&buf)
+            Err(e) => return Err(redact_api_key(&format!("请求失败：{}", e), &config.api_key)),
         }
-        Err(ureq::Error::Status(code, resp)) => {
-            let detail = resp.into_string().unwrap_or_default();
-            Err(format!("API 返回 {}：{}", code, truncate(&detail, 300)))
-        }
-        Err(e) => Err(format!("请求失败：{}", e)),
     }
+}
+
+/// 错误文案脱敏：网关/代理可能在错误体或 IO 错误里回显请求头，入前端前把已配置的
+/// API 密钥替换为 ***。
+fn redact_api_key(msg: &str, api_key: &str) -> String {
+    let key = api_key.trim();
+    if key.is_empty() {
+        return msg.to_string();
+    }
+    msg.replace(key, "***")
 }
 
 /// 从 Anthropic 响应 JSON 提取首个文本块。
@@ -362,10 +403,19 @@ fn parse_tag_list(reply: &str, max: usize) -> Vec<String> {
         }
     }
 
-    // 回退：逗号或换行分隔
+    // 回退：逗号/换行/顿号分隔。散文回复常带 "Tags: xxx" / "标签：xxx" 类前缀，
+    // 先取末个冒号（半角/全角）之后的片段，再修剪引号/括号/列表符等装饰字符；
+    // 含空格的过长 token 仍由 dedup_clean 的 >40 字符规则丢弃。
     let parts: Vec<String> = cleaned
         .split(|c| c == ',' || c == '\n' || c == '、')
-        .map(|s| s.trim().trim_matches(['"', '\'', '[', ']', '-', '*', '#']).trim().to_string())
+        .map(|s| {
+            let t = s.trim();
+            let t = t.rsplit([':', '：']).next().unwrap_or(t);
+            t.trim()
+                .trim_matches(['"', '\'', '[', ']', '-', '*', '#', ':', '：', '•', '·'])
+                .trim()
+                .to_string()
+        })
         .collect();
     dedup_clean(parts, max)
 }
@@ -439,6 +489,27 @@ mod tests {
     }
 
     #[test]
+    fn parse_fallback_strips_prose_prefix() {
+        // 散文回复的 "Tags:" / "标签：" 前缀在回退切分中被剥离
+        let tags = parse_tag_list("Tags: 开发工具, 截图", 5);
+        assert_eq!(tags, vec!["开发工具", "截图"]);
+        let tags = parse_tag_list("标签：编辑器\n截图", 5);
+        assert_eq!(tags, vec!["编辑器", "截图"]);
+        // 含空格的超长散文 token 仍按 >40 字符规则丢弃
+        let long_prose = format!("These are some suggested tags for your object: {}", "x".repeat(60));
+        let tags = parse_tag_list(&format!("{}, 截图", long_prose), 5);
+        assert_eq!(tags, vec!["截图"]);
+    }
+
+    #[test]
+    fn error_message_redacts_api_key() {
+        assert_eq!(redact_api_key("401 bad key sk-secret", "sk-secret"), "401 bad key ***");
+        assert_eq!(redact_api_key("no key here", "sk-secret"), "no key here");
+        // 未配置密钥时不做替换
+        assert_eq!(redact_api_key("unchanged", ""), "unchanged");
+    }
+
+    #[test]
     fn extract_anthropic_text() {
         let raw = r#"{"content":[{"type":"text","text":"[\"a\"]"}]}"#;
         assert_eq!(extract_text(raw).unwrap(), "[\"a\"]");
@@ -463,5 +534,11 @@ mod tests {
         assert!(!base_url_is_insecure("http://[::1]:8080/v1"));
         assert!(!base_url_is_insecure("http://[::1]"));
         assert!(!base_url_is_insecure(""));
+        // userinfo 不得绕过白名单：真实 host 是最后一个 @ 之后
+        assert!(base_url_is_insecure("http://localhost:1234@evil.com"));
+        assert!(base_url_is_insecure("http://user:pass@evil.com"));
+        // userinfo + 本机回环 → 放行
+        assert!(!base_url_is_insecure("http://user:pass@localhost:8080"));
+        assert!(!base_url_is_insecure("http://token@127.0.0.1:1234"));
     }
 }

@@ -11,12 +11,24 @@ import {
   findClosestNumberDataAttribute,
 } from "../lib/internalPointerDrag";
 import { getFileSuffix, getTypeLabel } from "../lib/itemUtils";
+import { showToast } from "../lib/toast";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
 import { SearchHighlightText } from "./SearchHighlightText";
 import type { Cabinet, ItemWithTags, Tag } from "../types";
 import type { ItemSlotDescriptor } from "../lib/modItemSlotRegistry";
+
+/**
+ * 右键命中多选集时注入的选中集信息：右键菜单的删除/收藏/复制路径据此
+ * 作用于整个选中集而非仅右击项。由 ItemGrid/ItemListView 统一构造。
+ */
+export interface ContextSelectionInfo {
+  ids: number[];
+  paths: string[];
+  /** 多选收藏目标态：有未收藏项则为 true（与 Ctrl+D 同口径） */
+  favoriteTarget: boolean;
+}
 
 export interface ItemCardProps {
   item: ItemWithTags;
@@ -35,10 +47,13 @@ export interface ItemCardProps {
   onRequestRemoveFromApp: (itemId: number) => Promise<void>;
   onUpdateThumbnail: (itemId: number, iconPath: string | null) => Promise<void>;
   selected: boolean;
+  /** 右击项属于当前多选集时非 null；ContextMenu 据此把部分动作扩展到整个选中集 */
+  contextSelection?: ContextSelectionInfo | null;
 }
 
 function useItemDrag(
   item: ItemWithTags,
+  currentCabinetId: number | null,
   onToggleFavorite: () => void,
   onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>,
   onClearCurrentFilter: (itemId: number) => Promise<void>,
@@ -87,10 +102,17 @@ function useItemDrag(
       },
       onDrop: async (target) => {
         if (target?.kind === "item-favorites") {
+          // 已收藏时拖到收藏区不再静默无效
           if (!item.is_favorite) await onToggleFavorite();
+          else showToast(`「${item.name}」已在收藏中`, "info");
           return;
         }
         if (target?.kind === "item-cabinet") {
+          // 前端可确定的重复（拖到当前所在柜）直接提示，不发请求
+          if (target.cabinetId === currentCabinetId) {
+            showToast(`「${item.name}」已在此文件柜中`, "info");
+            return;
+          }
           await onAddItemToCabinet(target.cabinetId, item.id);
           return;
         }
@@ -142,6 +164,7 @@ function ItemCardComponent({
   onRequestRemoveFromApp,
   onUpdateThumbnail,
   selected,
+  contextSelection,
 }: ItemCardProps) {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [showTagEditor, setShowTagEditor] = useState(false);
@@ -155,6 +178,7 @@ function ItemCardComponent({
 
   const handleItemHandlePointerDown = useItemDrag(
     item,
+    currentCabinetId,
     onToggleFavorite,
     onAddItemToCabinet,
     onClearCurrentFilter,
@@ -307,6 +331,7 @@ function ItemCardComponent({
           cabinets={cabinets}
           currentCabinetId={currentCabinetId}
           currentCabinetName={currentCabinetName}
+          contextSelection={contextSelection}
           position={menuPos}
           onClose={() => setMenuPos(null)}
           onLaunch={onLaunch}

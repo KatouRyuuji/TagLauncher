@@ -35,8 +35,10 @@ const REMOTE_KEEP_COUNT: usize = 10;
 const MAX_DOWNLOAD_BYTES: u64 = 1024 * 1_048_576;
 /// 控制类请求超时（PROPFIND/MKCOL/DELETE）
 const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
-/// 传输类请求超时（PUT/GET，大库 + 慢速 NAS 场景）
-const TRANSFER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+/// 传输类请求超时（PUT/GET）。ureq 的 timeout 是整个请求的总限时、没有按传输进展
+/// 重置的空闲超时；大库 + 慢速 NAS（如机械硬盘群晖）下 600s 可能不够，放宽到 1 小时
+/// 覆盖极端场景——真正的异常卡死由下载大小上限与用户重试兜底。
+const TRANSFER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3600);
 
 // ---------------------------------------------------------------------------
 // 配置
@@ -80,6 +82,7 @@ pub fn sync_get_config(db: State<Database>) -> SyncConfig {
 
 #[tauri::command]
 pub fn sync_set_config(db: State<Database>, config: SyncConfig) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let url = config.url.trim();
     if !url.is_empty() && !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("WebDAV 地址必须以 http:// 或 https:// 开头".to_string());
@@ -105,6 +108,7 @@ pub fn sync_set_config(db: State<Database>, config: SyncConfig) -> Result<(), St
 /// 显式清除已存密码（「留空=不修改」语义下删除凭据的专用通道）。
 #[tauri::command]
 pub fn sync_clear_password(db: State<Database>) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let conn = db.get_conn();
     conn.execute("DELETE FROM app_meta WHERE key = ?1", [KEY_PASSWORD])
         .map_err(|e| e.to_string())?;
@@ -148,10 +152,14 @@ pub fn sync_list_backups(db: State<Database>) -> Result<Vec<RemoteBackup>, Strin
 /// 返回云端文件名。
 #[tauri::command(async)]
 pub fn sync_backup_now(db: State<Database>) -> Result<String, String> {
+    crate::db::ensure_writes_allowed()?;
     let ctx = load_context(&db)?;
     ensure_remote_dir(&ctx)?;
 
     // 1. 快照到临时文件（Online Backup，页级一致）
+    // 注意：快照到剔除敏感配置之间存在明文落盘窗口；闭包 + 尾部 remove_file 保证
+    // strip 失败/流程中断都会删除临时文件，进程崩溃的残留由 load_context 的
+    // cleanup_stale_sync_temps 在下一次同步操作前清理。
     let temp = temp_file_path("upload");
     let result = (|| {
         data_commands::snapshot_live_db(&db, &temp)?;
@@ -194,9 +202,15 @@ pub fn sync_restore(
     db: State<Database>,
     file_name: String,
 ) -> Result<String, String> {
+    crate::db::ensure_writes_allowed()?;
     let name = file_name.trim();
-    // 远端列表返回的文件名不应含路径分隔符；防御异常输入拼出目录穿越 URL
-    if name.is_empty() || name.contains('/') || name.contains('\\') || !name.ends_with(".db") {
+    // 远端列表返回的文件名不应含路径分隔符与 ".."；防御异常输入拼出目录穿越 URL
+    if name.is_empty()
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+        || !name.ends_with(".db")
+    {
         return Err("非法的云端备份文件名".to_string());
     }
     let ctx = load_context(&db)?;
@@ -247,6 +261,8 @@ pub fn sync_restore(
         // 6. 回填本机凭据。失败时不回滚恢复本身（数据已就位，回滚反而丢掉用户想恢复的
         // 内容），但错误消息须说清现状：恢复已成功、仅本机凭据需重新配置。
         if let Err(e) = reapply_local_secrets(&db, &local_secrets) {
+            // 实库内容已变：与成功路径一样冻结写入，等重启生效
+            db.freeze_writes();
             return Err(format!(
                 "数据已恢复，但回填本机 AI/云同步凭据失败（{}）。请在设置中重新配置这些凭据。安全备份：{}",
                 e,
@@ -254,6 +270,8 @@ pub fn sync_restore(
             ));
         }
 
+        // 实库内容已被云端副本覆盖：重启前的一切后续写入都会随重启丢失，冻结写入
+        db.freeze_writes();
         Ok(safety.to_string_lossy().to_string())
     })();
     let _ = std::fs::remove_file(&temp);
@@ -272,6 +290,9 @@ struct DavContext {
 }
 
 fn load_context(db: &Database) -> Result<DavContext, String> {
+    // 每次远端操作前顺手清理系统临时目录里的同步临时库残留（上次流程中断/崩溃
+    // 留下的 taglauncher_sync_*.db，上传残留可能含明文密钥）
+    cleanup_stale_sync_temps();
     let (url, username, password, remote_dir) = {
         let conn = db.get_conn();
         (
@@ -546,7 +567,8 @@ fn parse_propfind_backups(xml: &str) -> Vec<RemoteBackup> {
         }
         // href 是 URL 路径，取最后一个非空段作为文件名并解码
         let name = percent_decode(href.trim_end_matches('/').rsplit('/').next().unwrap_or(""));
-        if !name.starts_with("taglauncher_") || !name.ends_with(".db") {
+        // 拒绝含 ".." 的名字：防止异常服务器响应拼出目录穿越路径
+        if !name.starts_with("taglauncher_") || !name.ends_with(".db") || name.contains("..") {
             continue;
         }
         let size = extract_first_tag_text(&block, "getcontentlength")
@@ -701,6 +723,31 @@ fn temp_file_path(purpose: &str) -> PathBuf {
         std::process::id(),
         data_commands::utc_timestamp_compact()
     ))
+}
+
+/// 清理系统临时目录里残留的同步临时库（上次流程中断/崩溃留下的
+/// taglauncher_sync_*.db，上传残留可能含明文密钥）。尽力而为，失败忽略。
+/// 只清理超过 1 小时未修改的文件：进行中的其它实例的临时文件不受影响。
+fn cleanup_stale_sync_temps() {
+    const STALE_AGE: std::time::Duration = std::time::Duration::from_secs(3600);
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !name.starts_with("taglauncher_sync_") || !name.ends_with(".db") {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .map(|t| t.elapsed().map(|age| age > STALE_AGE).unwrap_or(false))
+            .unwrap_or(false);
+        if stale {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

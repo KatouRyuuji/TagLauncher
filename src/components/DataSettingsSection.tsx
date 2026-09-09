@@ -5,6 +5,7 @@ import * as db from "../lib/db";
 import type { DataDirectoryInfo } from "../lib/db";
 import { formatBytes } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
+import { useAppStore } from "../stores/appStore";
 
 type BusyAction = "switch" | "reset" | "backup" | "export" | "import" | null;
 
@@ -14,6 +15,7 @@ const TARGET_HAS_DB_MARKER = "已存在 TagLauncher 数据库";
 export function DataSettingsSection() {
   const [info, setInfo] = useState<DataDirectoryInfo | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
+  const beginRestart = useAppStore((s) => s.beginRestart);
   // 用户选择的目标目录已有数据库时挂起，展示「迁移覆盖被拒」的内联确认，
   // 提供"直接使用该目录数据"（migrate=false）入口——否则该场景是死路：
   // 后端报错文案引导的选择在前端不存在。
@@ -39,14 +41,6 @@ export function DataSettingsSection() {
     }
   };
 
-  const promptRestart = (message: string) => {
-    showToast(message, "success");
-    // 略微延迟，让用户看到 toast 后重启
-    window.setTimeout(() => {
-      void db.restartApp().catch(() => showToast("请手动重启应用以生效", "warning"));
-    }, 1200);
-  };
-
   const handleSwitchDir = () =>
     withBusy("switch", async () => {
       const selected = await dialogOpen({ title: "选择新的数据目录", directory: true, multiple: false });
@@ -62,7 +56,8 @@ export function DataSettingsSection() {
         }
         throw e;
       }
-      promptRestart("数据目录已切换，应用即将重启以生效");
+      // 后端写入已冻结：阻断遮罩 + 自动重启（不再用 toast+延时 的软提示窗口）
+      beginRestart("数据目录已切换");
     });
 
   // 目标目录已有数据库：不复制当前数据，直接改用该目录（重启生效）
@@ -71,14 +66,14 @@ export function DataSettingsSection() {
       if (!pendingAdoptDir) return;
       await db.setDataDirectory(pendingAdoptDir, false);
       setPendingAdoptDir(null);
-      promptRestart("已切换到目标数据目录，应用即将重启以生效");
+      beginRestart("已切换到目标数据目录");
     });
 
   const handleReset = () =>
     withBusy("reset", async () => {
       if (!info || !info.isCustom) return;
       await db.resetDataDirectory();
-      promptRestart("已恢复默认数据目录，应用即将重启以生效");
+      beginRestart("已恢复默认数据目录");
     });
 
   const handleBackup = () =>
@@ -109,10 +104,8 @@ export function DataSettingsSection() {
       });
       if (!selected || Array.isArray(selected)) return;
       const backup = await db.importData(selected);
-      showToast(`已导入（原数据已备份到 ${backup}），应用即将重启`, "success");
-      window.setTimeout(() => {
-        void db.restartApp().catch(() => showToast("请手动重启应用以生效", "warning"));
-      }, 1500);
+      // 后端写入已冻结：阻断遮罩 + 自动重启
+      beginRestart(`已导入（原数据已备份到 ${backup}）`);
     });
 
   const openBackupsDir = () => {

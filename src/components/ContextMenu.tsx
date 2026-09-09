@@ -18,17 +18,22 @@ import {
 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { stepMenuIndex } from "../lib/itemQuery";
+import { SET_FAVORITES_EVENT } from "../hooks/useItems";
+import { BATCH_REMOVE_REQUEST_EVENT } from "../hooks/useItemRemoval";
+import { stepMenuIndex, formatPathCopy } from "../lib/itemQuery";
 import * as db from "../lib/db";
 import { showToast } from "../lib/toast";
 import { copyText } from "../lib/clipboard";
 import type { Cabinet, ItemWithTags } from "../types";
+import type { ContextSelectionInfo } from "./ItemCard";
 
 interface ContextMenuProps {
   item: ItemWithTags;
   cabinets: Cabinet[];
   currentCabinetId: number | null;
   currentCabinetName: string | null;
+  /** 右击项属于当前多选集时非 null：删除/收藏/复制路径作用于整个选中集 */
+  contextSelection?: ContextSelectionInfo | null;
   position: { x: number; y: number };
   onClose: () => void;
   onLaunch: () => void;
@@ -46,6 +51,7 @@ export function ContextMenu({
   cabinets,
   currentCabinetId,
   currentCabinetName,
+  contextSelection,
   position,
   onClose,
   onLaunch,
@@ -293,6 +299,40 @@ export function ContextMenu({
     onClose();
   };
 
+  // 右击项属于当前多选集时，复制路径/收藏/删除作用于整个选中集；
+  // 打开/预览/文件柜等保持单对象语义（对齐资源管理器）。
+  const multi = contextSelection ?? null;
+
+  const handleCopyPaths = () => {
+    const payload = formatPathCopy(multi ? multi.paths : [item.path]);
+    if (payload) void copyText(payload.text, payload.message);
+    onClose();
+  };
+
+  const handleToggleFavoriteClick = () => {
+    if (multi) {
+      // 多选统一置为目标态（有未收藏项则全部收藏，否则全部取消）：由 useItems 监听执行
+      window.dispatchEvent(
+        new CustomEvent(SET_FAVORITES_EVENT, {
+          detail: { ids: multi.ids, favorite: multi.favoriteTarget },
+        }),
+      );
+    } else {
+      onToggleFavorite();
+    }
+    onClose();
+  };
+
+  const handleRemoveClick = () => {
+    if (multi) {
+      // 删除整个选中集：事件由 useItemRemoval 监听，走同一套批量移除确认流
+      window.dispatchEvent(new Event(BATCH_REMOVE_REQUEST_EVENT));
+    } else {
+      onRemove();
+    }
+    onClose();
+  };
+
   // 通过 Portal 渲染到 body：彻底免疫祖先的 transform / will-change / overflow，
   // 保证 position:fixed 始终相对视口定位（虚拟化列表内右键也精准跟随鼠标）。
   return createPortal(
@@ -336,15 +376,27 @@ export function ContextMenu({
         <MenuItem icon={Play} label="打开" onClick={() => { onLaunch(); onClose(); }} />
         {onPreview && <MenuItem icon={Eye} label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
         <MenuItem icon={FolderOpen} label="打开所在文件夹" onClick={() => void handleOpenFolder()} />
-        <MenuItem icon={Copy} label="复制路径" onClick={() => { void copyText(item.path, "已复制路径"); onClose(); }} />
+        <MenuItem
+          icon={Copy}
+          label={multi ? `复制 ${multi.paths.length} 条路径` : "复制路径"}
+          onClick={handleCopyPaths}
+        />
         <MenuDivider />
 
         <MenuGroupLabel>收藏与整理</MenuGroupLabel>
         <MenuItem
           icon={Star}
-          label={item.is_favorite ? "取消收藏" : "加入收藏"}
-          onClick={() => { onToggleFavorite(); onClose(); }}
-          accent={item.is_favorite ? "favorite" : undefined}
+          label={
+            multi
+              ? multi.favoriteTarget
+                ? `收藏 ${multi.ids.length} 个对象`
+                : `取消收藏 ${multi.ids.length} 个对象`
+              : item.is_favorite
+              ? "取消收藏"
+              : "加入收藏"
+          }
+          onClick={handleToggleFavoriteClick}
+          accent={(multi ? !multi.favoriteTarget : item.is_favorite) ? "favorite" : undefined}
         />
         <MenuItem icon={Tags} label="管理标签" onClick={() => { onEditTags(); onClose(); }} />
         <MenuItem icon={ImagePlus} label={item.icon_path ? "更换缩略图" : "设置缩略图"} onClick={() => void handleChangeThumbnail()} />
@@ -363,6 +415,12 @@ export function ContextMenu({
               ref={cabinetTriggerRef}
               type="button"
               role="menuitem"
+              onClick={(event) => {
+                // 鼠标靠 hover 已展开子菜单，点击保持展开即可；
+                // 键盘 Enter/Space（event.detail === 0）打开子菜单并把焦点移入首项。
+                if (event.detail === 0) focusSubmenuOnOpenRef.current = true;
+                openCabinetSubmenu();
+              }}
               className="flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
               <FolderInput aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
@@ -386,7 +444,12 @@ export function ContextMenu({
 
         <MenuDivider />
         <MenuGroupLabel>危险操作</MenuGroupLabel>
-        <MenuItem icon={Trash2} label="删除" onClick={() => { onRemove(); onClose(); }} accent="danger" />
+        <MenuItem
+          icon={Trash2}
+          label={multi ? `删除 ${multi.ids.length} 个对象` : "删除"}
+          onClick={handleRemoveClick}
+          accent="danger"
+        />
       </div>
 
       {showCabinetSub && (

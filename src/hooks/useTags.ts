@@ -13,6 +13,9 @@ import { compareNames } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
 import type { Tag } from "../types";
 
+/** 标签改名/删除事件：useItems 监听后刷新对象列表，避免卡片标签 pill 残留旧值。 */
+export const TAGS_WRITTEN_EVENT = "taglauncher-tags-written";
+
 /** 按名称排序，保持与后端 get_tags 的返回顺序一致 */
 function sortTags(list: Tag[]): Tag[] {
   return [...list].sort((a, b) => compareNames(a.name, b.name));
@@ -67,6 +70,8 @@ export function useTags() {
     );
     setTags(next);
     notifyTagsChanged(next);
+    // 对象卡片 pill 渲染自 item.tags：通知 useItems 刷新对象，避免幽灵标签
+    window.dispatchEvent(new Event(TAGS_WRITTEN_EVENT));
   }, [setTags]);
 
   /** 删除标签（关联的 item_tags 记录会级联删除） */
@@ -81,6 +86,8 @@ export function useTags() {
     if (selectedTagIds.includes(id)) {
       setSelectedTagIds(selectedTagIds.filter((tagId) => tagId !== id));
     }
+    // 级联删除后对象卡片仍持有旧 item.tags：通知 useItems 刷新
+    window.dispatchEvent(new Event(TAGS_WRITTEN_EVENT));
   }, [setTags]);
 
   return { tags, loading, refresh, addTag, updateTag, removeTag };

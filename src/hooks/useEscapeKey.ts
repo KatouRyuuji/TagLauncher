@@ -22,6 +22,13 @@ export function useEscapeKey(onEscape: () => void, active = true): void {
     const entry = () => onEscapeRef.current();
     escapeStack.push(entry);
     const handler = (event: KeyboardEvent) => {
+      // 带 data-esc-local 的元素（如浮动面板键盘拖拽手柄）自行处理 Esc，不走全局栈
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest("[data-esc-local]")
+      ) {
+        return;
+      }
       if (event.key === "Escape" && escapeStack[escapeStack.length - 1] === entry) {
         event.stopPropagation();
         entry();

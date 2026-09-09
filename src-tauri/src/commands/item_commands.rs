@@ -16,12 +16,11 @@ pub fn add_item(db: State<Database>, path: String) -> Result<Item, String> {
     item_service::add_item(&conn, &path)
 }
 
-// 批量拖入大量文件是重 IO 大头，同样用 (async) 放到工作线程；add_items 的 &mut conn 事务在
-// 工作线程内同步执行，函数体无 await，无跨 await 持锁。
+// 批量拖入大量文件是重 IO 大头，同样用 (async) 放到工作线程；add_items 内部两段式：
+// 锁外逐文件采集元数据（重 IO）→ 锁内单事务批量写库，重 IO 期间不持有全局 DB 锁。
 #[tauri::command(async)]
 pub fn add_items(db: State<Database>, paths: Vec<String>) -> item_service::AddItemsResult {
-    let mut conn = db.get_conn();
-    item_service::add_items(&mut conn, paths)
+    item_service::add_items(&db, paths)
 }
 
 #[tauri::command]

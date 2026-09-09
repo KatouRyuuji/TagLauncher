@@ -38,7 +38,7 @@ export const sakuraTheme: ThemeDefinition = {
     "text-secondary": "#47536b",
     "text-tertiary": "#6b7791",
     "text-muted": "rgba(107, 119, 145, 0.85)",
-    "text-faint": "rgba(107, 119, 145, 0.62)",
+    "text-faint": "rgba(107, 119, 145, 0.72)",
     "text-ghost": "#dae3ee",
     "text-placeholder": "rgba(107, 119, 145, 0.78)",
     "text-invert": "#ffffff",

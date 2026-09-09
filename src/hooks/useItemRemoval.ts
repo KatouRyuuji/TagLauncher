@@ -7,9 +7,12 @@
 // 不再单删/批量两条路径落到不同后端命令。
 // ============================================================================
 
-import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 const SKIP_REMOVE_ITEM_CONFIRM_KEY = "taglauncher.skip_remove_item_confirm";
+
+/** 请求批量移除当前选中集事件：ContextMenu 多选删除走此通道（拿不到本 hook 的回调）。 */
+export const BATCH_REMOVE_REQUEST_EVENT = "taglauncher-request-batch-remove";
 
 interface UseItemRemovalParams {
   removeItems: (ids: number[]) => Promise<void>;
@@ -119,6 +122,13 @@ export function useItemRemoval({
     setPendingBatchRemoveItemIds(null);
     setSkipRemoveItemConfirm(false);
   }, []);
+
+  // 右键菜单命中多选集时的「删除」经由事件到达，与 Delete 键走同一确认流
+  useEffect(() => {
+    const handler = () => { void requestBatchRemoveFromApp(); };
+    window.addEventListener(BATCH_REMOVE_REQUEST_EVENT, handler);
+    return () => window.removeEventListener(BATCH_REMOVE_REQUEST_EVENT, handler);
+  }, [requestBatchRemoveFromApp]);
 
   return {
     requestRemoveFromApp,

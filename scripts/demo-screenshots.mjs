@@ -130,9 +130,10 @@ async function scrollSettingsTo(page, chipLabel) {
 async function selectTheme(page, themeLabel) {
   const dialog = page.getByRole("dialog", { name: "设置工作台" });
   // 主题选择器为自绘 SelectMenu：点开按钮后按选项文本选择
+  // （弹层 portal 到 body，不在设置对话框 DOM 内，选项须从 page 范围定位）
   await dialog.locator('button[aria-label="当前主题"]').click();
   await settle(250);
-  await dialog.locator('[role="option"]', { hasText: themeLabel }).first().click();
+  await page.locator('[role="listbox"] [role="option"]', { hasText: themeLabel }).first().click();
   await settle(600);
 }
 
@@ -435,7 +436,7 @@ async function themeTour(page) {
   // 收集「内置主题」分组下全部配色家族名（自绘 SelectMenu 的 option 文本）
   await dialog.locator('button[aria-label="当前主题"]').click();
   await settle(250);
-  const themeLabels = await dialog.locator('[role="listbox"] [role="option"]').evaluateAll(
+  const themeLabels = await page.locator('[role="listbox"] [role="option"]').evaluateAll(
     (options) => options.map((option) => option.textContent?.trim() ?? ""),
   );
   await page.keyboard.press("Escape");

@@ -35,7 +35,7 @@ vi.mock("../lib/db", () => ({
   exportThemeFile: mocks.exportThemeFile,
 }));
 
-import { useTheme } from "./useTheme";
+import { useTheme, MOD_THEME_ADDED } from "./useTheme";
 
 describe("useTheme 导入主题后 setTheme 竞态", () => {
   beforeEach(() => {
@@ -74,5 +74,31 @@ describe("useTheme 导入主题后 setTheme 竞态", () => {
     expect(result.current.currentTheme.id).toBe("imported-theme");
     // 持久化的也应是新主题，而不是 fallback 的默认主题
     expect(mocks.setCurrentTheme).toHaveBeenLastCalledWith("imported-theme");
+  });
+
+  it("MOD_THEME_ADDED 后立即 setTheme 应能切换到 mod 主题", async () => {
+    const { result } = renderHook(() => useTheme());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.loading).toBe(false);
+
+    const modTheme = {
+      id: "mod-theme-x",
+      name: "Mod Theme",
+      isPreset: false,
+      variables: { "bg-base": "#000000" },
+    };
+
+    // mod 主题注册事件与紧随的 setTheme 在同一微任务链：modThemesRef 必须
+    // 同步领先 state 一拍，否则 findTheme miss 会错误回退默认主题并持久化
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(MOD_THEME_ADDED, { detail: modTheme }));
+      await result.current.setTheme("mod-theme-x");
+    });
+
+    expect(result.current.currentTheme.id).toBe("mod-theme-x");
+    expect(mocks.setCurrentTheme).toHaveBeenLastCalledWith("mod-theme-x");
   });
 });

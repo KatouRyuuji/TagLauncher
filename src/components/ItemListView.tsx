@@ -7,7 +7,8 @@ import { isHeaderSortActive, toggleHeaderSort, type ListHeaderColumn } from "../
 import { ITEM_LIST_BASE_ROW_HEIGHT, ITEM_LIST_GRID_TEMPLATE, ItemRow } from "./ItemRow";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
-import { SelectionCanvas, type Rect } from "./SelectionCanvas";
+import { SelectionCanvas, consumeSelectionScrollFollow, type Rect } from "./SelectionCanvas";
+import type { ContextSelectionInfo } from "./ItemCard";
 
 type ItemRowViewProps = Omit<
   ItemViewProps,
@@ -24,10 +25,12 @@ const ItemListRow = memo(function ItemListRow({
   item,
   viewProps,
   selected,
+  contextSelection,
 }: {
   item: ItemViewProps["items"][number];
   viewProps: ItemRowViewProps;
   selected: boolean;
+  contextSelection: ContextSelectionInfo | null;
 }) {
   const {
     tags,
@@ -66,6 +69,7 @@ const ItemListRow = memo(function ItemListRow({
       onRequestRemoveFromApp={onRequestRemoveFromApp}
       onUpdateThumbnail={onUpdateThumbnail}
       selected={selected}
+      contextSelection={contextSelection}
     />
   );
 });
@@ -174,6 +178,10 @@ export function ItemListView({
     count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ITEM_LIST_BASE_ROW_HEIGHT,
+    // 行 key 用对象 id 而非默认行索引：筛选/排序/换柜后行 key 变化触发 React
+    // 重建行 DOM 并由 measureElement 同步重测；索引复用会让旧行高残留在
+    // itemSizeCache（v3 同步测量命中缓存即不读 DOM），表现为行距错乱。
+    getItemKey: (index) => items[index]?.id ?? index,
     overscan: 6,
   });
 
@@ -186,13 +194,13 @@ export function ItemListView({
     }
   }, [virtualItems]);
 
-  // items 变化后同一行索引对应的内容/高度已失效，但虚拟化器按索引缓存测量值、
-  // 且 key 相同不会重新触发 measureElement：必须主动清空测量缓存强制重测，
-  // 否则滚动总高度与行位置按旧高度计算（滚动错乱、未渲染区域尺寸错误）。
+  // items 变化后同一行索引对应的内容已失效，框选度量按行索引记录，须清空重录。
+  // 行高重测无需 virtualizer.measure()：getItemKey 按对象 id 变化触发
+  // measureElement 重测；同 id 行的纯高度变化（多行标签/Mod footer）由虚拟器
+  // 内部 ResizeObserver 自动校正（measure() 清缓存后复用行不会重测，见 ItemGrid）。
   useLayoutEffect(() => {
     rowMetricsRef.current.clear();
-    virtualizer.measure();
-  }, [virtualizer, items]);
+  }, [items]);
 
   const lastSelectedId = selectedItemIds[selectedItemIds.length - 1];
   const skipScrollRef = useRef(true);
@@ -209,10 +217,26 @@ export function ItemListView({
     }
     if (lastScrolledIdRef.current === lastSelectedId) return;
     lastScrolledIdRef.current = lastSelectedId;
+    // 仅键盘单步导航（方向键/Home/End/Shift 扩展）跟随滚动；Ctrl+A 全选、
+    // 框选、批量选择不设置跟随标记，视图保持原地（SelectionCanvas 顶部有标记说明）。
+    if (consumeSelectionScrollFollow() !== lastSelectedId) return;
     const index = items.findIndex((item) => item.id === lastSelectedId);
     if (index < 0) return;
     virtualizer.scrollToIndex(index, { align: "auto" });
   }, [lastSelectedId, items, virtualizer]);
+
+  // 右键命中多选集时，右键菜单的删除/收藏/复制路径作用于整个选中集；
+  // 仅多选（>1）时构造，单选/未选中为 null（菜单回退单对象语义）。
+  const contextSelectionInfo = useMemo<ContextSelectionInfo | null>(() => {
+    if (selectedItemIds.length <= 1) return null;
+    const idSet = new Set(selectedItemIds);
+    const selected = items.filter((item) => idSet.has(item.id));
+    return {
+      ids: selected.map((item) => item.id),
+      paths: selected.map((item) => item.path),
+      favoriteTarget: selected.some((item) => !item.is_favorite),
+    };
+  }, [items, selectedItemIds]);
 
   // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
   // 注意：vRow.start 相对于行容器（position:relative 的 div），而行容器位于 sticky
@@ -301,6 +325,7 @@ export function ItemListView({
                   item={item}
                   viewProps={viewProps}
                   selected={selectedItemIdSet.has(item.id)}
+                  contextSelection={selectedItemIdSet.has(item.id) ? contextSelectionInfo : null}
                 />
               </div>
             );

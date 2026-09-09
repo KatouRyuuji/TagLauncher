@@ -10,6 +10,7 @@
 import { useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import { pickRandomTagColor } from "../lib/tagColors";
+import { showToast } from "../lib/toast";
 import type { ItemWithTags, Tag } from "../types";
 
 interface UseItemTagActionsParams {
@@ -41,7 +42,12 @@ export function useItemTagActions({
       if (!item) return;
 
       const existing = item.tags.map((t) => t.id);
-      if (existing.includes(tagId)) return;
+      if (existing.includes(tagId)) {
+        // 拖到已有该标签的对象：原本静默无效，给出 info 反馈
+        const tagName = useAppStore.getState().tags.find((t) => t.id === tagId)?.name;
+        showToast(tagName ? `「${item.name}」已有「${tagName}」标签` : "该对象已有此标签", "info");
+        return;
+      }
 
       await setItemTags(itemId, [...existing, tagId]);
     },

@@ -127,7 +127,7 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
     "text-secondary": p.text_2,
     "text-tertiary": light ? p.text_3 : rgba(p.text_2, 0.82),
     "text-muted": light ? rgba(p.text_3, 0.85) : p.text_3,
-    "text-faint": rgba(p.text_3, light ? 0.62 : 0.72),
+    "text-faint": rgba(p.text_3, 0.72),
     "text-ghost": light ? p.border : rgba(p.text_3, 0.3),
     "text-placeholder": rgba(p.text_3, light ? 0.78 : 0.85),
     "text-invert": p.on_primary,

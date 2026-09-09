@@ -6,7 +6,11 @@ import { applyTypeFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/it
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
+import { TAGS_WRITTEN_EVENT } from "./useTags";
 import type { ItemWithTags } from "../types";
+
+/** 批量收藏请求事件（ContextMenu 多选收藏走此通道，detail: { ids, favorite }）。 */
+export const SET_FAVORITES_EVENT = "taglauncher-set-favorites";
 
 /**
  * 写操作错误反馈包装：失败时弹出可读 toast 再向上抛出。
@@ -205,6 +209,14 @@ export function useItems() {
     loadAll();
   }, [loadAll]);
 
+  // 标签改名/删除后，对象卡片上的标签 pill 渲染自 item.tags：监听标签写事件
+  // 全量刷新对象，避免卡片残留幽灵标签（旧名称/已删标签）。
+  useEffect(() => {
+    const handler = () => { void loadAll(); };
+    window.addEventListener(TAGS_WRITTEN_EVENT, handler);
+    return () => window.removeEventListener(TAGS_WRITTEN_EVENT, handler);
+  }, [loadAll]);
+
   const refreshItemById = useCallback(async (itemId: number) => {
     const item = await db.getItem(itemId);
     setAllItems((current) => upsertItem(current, item));
@@ -291,6 +303,18 @@ export function useItems() {
         showToast(`导入失败 ${result.failed.length} 项：${getPathDisplayName(first.path)}（${first.error}）`, "warning");
       }
       if (result.items.length === 0) return;
+
+      // 后端按文件身份判重并标注实际新建数（改名/移动后的重拖会合并既有记录，
+      // 不计入新建）——导入反馈以 createdCount 为准，不用路径字符串近似。
+      const importedCount = result.createdCount;
+      const duplicateCount = result.items.length - importedCount;
+      if (importedCount === 0) {
+        showToast(`${duplicateCount} 个对象已存在，无需导入`, "info");
+      } else if (duplicateCount > 0) {
+        showToast(`已导入 ${importedCount} 个对象，${duplicateCount} 个已存在跳过`, "success");
+      } else {
+        showToast(`已导入 ${importedCount} 个对象`, "success");
+      }
 
       const changedItems = await db.getItemsByIds(result.items.map((item) => item.id));
       applyChangedItems(changedItems);
@@ -382,6 +406,18 @@ export function useItems() {
       applyChangedItems(changedItems);
     });
   }, [applyChangedItems]);
+
+  // ContextMenu 的多选收藏经由事件到达（右键菜单拿不到本 hook 的回调）
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ ids?: unknown; favorite?: unknown }>).detail;
+      if (!detail || !Array.isArray(detail.ids)) return;
+      const ids = detail.ids.filter((id): id is number => typeof id === "number");
+      if (ids.length > 0) void setFavorites(ids, Boolean(detail.favorite)).catch(() => {});
+    };
+    window.addEventListener(SET_FAVORITES_EVENT, handler);
+    return () => window.removeEventListener(SET_FAVORITES_EVENT, handler);
+  }, [setFavorites]);
 
   // 柜成员操作：await 后用 useAppStore.getState() 读最新选中柜（同 useTags 范式），
   // 避免等待期间用户切柜后按调用时刻的捕获值写错 cabinetItems 列表。

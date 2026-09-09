@@ -251,6 +251,7 @@ pub fn run() {
             set_current_theme,
             get_setting,
             set_setting,
+            check_version_migration,
             // 数据目录 / 导入导出备份
             get_data_directory_info,
             set_data_directory,

@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import {
   Check,
+  Eye,
   Keyboard,
   MousePointer2,
   Navigation,
@@ -39,6 +40,18 @@ const GROUPS: { title: string; icon: LucideIcon; items: { keys: string; action: 
       { keys: "Ctrl+C", action: "复制选中路径（多项换行）" },
       { keys: "Ctrl+D", action: "收藏 / 取消收藏" },
       { keys: "G / L", action: "网格 / 列表" },
+    ],
+  },
+  {
+    title: "快速预览（预览打开时）",
+    icon: Eye,
+    items: [
+      { keys: "Space", action: "关闭预览" },
+      { keys: "↑ ↓ ← → / Home / End", action: "切换预览对象" },
+      { keys: "Enter", action: "启动预览对象" },
+      { keys: "Ctrl+C", action: "复制预览对象路径" },
+      { keys: "Ctrl+D", action: "收藏 / 取消收藏预览对象" },
+      { keys: "Ctrl+A", action: "预览时不生效（避免误全选背景列表）" },
     ],
   },
   {

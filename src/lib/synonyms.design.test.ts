@@ -56,6 +56,19 @@ test("setSynonymGroups：重复调用是整体替换而非合并追加", () => {
   assert.deepEqual(expandQuery("c"), ["c", "d"]);
 });
 
+test("setSynonymGroups：共享词的重叠组并成等价类（传递链不断裂）", () => {
+  setSynonymGroups([["游戏", "game"], ["game", "电竞"]]);
+  assert.deepEqual(expandQuery("游戏"), ["游戏", "game", "电竞"]);
+  assert.deepEqual(expandQuery("电竞"), ["电竞", "游戏", "game"]);
+  assert.deepEqual(expandQuery("game"), ["game", "游戏", "电竞"]);
+});
+
+test("setSynonymGroups：多组链式重叠时全部并为一组", () => {
+  setSynonymGroups([["a", "b"], ["c", "d"], ["b", "c"]]);
+  assert.deepEqual(expandQuery("a"), ["a", "b", "c", "d"]);
+  assert.deepEqual(expandQuery("d"), ["d", "a", "b", "c"]);
+});
+
 test("loadSynonyms：非 Tauri 环境下 invoke 失败应静默降级为空同义词表，而非抛出异常", async () => {
   // 先建立一个非空分组，验证 loadSynonyms 失败后确实把表清空（而非保留旧值）。
   setSynonymGroups([["foo", "bar"]]);

@@ -14,6 +14,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { hasPotentialExternalFileDrag, extractDroppedPaths } from "../lib/dropPaths";
+import { showToast } from "../lib/toast";
 
 export interface ExternalFileDropHandlers {
   onDragEnter: (e: DragEvent<HTMLElement>) => void;
@@ -59,7 +60,13 @@ export function useExternalFileDrop(
       // 不排序会导致同一批文件在 800ms 窗口内被判定为两次导入。
       const key = [...normalized].sort().join("\n");
       const now = Date.now();
-      if (recentDropRef.current.key === key && now - recentDropRef.current.ts < 800) {
+      const gap = now - recentDropRef.current.ts;
+      if (recentDropRef.current.key === key && gap < 800) {
+        // 双通道的并发重复投递在毫秒内到达，静默去重即可；
+        // 间隔较长的同批路径判定为用户有意重拖，给出反馈而不是静默吞掉。
+        if (gap >= 120) {
+          showToast("这批文件刚刚已导入，如需再次导入请稍候", "info");
+        }
         return;
       }
       // 先记 key 挡住双通道的并发重复投递；导入失败时撤销记录，

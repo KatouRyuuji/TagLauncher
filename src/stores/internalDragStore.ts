@@ -6,7 +6,8 @@ export type InternalDragHoverTarget =
   | { kind: "item-favorites" }
   | { kind: "item-clear-current-filter" }
   | { kind: "item-remove-from-app" }
-  | { kind: "reorder-tag"; itemId: number; targetIdx: number }
+  // targetIdx 为悬停的标签下标；after 表示指针落在该标签右半区（插入到其后）
+  | { kind: "reorder-tag"; itemId: number; targetIdx: number; after: boolean }
   | { kind: "reorder-remove"; itemId: number }
   | null;
 
@@ -48,7 +49,12 @@ function sameHoverTarget(a: InternalDragHoverTarget, b: InternalDragHoverTarget)
     case "item-remove-from-app":
       return true;
     case "reorder-tag":
-      return b.kind === "reorder-tag" && a.itemId === b.itemId && a.targetIdx === b.targetIdx;
+      return (
+        b.kind === "reorder-tag" &&
+        a.itemId === b.itemId &&
+        a.targetIdx === b.targetIdx &&
+        a.after === b.after
+      );
     case "reorder-remove":
       return b.kind === "reorder-remove" && a.itemId === b.itemId;
   }

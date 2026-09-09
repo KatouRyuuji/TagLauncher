@@ -13,9 +13,8 @@ fn add_items_isolates_single_failure_without_aborting_batch() {
     let good1 = common::write_file(&t.dir, "app1.exe", b"x");
     let good2 = common::write_file(&t.dir, "app2.exe", b"y");
 
-    let mut conn = t.db.get_conn();
     let result = item_service::add_items(
-        &mut conn,
+        &t.db,
         vec![good1.clone(), "   ".to_string(), good2.clone()],
     );
 
@@ -23,6 +22,7 @@ fn add_items_isolates_single_failure_without_aborting_batch() {
     assert_eq!(result.failed.len(), 1, "空白路径应作为单项失败被隔离");
     assert_eq!(result.failed[0].path, "   ");
     // 其余项确实持久化了（整批未回滚）。
+    let conn = t.db.get_conn();
     let cnt: i64 = conn
         .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
         .unwrap();

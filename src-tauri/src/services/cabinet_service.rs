@@ -38,7 +38,10 @@ fn friendly_name_err(e: rusqlite::Error) -> String {
 
 /// 新建文件柜
 pub fn add_cabinet(conn: &Connection, name: &str, color: &str) -> Result<Cabinet, String> {
-    if name.trim().is_empty() {
+    crate::db::ensure_writes_allowed()?;
+    // 校验与落库统一使用 trim 后的值（与 tag_service::add_tag 同一口径）
+    let name = name.trim();
+    if name.is_empty() {
         return Err("文件柜名称不能为空".to_string());
     }
     conn.execute(
@@ -64,6 +67,12 @@ pub fn add_cabinet(conn: &Connection, name: &str, color: &str) -> Result<Cabinet
 
 /// 更新文件柜
 pub fn update_cabinet(conn: &Connection, id: i64, name: &str, color: &str) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
+    // 与 add_cabinet 同一口径：trim 后落库，空名拒绝
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("文件柜名称不能为空".to_string());
+    }
     let affected = conn
         .execute(
             "UPDATE cabinets SET name = ?1, color = ?2 WHERE id = ?3",
@@ -79,6 +88,7 @@ pub fn update_cabinet(conn: &Connection, id: i64, name: &str, color: &str) -> Re
 
 /// 删除文件柜
 pub fn remove_cabinet(conn: &Connection, id: i64) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let affected = conn
         .execute("DELETE FROM cabinets WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
@@ -90,6 +100,7 @@ pub fn remove_cabinet(conn: &Connection, id: i64) -> Result<(), String> {
 
 /// 添加项目到文件柜
 pub fn add_item_to_cabinet(conn: &Connection, cabinet_id: i64, item_id: i64) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     // 先校验存在性给友好文案：否则把裸 FOREIGN KEY constraint failed 抛给前端
     // （与 tag_service::set_item_tags 同一模式）
     tag_service::ensure_exists(conn, "cabinets", cabinet_id, "文件柜")?;
@@ -108,6 +119,7 @@ pub fn remove_item_from_cabinet(
     cabinet_id: i64,
     item_id: i64,
 ) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     conn.execute(
         "DELETE FROM cabinet_items WHERE cabinet_id = ?1 AND item_id = ?2",
         params![cabinet_id, item_id],
@@ -122,6 +134,7 @@ pub fn add_items_to_cabinet(
     cabinet_id: i64,
     item_ids: &[i64],
 ) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     // 先校验存在性给友好文案（事务保证校验失败时不留半份写入）
     tag_service::ensure_exists(&tx, "cabinets", cabinet_id, "文件柜")?;
@@ -137,18 +150,19 @@ pub fn add_items_to_cabinet(
     Ok(())
 }
 
-/// 批量从文件柜移除（按 500 分块、整批一个事务，原子）。
+/// 批量从文件柜移除（按 IN_CHUNK 分块、整批一个事务，原子）。
 /// 单条 IN (...) 在成员数超过 SQLite 变量上限（旧版 999）时会直接失败。
 pub fn remove_items_from_cabinet(
     conn: &Connection,
     cabinet_id: i64,
     item_ids: &[i64],
 ) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     if item_ids.is_empty() {
         return Ok(());
     }
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    for chunk in item_ids.chunks(500) {
+    for chunk in item_ids.chunks(crate::services::item_service::IN_CHUNK) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
             "DELETE FROM cabinet_items WHERE cabinet_id = ? AND item_id IN ({})",
