@@ -425,9 +425,9 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 
 ### 9.3 协议兼容与解析
 
-- **端点归一化**：`ai.base_url` 结尾自动补全为 `/v1/messages`（`.../v1/messages` 原样；`.../v1` 补 `/messages`；其它补 `/v1/messages`）。鉴权头仅发送 `x-api-key` + `anthropic-version`（**不再额外发送 `Authorization: Bearer`**，避免密钥暴露给会记录该头的第三方网关）；`ai.base_url` 强制 https（本机 `http://localhost` 除外），防止密钥明文过网。
-- **响应解析**：优先取 Anthropic `content[].text`，兜底 OpenAI 风格 `choices[].message.content`。
-- **标签解析**：优先解析首个 JSON 数组；失败时按逗号/换行/顿号回退切分；统一去重、去空、超长（>40 字符）丢弃并裁剪到上限。
+- **端点归一化**：`ai.base_url` 结尾自动补全为 `/v1/messages`（`.../v1/messages` 原样；`.../v1` 补 `/messages`；其它补 `/v1/messages`）。鉴权同时发送 `x-api-key` 与 `Authorization: Bearer`（官方 Anthropic 认前者，Kimi Code / `ANTHROPIC_AUTH_TOKEN` 风格网关认后者），另带 `anthropic-version`；请求体固定 `stream: false`。`ai.base_url` 强制 https（本机 `http://localhost` 除外），防止密钥明文过网；重定向不跟随。
+- **响应解析**：优先取 Anthropic `content[].text`（跳过 `thinking` 块），其次 `content` 字符串，再兜底 OpenAI 风格 `choices[].message.content`（字符串或分段数组）。HTTP 200 的 `error.message` 按 API 错误返回。测试连接与打标请求的 `max_tokens` 均为 1024，HTTP 超时 120 秒，以容纳思考模型先输出 thinking 再输出正文。
+- **标签解析**：优先解析首个 JSON 数组；失败时按逗号/全角逗号/换行/顿号回退切分；统一去重、去空、超长（>40 字符）丢弃并裁剪到上限。
 
 ### 9.4 前端编排
 
@@ -572,7 +572,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src
 ### 安全
 
 - **对象启动经 `ShellExecuteW`（"open" 动词），不经 `cmd.exe`**：从根上杜绝路径中 `&` / `^` / `(` 等 shell 元字符导致的命令注入（旧实现 `cmd /C start "" <path>` 对无空格路径不加引号，会把这些字符当命令分隔符）。见 `services/launch_service.rs`。
-- **AI 密钥最小暴露面**：明文密钥只存后端 `app_meta`，`ai_get_config` 不下发明文（仅回传 `hasApiKey`）；鉴权仅发 `x-api-key`（不发 `Authorization: Bearer`）；`ai.base_url` 强制 https（本机 `localhost` 除外）；**导出 `export_data` 自动剔除 `ai.*` 密钥并 VACUUM 重写**，本机备份 / 迁移则保留密钥以支持完整恢复。
+- **AI 密钥最小暴露面**：明文密钥只存后端 `app_meta`，`ai_get_config` 不下发明文（仅回传 `hasApiKey`）；鉴权发送 `x-api-key` 与 `Authorization: Bearer`（兼容官方 Anthropic 与 AUTH_TOKEN 风格网关）；`ai.base_url` 强制 https（本机 `localhost` 除外），重定向不跟随；**导出 `export_data` 自动剔除 `ai.*` 密钥并 VACUUM 重写**，本机备份 / 迁移则保留密钥以支持完整恢复。
 - **Mod `net.fetch` SSRF 防御**：自定义 DNS 解析器（`SsrfGuardResolver`）在解析层拦截环回 / 私网 / 链路本地 / 保留地址，fail-closed，重定向每一跳重新校验；仅 http/https、默认 30s（上限 120s）超时、10MB 体积上限。见 `commands/net_commands.rs`。
 - **WebView CSP**：`tauri.conf.json` 配置 `csp` / `devCsp`（`default-src 'self'`、`connect-src` 限本机 IPC/asset、`object-src 'none'`、`frame-src 'none'` 等），收敛脚本 / 网络 / 框架来源，作为纵深防御。
 - **Mod / 主题为「可信扩展」**：其 `permissions` 是能力声明（运行时由 JS 宿主据此约束可调用的 API 面），**并非操作系统级安全沙箱边界**——Mod 与应用同处一个 WebView，请仅安装可信来源的扩展。

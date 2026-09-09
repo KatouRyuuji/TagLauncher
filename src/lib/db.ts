@@ -487,7 +487,7 @@ export async function aiSetConfig(config: AiConfig): Promise<void> {
   return invokeCmd("ai_set_config", { config });
 }
 
-/** 是否已配置 AI（base_url + api_key 非空） */
+/** 是否已配置 AI（base_url + api_key + model 均非空） */
 export async function aiIsConfigured(): Promise<boolean> {
   return invokeCmd("ai_is_configured");
 }

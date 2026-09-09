@@ -26,6 +26,11 @@ const KEY_EXTRA_PROMPT: &str = "ai.extra_prompt";
 
 const DEFAULT_MAX_TAGS: u32 = 5;
 const ANTHROPIC_VERSION: &str = "2023-06-01";
+/// 测试连接与打标的输出上限。思考模型会先占用一部分 token 写 thinking 块，
+/// 过小（如 16）时 content 里只有 thinking、没有 text，表现为「响应中未找到文本内容」。
+const COMPLETION_MAX_TOKENS: u32 = 1024;
+/// 思考模型（Kimi K2.7 等）首 token 较慢，整段请求含连接+读体。
+const HTTP_TIMEOUT_SECS: u64 = 120;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -142,13 +147,13 @@ pub fn ai_test_connection(db: State<Database>) -> Result<String, String> {
         AiConfig::load(&conn)
     };
     if !config.is_configured() {
-        return Err("请先填写 API 地址与密钥".to_string());
+        return Err("请先填写并保存 API 地址、密钥与模型".to_string());
     }
     let reply = call_messages(
         &config,
         "You are a connection tester. Reply with the single word: ok",
         "ping",
-        16,
+        COMPLETION_MAX_TOKENS,
     )?;
     Ok(reply.trim().to_string())
 }
@@ -174,7 +179,7 @@ pub fn ai_suggest_tags(
 
     let system = build_system_prompt(&config);
     let user = build_user_prompt(&name, &path, &item_type, &existing_tags);
-    let reply = call_messages(&config, &system, &user, 512)?;
+    let reply = call_messages(&config, &system, &user, COMPLETION_MAX_TOKENS)?;
     let tags = parse_tag_list(&reply, config.max_tags as usize);
     // allow_new_tags=false 时提示词只是软约束：散文回复经回退切分仍会产出词表外标签。
     // 返回前按本次词表（大小写不敏感）硬性过滤，词表外的一律丢弃。
@@ -274,14 +279,16 @@ fn base_url_is_insecure(base_url: &str) -> bool {
 
 fn call_messages(config: &AiConfig, system: &str, user: &str, max_tokens: u32) -> Result<String, String> {
     let endpoint = build_endpoint(&config.base_url);
+    let key = config.api_key.trim();
     let body = serde_json::json!({
         "model": config.model,
         "max_tokens": max_tokens,
+        "stream": false,
         "system": system,
         "messages": [{ "role": "user", "content": user }],
     });
 
-    // redirects(0)：禁用自动重定向——ureq 跟随重定向时会携带原请求头（含 x-api-key）
+    // redirects(0)：禁用自动重定向——ureq 跟随重定向时会携带原请求头（含密钥）
     // 转发到新主机，被劫持/恶意的兼容网关可 302 把密钥引到第三方。改为显式报出重定向，
     // 由用户核对 base_url。（不做私网拦截：base_url 是用户自配，本地/局域网网关属合法场景。）
     let agent = ureq::AgentBuilder::new().redirects(0).build();
@@ -293,11 +300,13 @@ fn call_messages(config: &AiConfig, system: &str, user: &str, max_tokens: u32) -
         let response = agent
             .post(&endpoint)
             .set("content-type", "application/json")
-            // 收敛鉴权头：Anthropic 协议标准是 x-api-key；不再额外发送 Authorization: Bearer，
-            // 避免把密钥暴露给会记录 Authorization 头的第三方兼容网关（缩小泄露面）。
-            .set("x-api-key", config.api_key.trim())
+            .set("accept", "application/json")
+            // 官方 Anthropic 认 x-api-key；Kimi Code / Claude Code 的 ANTHROPIC_AUTH_TOKEN
+            // 风格兼容网关认 Authorization: Bearer。两者一并发送。
+            .set("x-api-key", key)
+            .set("authorization", &format!("Bearer {key}"))
             .set("anthropic-version", ANTHROPIC_VERSION)
-            .timeout(std::time::Duration::from_secs(60))
+            .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECS))
             .send_string(&body.to_string());
 
         match response {
@@ -335,8 +344,9 @@ fn call_messages(config: &AiConfig, system: &str, user: &str, max_tokens: u32) -
                     std::thread::sleep(std::time::Duration::from_secs(if attempt == 1 { 1 } else { 3 }));
                     continue;
                 }
-                // 网关常在错误体里回显请求（含 x-api-key 头）：先抹掉密钥再截断，避免密钥入前端
-                let detail = redact_api_key(&resp.into_string().unwrap_or_default(), &config.api_key);
+                // 网关常在错误体里回显请求（含密钥）：先抹掉密钥再截断，避免密钥入前端
+                let raw = resp.into_string().unwrap_or_default();
+                let detail = redact_api_key(&status_error_detail(&raw), key);
                 return Err(format!("API 返回 {}：{}", code, truncate(&detail, 300)));
             }
             Err(e) => return Err(redact_api_key(&format!("请求失败：{}", e), &config.api_key)),
@@ -354,36 +364,125 @@ fn redact_api_key(msg: &str, api_key: &str) -> String {
     msg.replace(key, "***")
 }
 
-/// 从 Anthropic 响应 JSON 提取首个文本块。
+/// 从 Anthropic 响应 JSON 提取正文文本块（跳过 thinking）。
 fn extract_text(raw: &str) -> Result<String, String> {
+    let raw = raw.trim_start_matches('\u{feff}');
+    let trimmed = raw.trim_start();
+    // 部分网关 content-type 标成 JSON，实际是 SSE 事件流
+    if trimmed.starts_with("data:") || trimmed.starts_with("event:") {
+        return Err("网关返回了流式(SSE)响应，本应用仅支持非流式".to_string());
+    }
     let v: serde_json::Value =
         serde_json::from_str(raw).map_err(|e| format!("响应不是有效 JSON：{}", e))?;
-    // Anthropic：{ content: [{type:"text", text:"..."}] }
+
+    // HTTP 200 仍可能带 Anthropic/OpenAI 错误对象
+    if let Some(msg) = api_error_from_value(&v) {
+        return Err(format!("API 错误：{}", msg));
+    }
+
+    // Anthropic：{ content: [{type:"text", text:"..."}] }；思考模型还会带 type=thinking 块。
     if let Some(arr) = v.get("content").and_then(|c| c.as_array()) {
         let mut out = String::new();
+        let mut saw_thinking = false;
         for block in arr {
-            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                if let Some(t) = block.get("text").and_then(|t| t.as_str()) {
-                    out.push_str(t);
+            if let Some(s) = block.as_str() {
+                out.push_str(s);
+                continue;
+            }
+            match block.get("type").and_then(|t| t.as_str()) {
+                Some("thinking") | Some("redacted_thinking") => saw_thinking = true,
+                Some("text") | Some("output_text") | None => {
+                    if let Some(t) = block.get("text").and_then(|t| t.as_str()) {
+                        out.push_str(t);
+                    }
                 }
+                _ => {}
             }
         }
-        if !out.is_empty() {
+        if !out.trim().is_empty() {
             return Ok(out);
         }
+        if saw_thinking {
+            let stop = v.get("stop_reason").and_then(|s| s.as_str()).unwrap_or("");
+            if stop == "max_tokens" {
+                return Err(
+                    "模型只返回了思考过程、没有正文（思考耗尽了输出上限）".to_string(),
+                );
+            }
+            return Err("模型只返回了思考过程、没有正文".to_string());
+        }
     }
-    // 兜底：部分兼容网关用 OpenAI 风格 choices[].message.content
+    // 部分网关把 content 写成字符串
+    if let Some(s) = v.get("content").and_then(|c| c.as_str()) {
+        if !s.trim().is_empty() {
+            return Ok(s.to_string());
+        }
+    }
+    // 兜底：OpenAI 风格 choices[].message.content（字符串或分段数组）
     if let Some(text) = v
         .get("choices")
         .and_then(|c| c.as_array())
         .and_then(|a| a.first())
         .and_then(|c| c.get("message"))
         .and_then(|m| m.get("content"))
-        .and_then(|t| t.as_str())
+        .and_then(openai_message_content)
     {
-        return Ok(text.to_string());
+        return Ok(text);
     }
     Err("响应中未找到文本内容".to_string())
+}
+
+fn openai_message_content(content: &serde_json::Value) -> Option<String> {
+    match content {
+        serde_json::Value::String(s) if !s.trim().is_empty() => Some(s.clone()),
+        serde_json::Value::Array(parts) => {
+            let mut out = String::new();
+            for part in parts {
+                if let Some(s) = part.as_str() {
+                    out.push_str(s);
+                    continue;
+                }
+                let ty = part.get("type").and_then(|t| t.as_str()).unwrap_or("text");
+                if matches!(ty, "text" | "output_text") {
+                    if let Some(t) = part.get("text").and_then(|t| t.as_str()) {
+                        out.push_str(t);
+                    }
+                }
+            }
+            if out.trim().is_empty() {
+                None
+            } else {
+                Some(out)
+            }
+        }
+        _ => None,
+    }
+}
+
+fn api_error_from_value(v: &serde_json::Value) -> Option<String> {
+    let err = v.get("error")?;
+    if err.is_null() {
+        return None;
+    }
+    if let Some(s) = err.as_str() {
+        let s = s.trim();
+        return if s.is_empty() { None } else { Some(s.to_string()) };
+    }
+    if let Some(msg) = err.get("message").and_then(|m| m.as_str()) {
+        let msg = msg.trim();
+        return if msg.is_empty() { None } else { Some(msg.to_string()) };
+    }
+    None
+}
+
+fn status_error_detail(raw: &str) -> String {
+    let raw = raw.trim_start_matches('\u{feff}');
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
+        if let Some(msg) = api_error_from_value(&v) {
+            return msg;
+        }
+    }
+    raw.to_string()
 }
 
 /// 从模型回复解析标签数组。优先解析 JSON 数组；失败时回退按行/逗号切分。
@@ -407,7 +506,7 @@ fn parse_tag_list(reply: &str, max: usize) -> Vec<String> {
     // 先取末个冒号（半角/全角）之后的片段，再修剪引号/括号/列表符等装饰字符；
     // 含空格的过长 token 仍由 dedup_clean 的 >40 字符规则丢弃。
     let parts: Vec<String> = cleaned
-        .split(|c| c == ',' || c == '\n' || c == '、')
+        .split(|c| c == ',' || c == '，' || c == '\n' || c == '、')
         .map(|s| {
             let t = s.trim();
             let t = t.rsplit([':', '：']).next().unwrap_or(t);
@@ -463,6 +562,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn completion_budget_leaves_room_for_thinking() {
+        // 思考模型会先写 thinking 块：16 会把额度吃光，测试连接表现为「响应中未找到文本内容」。
+        assert!(COMPLETION_MAX_TOKENS >= 512);
+        assert!(HTTP_TIMEOUT_SECS >= 60);
+    }
+
+    #[test]
     fn endpoint_normalization() {
         assert_eq!(build_endpoint("https://api.anthropic.com"), "https://api.anthropic.com/v1/messages");
         assert_eq!(build_endpoint("https://api.anthropic.com/"), "https://api.anthropic.com/v1/messages");
@@ -486,6 +592,12 @@ mod tests {
     fn parse_fallback_comma() {
         let tags = parse_tag_list("开发工具, 截图, 编辑器", 2);
         assert_eq!(tags, vec!["开发工具", "截图"]);
+    }
+
+    #[test]
+    fn parse_fallback_fullwidth_comma() {
+        let tags = parse_tag_list("开发工具，截图，编辑器", 5);
+        assert_eq!(tags, vec!["开发工具", "截图", "编辑器"]);
     }
 
     #[test]
@@ -516,9 +628,67 @@ mod tests {
     }
 
     #[test]
+    fn extract_skips_thinking_then_reads_text() {
+        let raw = r#"{"content":[{"type":"thinking","thinking":"..."},{"type":"text","text":"ok"}],"stop_reason":"end_turn"}"#;
+        assert_eq!(extract_text(raw).unwrap(), "ok");
+    }
+
+    #[test]
+    fn extract_thinking_only_max_tokens() {
+        let raw = r#"{"content":[{"type":"thinking","thinking":"..."}],"stop_reason":"max_tokens"}"#;
+        let err = extract_text(raw).unwrap_err();
+        assert!(err.contains("思考"), "{err}");
+        assert!(err.contains("输出上限"), "{err}");
+    }
+
+    #[test]
     fn extract_openai_style_fallback() {
         let raw = r#"{"choices":[{"message":{"content":"[\"a\"]"}}]}"#;
         assert_eq!(extract_text(raw).unwrap(), "[\"a\"]");
+    }
+
+    #[test]
+    fn extract_openai_content_array() {
+        let raw = r#"{"choices":[{"message":{"content":[{"type":"text","text":"[\"a\"]"}]}}]}"#;
+        assert_eq!(extract_text(raw).unwrap(), "[\"a\"]");
+    }
+
+    #[test]
+    fn extract_content_string() {
+        let raw = r#"{"content":"[\"a\"]"}"#;
+        assert_eq!(extract_text(raw).unwrap(), "[\"a\"]");
+    }
+
+    #[test]
+    fn extract_strips_utf8_bom() {
+        let raw = "\u{feff}{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}";
+        assert_eq!(extract_text(raw).unwrap(), "ok");
+    }
+
+    #[test]
+    fn extract_http200_error_object() {
+        let raw = r#"{"type":"error","error":{"type":"invalid_request_error","message":"model not found"}}"#;
+        let err = extract_text(raw).unwrap_err();
+        assert!(err.contains("model not found"), "{err}");
+    }
+
+    #[test]
+    fn extract_rejects_sse_payload() {
+        let err = extract_text("data: {\"type\":\"message_start\"}\n\n").unwrap_err();
+        assert!(err.contains("SSE"), "{err}");
+    }
+
+    #[test]
+    fn extract_and_parse_thinking_then_json_tags() {
+        let raw = r#"{"content":[{"type":"thinking","thinking":"..."},{"type":"text","text":"[\"文件启动器\",\"Tauri\"]"}],"stop_reason":"end_turn"}"#;
+        let text = extract_text(raw).unwrap();
+        assert_eq!(parse_tag_list(&text, 5), vec!["文件启动器", "Tauri"]);
+    }
+
+    #[test]
+    fn status_error_prefers_json_message() {
+        let raw = r#"{"error":{"message":"invalid api key","type":"authentication_error"}}"#;
+        assert_eq!(status_error_detail(raw), "invalid api key");
     }
 
     #[test]

@@ -610,7 +610,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return null;
     }
     case "ai_is_configured":
-      return state.ai.baseUrl.length > 0 && state.ai.apiKey.length > 0;
+      return state.ai.baseUrl.length > 0 && state.ai.apiKey.length > 0 && state.ai.model.length > 0;
     case "ai_clear_api_key":
       state.ai.apiKey = "";
       return null;

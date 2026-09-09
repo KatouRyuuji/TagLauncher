@@ -153,7 +153,7 @@ src-tauri/src/
 - 后端只暴露无状态原语 `ai_suggest_tags`（给一个对象建议标签）；批量遍历、并发、进度、取消由前端 `hooks/useAiTagging.ts` 编排（并发池 `CONCURRENCY = 3`，建标/应用标签串行化避免重复建标）。
 - HTTP 用 `ureq`（阻塞，与 `net_fetch` 一致，不引入 async 运行时）。
 - 配置存于 `app_meta` KV（复用 `settings_service` 的 `get_setting`/`set_setting`），键前缀 `ai.`：`base_url`/`api_key`/`model`/`auto_tag_on_add`/`max_tags`/`allow_new_tags`/`extra_prompt`；模型由用户填写（Anthropic 兼容模型名，必填、无内置默认）。
-- 关键函数：`build_endpoint`（端点归一化，补 `/v1/messages`）、`extract_text`（Anthropic `content[].text` 优先、OpenAI `choices` 兜底）、`parse_tag_list`（JSON 数组优先，逗号/换行回退）。均带单测。
+- 关键函数：`build_endpoint`（端点归一化，补 `/v1/messages`）、`extract_text`（Anthropic `content[].text` 优先并跳过 thinking，兼容 content 字符串 / OpenAI choices 分段 / HTTP 200 错误体）、`parse_tag_list`（JSON 数组优先，逗号/全角逗号/换行回退）。均带单测。
 - 新对象自动打标：`useItems` 派发 `taglauncher-items-added` 事件 → `App` 监听 → silent 后台调用。
 
 ## 4.5 `data_commands.rs`（数据目录 / 导入 / 导出 / 备份）
