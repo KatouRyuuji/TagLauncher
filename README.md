@@ -46,14 +46,14 @@
 | 🤖 | **AI 自动打标** | 兼容 Anthropic 协议(可接第三方地址),一键 / 自动打标;密钥只存本机,导出自动剔除。 |
 | 🔒 | **数据主权** | 全部本地存储;WebDAV 云备份脱敏(保留最近 10 份);自定义数据目录,一键备份 / 导出 / 导入。 |
 
-> 另有商业级交互(大列表虚拟化、命令面板、空格预览、框选、关键词高亮)与在线更新(x64 / ARM64 双架构安装包,启动自动检查、24h 节流)。工程数据:**92 个后端命令 · 300+ 自动化测试全绿 · CI + tag 触发双架构发版流水线**。
+> 另有商业级交互(大列表虚拟化、命令面板、空格预览、框选、关键词高亮)与在线更新(x64 / ARM64 双架构安装包,启动自动检查、24h 节流)。工程数据:**93 个后端命令 · 300+ 自动化测试全绿 · CI + tag 触发双架构发版流水线**。
 
 ## 快速开始
 
 ### 我是用户
 
 1. 前往 [Releases](https://github.com/KatouRyuuji/TagLauncher/releases) 下载最新版本(按设备选择 x64 或 ARM64):
-   - **安装包**(NSIS,约 4.8 MB):`..._x64-setup.exe` / `..._arm64-setup.exe`;
+   - **安装包**(NSIS,约 14 MB):`..._x64-setup.exe` / `..._arm64-setup.exe`;
    - **便携版**(单 exe zip,解压即用,可放 U 盘):`..._x64-portable.zip` / `..._arm64-portable.zip`。
 2. 安装包:运行安装程序,可选桌面快捷方式,安装语言支持 English / 简体中文;便携版:解压后运行 `tag-launcher.exe`(数据存放在用户数据目录 `%LOCALAPPDATA%\TagLauncher\Save\`,与解压位置无关,换版本不丢数据)。
 3. 启动后拖入文件或文件夹,贴标签、归档、一键启动。
@@ -129,7 +129,7 @@ npm run pack:portable  # 打便携版 zip(单 exe;build.bat 会在构建后自�
 <summary><b>更新与平台</b></summary>
 
 - 启动自动检查 GitHub Releases(24h 节流、同版本只提醒一次);设置页可手动检查,按当前架构(x64 / ARM64)直达安装包下载。
-- 安装包 NSIS 约 4.8 MB,另有单 exe 便携版 zip(解压即用);支持 Windows 10 / 11,x64 与 ARM64 原生双架构。
+- 安装包 NSIS 约 14 MB,另有单 exe 便携版 zip(解压即用);支持 Windows 10 / 11,x64 与 ARM64 原生双架构。
 - 流水线:push / PR 触发 CI 全量测试;推送版本 tag 自动构建双架构安装包 + 便携 zip 并生成草稿 Release。
 </details>
 
@@ -143,7 +143,7 @@ npm run pack:portable  # 打便携版 zip(单 exe;build.bat 会在构建后自�
 | [主题开发指南](./THEME_GUIDE.md) | 主题 JSON 字段与 112 键变量契约 |
 | [源码开发指南](./TUTORIAL.md) | 从源码开始的开发教学 |
 | [维护手册](./MAINTENANCE.md) | 测试、发版与维护流程 |
-| [版本对比](./版本对比.md) | 1.0.0 → 1.7.4-beta 代际升级记录 |
+| [版本对比](./版本对比.md) | 1.0.0 → 1.7.5-beta 代际升级记录 |
 
 ## Star History
 
