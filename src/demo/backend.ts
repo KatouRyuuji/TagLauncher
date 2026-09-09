@@ -27,6 +27,8 @@ import {
 
 const VERSION: string = pkg.version;
 const DATA_DIR = "C:\\DemoData\\TagLauncher";
+/** 演示用的默认数据目录（与真实后端口径一致：%LOCALAPPDATA%\TagLauncher\Save） */
+const DEMO_SAVE_DIR = "C:\\Users\\Demo\\AppData\\Local\\TagLauncher\\Save";
 
 // ---- 内存状态 ----
 
@@ -523,26 +525,23 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return null;
 
     // ---- 数据目录 / 备份 ----
-    case "get_data_directory_info": {
-      // 与真实后端的默认数据目录口径一致（%LOCALAPPDATA%\TagLauncher\Save）
-      const defaultDir = "C:\\Users\\Demo\\AppData\\Local\\TagLauncher\\Save";
+    case "get_data_directory_info":
       return {
-        saveDir: defaultDir,
-        defaultSaveDir: defaultDir,
+        saveDir: DEMO_SAVE_DIR,
+        defaultSaveDir: DEMO_SAVE_DIR,
         isCustom: false,
         dbSizeBytes: 188_416,
-        backupsDir: `${defaultDir}\\Backups`,
+        backupsDir: `${DEMO_SAVE_DIR}\\Backups`,
       };
-    }
     case "set_data_directory":
     case "reset_data_directory":
       return null;
     case "backup_data":
-      return `C:\\Users\\Demo\\AppData\\Local\\TagLauncher\\Save\\Backups\\taglauncher-backup-${Date.now()}.db`;
+      return `${DEMO_SAVE_DIR}\\Backups\\taglauncher-backup-${Date.now()}.db`;
     case "export_data":
       return null;
     case "import_data":
-      return `${DATA_DIR}\\Save\\Backups\\taglauncher-backup-safety.db`;
+      return `${DEMO_SAVE_DIR}\\Backups\\taglauncher-backup-safety.db`;
     case "restart_app":
       return null;
 
@@ -582,7 +581,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return name;
     }
     case "sync_restore":
-      return `${DATA_DIR}\\Save\\Backups\\taglauncher-backup-safety.db`;
+      return `${DEMO_SAVE_DIR}\\Backups\\taglauncher-backup-safety.db`;
 
     // ---- 在线更新 ----
     case "update_check":
@@ -635,7 +634,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         themes_dir: `${DATA_DIR}\\Themes`,
         root_dir: DATA_DIR,
         mods_dir: `${DATA_DIR}\\Mods`,
-        save_dir: `${DATA_DIR}\\Save`,
+        save_dir: DEMO_SAVE_DIR,
       };
     case "install_theme_file":
       throw new Error("演示模式：主题导入已禁用（文件对话框为模拟环境）");

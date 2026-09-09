@@ -1,7 +1,8 @@
-// 便携版打包：把 release 单 exe 打成 zip（解压即用，数据落在 exe 同级 Save/）。
-// zip 内固定顶层目录 TagLauncher/（不带版本号）：解压覆盖到同一位置时新旧版本
-// 合并进同一目录、exe 被替换而 Save/ 数据目录保留——避免按 zip 名（带版本号）
-// 解压成并列目录导致换版本后"数据丢失"。
+// 便携版打包：把 release 单 exe 打成 zip（解压即用；数据落在用户数据目录
+// %LOCALAPPDATA%\TagLauncher\Save\，与解压位置无关）。
+// zip 内固定顶层目录 TagLauncher/（不带版本号）：解压覆盖到同一位置时 exe 被
+// 替换而 exe 同级的 Plugins_Theme/、Plugins_Mods/、synonyms.json、datapath.json
+// （数据目录重定向指针）得以保留。
 // 用法：node scripts/build-portable.mjs [--target <rust-triple>]
 //   无参     → x64：src-tauri/target/release/tag-launcher.exe
 //   --target aarch64-pc-windows-msvc → src-tauri/target/<triple>/release/tag-launcher.exe

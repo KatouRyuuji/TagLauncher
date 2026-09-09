@@ -444,7 +444,7 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 ### 10.1 数据目录重定向
 
 - 默认数据目录为 `%LOCALAPPDATA%\TagLauncher\Save\`（`path_service::default_save_dir`；数据与程序目录解耦，升级/重装/删除程序目录均不影响数据；`LOCALAPPDATA` 缺失时兜底 exe 同级 `Save/`）。用户可切换到自定义目录，重定向路径记录在 exe 旁 `datapath.json`（`read_data_dir_redirect` / `write_data_dir_redirect`）。
-- 从旧版本（v1.0~1.7.4，默认 exe 同级 `Save/`）升级：新版首次启动在默认位置无库时，自动从旧位置复制最新库到用户目录（`lib.rs::find_legacy_db` + `migrate_legacy_db`，原位置留底不删）。
+- 从旧版本（v1.0~1.7.4，默认 exe 同级 `Save/`）升级：新版首次启动在默认位置无库（或仅有 schema_version=0 的迁移残骸）时，自动把旧位置**最新且健康**的库复制到用户目录（`lib.rs::probe_db` 三态判定 → `find_legacy_db`（仅接受健康候选）→ `migrate_legacy_db` VACUUM INTO 一致快照；历史备份 `Backups/` 随之一并复制，原位置留底不删）。真损坏（打不开/读不了 sqlite_master）的库不触发该覆盖——交 `open_or_recover` 走安全备份自愈并留存 `.corrupt-*` 现场。
 - **仅重定向 `Save/`**（应用原生数据：数据库、备份等）；`Builtin/`、`Plugins_Theme/`、`Plugins_Mods/` 仍固定 exe 同级。
 - 切换目录或导入数据后需**重启应用**生效（命令内部调用 `app.restart()`）。
 
