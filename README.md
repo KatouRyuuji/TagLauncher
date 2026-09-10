@@ -143,7 +143,7 @@ npm run pack:portable  # 打便携版 zip(单 exe;build.bat 会在构建后自�
 | [主题开发指南](./THEME_GUIDE.md) | 主题 JSON 字段与 112 键变量契约 |
 | [源码开发指南](./TUTORIAL.md) | 从源码开始的开发教学 |
 | [维护手册](./MAINTENANCE.md) | 测试、发版与维护流程 |
-| [版本对比](./版本对比.md) | 1.0.0 → 1.7.5-beta 代际升级记录 |
+| [版本对比](./版本对比.md) | 1.0.0 → 1.7.6-beta 代际升级记录 |
 
 ## Star History
 

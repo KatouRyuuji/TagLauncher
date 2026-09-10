@@ -1,6 +1,6 @@
 # TagLauncher 主题开发指南
 
-> 适用版本：v1.7.5-beta
+> 适用版本：v1.7.6-beta
 > 相关文档：[PROJECT_MANUAL.md](./PROJECT_MANUAL.md)（架构总览）· [MOD_GUIDE.md](./MOD_GUIDE.md)（Mod 开发）
 > 可参照的完整示例：仓库根目录 `ExampleTheme/SkyCloudTheme/theme.json`（112 个变量键与内置主题完全一致）
 
