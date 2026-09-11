@@ -33,8 +33,14 @@ npm run build       # 前端生产构建
 python scripts/e2e-data-migration.py   # 沙箱隔离（子进程 LOCALAPPDATA 注入），不碰真实用户数据
 ```
 
-3. **更新文档**：README 版本号、USER_GUIDE；涉及功能差异时在《版本对比.md》同步当前版本列。
-4. **提交并打 tag**：
+3. **本机全量打包（x64 安装包 + 便携 zip）**：发版产物不只走 CI——本机也要出一份（本机打包仅 x64，ARM64 归 CI）：
+
+```bash
+npm run pack        # tauri build + pack:portable，产物在 src-tauri/target/release/bundle/
+```
+
+4. **更新文档**：README 版本号、USER_GUIDE；涉及功能差异时在《版本对比.md》同步当前版本列。
+5. **提交并打 tag**：
 
 ```bash
 git add -A
@@ -43,11 +49,11 @@ git tag X.Y.Z
 git push origin main --tags
 ```
 
-5. **等待 Release 工作流完成**（约 15–25 分钟，双架构并行）；到 GitHub Releases 页检查草稿：
+6. **等待 Release 工作流完成**（约 15–25 分钟，双架构并行）；到 GitHub Releases 页检查草稿：
    - 确认四个产物都已上传：`TagLauncher_X.Y.Z_x64-setup.exe`、`TagLauncher_X.Y.Z_arm64-setup.exe`、`TagLauncher_X.Y.Z_x64-portable.zip`、`TagLauncher_X.Y.Z_arm64-portable.zip`；
    - 补写 Release 说明（用户可见，会显示在应用内「检查更新」的更新说明里）；
    - 实机安装冒烟：安装 → 启动 → 导入对象 → 打标 → 搜索 → 检查更新；便携 zip 解压运行做同样冒烟。
-6. **点击 Publish** 发布。已装用户会在启动后 24h 内收到应用内更新提示。
+7. **点击 Publish** 发布。已装用户会在启动后 24h 内收到应用内更新提示。
 
 ### 版本号语义
 
