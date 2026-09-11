@@ -41,7 +41,7 @@ export function emptyStateCopy(variant: EmptyStateVariant, searchQuery: string):
     case "library":
       return {
         title: "暂无项目",
-        description: "将文件或文件夹拖拽到主区域，或使用顶部按钮开始导入。",
+        description: "将文件或文件夹拖拽到主区域，或点击下方按钮开始导入。",
         showClearSearch: false,
         showClearFilters: false,
       };

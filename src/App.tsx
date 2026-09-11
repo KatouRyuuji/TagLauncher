@@ -331,6 +331,7 @@ function App() {
     onSelectItems: handleSelectItems,
     libraryEmpty: allItems.length === 0,
     onClearFilters: handleClearFilters,
+    onAddItems: addItems,
   };
 
   return (

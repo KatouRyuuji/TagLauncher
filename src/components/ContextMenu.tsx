@@ -219,6 +219,10 @@ export function ContextMenu({
 
   useEscapeKey(handleEscape);
 
+  // 菜单/子菜单内容溢出时给底缘渐隐提示（仅实际可滚且未到底时生效）
+  useBottomScrollFade(menuRef, [item, contextSelection, cabinets.length]);
+  useBottomScrollFade(submenuRef, [showCabinetSub, cabinets.length]);
+
   useEffect(() => {
     if (!showCabinetSub || !focusSubmenuOnOpenRef.current) return;
     focusSubmenuOnOpenRef.current = false;
@@ -372,7 +376,7 @@ export function ContextMenu({
         style={{ ...style, boxShadow: "var(--shadow-dropdown)" }}
         className="modal-surface w-[220px] max-h-[72vh] max-w-[72vw] overflow-y-auto p-1.5"
       >
-        <MenuGroupLabel>启动</MenuGroupLabel>
+        <MenuGroupLabel>操作</MenuGroupLabel>
         <MenuItem icon={Play} label="打开" onClick={() => { onLaunch(); onClose(); }} />
         {onPreview && <MenuItem icon={Eye} label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
         <MenuItem icon={FolderOpen} label="打开所在文件夹" onClick={() => void handleOpenFolder()} />
@@ -484,6 +488,31 @@ export function ContextMenu({
     </>,
     document.body,
   );
+}
+
+/**
+ * 纵向滚动容器的底缘渐隐提示"下面还有内容"：仅在内容溢出（scrollHeight > clientHeight）
+ * 且未滚到底时挂 menu-scroll-more 类。与 SearchBar 筛选区的 filter-scroll-more 同一思路（横向→纵向）。
+ * 依赖由调用方按内容变化点给出（组件不按打开关闭重建，内容行数变化需触发重估）。
+ */
+function useBottomScrollFade(ref: React.RefObject<HTMLElement | null>, deps: React.DependencyList): void {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const canScroll = el.scrollHeight > el.clientHeight + 1;
+      const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+      el.classList.toggle("menu-scroll-more", canScroll && !atEnd);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("scroll", update);
+    };
+  }, deps);
 }
 
 function MenuItem({

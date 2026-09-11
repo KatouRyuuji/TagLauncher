@@ -177,7 +177,8 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
               data-testid="search-mode-badge"
               onClick={() => setSearchMode("all")}
               className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent-primary)_36%,transparent)] bg-[var(--accent-primary-bg)] px-1.5 text-[13px] font-semibold text-[var(--accent-primary)] hover:border-[var(--accent-primary)]"
-              title={`当前只搜${MODES.find((mode) => mode.value === searchMode)?.label}；点击恢复为“全部”`}
+              title={`退出「仅${MODES.find((mode) => mode.value === searchMode)?.label}」模式，恢复搜索全部范围（保留当前关键词）`}
+              aria-label="退出搜索模式，恢复搜索全部范围"
             >
               仅{MODES.find((mode) => mode.value === searchMode)?.label}
               <X className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
@@ -382,10 +383,10 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
                     title={tag.name}
                     style={{
                       borderColor: active
-                        ? `color-mix(in srgb, ${tag.color} 48%, var(--border-default))`
+                        ? `color-mix(in srgb, ${tag.color} 65%, var(--border-default))`
                         : `color-mix(in srgb, ${tag.color} 24%, var(--border-subtle))`,
                       backgroundColor: active
-                        ? `color-mix(in srgb, ${tag.color} 17%, var(--bg-card))`
+                        ? `color-mix(in srgb, ${tag.color} 20%, var(--bg-card))`
                         : `color-mix(in srgb, ${tag.color} 7%, transparent)`,
                       color: active ? "var(--text-primary)" : "var(--text-secondary)",
                       boxShadow: active ? `inset 0 -2px 0 ${tag.color}` : "none",

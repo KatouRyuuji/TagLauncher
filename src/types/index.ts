@@ -60,4 +60,6 @@ export interface ItemViewProps {
   /** 整个对象库为空（非筛选导致的空） */
   libraryEmpty?: boolean;
   onClearFilters?: () => void;
+  /** 空库引导的「添加文件/文件夹」入口，与顶栏添加按钮共用同一导入流程 */
+  onAddItems?: (paths: string[]) => Promise<void>;
 }

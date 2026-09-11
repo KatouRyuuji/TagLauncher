@@ -240,8 +240,15 @@ const num = (value: unknown): number => Number(value);
 const str = (value: unknown): string => String(value);
 const ids = (value: unknown): number[] => (value as number[]).map(Number);
 
-/** 模拟 IPC 往返延迟，让加载态/骨架屏在演示中可见 */
-function latency(ms = 50): Promise<void> {
+/** 模拟 IPC 往返延迟（毫秒）：默认 50ms 让加载态在演示中可感知；
+ *  URL 加 ?demo-latency=<ms> 可拉大窗口（截图巡检捕获首屏骨架屏用），不改动任何命令契约 */
+const LATENCY_MS = (() => {
+  const raw = new URLSearchParams(window.location.search).get("demo-latency");
+  const parsed = raw === null ? NaN : Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 50;
+})();
+
+function latency(ms = LATENCY_MS): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   CheckCheck,
   ChevronUp,
@@ -248,9 +249,39 @@ function ToolbarMenuButton({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  // 菜单向上展开（bottom: 100%+8px），而工具条根是 overflow-x-auto——CSS 规范下
+  // 一轴非 visible 时另一轴 visible 也按 auto 计，菜单会被整体裁切（DOM 展开但视觉
+  // 不可见）。故菜单 portal 到 body 用 fixed 定位（与 SelectMenu 同一模式），
+  // 打开时按按钮视口位置计算，向上展开且不超出视口顶部。
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState<{ bottom: number; left: number; maxHeight: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuPos(null);
+      return;
+    }
+    const update = () => {
+      const button = buttonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const gutter = 8;
+      const maxHeight = Math.max(120, Math.min(260, rect.top - gutter - 8));
+      setMenuPos({
+        bottom: window.innerHeight - rect.top + 8,
+        left: Math.max(gutter, Math.min(rect.left, window.innerWidth - 200)),
+        maxHeight,
+      });
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [open]);
+
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
         aria-expanded={open}
         aria-haspopup="menu"
@@ -262,16 +293,27 @@ function ToolbarMenuButton({
         {label}
         <ChevronUp aria-hidden="true" size={12} strokeWidth={1.8} className={`transition-transform ${open ? "" : "rotate-180"}`} />
       </button>
-      {open && (
-        <div
-          data-floating-menu=""
-          data-workspace-overlay=""
-          role="menu"
-          className="absolute bottom-[calc(100%+8px)] left-0 max-h-[260px] min-w-[190px] overflow-auto rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1 shadow-[var(--shadow-dropdown)]"
-        >
-          {children}
-        </div>
-      )}
+      {open && menuPos &&
+        createPortal(
+          <div
+            data-floating-menu=""
+            data-workspace-overlay=""
+            role="menu"
+            // 菜单内 pointerdown 阻止冒泡：工具条根的 stopPropagation 保护不到
+            // portal 出去的菜单，不拦则 window 的点击外部关闭会先卸载菜单导致 click 丢失
+            onPointerDown={(event) => event.stopPropagation()}
+            className="fixed min-w-[190px] overflow-auto rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1 shadow-[var(--shadow-dropdown)]"
+            style={{
+              bottom: menuPos.bottom,
+              left: menuPos.left,
+              maxHeight: menuPos.maxHeight,
+              zIndex: "var(--z-select-menu)",
+            }}
+          >
+            {children}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

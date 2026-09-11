@@ -374,7 +374,7 @@
     cursor: pointer;
   }
 
-  .action-button:hover {
+  .action-button:hover:not(:disabled) {
     border-color: var(--border-default);
     color: var(--text-primary);
     background: color-mix(in srgb, var(--bg-hover) 70%, var(--bg-input));
@@ -386,7 +386,7 @@
     color: var(--text-invert);
   }
 
-  .action-button-primary:hover {
+  .action-button-primary:hover:not(:disabled) {
     background: var(--accent-primary-hover);
     border-color: var(--accent-primary-hover);
     color: var(--text-invert);
@@ -558,6 +558,11 @@
   /* 筛选区可横向滚动且未到底时，右缘渐隐提示后续内容（类名由 SearchBar 维护） */
   .filter-scroll-more {
     mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+
+  /* 右键菜单可纵向滚动且未到底时，底缘渐隐提示后续内容（类名由 ContextMenu 维护） */
+  .menu-scroll-more {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
   }
 
   .toolbar-strip {

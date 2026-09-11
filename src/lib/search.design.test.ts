@@ -202,4 +202,44 @@ test("filterSearchIndex：按允许集过滤索引", () => {
   assert.equal(filterSearchIndex(layeredIndex, new Set(items.map((i) => i.id))), layeredIndex);
 });
 
+test("B12 英文名缩写匹配：首字母前缀与连写子序列", () => {
+  const enIndex = buildSearchIndex(
+    [item(61, "Visual Studio Code"), item(62, "Visual Studio Code 2022"), item(63, "abc")],
+    "name",
+  );
+  // 首字母缩写：vsc 命中（62 尾随版本号不参与首字母串）
+  assert.deepEqual(searchWithIndex(enIndex, "vsc").map((i) => i.id), [61, 62]);
+  // 连写子序列：v、s、c 落词首，o/d/e 词内连写
+  assert.deepEqual(searchWithIndex(enIndex, "vscode").map((i) => i.id), [61, 62]);
+  // 反例：词内部跳字不构成子序列命中（b/c 均非 abc 词首）
+  assert.deepEqual(searchWithIndex(enIndex, "bc").map((i) => i.id), []);
+  // 反例：单字母查询不参与缩写匹配（s 也非任何名称/拼音前缀）
+  assert.deepEqual(searchWithIndex(enIndex, "s").map((i) => i.id), []);
+});
+
+test("B13 英文缩写切词：连字符/下划线/驼峰边界，标签名同样参与", () => {
+  const enIndex = buildSearchIndex([item(71, "my-file_name"), item(72, "QuickTimePlayer")], "name");
+  assert.deepEqual(searchWithIndex(enIndex, "mfn").map((i) => i.id), [71]);
+  assert.deepEqual(searchWithIndex(enIndex, "qtp").map((i) => i.id), [72]);
+
+  const tagIdx = buildSearchIndex([item(73, "x", [{ id: 9, name: "Dev Tools" }])], "tag");
+  assert.deepEqual(searchWithIndex(tagIdx, "dt").map((i) => i.id), [73]);
+});
+
+test("B14 弱命中排序低于强命中，收藏仍绝对置顶", () => {
+  const rankIndex = buildSearchIndex(
+    [item(81, "Visual Studio Code"), item(82, "codepen")],
+    "name",
+  );
+  // "code"：82 为名称前缀强命中；81 仅连写子序列弱命中（c 落词首、ode 连写），排在强命中之后
+  assert.deepEqual(searchWithIndex(rankIndex, "code").map((i) => i.id), [82, 81]);
+
+  // 收藏绝对置顶不受强弱分层影响：弱命中的收藏项仍排第一
+  const favIndex = buildSearchIndex(
+    [{ ...item(83, "Visual Studio Code"), is_favorite: true }, item(84, "codepen")],
+    "name",
+  );
+  assert.deepEqual(searchWithIndex(favIndex, "code").map((i) => i.id), [83, 84]);
+});
+
 await run("search");

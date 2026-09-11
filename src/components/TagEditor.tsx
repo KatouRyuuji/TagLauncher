@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { getThemeTagPresetColors } from "../lib/tagColors";
+import { getThemeTagPresetColors, nameColorByHue } from "../lib/tagColors";
 import type { Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -14,8 +14,6 @@ interface TagEditorProps {
   onDelete?: () => void;
   onClose: () => void;
 }
-
-const COLOR_NAMES = ["蔷薇", "樱粉", "豆沙", "蜜橙", "琥珀", "晴蓝", "藤紫", "莓红"];
 
 export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: TagEditorProps) {
   const presetColors = getThemeTagPresetColors();
@@ -100,7 +98,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
           <div className="mt-5">
             <div className="text-label">Palette</div>
             <div className="mt-3 grid grid-cols-4 gap-3">
-              {presetColors.map((preset, index) => (
+              {presetColors.map((preset) => (
                 <button
                   key={preset}
                   type="button"
@@ -115,7 +113,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
                 >
                   <span className="h-4 w-4 rounded-full" style={{ backgroundColor: preset }} />
                   <span className="text-xs font-medium text-[var(--text-secondary)]">
-                    {COLOR_NAMES[index] ?? `颜色 ${index + 1}`}
+                    {nameColorByHue(preset)}
                   </span>
                 </button>
               ))}

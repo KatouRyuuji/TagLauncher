@@ -168,7 +168,17 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
 
         <div className="flex min-h-0 flex-1">
           {/* 左：层级图谱 */}
-          <div className="min-h-0 min-w-0 flex-1 overflow-auto px-8 py-8">
+          <div
+            className="min-h-0 min-w-0 flex-1 overflow-auto px-8 py-8"
+            onWheel={(event) => {
+              // 宽层图谱下滚轮直接水平平移，不依赖触摸板或 Shift+滚轮。
+              // 仅在纵向无滚动余量时转换；纵横向均可滚时保留原生纵向滚动。
+              const el = event.currentTarget;
+              if (el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth > el.clientWidth + 1) {
+                el.scrollLeft += event.deltaY;
+              }
+            }}
+          >
             {emptyState === "no-tags" ? (
               <div className="flex h-full items-center justify-center">
                 <div className="surface-card-soft flex max-w-[420px] flex-col items-center px-8 py-12 text-center">

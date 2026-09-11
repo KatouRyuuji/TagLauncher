@@ -18,6 +18,8 @@ export interface SelectMenuOption {
   value: string;
   label: string;
   hint?: string;
+  /** 选项代表色（CSS 颜色，如主题 accent）：有值时在触发按钮与选项左侧渲染色点 */
+  swatch?: string;
 }
 
 export interface SelectMenuGroup {
@@ -149,6 +151,13 @@ export function SelectMenu({ value, onChange, ariaLabel, options, groups, classN
         onClick={() => setOpen((value) => !value)}
         className={className}
       >
+        {current?.swatch && (
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-full border border-[var(--line-hairline)]"
+            style={{ backgroundColor: current.swatch }}
+            aria-hidden="true"
+          />
+        )}
         <span className="min-w-0 truncate">{current?.label ?? value}</span>
         <ChevronDown
           className={`h-3.5 w-3.5 shrink-0 text-[var(--text-faint)] transition-transform ${open ? "rotate-180" : ""}`}
@@ -204,6 +213,13 @@ export function SelectMenu({ value, onChange, ariaLabel, options, groups, classN
                               : "text-[var(--text-secondary)]"
                         }`}
                       >
+                        {option.swatch && (
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-full border border-[var(--line-hairline)]"
+                            style={{ backgroundColor: option.swatch }}
+                            aria-hidden="true"
+                          />
+                        )}
                         <span className="min-w-0 flex-1 truncate">{option.label}</span>
                         {selected && <Check className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} aria-hidden="true" />}
                       </button>

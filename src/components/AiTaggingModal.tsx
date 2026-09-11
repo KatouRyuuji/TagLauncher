@@ -82,7 +82,8 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
             <div className="mt-4 grid grid-cols-3 gap-2 text-center">
               <StatBox label="已打标" value={progress.succeeded} tone="success" />
               <StatBox label="无建议" value={progress.skipped} tone="muted" />
-              <StatBox label="失败" value={progress.failed} tone="danger" />
+              {/* 失败为 0 时保持中性色，避免无失败也亮红灯造成误读 */}
+              <StatBox label="失败" value={progress.failed} tone={progress.failed > 0 ? "danger" : "muted"} />
             </div>
 
             {progress.running && progress.lastNames.length > 0 && (

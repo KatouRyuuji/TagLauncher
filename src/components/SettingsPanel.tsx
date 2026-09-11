@@ -21,7 +21,7 @@ import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { showToast } from "../lib/toast";
 import { SETTINGS_SECTIONS, settingsSectionDomId } from "../lib/settingsSections";
-import { THEME_FAMILIES, findFamilyByThemeId, resolveFamilyThemeId } from "../themes";
+import { THEME_FAMILIES, findFamilyByThemeId, listOfficialFamilySwatches, resolveFamilyThemeId } from "../themes";
 import type { ColorMode } from "../lib/colorMode";
 import type { ThemeDefinition, ThemeVariant } from "../types/theme";
 import { AiSettingsSection } from "./AiSettingsSection";
@@ -437,6 +437,8 @@ function ThemeSelect({
   const customThemes = themes.filter((theme) => theme.source === "custom");
   const modThemes = themes.filter((theme) => theme.source === "mod");
   const value = currentFamily ? `family:${currentFamily.id}` : currentThemeId;
+  // 选项左侧色点：内置家族取代表色（复用首页色点的同一来源），自定义/Mod 主题取自身 accent
+  const familySwatches = new Map(listOfficialFamilySwatches(effectiveMode).map((swatch) => [swatch.id, swatch.swatchColor]));
 
   const handleChange = (raw: string) => {
     if (raw.startsWith("family:")) {
@@ -460,6 +462,7 @@ function ThemeSelect({
             options: THEME_FAMILIES.map((family) => ({
               value: `family:${family.id}`,
               label: `${family.name}${family.lang === "b" ? " · 仪表" : ""}`,
+              swatch: familySwatches.get(family.id),
             })),
           },
           ...(customThemes.length > 0
@@ -468,6 +471,7 @@ function ThemeSelect({
                 options: customThemes.map((theme) => ({
                   value: theme.id,
                   label: `${theme.name}${theme.version ? ` · v${theme.version}` : ""}${theme.author ? ` · ${theme.author}` : ""}`,
+                  swatch: theme.variables["accent-primary"],
                 })),
               }]
             : []),
@@ -477,6 +481,7 @@ function ThemeSelect({
                 options: modThemes.map((theme) => ({
                   value: theme.id,
                   label: `${theme.name}${theme.version ? ` · v${theme.version}` : ""}${theme.author ? ` · ${theme.author}` : ""}`,
+                  swatch: theme.variables["accent-primary"],
                 })),
               }]
             : []),

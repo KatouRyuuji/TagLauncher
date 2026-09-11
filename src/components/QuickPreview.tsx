@@ -224,8 +224,14 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
       {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
 
       <dl className="workbench-panel grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 p-4 text-sm">
+        {item.type === "audio" && audio?.duration_ms != null && (
+          <>
+            <dt className="text-[var(--text-faint)]">时长</dt>
+            <dd className="text-[var(--text-secondary)]">{formatDurationMs(audio.duration_ms)}</dd>
+          </>
+        )}
         <dt className="text-[var(--text-faint)]">大小</dt>
-        <dd className="text-[var(--text-secondary)]">{formatBytes(info?.size)}</dd>
+        <dd className="text-[var(--text-secondary)]">{info?.size != null ? formatBytes(info.size) : "未知"}</dd>
         <dt className="text-[var(--text-faint)]">修改时间</dt>
         <dd className="text-[var(--text-secondary)]">
           {info?.modified_at_secs ? formatLocalDateTime(info.modified_at_secs) : "未知"}
@@ -281,6 +287,14 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
 function toAssetUrl(path: string | null | undefined): string | null {
   if (!path) return null;
   return convertFileSrc(path.replace(/\\/g, "/"));
+}
+
+/** 音频总时长（元数据 duration_ms）→ m:ss；demo 模式下 <audio> 无法加载真实文件，以此兜底展示。 */
+function formatDurationMs(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function formatLocalDateTime(epochSeconds: number): string {

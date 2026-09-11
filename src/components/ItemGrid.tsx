@@ -14,6 +14,20 @@ const GRID_GAP = 12;
 const GRID_ROW_EST = 200;
 
 /**
+ * 行高测量：始终读取真实 DOM 高度（ResizeObserver 回调用 borderBoxSize 保留亚像素精度，
+ * 挂载 ref 分支读 offsetHeight）。v3 默认实现的无 entry 分支在 itemSizeCache 命中时
+ * 直接返回缓存值而不读 DOM；实测列数/筛选切换的过渡帧中，旧世代行的中间尺寸会被
+ * ResizeObserver 写入新世代的 key（缓存串代），命中脏缓存的行将按错误高度定位，
+ * 直到下一次尺寸变化才校正。挂载即真测使已渲染行的行高恒等于真实 DOM 高度，
+ * 与缓存内容无关；未渲染行仍由 itemSizeCache/估算值服务。
+ */
+function measureGridRow(element: HTMLElement, entry: ResizeObserverEntry | undefined): number {
+  const box = entry?.borderBoxSize?.[0];
+  if (box) return Math.round(box.blockSize);
+  return element.offsetHeight;
+}
+
+/**
  * 列最小宽度：唯一来源是 index.css --grid-col-min（主题可覆盖，骨架屏按它渲染），
  * JS 侧读取同一变量保证真实网格与骨架屏一致；读取失败回退 256。
  * 注意：主题运行时切换该变量不会触发 lanes 重算（resize 才会），内置主题均为 256，可接受。
@@ -118,6 +132,7 @@ export function ItemGrid({
   onSelectItems,
   libraryEmpty,
   onClearFilters,
+  onAddItems,
 }: ItemViewProps) {
   const viewProps = useMemo(() => ({
     tags,
@@ -193,10 +208,12 @@ export function ItemGrid({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => GRID_ROW_EST,
+    // 行高测量走自定义 measureGridRow：挂载与尺寸变化都读真实 DOM 高度，
+    // 不信任 itemSizeCache 的残留值（见 measureGridRow 注释）。
+    measureElement: measureGridRow,
     // 行 key 用内容身份（首项 id + 列数）而非默认行索引：换柜/筛选/排序/列数变化后
-    // 行 key 随之变化，React 重建行 DOM 触发 measureElement 重测，缓存未命中时
-    // 同步读真实行高。索引复用的 key 会让旧行高残留在 itemSizeCache 里
-    // （v3 同步测量命中缓存即不读 DOM），表现为行间间隙/重叠。
+    // 行 key 随之变化，React 重建行 DOM 触发 measureElement 重测。索引复用的 key
+    // 会让行 DOM 滞留旧内容的测量语义，行高与内容错位积累，表现为行间间隙/重叠。
     getItemKey: (index) => {
       const first = items[index * lanes];
       return first ? `${first.id}@${lanes}` : index;
@@ -298,7 +315,7 @@ export function ItemGrid({
   }
 
   if (items.length === 0) {
-    return <WorkspaceEmptyState kind={libraryEmpty ? "library" : "filter"} onClearFilters={onClearFilters} />;
+    return <WorkspaceEmptyState kind={libraryEmpty ? "library" : "filter"} onClearFilters={onClearFilters} onAddItems={onAddItems} />;
   }
 
   return (

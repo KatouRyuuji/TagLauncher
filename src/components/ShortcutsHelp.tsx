@@ -13,12 +13,18 @@ import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useAppStore } from "../stores/appStore";
 
-const GROUPS: { title: string; icon: LucideIcon; items: { keys: string; action: string }[] }[] = [
+interface ShortcutItem {
+  /** 键位文案；数组时渲染为并列的多个 key chip（如 F3 / / / Ctrl+F 三个等价键） */
+  keys: string | string[];
+  action: string;
+}
+
+const GROUPS: { title: string; icon: LucideIcon; note?: string; items: ShortcutItem[] }[] = [
   {
     title: "导航",
     icon: Navigation,
     items: [
-      { keys: "F3 或 / 或 Ctrl+F", action: "聚焦搜索" },
+      { keys: ["F3", "/", "Ctrl+F"], action: "聚焦搜索" },
       { keys: "Ctrl+K", action: "命令面板" },
       { keys: "↑ ↓", action: "移动选中项（网格按列）" },
       { keys: "Home / End", action: "跳到首项 / 末项" },
@@ -45,13 +51,13 @@ const GROUPS: { title: string; icon: LucideIcon; items: { keys: string; action: 
   {
     title: "快速预览（预览打开时）",
     icon: Eye,
+    note: "预览打开时 Ctrl+A 不生效，避免误全选背景列表。",
     items: [
       { keys: "Space", action: "关闭预览" },
       { keys: "↑ ↓ ← → / Home / End", action: "切换预览对象" },
       { keys: "Enter", action: "启动预览对象" },
       { keys: "Ctrl+C", action: "复制预览对象路径" },
       { keys: "Ctrl+D", action: "收藏 / 取消收藏预览对象" },
-      { keys: "Ctrl+A", action: "预览时不生效（避免误全选背景列表）" },
     ],
   },
   {
@@ -125,18 +131,28 @@ export function ShortcutsHelp() {
                     </span>
                   </div>
                   <ul className={groupIndex === GROUPS.length - 1 ? "grid sm:grid-cols-2 sm:gap-x-6" : undefined}>
-                    {group.items.map((item) => (
-                      <li
-                        key={item.keys}
-                        className="flex min-h-9 items-center justify-between gap-3 border-b border-[var(--line-hairline)] py-1.5 text-sm last:border-b-0"
-                      >
-                        <span className="min-w-0 text-[var(--text-secondary)]">{item.action}</span>
-                        <kbd className="kbd max-w-[58%] shrink-0 justify-end whitespace-normal py-1 text-right leading-4">
-                          {item.keys}
-                        </kbd>
-                      </li>
-                    ))}
+                    {group.items.map((item) => {
+                      const chips = Array.isArray(item.keys) ? item.keys : [item.keys];
+                      return (
+                        <li
+                          key={item.action}
+                          className="flex min-h-9 items-center justify-between gap-3 border-b border-[var(--line-hairline)] py-1.5 text-sm last:border-b-0"
+                        >
+                          <span className="min-w-0 text-[var(--text-secondary)]">{item.action}</span>
+                          <span className="flex max-w-[58%] shrink-0 flex-wrap justify-end gap-1">
+                            {chips.map((chip) => (
+                              <kbd key={chip} className="kbd whitespace-normal py-1 text-right leading-4">
+                                {chip}
+                              </kbd>
+                            ))}
+                          </span>
+                        </li>
+                      );
+                    })}
                   </ul>
+                  {group.note && (
+                    <p className="mt-2 text-xs leading-5 text-[var(--text-faint)]">{group.note}</p>
+                  )}
                 </section>
               );
             })}

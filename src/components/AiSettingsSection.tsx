@@ -24,7 +24,7 @@ const EMPTY_CONFIG: AiConfig = {
 export function AiSettingsSection() {
   const [config, setConfig] = useState<AiConfig>(EMPTY_CONFIG);
   const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState<"save" | "test" | null>(null);
+  const [busy, setBusy] = useState<"save" | "test" | "tag" | null>(null);
   const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
@@ -84,6 +84,8 @@ export function AiSettingsSection() {
   };
 
   const requestTagAll = async (scope: AiTagAllDetail["scope"]) => {
+    // 打标按钮始终可点击，故此处统一做配置校验与防重入
+    if (busy === "tag") return;
     // 校验后端已保存配置（而非本地未保存的输入），口径与 flushQueuedAutoTag 一致
     let saved: AiConfig;
     try {
@@ -93,10 +95,11 @@ export function AiSettingsSection() {
       return;
     }
     if (!saved.baseUrl.trim() || saved.hasApiKey !== true || !saved.model.trim()) {
-      showToast("请先填写并保存 API 配置", "warning");
+      showToast("请先填写并保存 API 地址、密钥与模型", "warning");
       return;
     }
     // 先统计待打标对象数并弹确认：每个对象 1 次 API 调用，批量打标可能产生可观耗时与费用
+    setBusy("tag");
     let count: number;
     try {
       const items = await db.getItems();
@@ -104,15 +107,23 @@ export function AiSettingsSection() {
     } catch (e) {
       showToast(`统计对象失败：${e instanceof Error ? e.message : String(e)}`, "error");
       return;
+    } finally {
+      setBusy(null);
     }
     if (count === 0) {
       showToast(scope === "untagged" ? "没有未打标的对象" : "当前没有对象", "info");
       return;
     }
-    const confirmed = await ask(
-      `将为 ${count} 个对象调用 AI 打标，预计发起 ${count} 次 API 请求。是否继续？`,
-      { title: "AI 批量打标", kind: "info" },
-    );
+    let confirmed: boolean;
+    try {
+      confirmed = await ask(
+        `将为 ${count} 个对象调用 AI 打标，预计发起 ${count} 次 API 请求。是否继续？`,
+        { title: "AI 批量打标", kind: "info" },
+      );
+    } catch (e) {
+      showToast(`操作失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      return;
+    }
     if (!confirmed) return;
     window.dispatchEvent(new CustomEvent<AiTagAllDetail>(AI_TAG_ALL_EVENT, { detail: { scope } }));
   };
@@ -241,11 +252,23 @@ export function AiSettingsSection() {
           </button>
         )}
         <div className="mx-1 h-6 w-px bg-[var(--border-subtle)]" />
-        <button type="button" onClick={() => void requestTagAll("untagged")} disabled={!configured} className="action-button px-4 text-xs disabled:opacity-50">
-          为未打标对象打标
+        <button
+          type="button"
+          onClick={() => void requestTagAll("untagged")}
+          aria-disabled={!configured}
+          title={configured ? undefined : "未配置 AI 服务"}
+          className={`action-button px-4 text-xs ${configured ? "" : "opacity-50"}`}
+        >
+          {busy === "tag" ? "统计中…" : "为未打标对象打标"}
         </button>
-        <button type="button" onClick={() => void requestTagAll("all")} disabled={!configured} className="action-button px-4 text-xs disabled:opacity-50">
-          为全部对象打标
+        <button
+          type="button"
+          onClick={() => void requestTagAll("all")}
+          aria-disabled={!configured}
+          title={configured ? undefined : "未配置 AI 服务"}
+          className={`action-button px-4 text-xs ${configured ? "" : "opacity-50"}`}
+        >
+          {busy === "tag" ? "统计中…" : "为全部对象打标"}
         </button>
       </div>
     </section>

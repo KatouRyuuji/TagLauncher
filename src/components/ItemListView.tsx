@@ -135,6 +135,7 @@ export function ItemListView({
   onSelectItems,
   libraryEmpty,
   onClearFilters,
+  onAddItems,
 }: ItemViewProps) {
   const viewProps = useMemo(() => ({
     tags,
@@ -277,7 +278,7 @@ export function ItemListView({
   }
 
   if (items.length === 0) {
-    return <WorkspaceEmptyState kind={libraryEmpty ? "library" : "filter"} onClearFilters={onClearFilters} />;
+    return <WorkspaceEmptyState kind={libraryEmpty ? "library" : "filter"} onClearFilters={onClearFilters} onAddItems={onAddItems} />;
   }
 
   return (

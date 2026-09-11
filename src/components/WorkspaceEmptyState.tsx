@@ -1,6 +1,7 @@
-import { CircleAlert, FilterX, LibraryBig, RefreshCw, SearchX } from "lucide-react";
+import { CircleAlert, FilePlus2, FilterX, FolderPlus, LibraryBig, RefreshCw, SearchX } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { emptyStateCopy, resolveEmptyStateVariant } from "../lib/emptyStateCopy";
+import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
 import { resetWorkspaceSearchInput } from "../lib/workspaceChrome";
 
 /** 对象列表加载失败且本地无缓存时的错误面板：给出可读原因与重试入口。 */
@@ -35,9 +36,11 @@ export function WorkspaceLoadError({
 export function WorkspaceEmptyState({
   kind,
   onClearFilters,
+  onAddItems,
 }: {
   kind: "library" | "filter";
   onClearFilters?: () => void;
+  onAddItems?: (paths: string[]) => Promise<void>;
 }) {
   const searchQuery = useAppStore((state) => state.searchQuery);
   const setSearchQuery = useAppStore((state) => state.setSearchQuery);
@@ -50,6 +53,22 @@ export function WorkspaceEmptyState({
     // 同步清空搜索框内的文字（SearchBar 本地受控值），否则输入框残留旧词
     resetWorkspaceSearchInput();
   };
+
+  // 与顶栏「添加」按钮同一入口：系统对话框选路径后交给 App 层 addItems
+  const handleAddFiles = async () => {
+    if (!onAddItems) return;
+    const paths = await pickFilesToAdd();
+    if (paths) await onAddItems(paths);
+  };
+  const handleAddFolders = async () => {
+    if (!onAddItems) return;
+    const paths = await pickFoldersToAdd();
+    if (paths) await onAddItems(paths);
+  };
+
+  // 空库引导给出导入 CTA；筛选/搜索无结果态保持纯文字引导，不加导入按钮
+  const showAddCta = variant === "library" && onAddItems;
+  const showActions = showAddCta || copy.showClearSearch || (copy.showClearFilters && onClearFilters);
 
   return (
     <div className="flex-1 overflow-auto">
@@ -69,8 +88,20 @@ export function WorkspaceEmptyState({
           <p className="mx-auto mt-2 max-w-[420px] font-body text-[13px] leading-5 text-[var(--text-muted)]">
             {copy.description}
           </p>
-          {(copy.showClearSearch || (copy.showClearFilters && onClearFilters)) && (
+          {showActions && (
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+              {showAddCta && (
+                <>
+                  <button type="button" className="action-button" onClick={() => void handleAddFiles()}>
+                    <FilePlus2 className="h-4 w-4" aria-hidden="true" />
+                    添加文件
+                  </button>
+                  <button type="button" className="action-button action-button-primary" onClick={() => void handleAddFolders()}>
+                    <FolderPlus className="h-4 w-4" aria-hidden="true" />
+                    添加文件夹
+                  </button>
+                </>
+              )}
               {copy.showClearSearch && (
                 <button type="button" className="action-button action-button-primary" onClick={handleClearSearch}>
                   <SearchX className="h-4 w-4" aria-hidden="true" />

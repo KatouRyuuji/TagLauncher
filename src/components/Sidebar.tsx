@@ -333,10 +333,10 @@ export function Sidebar({
                       {parentCountByTag.get(tag.id) || childCountByTag.get(tag.id) ? (
                         <span className="data-readout flex shrink-0 items-center gap-1 text-[13px] text-[var(--text-faint)]">
                           {parentCountByTag.get(tag.id) ? (
-                            <span title={`${parentCountByTag.get(tag.id)} 个父标签`}>⊂{parentCountByTag.get(tag.id)}</span>
+                            <span title={`${parentCountByTag.get(tag.id)} 个父标签`}>父{parentCountByTag.get(tag.id)}</span>
                           ) : null}
                           {childCountByTag.get(tag.id) ? (
-                            <span title={`${childCountByTag.get(tag.id)} 个子标签`}>⊃{childCountByTag.get(tag.id)}</span>
+                            <span title={`${childCountByTag.get(tag.id)} 个子标签`}>子{childCountByTag.get(tag.id)}</span>
                           ) : null}
                         </span>
                       ) : null}

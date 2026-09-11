@@ -5,14 +5,16 @@
 // 用 Playwright 驱动真实 UI 交互，逐特性断言行为正确（check 计数，失败以
 // 退出码 1 结束），并在每个形态落截图。
 //
-// 覆盖：欢迎页 / 网格 / 列表 / 关键词·拼音·表达式搜索 / 类型筛选 / 标签 DAG
-// 筛选（父并入后代、多选交集）/ 收藏 / 最近使用 / 文件柜 / 排序 / 命令面板 /
-// 快速预览（图片·音频·文件夹）/ 右键菜单 / 标签编辑 / 框选与批量工具条 /
-// 标签关系编辑 / 标签图谱 / 设置六区块 / AI 打标 / 快捷键帮助 / F3 /
-// 失效找回 / 空态；主题形态：7 配色家族 × 亮/暗 + 霜靛亮/暗列表。
+// 覆盖：欢迎页 / 网格 / 列表 / 侧栏新建标签·文件柜编辑态 / 关键词（含高亮）·拼音·
+// 表达式搜索 / 搜索模式切换 / 类型筛选 / 筛选无结果空态 / 标签 DAG 筛选（父并入后代、
+// 多选交集）/ 收藏 / 最近使用 / 文件柜 / 排序 / 命令面板（打开态·命令过滤·对象搜索）/
+// 快速预览（图片·音频·文件夹）/ 右键菜单（单选·多选·添加到文件柜子菜单）/ 标签编辑 /
+// 框选与批量工具条（含下拉菜单）/ 标签关系编辑 / 标签图谱 / 设置六区块（含主题下拉
+// 打开态）/ AI 打标（进行中 + 完成）/ 快捷键帮助 / F3 / 失效找回 / 批量移除确认 /
+// 空库引导 / 首屏骨架屏；主题形态：7 配色家族 × 亮/暗 + 霜靛亮/暗列表。
 //
 // 用法：
-//   npm run demo:shots            # 测试 + 截图到 screenshots/（本地目录，不上云）
+//   npm run demo:shots            # 测试 + 截图到 宣传视频/e2e-review/（自动创建，覆盖旧图）
 //   node scripts/demo-screenshots.mjs --out my-shots --port 5200
 // ============================================================================
 
@@ -26,7 +28,7 @@ const argValue = (name, fallback) => {
   const index = args.indexOf(`--${name}`);
   return index >= 0 ? args[index + 1] : fallback;
 };
-const OUT_DIR = path.resolve(argValue("out", "screenshots"));
+const OUT_DIR = path.resolve(argValue("out", "宣传视频/e2e-review"));
 const PORT = Number(argValue("port", "5199"));
 const BASE = `http://127.0.0.1:${PORT}`;
 
@@ -237,6 +239,26 @@ async function featureTour(page) {
   await page.locator('button[title="网格视图"]').click();
   await settle();
 
+  // 03c 侧栏 - 新建标签（打开的编辑态，不保存直接关闭）
+  await page.locator('[data-region="sidebar-nav"] button:has-text("新建标签")').click();
+  await settle(400);
+  await shot(page, "sidebar-tag-new-侧栏-新建标签");
+  await check("新建标签弹窗打开", page.getByRole("dialog", { name: "编辑标签" }).getByRole("heading", { name: "新建标签" }).isVisible());
+  await closeOverlays(page);
+  await page.getByRole("dialog", { name: "编辑标签" }).waitFor({ state: "detached" });
+
+  // 03d 侧栏 - 新建文件柜（文件柜页签 → 编辑态 → 回到标签页签）
+  await page.locator('[data-region="sidebar"] button:has-text("文件柜")').first().click();
+  await settle(300);
+  await page.locator('[data-region="sidebar-nav"] button:has-text("新建文件柜")').click();
+  await settle(400);
+  await shot(page, "sidebar-cabinet-new-侧栏-新建文件柜");
+  await check("新建文件柜弹窗打开", page.getByRole("dialog", { name: "编辑标签" }).getByRole("heading", { name: "新建文件柜" }).isVisible());
+  await closeOverlays(page);
+  await page.getByRole("dialog", { name: "编辑标签" }).waitFor({ state: "detached" });
+  await page.locator('[data-region="sidebar"] button:has-text("标签")').first().click();
+  await settle(300);
+
   // 04 搜索 - 关键词
   const search = page.locator("#workspace-search");
   await search.click();
@@ -244,6 +266,17 @@ async function featureTour(page) {
   await settle(800);
   await shot(page, "search-keyword-搜索-关键词");
   await check("关键词搜索「晴天」命中 1 项", (await itemCount(page)) === 1);
+  await check("命中词高亮渲染（mark.search-highlight）", page.locator("mark.search-highlight").first().isVisible());
+
+  // 04b 搜索模式切换（全部 → 仅名称：范围徽标出现，点击徽标恢复）
+  await page.locator('[role="group"][aria-label="搜索范围"] button:has-text("名称")').click();
+  await settle(600);
+  await shot(page, "search-mode-搜索模式切换-仅名称");
+  await check("仅名称模式徽标出现", page.locator('[data-testid="search-mode-badge"]').isVisible());
+  await check("仅名称模式「晴天」仍命中 1 项", (await itemCount(page)) === 1);
+  await page.locator('[data-testid="search-mode-badge"]').click();
+  await settle(400);
+  await check("恢复全部模式后徽标消失", (await page.locator('[data-testid="search-mode-badge"]').count()) === 0);
 
   // 05 搜索 - 拼音首字母（zjl → 周杰伦）
   await search.fill("zjl");
@@ -254,6 +287,7 @@ async function featureTour(page) {
   // 06 搜索 - 表达式（与/排除）
   await search.fill("开发&&自动化");
   await settle(800);
+  await shot(page, "search-expression-搜索-表达式");
   await check("表达式「开发&&自动化」命中 2 项", (await itemCount(page)) === 2);
   await search.fill("开发&&!!自动化");
   await settle(800);
@@ -267,13 +301,27 @@ async function featureTour(page) {
   await clearSearch(page);
   await check("清空搜索恢复 10 项", (await itemCount(page)) === 10);
 
-  // 08 类型筛选（图片 = 2）
-  await page.locator('[role="group"][aria-label="文件类型筛选"] button:has-text("图片")').click();
+  // 08 类型筛选（筛选栏待选态 → 图片 = 2）
+  const typeChipImage = page.locator('[role="group"][aria-label="文件类型筛选"] button:has-text("图片")');
+  await typeChipImage.hover();
+  await settle(250);
+  await shot(page, "filter-type-open-类型筛选栏");
+  await typeChipImage.click();
   await settle(500);
   await shot(page, "filter-type-类型筛选-图片");
   await check("类型筛选「图片」命中 2 项", (await itemCount(page)) === 2);
   await page.locator('[role="group"][aria-label="文件类型筛选"] button:has-text("图片")').click();
   await settle(400);
+
+  // 08b 筛选无结果空态（类型「图片」∩ 标签「开发」无交集 → 一键清空筛选）
+  await page.locator('[role="group"][aria-label="文件类型筛选"] button:has-text("图片")').click();
+  await settle(300);
+  await sidebarTag(page, "开发");
+  await shot(page, "filter-empty-筛选无结果空态");
+  await check("筛选无结果空态出现「清空所有筛选」", page.getByRole("button", { name: "清空所有筛选" }).isVisible());
+  await page.getByRole("button", { name: "清空所有筛选" }).click();
+  await settle(600);
+  await check("清空筛选恢复 10 项", (await itemCount(page)) === 10);
 
   // 09 标签筛选（父标签并入后代对象：娱乐 ⊃ 游戏/音乐/电影 → 3 项）
   await sidebarTag(page, "娱乐");
@@ -329,12 +377,21 @@ async function featureTour(page) {
   await page.locator('[role="option"]', { hasText: "智能" }).click();
   await settle(400);
 
-  // 15 命令面板
+  // 15 命令面板（Ctrl+K 打开态 → 命令过滤 → 对象搜索）
   await page.keyboard.press("Control+k");
   await settle();
-  await page.keyboard.type("vscode", { delay: 30 });
+  await shot(page, "command-palette-open-命令面板-打开态");
+  await check("命令面板打开", page.getByRole("dialog", { name: "命令面板" }).isVisible());
+  const paletteInput = page.getByRole("textbox", { name: "搜索命令或项目" });
+  await paletteInput.fill("设置");
   await settle(500);
-  await shot(page, "command-palette-命令面板");
+  await shot(page, "command-palette-filter-命令面板-命令过滤");
+  await check("命令过滤命中「打开设置」", page.getByRole("dialog", { name: "命令面板" }).getByText("打开设置").first().isVisible());
+  await paletteInput.fill("");
+  await settle(300);
+  await paletteInput.fill("vscode");
+  await settle(500);
+  await shot(page, "command-palette-item-命令面板-对象搜索");
   await check("命令面板命中 Visual Studio Code", page.getByText("Visual Studio Code").first().isVisible());
   await closeOverlays(page);
 
@@ -383,6 +440,26 @@ async function featureTour(page) {
   await closeOverlays(page);
   await clearSelection(page);
 
+  // 21b 右键菜单 - 添加到文件柜子菜单（悬停展开，两级 Escape 逐级关闭）
+  await rightClickItem(page, "原神");
+  await page.getByRole("menuitem", { name: "添加到文件柜" }).hover();
+  await settle(400);
+  await shot(page, "context-menu-cabinet-右键菜单-添加到文件柜");
+  await check("文件柜子菜单列出「娱乐休闲」", page.getByRole("menuitem", { name: "娱乐休闲" }).isVisible());
+  await closeOverlays(page);
+  await closeOverlays(page);
+  await clearSelection(page);
+
+  // 21c 右键菜单 - 多选对象（Ctrl 加选后右击选中项，批量语义菜单）
+  await itemCard(page, "原神").click({ modifiers: ["Control"] });
+  await itemCard(page, "Visual Studio Code").click({ modifiers: ["Control"] });
+  await settle(300);
+  await rightClickItem(page, "原神");
+  await shot(page, "context-menu-multi-右键菜单-多选");
+  await check("多选菜单显示「复制 2 条路径」", page.getByText("复制 2 条路径", { exact: true }).isVisible());
+  await closeOverlays(page);
+  await clearSelection(page);
+
   // 22 框选批量操作（从网格左 padding 空白条拖出选区，起点不能落在卡片上）
   const grid = page.locator('[data-region="main"]');
   const box = await grid.boundingBox();
@@ -395,8 +472,16 @@ async function featureTour(page) {
   await settle(300);
   await shot(page, "batch-toolbar-批量操作工具条");
   await check("批量工具条出现", page.getByRole("button", { name: "取消选择" }).isVisible());
-  await page.keyboard.press("Escape");
+
+  // 22b 批量工具条下拉菜单（加入标签）
+  await page.getByRole("button", { name: "加入标签" }).click();
   await settle(300);
+  await shot(page, "batch-menu-批量工具条-加入标签下拉");
+  await check("加入标签下拉菜单展开", (await page.locator('[data-floating-menu] [role="menuitem"]').count()) > 0);
+  await page.keyboard.press("Escape");
+  await settle(200);
+  await check("下拉菜单已收起", (await page.locator('[data-floating-menu]').count()) === 0);
+  await clearSelection(page);
 
   // 23 标签关系编辑器
   await page.locator('[data-region="sidebar"] button[aria-label="管理标签父子关系"]').click();
@@ -416,11 +501,25 @@ async function featureTour(page) {
   await openSettings(page);
   await shot(page, "settings-theme-设置-主题外观");
   await check("设置面板打开", page.getByRole("dialog", { name: "设置工作台" }).isVisible());
+
+  // 25b 主题下拉打开态（再点触发按钮收起，避免 Escape 误关设置对话框）
+  const themeTrigger = page.getByRole("dialog", { name: "设置工作台" }).locator('button[aria-label="当前主题"]');
+  await themeTrigger.click();
+  await settle(300);
+  await shot(page, "settings-theme-dropdown-设置-主题下拉打开");
+  await check("主题下拉列出内置配色家族", (await page.locator('[role="listbox"][aria-label="当前主题"] [role="option"]').count()) >= 7);
+  await themeTrigger.click();
+  await settle(250);
+  await check("主题下拉已收起", (await page.locator('[role="listbox"][aria-label="当前主题"]').count()) === 0);
+
   await scrollSettingsTo(page, "AI");
   await shot(page, "settings-ai-设置-AI自动打标");
 
-  // 26 AI 一键打标（mock 建议 → 真实编排进度）
+  // 26 AI 一键打标（mock 建议 → 真实编排进度：先截进行中，再等完成）
   await page.getByRole("button", { name: "为全部对象打标" }).click();
+  await page.getByRole("dialog", { name: "AI 打标进度" }).waitFor();
+  await shot(page, "ai-tagging-running-AI打标-进行中");
+  await check("AI 打标进行中弹窗出现", page.getByText("正在自动打标…").isVisible());
   await page.getByText("打标完成").waitFor({ timeout: 60_000 });
   await settle(400);
   await shot(page, "ai-tagging-AI批量打标");
@@ -449,6 +548,36 @@ async function featureTour(page) {
   await page.getByText("个失效 · 尝试找回").click();
   await settle(900);
   await shot(page, "missing-relocate-失效对象找回反馈");
+
+  // 33 空库引导：全选 → 批量移除（确认弹窗）→ 空库空态。
+  //    demo 后端为页面内存态，随后 reload 即复位为初始演示数据集。
+  await page.locator(".toast-enter").first().waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
+  await page.locator('[data-region="main"]').click({ position: { x: 6, y: 300 } });
+  await page.keyboard.press("Control+a");
+  await settle(300);
+  await check("Ctrl+A 全选 10 项", (await page.locator('[data-testid="batch-toolbar"]').textContent())?.includes("10"));
+  await page.keyboard.press("Delete");
+  await settle(400);
+  await shot(page, "remove-confirm-批量移除确认");
+  await check("批量移除确认弹窗打开", page.getByRole("dialog", { name: "移除对象确认" }).isVisible());
+  await page.getByRole("button", { name: "确认移除" }).click();
+  await settle(700);
+  await shot(page, "empty-library-空库引导");
+  await check("空库引导出现「暂无项目」", page.getByText("暂无项目").isVisible());
+
+  // 34 首屏骨架屏：主题加载门控会消耗 mock IPC 延迟的前段，用 ?demo-latency=4000
+  //    留出约 2s 的骨架屏窗口；随后回到默认延迟重新进入，演示数据随之复位
+  //    （页面内存态随刷新重建）。提前隐藏欢迎页，避免遮挡骨架屏。
+  await page.evaluate(() => localStorage.setItem("taglauncher.hide_welcome_modal", "1"));
+  await page.goto(`${BASE}/?demo-latency=4000`, { waitUntil: "domcontentloaded" });
+  const skeleton = page.locator('[data-region="workspace-skeleton"]');
+  await skeleton.waitFor();
+  await shot(page, "workspace-skeleton-首屏骨架屏");
+  await check("首屏骨架屏渲染", skeleton.isVisible());
+  await page.goto(BASE, { waitUntil: "domcontentloaded" });
+  await page.locator('[data-region="main"] [data-selectable-item-id]').first().waitFor();
+  await settle();
+  await check("重新进入后演示数据复位为 10 项", (await itemCount(page)) === 10);
 }
 
 // ---- 主题形态巡演：7 配色家族 × 亮/暗 网格 + 霜靛亮/暗列表 ----
@@ -498,6 +627,10 @@ async function themeTour(page) {
 
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
+  // 幂等：先清上一轮旧图（同名覆盖之外，序号漂移也不留残留），目录内容恒等于本轮产出
+  for (const file of fs.readdirSync(OUT_DIR)) {
+    if (file.endsWith(".png")) fs.rmSync(path.join(OUT_DIR, file));
+  }
   const server = await ensureServer();
   const browser = await chromium.launch();
   try {
