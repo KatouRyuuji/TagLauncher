@@ -9,6 +9,9 @@ cd /d "%~dp0"
 :: --target. Cross ARM64 builds need the "MSVC v143 - ARM64 build tools"
 :: component (see build-arm64.bat); cross x64 builds on an ARM64 host need
 :: the x64 MSVC toolset (present in a default VCTools workload).
+:: If no registered VS instance ships the target toolset, a known standalone
+:: BuildTools path (VC\Auxiliary\Build\vcvarsall.bat) is probed and loaded
+:: automatically, because cc-rs/vswhere only see registered instances.
 
 set "HOST_TRIPLE=x86_64-pc-windows-msvc"
 set "OTHER_TRIPLE=aarch64-pc-windows-msvc"
@@ -63,6 +66,11 @@ if errorlevel 1 goto :pack_failed
 
 echo.
 echo [2/2] Building %OTHER_TRIPLE% (cross)...
+if /i "%OTHER_TRIPLE%"=="aarch64-pc-windows-msvc" (
+    call :ensure_msvc arm64 x64_arm64
+) else (
+    call :ensure_msvc x64 arm64_x64
+)
 call npm run tauri build -- --target %OTHER_TRIPLE%
 if errorlevel 1 goto :build_failed
 call npm run pack:portable -- --target %OTHER_TRIPLE%
@@ -91,3 +99,18 @@ echo.
 echo [ERROR] Portable packaging failed. See the log above.
 pause
 exit /b 1
+
+:: 确保交叉目标的 MSVC 工具链就绪：%1=目标架构目录名(arm64|x64)，%2=vcvarsall 参数。
+:: vswhere 只枚举已注册实例；未注册的 BuildTools（手动部署/残留）不在其列，
+:: 此时探测其标准路径并 call vcvarsall 注入 PATH/INCLUDE/LIB。
+:ensure_msvc
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if not exist "%VSWHERE%" exit /b 0
+"%VSWHERE%" -latest -find **\Hostx64\%1\cl.exe 2>nul | findstr /i "cl.exe" >nul
+if not errorlevel 1 exit /b 0
+set "VCVARSALL=%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
+if exist "%VCVARSALL%" (
+    echo No registered MSVC %1 toolset found; loading unregistered BuildTools instance...
+    call "%VCVARSALL%" %2 >nul
+)
+exit /b 0
