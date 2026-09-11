@@ -1,6 +1,6 @@
 # TagLauncher Mod 开发指南
 
-> 适用版本：v1.7.6-beta · Mod API v3.2.0
+> 适用版本：v1.7.7-beta · Mod API v3.2.0
 > 相关文档：[PROJECT_MANUAL.md](./PROJECT_MANUAL.md)（架构总览）· [THEME_GUIDE.md](./THEME_GUIDE.md)（主题开发）
 > 可运行示例：仓库根目录 `ExampleMod/preview/`
 

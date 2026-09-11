@@ -1,6 +1,6 @@
 # TagLauncher 项目手册
 
-> 适用版本：v1.7.6-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
+> 适用版本：v1.7.7-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
 
 ## 一、项目简介
 
@@ -25,7 +25,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - 自定义窗口栏：`decorations: false` 隐藏 Windows 原生标题栏，`TitleBar.tsx` 自绘窗口栏（`data-tauri-drag-region` 拖拽 + 双击最大化 + 最小化/最大化/关闭按钮），配色全部取主题 token 随主题联动；窗口权限见 `src-tauri/capabilities/default.json`。
 - 顶层错误边界：`AppErrorBoundary.tsx` 捕获渲染期崩溃，替代白屏为可操作错误页（复制错误详情/重新加载）；崩溃早于主题就绪时强制移除 FOUC 门控并显示窗口，避免进程挂死不可见。列表加载失败时工作台呈现可重试错误面板而非"暂无项目"假象。
 - Mod 扩展系统：支持 `css` / `css+js` / `theme` 三类 Mod，提供权限声明（能力/意图标注 + API 误用防呆，**非安全沙箱**——Mod 属可信扩展，JS 以完全权限运行于主 realm，启用前须确认来源可信）、生命周期回调、工具栏按钮、侧栏/浮动面板、卡片与列表行对等插槽、Mod 数据存储、文件读写、受约束的网络请求原语（`net.fetch` 经 Rust 后端代理）、只读标签关系等接口（API 版本 3.2.0）。
-- AI 自动打标：兼容 Anthropic Messages API（官方或第三方兼容地址），在设置中填写 base URL / API key / 模型后，可为全部或未打标对象批量打标，支持「新对象自动打标」「允许创建新标签」「每对象最多标签数」等选项；后端仅提供无状态「建议标签」原语，批量遍历/并发/进度/取消由前端编排。
+- AI 自动打标：兼容 Anthropic Messages API（官方或第三方兼容地址），在设置中填写 base URL / API key / 模型后，可为全部或未打标对象批量打标，支持「新对象自动打标」「允许创建新标签」「每对象最多标签数」等选项；请求体显式禁用思考（`thinking:{type:"disabled"}`，结构化输出任务不需要思考），「200 但无文本」瞬态响应有限重试；后端仅提供无状态「建议标签」原语，批量遍历/并发/进度/取消由前端编排。
 - 数据管理：默认数据目录为 `%LOCALAPPDATA%\TagLauncher\Save\`（与程序目录解耦，升级/重装不丢数据）；数据目录可自定义（exe 旁 `datapath.json` 记录重定向，仅重定向 `Save/`）；旧版本（exe 同级 `Save/`）数据首次启动自动复制到用户目录、原位置留底；支持一键备份、导出、导入，统一走 SQLite Online Backup API（页级一致快照），导入前自动安全备份、可回退；切换目录或导入后自动重启生效。
 - 云同步（WebDAV）：备份/恢复到任意 WebDAV 服务（NAS/Nextcloud/坚果云），云端副本剔除敏感配置（`ai.*`/`sync.*`），恢复保留本机凭据；远端保留最近 10 份；可选启动时自动备份（24h 节流）。详见 §十一。
 - 在线更新（GitHub Releases）：`update_check` 拉取 latest release，语义版本比较 + 按架构匹配安装包资产；设置页手动检查 + 启动后台自动检查（24h 节流、同版本只提示一次）。详见 §十一。
