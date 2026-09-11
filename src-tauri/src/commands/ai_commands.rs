@@ -277,16 +277,25 @@ fn base_url_is_insecure(base_url: &str) -> bool {
     !matches!(host, "localhost" | "127.0.0.1" | "::1")
 }
 
-fn call_messages(config: &AiConfig, system: &str, user: &str, max_tokens: u32) -> Result<String, String> {
-    let endpoint = build_endpoint(&config.base_url);
-    let key = config.api_key.trim();
-    let body = serde_json::json!({
+/// 构造请求体。打标/测试连接是结构化输出任务，显式禁用思考：消除思考模型
+/// 间歇性无文本响应、避免 thinking 吃掉输出预算，响应也更快更省 token。
+/// Anthropic 官方与 Kimi 等兼容网关均接受 thinking 字段（disabled 为默认语义）；
+/// 对该字段不认识的宽容网关会忽略它。
+fn build_request_body(config: &AiConfig, system: &str, user: &str, max_tokens: u32) -> String {
+    serde_json::json!({
         "model": config.model,
         "max_tokens": max_tokens,
         "stream": false,
+        "thinking": { "type": "disabled" },
         "system": system,
         "messages": [{ "role": "user", "content": user }],
-    });
+    })
+    .to_string()
+}
+
+fn call_messages(config: &AiConfig, system: &str, user: &str, max_tokens: u32) -> Result<String, String> {    let endpoint = build_endpoint(&config.base_url);
+    let key = config.api_key.trim();
+    let body = build_request_body(config, system, user, max_tokens);
 
     // redirects(0)：禁用自动重定向——ureq 跟随重定向时会携带原请求头（含密钥）
     // 转发到新主机，被劫持/恶意的兼容网关可 302 把密钥引到第三方。改为显式报出重定向，
@@ -307,7 +316,7 @@ fn call_messages(config: &AiConfig, system: &str, user: &str, max_tokens: u32) -
             .set("authorization", &format!("Bearer {key}"))
             .set("anthropic-version", ANTHROPIC_VERSION)
             .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECS))
-            .send_string(&body.to_string());
+            .send_string(&body);
 
         match response {
             Ok(resp) => {
@@ -336,7 +345,19 @@ fn call_messages(config: &AiConfig, system: &str, user: &str, max_tokens: u32) -
                 if buf.len() as u64 > MAX_RESPONSE_BYTES {
                     return Err("AI 响应体超过 4MB 上限，已中止（可能是代理/网关返回异常内容）".to_string());
                 }
-                return extract_text(&buf);
+                match extract_text(&buf) {
+                    Ok(text) => return Ok(text),
+                    Err(e) => {
+                        // 结构有效但无文本（思考模型/网关在压力下偶发空 content）：
+                        // 按瞬态故障重试，与 429/5xx 共用重试预算
+                        if e.contains("未找到文本内容") && attempt < 2 {
+                            attempt += 1;
+                            std::thread::sleep(std::time::Duration::from_secs(if attempt == 1 { 1 } else { 3 }));
+                            continue;
+                        }
+                        return Err(e);
+                    }
+                }
             }
             Err(ureq::Error::Status(code, resp)) => {
                 if matches!(code, 429 | 500 | 502 | 503 | 529) && attempt < 2 {
@@ -429,7 +450,33 @@ fn extract_text(raw: &str) -> Result<String, String> {
     {
         return Ok(text);
     }
-    Err("响应中未找到文本内容".to_string())
+    // 附带响应结构诊断（只含骨架不含内容），便于定位网关的非标响应形态
+    Err(format!(
+        "响应中未找到文本内容（{}）",
+        response_diagnosis(&v)
+    ))
+}
+
+/// 响应骨架诊断：顶层键、stop_reason、content/choices 的形态与块数。
+/// 只描述结构不引用内容，避免把模型输出/网关回显带进错误消息。
+fn response_diagnosis(v: &serde_json::Value) -> String {
+    let keys: Vec<&str> = v.as_object().map(|o| o.keys().map(|k| k.as_str()).collect()).unwrap_or_default();
+    let stop = v.get("stop_reason").and_then(|s| s.as_str()).unwrap_or("-");
+    let content_desc = match v.get("content") {
+        None => "缺失".to_string(),
+        Some(c) if c.is_null() => "null".to_string(),
+        Some(c) if c.is_string() => "空字符串".to_string(),
+        Some(serde_json::Value::Array(a)) => {
+            let types: Vec<String> = a
+                .iter()
+                .take(4)
+                .map(|b| b.get("type").and_then(|t| t.as_str()).unwrap_or("?").to_string())
+                .collect();
+            format!("数组({}块: {})", a.len(), types.join(","))
+        }
+        Some(_) => "其它类型".to_string(),
+    };
+    format!("顶层键[{}]，stop_reason={}，content={}", keys.join(","), stop, content_desc)
 }
 
 fn openai_message_content(content: &serde_json::Value) -> Option<String> {
@@ -683,6 +730,132 @@ mod tests {
         let raw = r#"{"content":[{"type":"thinking","thinking":"..."},{"type":"text","text":"[\"文件启动器\",\"Tauri\"]"}],"stop_reason":"end_turn"}"#;
         let text = extract_text(raw).unwrap();
         assert_eq!(parse_tag_list(&text, 5), vec!["文件启动器", "Tauri"]);
+    }
+
+    #[test]
+    fn request_body_disables_thinking() {
+        let config = AiConfig {
+            base_url: "https://x.test".into(),
+            api_key: "k".into(),
+            model: "m".into(),
+            auto_tag_on_add: false,
+            max_tags: 5,
+            allow_new_tags: true,
+            extra_prompt: String::new(),
+            has_api_key: false,
+        };
+        let v: serde_json::Value =
+            serde_json::from_str(&build_request_body(&config, "sys", "user", 1024)).unwrap();
+        assert_eq!(v["thinking"]["type"], "disabled");
+        assert_eq!(v["stream"], false);
+    }
+
+    #[test]
+    fn extract_failure_carries_structure_diagnosis() {
+        // content 为 null
+        let err = extract_text(r#"{"id":"m1","content":null,"stop_reason":"end_turn"}"#).unwrap_err();
+        assert!(err.contains("未找到文本内容"), "{err}");
+        assert!(err.contains("content=null"), "{err}");
+        assert!(err.contains("stop_reason=end_turn"), "{err}");
+        // content 空数组
+        let err = extract_text(r#"{"content":[]}"#).unwrap_err();
+        assert!(err.contains("content=数组(0块"), "{err}");
+        // content 字段缺失
+        let err = extract_text(r#"{"foo":1}"#).unwrap_err();
+        assert!(err.contains("content=缺失"), "{err}");
+        assert!(err.contains("foo"), "{err}");
+    }
+
+    /// 微型 HTTP mock：按序回放响应体，记录收到的请求体
+    fn spawn_mock_server(
+        responses: Vec<&'static str>,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+        use std::sync::{Arc, Mutex};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let requests_clone = Arc::clone(&requests);
+        std::thread::spawn(move || {
+            for body in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                // 读请求头到空行
+                let mut buf = Vec::new();
+                let mut byte = [0u8; 1];
+                while !buf.ends_with(b"\r\n\r\n") {
+                    if stream.read(&mut byte).unwrap_or(0) == 0 {
+                        break;
+                    }
+                    buf.push(byte[0]);
+                }
+                let headers = String::from_utf8_lossy(&buf).to_string();
+                let content_length: usize = headers
+                    .lines()
+                    .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse().unwrap_or(0)))
+                    .unwrap_or(0);
+                let mut body_buf = vec![0u8; content_length];
+                let _ = stream.read_exact(&mut body_buf);
+                requests_clone
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&body_buf).to_string());
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+        (format!("http://127.0.0.1:{}", addr.port()), requests)
+    }
+
+    #[test]
+    fn call_messages_retries_transient_empty_content() {
+        // 第一次返回 200 空 content（思考模型/网关间歇形态），第二次正常
+        let (base, requests) = spawn_mock_server(vec![
+            r#"{"id":"m1","content":[],"stop_reason":"end_turn"}"#,
+            r#"{"id":"m2","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}"#,
+        ]);
+        let config = AiConfig {
+            base_url: base,
+            api_key: "test-key".into(),
+            model: "m".into(),
+            auto_tag_on_add: false,
+            max_tags: 5,
+            allow_new_tags: true,
+            extra_prompt: String::new(),
+            has_api_key: false,
+        };
+        let reply = call_messages(&config, "sys", "ping", 64).expect("重试后应成功");
+        assert_eq!(reply, "ok");
+        let reqs = requests.lock().unwrap();
+        assert_eq!(reqs.len(), 2, "瞬态空响应应触发一次重试");
+        let sent: serde_json::Value = serde_json::from_str(&reqs[0]).unwrap();
+        assert_eq!(sent["thinking"]["type"], "disabled");
+    }
+
+    #[test]
+    fn call_messages_persistent_empty_content_fails_with_diagnosis() {
+        let (base, requests) = spawn_mock_server(vec![
+            r#"{"content":null,"stop_reason":"end_turn"}"#,
+            r#"{"content":null,"stop_reason":"end_turn"}"#,
+            r#"{"content":null,"stop_reason":"end_turn"}"#,
+        ]);
+        let config = AiConfig {
+            base_url: base,
+            api_key: "k".into(),
+            model: "m".into(),
+            auto_tag_on_add: false,
+            max_tags: 5,
+            allow_new_tags: true,
+            extra_prompt: String::new(),
+            has_api_key: false,
+        };
+        let err = call_messages(&config, "sys", "ping", 64).unwrap_err();
+        assert!(err.contains("未找到文本内容"), "{err}");
+        assert!(err.contains("content=null"), "{err}");
+        assert_eq!(requests.lock().unwrap().len(), 3, "重试预算用完后报错");
     }
 
     #[test]

@@ -27,6 +27,12 @@ npm run test:all    # 五步全绿
 npm run build       # 前端生产构建
 ```
 
+   改动涉及数据目录/迁移/自愈逻辑时，另跑真实二进制场景矩阵（需本机 Python 3.8+，先 `npm run tauri build -- --no-bundle` 产出 exe）：
+
+```bash
+python scripts/e2e-data-migration.py   # 沙箱隔离（子进程 LOCALAPPDATA 注入），不碰真实用户数据
+```
+
 3. **更新文档**：README 版本号、USER_GUIDE；涉及功能差异时在《版本对比.md》同步当前版本列。
 4. **提交并打 tag**：
 
