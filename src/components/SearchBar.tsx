@@ -53,54 +53,11 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
   const sortMode = useAppStore((state) => state.sortMode);
   const setSortMode = useAppStore((state) => state.setSortMode);
   const setCommandPaletteOpen = useAppStore((state) => state.setCommandPaletteOpen);
-  const tags = useAppStore((state) => state.tags);
-  const selectedTagIds = useAppStore((state) => state.selectedTagIds);
-  const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
-  const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
   const typeFilter = useAppStore((state) => state.typeFilter);
   const setTypeFilter = useAppStore((state) => state.setTypeFilter);
-  const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
-  const showFavorites = useAppStore((state) => state.showFavorites);
-  const showRecent = useAppStore((state) => state.showRecent);
-  const tagFilterAvailable = selectedCabinetId === null && !showFavorites && !showRecent;
   const [inputValue, setInputValue] = useState("");
   const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
   const composingRef = useRef(false);
-  const filterScrollRef = useRef<HTMLDivElement>(null);
-
-  // 筛选区是水平滚动容器：把纵向滚轮转为横向滚动，标签多时不用拖动滚动条。
-  // React 的 onWheel 在根节点以 passive 注册、无法 preventDefault，须手动挂非 passive 监听。
-  useEffect(() => {
-    const el = filterScrollRef.current;
-    if (!el) return;
-    const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY === 0 || event.deltaX !== 0 || event.shiftKey) return;
-      if (el.scrollWidth <= el.clientWidth) return;
-      el.scrollLeft += event.deltaY;
-      event.preventDefault();
-    };
-    el.addEventListener("wheel", handleWheel, { passive: false });
-    return () => el.removeEventListener("wheel", handleWheel);
-  }, []);
-
-  // 右缘渐隐提示"后面还有内容"：仅在可滚且未滚到底时加 filter-scroll-more 类
-  useEffect(() => {
-    const el = filterScrollRef.current;
-    if (!el) return;
-    const update = () => {
-      const canScroll = el.scrollWidth > el.clientWidth + 1;
-      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
-      el.classList.toggle("filter-scroll-more", canScroll && !atEnd);
-    };
-    update();
-    el.addEventListener("scroll", update, { passive: true });
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => {
-      el.removeEventListener("scroll", update);
-      ro.disconnect();
-    };
-  }, []);
 
   useEffect(() => {
     const update = () => setModButtons(getToolbarButtons());
@@ -332,11 +289,8 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
 
         <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
 
-        {/* 类型始终完整展示；标签仅在标签筛选模式下出现，避免文件柜里误点「全部标签」退出 */}
-        <div
-          ref={filterScrollRef}
-          className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
-        >
+        {/* 类型始终完整展示（允许换行）；标签筛选条已移至主视图底部（TagFilterBar） */}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <div role="group" aria-label="文件类型筛选" className="segmented-control h-8 shrink-0">
             {TYPE_FILTERS.map((filter) => (
               <button
@@ -353,56 +307,6 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
               </button>
             ))}
           </div>
-
-          {tagFilterAvailable && tags.length > 0 && (
-            <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
-          )}
-
-          {tagFilterAvailable && tags.length > 0 && (
-            <div role="group" aria-label="标签筛选" className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setSelectedTagIds([])}
-                aria-pressed={selectedTagIds.length === 0}
-                className={`control-chip h-7 min-h-7 shrink-0 px-2.5 text-[13px] font-medium ${
-                  selectedTagIds.length === 0 ? "control-chip-active" : ""
-                }`}
-              >
-                全部标签
-              </button>
-
-              {tags.map((tag) => {
-                const active = selectedTagIds.includes(tag.id);
-                return (
-                  <button
-                    key={tag.id}
-                    type="button"
-                    onClick={() => toggleTagSelection(tag.id)}
-                    className="inline-flex h-7 min-h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[13px] font-medium text-[var(--text-secondary)]"
-                    aria-pressed={active}
-                    title={tag.name}
-                    style={{
-                      borderColor: active
-                        ? `color-mix(in srgb, ${tag.color} 65%, var(--border-default))`
-                        : `color-mix(in srgb, ${tag.color} 24%, var(--border-subtle))`,
-                      backgroundColor: active
-                        ? `color-mix(in srgb, ${tag.color} 20%, var(--bg-card))`
-                        : `color-mix(in srgb, ${tag.color} 7%, transparent)`,
-                      color: active ? "var(--text-primary)" : "var(--text-secondary)",
-                      boxShadow: active ? `inset 0 -2px 0 ${tag.color}` : "none",
-                    }}
-                  >
-                    <span
-                      className="h-1.5 w-1.5 rounded-[1px]"
-                      style={{ backgroundColor: tag.color }}
-                      aria-hidden="true"
-                    />
-                    <span>{tag.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
 
         <div role="group" aria-label="导入" className="flex shrink-0 items-center gap-1.5 border-l border-[var(--line-hairline)] pl-2">

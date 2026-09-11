@@ -555,7 +555,7 @@
     text-transform: uppercase;
   }
 
-  /* 筛选区可横向滚动且未到底时，右缘渐隐提示后续内容（类名由 SearchBar 维护） */
+  /* 标签筛选条可横向滚动且未到底时，右缘渐隐提示后续内容（类名由 TagFilterBar 维护） */
   .filter-scroll-more {
     mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   }

@@ -123,7 +123,8 @@ tag-launcher/
 │   │   ├── TitleBar.tsx          # 自绘窗口栏（decorations: false，拖拽/最小化/最大化/关闭）
 │   │   ├── AppErrorBoundary.tsx  # 顶层错误边界（崩溃时强制显示窗口 + 可复制错误详情）
 │   │   ├── Sidebar.tsx           # 左侧导航（标签/文件柜/最近使用）
-│   │   ├── SearchBar.tsx         # 搜索框 + 控制/筛选合并行（搜索范围/排序/视图/类型与标签筛选/导入）
+│   │   ├── SearchBar.tsx         # 搜索框 + 控制/筛选合并行（搜索范围/排序/视图/类型筛选/导入）
+│   │   ├── TagFilterBar.tsx      # 主视图顶部标签筛选条（单行横向滚动 chips）
 │   │   ├── SearchHighlightText.tsx # 搜索关键词高亮渲染
 │   │   ├── CommandPalette.tsx    # Ctrl+K 命令面板（同名对象以路径第二行区分）
 │   │   ├── QuickPreview.tsx      # 空格快速预览
@@ -687,7 +688,8 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 | `sidebar-panels` | 侧栏面板区 | Mod 面板宿主 |
 | `searchbar` | 顶部搜索/工具栏 | 搜索框、排序、视图切换 |
 | `main` | 主视图区 | 对象网格/列表所在区域 |
-| `filterbar` | 控制/筛选合并行 | 搜索范围/排序/视图切换/类型与标签筛选 chips/导入按钮 |
+| `filterbar` | 控制/筛选合并行 | 搜索范围/排序/视图切换/类型筛选 chips/导入按钮 |
+| `tagfilterbar` | 主视图顶部标签筛选条 | 标签筛选 chips 单行横向滚动（仅全部项目视图且有标签时渲染） |
 | `statusbar` | 底部状态栏 | 可见数量/范围/已选/排序 |
 | `item-grid-inner` | 网格内部容器 | 虚拟化网格内容层 |
 | `bg-decoration` | 背景装饰层 | 主题背景动画/渐变挂点（z-index 最低） |

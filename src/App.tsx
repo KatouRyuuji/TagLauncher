@@ -18,6 +18,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { QuickPreview } from "./components/QuickPreview";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { StatusBar } from "./components/StatusBar";
+import { TagFilterBar } from "./components/TagFilterBar";
 import { useItems } from "./hooks/useItems";
 import { useTags } from "./hooks/useTags";
 import { useCabinets } from "./hooks/useCabinets";
@@ -386,6 +387,8 @@ function App() {
           TagLauncher 启动工作台
         </h1>
         <SearchBar onAddItems={addItems} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} />
+        {/* 标签筛选条固定在主视图顶部：单行横向滚动，不挤压网格布局 */}
+        <TagFilterBar />
         {/* 加载失败且本地无任何缓存时渲染可重试的错误面板；有缓存时保留旧列表，
             失败已由 toast 提示，避免把可用数据替换成错误页。 */}
         {loadError && !loading && allItems.length === 0 ? (
