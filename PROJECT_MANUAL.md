@@ -1,6 +1,6 @@
 # TagLauncher 项目手册
 
-> 适用版本：v1.7.7-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
+> 适用版本：v1.7.8-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
 
 ## 一、项目简介
 
