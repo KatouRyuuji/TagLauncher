@@ -8,6 +8,7 @@ src-tauri/gen/
 .vscode/
 .claude/
 .codex/
+.agents/
 
 *.log
 *.tmp
@@ -51,3 +52,12 @@ TagLauncher-README/
 视频素材/
 宣传视频/
 视频剧本.txt
+
+# 本机 UI 缺陷截图
+bug/
+
+# 本机设计草稿
+design-system/
+
+# verify-layout 本机截图
+scripts/.v-*.png
