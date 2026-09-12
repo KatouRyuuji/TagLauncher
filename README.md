@@ -22,19 +22,15 @@
 <!-- 以下均为真实截图(2880×1800,建议展示宽度 1280×800);如需替换,保持同名文件即可 -->
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./assets/screenshot-main-dark.png" />
-    <source media="(prefers-color-scheme: light)" srcset="./assets/screenshot-main-light.png" />
-    <img alt="主界面 · 网格视图" src="./assets/screenshot-main-dark.png" width="880" />
-  </picture>
+  <img alt="主界面 · 网格视图（霜靛亮色）" src="./assets/screenshot-main-light.png" width="880" />
 </p>
 
 <p align="center">
-  <img alt="标签关系图谱" src="./assets/screenshot-tag-graph.png" width="420" />&nbsp;&nbsp;
-  <img alt="命令面板(Ctrl+K)" src="./assets/screenshot-command-palette.png" width="420" />
+  <img alt="标签关系图谱（霜靛亮色）" src="./assets/screenshot-tag-graph.png" width="420" />&nbsp;&nbsp;
+  <img alt="命令面板(Ctrl+K)（霜靛亮色）" src="./assets/screenshot-command-palette.png" width="420" />
 </p>
 
-<p align="center"><sub>主界面(暗/亮随系统切换) · 标签关系图谱 · 命令面板</sub></p>
+<p align="center"><sub>主界面 · 标签关系图谱 · 命令面板（均为霜靛亮色）</sub></p>
 
 ## 核心亮点
 
@@ -93,7 +89,7 @@ npm run pack:portable  # 打便携版 zip(单 exe;build.bat 会在构建后自�
 <details>
 <summary><b>搜索与交互</b></summary>
 
-- 搜索覆盖名称、路径、标签、拼音、拼音首字母与同义词,支持表达式语法,150ms 防抖,关键词高亮。
+- 搜索覆盖名称、路径、标签、拼音、拼音首字母、英文轻度容错、英文缩写与同义词,支持表达式语法,150ms 防抖,关键词高亮。
 - 网格 / 列表双视图均虚拟化渲染(@tanstack/react-virtual);五种排序(智能 / 名称 / 最近 / 添加时间 / 类型)并记忆偏好。
 - 命令面板(Ctrl+K)、空格快速预览、鼠标框选、批量操作工具条、右键菜单完整键盘可达。
 - 键盘优先:`/` 聚焦搜索,方向键 / Home / End / 翻页选择,Enter 启动,Ctrl+C 复制路径,Ctrl+D 收藏,`?` 查看快捷键;中文输入法组字不误触。

@@ -1,6 +1,6 @@
 # TagLauncher 使用手册
 
-> 适用版本：v1.7.8-beta · 面向最终用户 · 开发者请见 [PROJECT_MANUAL.md](./PROJECT_MANUAL.md) 与 [TUTORIAL.md](./TUTORIAL.md)
+> 适用版本：v1.7.11-beta · 面向最终用户 · 开发者请见 [PROJECT_MANUAL.md](./PROJECT_MANUAL.md) 与 [TUTORIAL.md](./TUTORIAL.md)
 
 TagLauncher 用「标签 + 文件柜 + 收藏 + 搜索」管理你的本地文件、文件夹、程序、脚本、图片和音频——不移动、不复制、不改动你的任何文件，只做轻量的索引与启动。
 
@@ -68,7 +68,8 @@ TagLauncher 用「标签 + 文件柜 + 收藏 + 搜索」管理你的本地文�
 顶栏搜索框支持三种模式（全部 / 名称 / 标签），并内建：
 
 - 中文按**子串**匹配（输入「晴天」命中「周杰伦 - 晴天」），并支持**拼音**与**拼音首字母**前缀匹配（如输入 `yx` 命中「游戏」）；
-- 英文轻度容错（3 字符以上）；
+- 英文轻度容错：查询至少 3 个英文字符时，名称开头允许差一个字母（如 `visul` 命中 Visual Studio Code）；名称里后段英文词差一个字母同样命中（如 `chromr` 命中 Google Chrome）。查询不足 5 个字母时要求首字母一致。含空格、扩展名或中英文混合的名称同样适用；
+- 英文缩写：多词英文名可用首字母或连写检索（如 `vsc` / `vscode` 命中 Visual Studio Code）；
 - **同义词**扩展（词库文件 `synonyms.json` 可自行编辑，重启生效）；
 - 表达式语法：
 
