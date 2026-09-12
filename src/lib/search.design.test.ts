@@ -226,6 +226,27 @@ test("B13 英文缩写切词：连字符/下划线/驼峰边界，标签名同�
   assert.deepEqual(searchWithIndex(tagIdx, "dt").map((i) => i.id), [73]);
 });
 
+test("B15 英文容错覆盖含空格/CJK/扩展名的真实名称", () => {
+  const realItems = [
+    item(91, "Visual Studio Code"),
+    item(92, "Google Chrome"),
+    item(93, "Chrome浏览器"),
+    item(94, "chrome.exe"),
+    item(95, "My Node App"),
+  ];
+  const realIndex = buildSearchIndex(realItems, "name");
+  // 空格名首词：visul→visual，编辑距离 1
+  assert.deepEqual(searchWithIndex(realIndex, "visul").map((i) => i.id), [91]);
+  // 后段词 / CJK 后缀 / 扩展名：chromr→chrome
+  assert.deepEqual(searchWithIndex(realIndex, "chromr").map((i) => i.id), [92, 93, 94]);
+  // 短词首字母不一致：bode 不命中 Node
+  assert.deepEqual(searchWithIndex(realIndex, "bode").map((i) => i.id), []);
+  // 编辑距离 2：vizul→visual 为 2，不命中
+  assert.deepEqual(searchWithIndex(realIndex, "vizul").map((i) => i.id), []);
+  // @ 严格模式关闭容错
+  assert.deepEqual(searchWithIndex(realIndex, "@visul").map((i) => i.id), []);
+});
+
 test("B14 弱命中排序低于强命中，收藏仍绝对置顶", () => {
   const rankIndex = buildSearchIndex(
     [item(81, "Visual Studio Code"), item(82, "codepen")],

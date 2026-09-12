@@ -394,17 +394,34 @@ function parseQuery(query: string): Expr | null {
   return expr;
 }
 
+/**
+ * 英文低容错：查询为 ≥3 的 `[a-z0-9_.-]+` 时，
+ * 对整串前缀做编辑距离 ≤1；对后段英文词（字母开头，空格/CJK 为分隔）做编辑距离恰好为 1。
+ * 短词（查询 <5）要求前缀首字母一致。
+ */
 function isEnglishTypoMatch(source: string, query: string): boolean {
   if (query.length < 3) return false;
-  if (!/^[a-z0-9_.-]+$/.test(source) || !/^[a-z0-9_.-]+$/.test(query)) {
-    return false;
+  if (!/^[a-z0-9_.-]+$/.test(query)) return false;
+
+  const head = englishPrefixEditDistance(source, query);
+  if (head !== null && head <= 1) return true;
+
+  const tokens = source.match(/[a-z][a-z0-9_.-]*/g);
+  if (!tokens) return false;
+  for (const token of tokens) {
+    const dist = englishPrefixEditDistance(token, query);
+    if (dist === 1) return true;
   }
+  return false;
+}
 
+function englishPrefixEditDistance(source: string, query: string): number | null {
   const sourcePrefix = source.slice(0, Math.max(query.length, 1));
-  if (Math.abs(sourcePrefix.length - query.length) > 1) return false;
+  if (!/^[a-z0-9_.-]+$/.test(sourcePrefix)) return null;
+  if (Math.abs(sourcePrefix.length - query.length) > 1) return null;
 
-  // 短词（<5 字母）收紧：不允许首字母替换，要求切片首字符与查询首字符一致，避免 bode→node 之类误命中
-  if (query.length < 5 && sourcePrefix[0] !== query[0]) return false;
+  // 短词（<5 字母）收紧：切片首字符与查询首字符一致，过滤 bode→node 之类误命中
+  if (query.length < 5 && sourcePrefix[0] !== query[0]) return null;
 
   let prev = Array.from({ length: query.length + 1 }, (_, i) => i);
   for (let i = 1; i <= sourcePrefix.length; i += 1) {
@@ -420,7 +437,7 @@ function isEnglishTypoMatch(source: string, query: string): boolean {
     prev = next;
   }
 
-  return prev[query.length] <= 1;
+  return prev[query.length];
 }
 
 /** CJK 统一表意文字与假名：命中即按子串匹配（见 prefixMatches） */
