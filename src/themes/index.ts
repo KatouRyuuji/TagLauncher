@@ -11,8 +11,8 @@ export {
   withDefaultThemeVariables,
 } from "./tokens";
 
-// 内置主题 = 历史主题 sakura（A1 亮，id 已被用户配置持久化）
-// + RyuujiDesign 锁定色板工厂生成的 13 套（见 ./ryuuji.ts 头部注释）
+// 内置主题 = 历史主题 sakura（霜靛·亮，id 已被用户配置持久化）
+// + 色板工厂生成的 17 套（见 ./ryuuji.ts 头部注释）
 export const presetThemes: ThemeDefinition[] = [sakuraTheme, ...ryuujiThemes].map((theme) => ({
   ...theme,
   isPreset: true,
@@ -41,6 +41,9 @@ export const THEME_FAMILIES: ThemeFamily[] = [
   { id: "a6", name: "樱花", lang: "a", light: "70492696-751c-4a29-9ab4-09ad8ddff1a4", dark: "ad9b379f-0f3d-45e3-8b55-bf077b4ab97a" },
   { id: "b1", name: "海军冰蓝", lang: "b", light: "e0f5add7-8b67-42c9-9b2b-c7bbf49e255d", dark: "6c309a70-ec6a-4429-8299-c4cde7c0ffcc" },
   { id: "b3", name: "铁锈", lang: "b", light: "5298ac16-455f-42f8-8bc8-e9b03ee0fdbf", dark: "cfaadcb4-7e85-460c-a8fe-52e848959719" },
+  // 素墨：A/B 共享中性色板；A 纸面形态沿用家族名，B 仪器形态名带「仪」
+  { id: "mono", name: "素墨", lang: "a", light: "f04d4499-8a9c-4c84-b7d1-73574fc98f9e", dark: "2db7495f-a084-4f7d-ae6d-d06258dc0e3c" },
+  { id: "mono-b", name: "素墨·仪", lang: "b", light: "54a0eaae-9c92-4f4a-b823-b0a33f940bd3", dark: "c3d01915-3266-4c53-b8ad-badc8089752b" },
 ];
 
 /** 主题 id 所属的配色家族；自定义/Mod 主题不属于任何家族时返回 undefined */

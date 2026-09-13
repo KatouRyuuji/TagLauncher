@@ -1,26 +1,27 @@
 @import "tailwindcss";
 
 @theme {
-  --text-xs: 13px;
+  --text-xs: 12px;
   --text-xs--line-height: 1.3;
 }
 
 @layer base {
   :root {
-    /* 字体方案（OFL 本地打包 + 系统兜底）：UI = Noto Sans SC、正文 = LXGW WenKai、等宽 = Cascadia Code */
+    /* 字体方案（OFL 本地打包 + 系统兜底）：UI = Noto Sans SC、阅读 = LXGW WenKai、等宽 = Cascadia Code */
     --font-family: "Noto Sans SC Variable", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "MiSans", system-ui, sans-serif;
     --font-family-body: "LXGW WenKai", "LXGW WenKai GB", "Kaiti SC", "STKaiti", "KaiTi", "Noto Sans SC", serif;
     --font-family-mono: "Cascadia Code", "Cascadia Mono", "JetBrains Mono", "Consolas", monospace;
-    --font-size-xs: 13px;
-    --font-size-sm: 14px;
-    --font-size-base: 15px;
-    --font-size-lg: 17px;
-    --font-size-xl: 20px;
+    --font-size-xs: 12px;
+    --font-size-sm: 13px;
+    --font-size-base: 14px;
+    --font-size-lg: 16px;
+    --font-size-xl: 18px;
     --font-weight-normal: 400;
     --font-weight-medium: 500;
-    --font-weight-bold: 600;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
     --line-height-tight: 1.3;
-    --line-height-normal: 1.55;
+    --line-height-normal: 1.6;
     --letter-spacing: 0;
 
     /* Ryuuji 工作台基线：4px 原子间距、克制圆角、发丝边与低接触影。 */
@@ -42,12 +43,13 @@
     --spacing-xs: 4px;
     --spacing-sm: 8px;
     --spacing-md: 12px;
-    --spacing-lg: 18px;
+    --spacing-lg: 16px;
     --spacing-xl: 24px;
 
-    --transition-fast: 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
-    --transition-normal: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
-    --transition-slow: 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    /* 动效档：hover 位移 180 / 弹窗 240 / 转场上限 400，平滑曲线 */
+    --transition-fast: 180ms cubic-bezier(0.25, 0.8, 0.25, 1);
+    --transition-normal: 240ms cubic-bezier(0.25, 0.8, 0.25, 1);
+    --transition-slow: 400ms cubic-bezier(0.25, 0.8, 0.25, 1);
 
     --bg-gradient: linear-gradient(180deg, #eef4f6 0%, #e9f0f3 100%);
     --card-backdrop-filter: none;
@@ -58,7 +60,7 @@
     --status-success-bg: rgba(34, 197, 94, 0.12);
     --tag-preset-colors: #e11d48,#ea580c,#ca8a04,#16a34a,#0d9488,#3db8bf,#2563eb,#7c3aed;
 
-    --sidebar-width: 236px;
+    --sidebar-width: 232px;
     --grid-col-min: 256px;
     --titlebar-height: 40px;
 
@@ -104,7 +106,7 @@
 
     --panel-floating-min-width: 320px;
     --panel-floating-min-height: 220px;
-    --panel-floating-border-radius: var(--radius-lg);
+    --panel-floating-border-radius: var(--radius-xl);
     --panel-titlebar-height: 40px;
     --panel-titlebar-bg: var(--bg-surface);
     --panel-body-bg: var(--bg-elevated);
@@ -155,6 +157,8 @@
     font-family: var(--font-family);
     font-size: var(--font-size-base);
     letter-spacing: var(--letter-spacing);
+    /* 数字统一等宽数字（读数与计数列对齐） */
+    font-variant-numeric: tabular-nums;
     background-color: var(--bg-base);
     color: var(--text-primary);
   }
@@ -200,8 +204,9 @@
     box-sizing: border-box;
   }
 
+  /* 选区染色 = 主色浅档实色底 + 正文色字 */
   ::selection {
-    background: var(--accent-primary-bg);
+    background: var(--accent-primary-shallow, var(--accent-primary-bg));
     color: var(--text-primary);
   }
 
@@ -239,9 +244,10 @@
     outline-offset: 2px;
   }
 
+  /* 滚动条：10px 细轨 + 3px 底色描边浮起 thumb，thumb 圆角随语言令牌（A 圆润 / B 硬朗） */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
   }
 
   ::-webkit-scrollbar-track {
@@ -250,11 +256,16 @@
 
   ::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
-    border-radius: var(--radius-full);
+    border: 3px solid var(--bg-base);
+    border-radius: var(--radius-lg);
   }
 
   ::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 }
 
@@ -288,14 +299,14 @@
 @layer components {
   .surface-card {
     border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     background: var(--surface-raised);
     box-shadow: var(--shadow-card);
   }
 
   .surface-card-soft {
     border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     background: color-mix(in srgb, var(--bg-card) 92%, transparent);
   }
 
@@ -365,7 +376,7 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    min-height: 36px;
+    min-height: 40px;
     padding: 0 14px;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
@@ -384,12 +395,28 @@
     border-color: var(--accent-primary);
     background: var(--accent-primary);
     color: var(--text-invert);
+    font-weight: var(--font-weight-semibold);
   }
 
   .action-button-primary:hover:not(:disabled) {
     background: var(--accent-primary-hover);
     border-color: var(--accent-primary-hover);
     color: var(--text-invert);
+  }
+
+  /* 主钮 hover（A 纸面签名）：lift 影 + 36% 白顶唇；B 机械面不叠影 */
+  :root[data-shape="a"] .action-button-primary:hover:not(:disabled) {
+    box-shadow: var(--shadow-lift), inset 0 1px 0 color-mix(in srgb, #fff 36%, var(--accent-primary));
+  }
+
+  /* 按压行程：A 落纸 +1px / B 仪器 +2px（lang 层位移契约） */
+  .action-button:active:not(:disabled),
+  .icon-button:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  :root[data-shape="b"] .action-button:active:not(:disabled),
+  :root[data-shape="b"] .icon-button:active:not(:disabled) {
+    transform: translateY(2px);
   }
 
   /* 危险按钮（RyuujiDesign 范式）：常态浅染底 + 警示色文字 + 40% 描边；
@@ -407,9 +434,14 @@
     box-shadow: var(--shadow-md);
   }
 
+  /* 危险钮 hover（A）：实心反白 + lift 影 + 36% 白顶唇（与主钮同方） */
+  :root[data-shape="a"] .action-button-danger:hover:not(:disabled) {
+    box-shadow: var(--shadow-lift), inset 0 1px 0 color-mix(in srgb, #fff 36%, var(--color-danger));
+  }
+
   .modal-surface {
     border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     background: var(--surface-raised);
     box-shadow: var(--shadow-overlay);
   }
@@ -423,7 +455,7 @@
     min-height: 280px;
     margin: 16px;
     border: 1px dashed var(--border-default);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     background:
       linear-gradient(var(--workspace-grid) 1px, transparent 1px),
       linear-gradient(90deg, var(--workspace-grid) 1px, transparent 1px),
@@ -540,7 +572,7 @@
 
   .workbench-panel {
     border: 1px solid var(--line-hairline);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     background: var(--surface-raised);
     box-shadow: var(--shadow-card);
   }
@@ -595,21 +627,11 @@
   }
 
   /* ------------------------------------------------------------------
-     造型语言装饰签名（严格取自 RyuujiDesign lang/{a,b}.css）
+     造型语言装饰签名（A 纸面 / B 仪表）
      data-shape / data-scheme 由 lib/theme.ts applyShapeLang 写入。
-     纹样仅作点缀：A 保留浮层顶唇；B 保留丝印字距、切角、倒角高光与
-     双线内框。
+     A 的顶唇已并入 shadow-card/shadow-dropdown/shadow-overlay 令牌
+     （themes/shapeLang.ts）；B 保留丝印字距、切角、倒角高光与双线内框。
      ------------------------------------------------------------------ */
-  :root[data-shape="a"] {
-    --paper-lip: inset 0 1px 0 color-mix(in srgb, #fff 86%, transparent);
-  }
-  :root[data-shape="a"][data-scheme="dark"] {
-    --paper-lip: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
-  }
-  :root[data-shape="a"] .modal-surface {
-    box-shadow: var(--paper-lip), var(--shadow-overlay);
-  }
-
   :root[data-shape="b"] {
     --bevel: inset 0 1px 0 color-mix(in srgb, #fff 40%, var(--bg-surface));
     --frame: inset 0 0 0 1px var(--bg-surface), inset 0 0 0 2px var(--border-medium);
@@ -621,8 +643,9 @@
   :root[data-shape="b"] .data-readout {
     letter-spacing: 0.16em;
   }
+  /* B 切角 = 仅左上 4px */
   :root[data-shape="b"] .item-card-render-scope {
-    clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
+    clip-path: polygon(4px 0, 100% 0, 100% 100%, 0 100%, 0 4px);
   }
   :root[data-shape="b"] [data-region="sidebar"],
   :root[data-shape="b"] [data-region="titlebar"] {
@@ -634,6 +657,108 @@
   /* 正文（长文/问候/空状态文案）用 LXGW WenKai；UI 控件仍用 --font-family */
   .font-body {
     font-family: var(--font-family-body);
+  }
+
+  /* 输入配方（A 纸面 / B 仪表双语言契约）：
+     A 纸面：静息纸槽影（paper-well），焦点 = 边换 primary + 底换 ctl-hover
+     + 3px 18% 软环；B 仪表：强描边深槽、焦点只换
+     signal 通道色不加环。键盘焦点另有全局 :focus-visible outline 双保险。
+     必须在 utilities 层：压过宿主上的 shadow-none/border 等工具类 */
+  :root[data-shape="a"] .input-frame {
+    box-shadow: var(--shadow-well);
+  }
+  :root[data-shape="b"] .input-frame {
+    border-color: var(--border-medium);
+  }
+  :root[data-shape] .input-frame:focus,
+  :root[data-shape] .input-frame:focus-within {
+    border-color: var(--accent-signal);
+    background-color: var(--bg-input-hover);
+  }
+  :root[data-shape="a"] .input-frame:focus,
+  :root[data-shape="a"] .input-frame:focus-within {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  }
+
+  /* 错误输入（forms.css 契约）：danger-ink 文 + 危险浅染底 + 40% 描边；
+     focus 保持错误语义（边收 danger-ink，不再叠主色环） */
+  :root[data-shape] .input-frame.is-error {
+    color: var(--color-danger-ink);
+    background: var(--color-danger-bg);
+    border-color: color-mix(in srgb, var(--color-danger) 40%, var(--bg-surface));
+  }
+  :root[data-shape] .input-frame.is-error:focus,
+  :root[data-shape] .input-frame.is-error:focus-within {
+    border-color: var(--color-danger-ink);
+    background: var(--color-danger-bg);
+    box-shadow: var(--shadow-well);
+  }
+
+  /* A 语言不丝印：mono 大写仪器标签退棚为普通 UI 标签 */
+  :root[data-shape="a"] .instrument-label,
+  :root[data-shape="a"] .text-label {
+    font-family: var(--font-family);
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  /* 键帽双语言配方：
+     A 软键帽 = currentColor 8% 底 + 20% 边 + 2px 底边台阶 + 接触影 + 顶唇；
+     B 方槽键帽 = 直角 + 表面底 + 强边 */
+  :root[data-shape="a"] .kbd {
+    padding: 2px 6px;
+    color: var(--text-primary);
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+    box-shadow: var(--shadow-sm), inset 0 1px 0 rgb(255 255 255 / 0.86);
+  }
+  :root[data-shape="a"][data-scheme="dark"] .kbd {
+    box-shadow: var(--shadow-sm), inset 0 1px 0 rgb(255 255 255 / 0.08);
+  }
+  :root[data-shape="b"] .kbd {
+    border-radius: 0;
+    background: var(--bg-surface);
+    border-color: var(--border-medium);
+  }
+
+  /* 浮层入场：弹窗/菜单/下拉
+     局部淡入 + 短距上移 10px，时长走 --transition-normal（240ms，缓动随语言） */
+  .modal-surface,
+  [role="menu"],
+  [role="listbox"] {
+    animation: app-float-in var(--transition-normal);
+  }
+
+  /* 抽屉入场：设置工作台右缘滑入 24px + 淡入 */
+  .drawer-enter {
+    animation: app-drawer-in var(--transition-normal);
+  }
+
+  /* B 语言签名交互：Reveal 描边跟随——hover 时描边微光随指针
+     游走；--reveal-x/--reveal-y 由 App.tsx 的 pointermove 委托写入 */
+  :root[data-shape="b"] .item-card-render-scope::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.5px;
+    background: radial-gradient(120px circle at var(--reveal-x, 50%) var(--reveal-y, 50%),
+      color-mix(in srgb, var(--accent-primary) 45%, transparent),
+      transparent 70%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+    pointer-events: none;
+  }
+  :root[data-shape="b"] .item-card-render-scope:hover::after {
+    opacity: 1;
   }
 
   /* 可聚焦对象卡片/行的键盘焦点环：与全局 button/input 焦点环共用同一 token 色。
@@ -649,16 +774,45 @@
     background-color: var(--accent-primary-bg-light);
   }
 
+  /* 卡片 hover 签名配方：
+     A 纸面 = 影不加深，只浓边（13%→24% 发丝边）+ 上移 1px；
+     B 仪表 = 不上浮，描边换 strong（位移契约归 A） */
   .card-hover-lift {
     transition:
+      transform var(--transition-fast),
       box-shadow var(--transition-fast),
       border-color var(--transition-fast),
       background-color var(--transition-fast);
   }
 
-  .card-hover-lift:hover {
-    box-shadow: var(--shadow-md);
-    border-color: var(--border-default);
+  :root[data-shape="a"] .card-hover-lift:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-medium);
+  }
+
+  :root[data-shape="b"] .card-hover-lift:hover {
+    border-color: var(--border-strong);
+  }
+
+  /* 选中行配方（菜单/命令面板/下拉一致；令牌值随造型语言分叉，
+     见 themes/ryuuji.ts 的 row-selected-* 组）：
+     A = 实心 primary + on-primary 字 + 顶唇；B = 15% 浅染 + 字重 600 */
+  .row-selected {
+    background: var(--row-selected-bg);
+    color: var(--row-selected-fg);
+    font-weight: var(--row-selected-weight);
+    box-shadow: var(--row-selected-shadow);
+  }
+
+  .row-selected .row-sub {
+    color: var(--row-selected-sub-fg);
+  }
+
+  /* 实心选中行内的键帽：底/边收入行色体系，避免灰底压在主色上 */
+  .row-selected .kbd {
+    background: color-mix(in srgb, var(--row-selected-fg) 12%, transparent);
+    border-color: transparent;
+    color: var(--row-selected-sub-fg);
   }
 
   .glow-accent {
@@ -675,7 +829,7 @@
   }
 
   .toast-enter {
-    animation: toast-slide-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: toast-slide-in var(--transition-normal);
   }
 
   .mod-panel-floating {
@@ -749,7 +903,7 @@
       color-mix(in srgb, var(--bg-elevated) 55%, transparent),
       transparent
     );
-    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
   }
 
   .item-card-render-scope,
@@ -763,6 +917,20 @@
 
   .item-row-render-scope {
     contain-intrinsic-size: 60px;
+  }
+}
+
+@keyframes app-float-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes app-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
   }
 }
 

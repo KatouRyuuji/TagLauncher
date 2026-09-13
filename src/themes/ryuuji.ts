@@ -1,16 +1,19 @@
 // ============================================================================
-// themes/ryuuji.ts — RyuujiDesign 锁定色板主题工厂
+// themes/ryuuji.ts — 内置色板主题工厂
 // ----------------------------------------------------------------------------
-// 色值逐值取自 RyuujiDesign styles/palettes.css 的锁定色板，禁止自造新色相；
-// 中间档仅用 rgba/color-mix 透明度派生。结构令牌按语言分叉：
-//   A = 纸面（圆角 4/8/8/12、纸影）
-//   B = 仪表（直角 0/2/4/4、硬影）
+// 内置主题色值集中维护于本文件 PALETTES 表（每板含完整语义色阶：
+// bg/surface/border/text×3/primary 梯度/on-primary/signal/语义四色及 ink/fill/
+// 浅染档），禁止自造新色相；中间档仅用 rgba/color-mix 透明度派生。
+// 结构令牌按语言分叉：
+//   A = 纸面（圆角 6/10/14/18、双层软影 + 顶唇）
+//   B = 仪表（直角 0/2/4/4、硬影 + 双线内框，暗色面板沉入场底 surface:=bg）
 // 主题模型：配色家族 × 亮/暗模式。本工厂按「家族 + 亮暗」生成具体主题，
 // 家族注册表（亮暗各映射一个主题 id）见 themes/index.ts 的 THEME_FAMILIES。
 // 主题唯一标识使用固定 uuid，与显示名、配色家族、功能语义完全解耦——
 // 显示名是面向用户的自由文本（亮/暗两套同名），身份识别只认 uuid。
-// sakura（A1 亮）为独立文件：其 uuid 已被用户配置持久化。
-// 结构令牌统一走 themes/shapeLang.ts（严格对齐 lang/a.css 与 lang/b.css）。
+// sakura（霜靛·亮）为独立文件：其 uuid 已被用户配置持久化。
+// 素墨为 A/B 共享中性色板：色值两语言一致，仅造型语言不同。
+// 结构令牌统一走 themes/shapeLang.ts（A/B 双语言结构配方）。
 // ============================================================================
 
 import type { ThemeDefinition } from "../types/theme";
@@ -21,25 +24,32 @@ interface RyuujiPalette {
   bg: string; bg_tint: string; surface: string; surface_2: string;
   border: string; border_strong: string;
   text: string; text_2: string; text_3: string; text_inverse: string;
-  primary: string; primary_deep: string; primary_ink: string; signal: string;
-  success: string; warning: string; danger: string;
-  success_so_shallow: string; warning_so_shallow: string; danger_so_shallow: string; on_primary: string;
+  primary: string; primary_deep: string; primary_ink: string; primary_shallow: string;
+  primary_so_shallow: string; primary_soo_shallow: string;
+  on_primary: string; signal: string;
+  success: string; warning: string; danger: string; info: string;
+  success_ink: string; warning_ink: string; danger_ink: string; info_ink: string;
+  success_fill: string; warning_fill: string;
+  success_so_shallow: string; warning_so_shallow: string; danger_so_shallow: string; info_so_shallow: string;
 }
 
 const PALETTES: Record<string, RyuujiPalette> = {
-  "a1-dark": { bg: "#0e1118", bg_tint: "#2d3148", surface: "#161b25", surface_2: "#1d2431", border: "#272f3e", border_strong: "#5b6373", text: "#e8ecf4", text_2: "#a2abbd", text_3: "#6e7789", text_inverse: "#ffffff", primary: "#5d68e7", primary_deep: "#4f58c4", primary_ink: "#b6bbf4", signal: "#5d68e7", success: "#4cc295", warning: "#d4a838", danger: "#cb4754", success_so_shallow: "#213c3b", warning_so_shallow: "#3c3729", danger_so_shallow: "#3b2732", on_primary: "#ffffff" },
-  "a3-light": { bg: "#faf6fe", bg_tint: "#eee3fa", surface: "#ffffff", surface_2: "#efe7fa", border: "#ddd0f0", border_strong: "#a495bb", text: "#332b40", text_2: "#564472", text_3: "#8a7aa0", text_inverse: "#ffffff", primary: "#9550e0", primary_deep: "#7f44be", primary_ink: "#683e97", signal: "#9550e0", success: "#1faa62", warning: "#e89e06", danger: "#d62a5e", success_so_shallow: "#e4f5ec", warning_so_shallow: "#fcf3e1", danger_so_shallow: "#fae5ec", on_primary: "#ffffff" },
-  "a3-dark": { bg: "#12101a", bg_tint: "#383047", surface: "#1a1724", surface_2: "#221e30", border: "#2d2838", border_strong: "#615971", text: "#ece7f2", text_2: "#a99cc0", text_3: "#776d8a", text_inverse: "#ffffff", primary: "#8d5ad6", primary_deep: "#784db6", primary_ink: "#d1bcee", signal: "#8d5ad6", success: "#4cc290", warning: "#d4a838", danger: "#ce4648", success_so_shallow: "#24393a", warning_so_shallow: "#3f3428", danger_so_shallow: "#3f2530", on_primary: "#ffffff" },
-  "a4-light": { bg: "#f7fceb", bg_tint: "#ebf6db", surface: "#ffffff", surface_2: "#e9f4d6", border: "#d2e3b2", border_strong: "#99ad7b", text: "#2d3523", text_2: "#4a6230", text_3: "#7a9260", text_inverse: "#ffffff", primary: "#568213", primary_deep: "#496f10", primary_ink: "#4c6d19", signal: "#568213", success: "#22ab4f", warning: "#e8a006", danger: "#cb4a26", success_so_shallow: "#e4f5ea", warning_so_shallow: "#fcf4e1", danger_so_shallow: "#f9e9e5", on_primary: "#ffffff" },
-  "a4-dark": { bg: "#11150f", bg_tint: "#343f23", surface: "#181d15", surface_2: "#1f251c", border: "#2a3324", border_strong: "#5c6851", text: "#e9f0e2", text_2: "#a0b28e", text_3: "#728060", text_inverse: "#ffffff", primary: "#617f26", primary_deep: "#526c20", primary_ink: "#c5df92", signal: "#617f26", success: "#52c878", warning: "#d4a838", danger: "#cd4747", success_so_shallow: "#243f29", warning_so_shallow: "#3e391c", danger_so_shallow: "#3d2821", on_primary: "#ffffff" },
-  "a5-light": { bg: "#f1fcfb", bg_tint: "#daf5f6", surface: "#ffffff", surface_2: "#d9f4f2", border: "#bfe2e0", border_strong: "#87aba8", text: "#253736", text_2: "#3a5f5b", text_3: "#6a8b86", text_inverse: "#ffffff", primary: "#108289", primary_deep: "#0e6f74", primary_ink: "#176a6f", signal: "#108289", success: "#1faa64", warning: "#e8a006", danger: "#ca452c", success_so_shallow: "#e4f5ec", warning_so_shallow: "#fcf4e1", danger_so_shallow: "#f9e9e6", on_primary: "#ffffff" },
-  "a5-dark": { bg: "#0f1516", bg_tint: "#254141", surface: "#161e1f", surface_2: "#1c2627", border: "#273331", border_strong: "#596966", text: "#e4efee", text_2: "#9db3b0", text_3: "#6f8582", text_inverse: "#ffffff", primary: "#21827e", primary_deep: "#1c6f6b", primary_ink: "#9be6e3", signal: "#21827e", success: "#4cc290", warning: "#d4a838", danger: "#cc4851", success_so_shallow: "#213f36", warning_so_shallow: "#3c3a24", danger_so_shallow: "#3b2a2c", on_primary: "#ffffff" },
-  "a6-light": { bg: "#fef4f8", bg_tint: "#fde1e8", surface: "#ffffff", surface_2: "#fae4ec", border: "#f0d4e0", border_strong: "#ba98a5", text: "#3a2a31", text_2: "#6f4453", text_3: "#9a6b78", text_inverse: "#ffffff", primary: "#e7134b", primary_deep: "#c41040", primary_ink: "#91334d", signal: "#e7134b", success: "#1faa64", warning: "#e8a006", danger: "#c0392b", success_so_shallow: "#e4f5ec", warning_so_shallow: "#fcf4e1", danger_so_shallow: "#f7e7e6", on_primary: "#ffffff" },
-  "a6-dark": { bg: "#141017", bg_tint: "#463039", surface: "#1c1720", surface_2: "#241e28", border: "#322733", border_strong: "#6c5b66", text: "#f0e7ec", text_2: "#bda2ac", text_3: "#8a707c", text_inverse: "#ffffff", primary: "#e61d3d", primary_deep: "#c41934", primary_ink: "#f8bdc6", signal: "#e61d3d", success: "#4cc290", warning: "#d4a838", danger: "#cd4939", success_so_shallow: "#263936", warning_so_shallow: "#413425", danger_so_shallow: "#402327", on_primary: "#ffffff" },
-  "b1-light": { bg: "#eaf0fd", bg_tint: "#dadfea", surface: "#ffffff", surface_2: "#d6e0fb", border: "#ccd6f2", border_strong: "#8f9ab6", text: "#262e3e", text_2: "#3a4664", text_3: "#6a7590", text_inverse: "#ffffff", primary: "#163a7a", primary_deep: "#133168", primary_ink: "#1d3561", signal: "#3053e8", success: "#10a06a", warning: "#cf8a00", danger: "#d92538", success_so_shallow: "#e2f4ed", warning_so_shallow: "#f9f1e0", danger_so_shallow: "#fae5e7", on_primary: "#ffffff" },
-  "b1-dark": { bg: "#020a19", bg_tint: "#313a4a", surface: "#081120", surface_2: "#0e1a2e", border: "#1c2c4a", border_strong: "#4e5f82", text: "#dae3fa", text_2: "#93a5cf", text_3: "#5d6d8e", text_inverse: "#ffffff", primary: "#3f70dd", primary_deep: "#365fbc", primary_ink: "#e3eafa", signal: "#3f70dd", success: "#52c878", warning: "#e0ae30", danger: "#cd4747", success_so_shallow: "#173632", warning_so_shallow: "#333023", danger_so_shallow: "#301e2a", on_primary: "#ffffff" },
-  "b3-light": { bg: "#fff6f0", bg_tint: "#f8e0dd", surface: "#ffffff", surface_2: "#fae6db", border: "#f2cec2", border_strong: "#b99288", text: "#392a29", text_2: "#6a3e38", text_3: "#a07870", text_inverse: "#ffffff", primary: "#d63e2d", primary_deep: "#b63526", primary_ink: "#8c3329", signal: "#b95b05", success: "#22ab4f", warning: "#f97d0a", danger: "#c01428", success_so_shallow: "#e4f5ea", warning_so_shallow: "#feefe2", danger_so_shallow: "#f7e3e5", on_primary: "#ffffff" },
-  "b3-dark": { bg: "#131010", bg_tint: "#412e2d", surface: "#1b1715", surface_2: "#241e1b", border: "#302723", border_strong: "#6a5c56", text: "#f0e8e4", text_2: "#b9a49c", text_3: "#7d6d68", text_inverse: "#ffffff", primary: "#d14338", primary_deep: "#b23930", primary_ink: "#edb5b1", signal: "#bd5908", success: "#4cc290", warning: "#f6852a", danger: "#ce4832", success_so_shallow: "#25392e", warning_so_shallow: "#472d19", danger_so_shallow: "#3f221c", on_primary: "#ffffff" }
+  "a1-dark": { bg: "#10131c", bg_tint: "#1c202d", surface: "#161b25", surface_2: "#1d2431", border: "#272f3e", border_strong: "#5b6373", text: "#e8ecf4", text_2: "#a2abbd", text_3: "#838c9c", text_inverse: "#ffffff", primary: "#4f6aeb", primary_deep: "#435ac8", primary_ink: "#bec8f8", primary_shallow: "#7b86b8", primary_so_shallow: "#2d3346", primary_soo_shallow: "#1c202d", on_primary: "#ffffff", signal: "#4f6aeb", success: "#4cc295", warning: "#d4a838", danger: "#cb4754", info: "#48beb8", success_ink: "#4cc295", warning_ink: "#d4a838", danger_ink: "#d97881", info_ink: "#48beb8", success_fill: "#2d8463", warning_fill: "#91711f", success_so_shallow: "#213c3b", warning_so_shallow: "#3c3729", danger_so_shallow: "#3b2732", info_so_shallow: "#203c42" },
+  "a3-light": { bg: "#f5f0fa", bg_tint: "#f0e9f7", surface: "#ffffff", surface_2: "#eee5f5", border: "#ddd0f0", border_strong: "#a495bb", text: "#332b40", text_2: "#564472", text_3: "#716188", text_inverse: "#ffffff", primary: "#8f5fc5", primary_deep: "#7a51a7", primary_ink: "#6b4d8e", primary_shallow: "#b899da", primary_so_shallow: "#f4f0f9", primary_soo_shallow: "#f0e9f7", on_primary: "#ffffff", signal: "#8f5fc5", success: "#1faa62", warning: "#e89e06", danger: "#d62a5e", info: "#4a77f0", success_ink: "#167745", warning_ink: "#8c5f04", danger_ink: "#c42655", info_ink: "#255aed", success_fill: "#18864d", warning_fill: "#9e6c04", success_so_shallow: "#e4f5ec", warning_so_shallow: "#fcf3e1", danger_so_shallow: "#fae5ec", info_so_shallow: "#e9effd" },
+  "a3-dark": { bg: "#12101a", bg_tint: "#211c2b", surface: "#1a1724", surface_2: "#221e30", border: "#2d2838", border_strong: "#615971", text: "#ece7f2", text_2: "#a99cc0", text_3: "#8c849e", text_inverse: "#ffffff", primary: "#9358d5", primary_deep: "#7d4bb5", primary_ink: "#d8c3f0", primary_shallow: "#9680b0", primary_so_shallow: "#362f44", primary_soo_shallow: "#211c2b", on_primary: "#ffffff", signal: "#9358d5", success: "#4cc290", warning: "#d4a838", danger: "#ce4648", info: "#8ba4e6", success_ink: "#4cc290", warning_ink: "#d4a838", danger_ink: "#db7778", info_ink: "#8ba4e6", success_fill: "#2d845f", warning_fill: "#91711f", success_so_shallow: "#24393a", warning_so_shallow: "#3f3428", danger_so_shallow: "#3f2530", info_so_shallow: "#31334b" },
+  "a4-light": { bg: "#f1f6e9", bg_tint: "#ebf2e0", surface: "#ffffff", surface_2: "#e8efdc", border: "#d2e3b2", border_strong: "#99ad7b", text: "#2d3523", text_2: "#4a6230", text_3: "#5e704a", text_inverse: "#ffffff", primary: "#578129", primary_deep: "#4a6e23", primary_ink: "#53762d", primary_shallow: "#a4c97b", primary_so_shallow: "#f1f7eb", primary_soo_shallow: "#ebf2e0", on_primary: "#ffffff", signal: "#578129", success: "#22ab4f", warning: "#e8a006", danger: "#cb4a26", info: "#1f8ad8", success_ink: "#197a38", warning_ink: "#8e6204", danger_ink: "#b94323", info_ink: "#196ead", success_fill: "#1b873e", warning_fill: "#9c6c04", success_so_shallow: "#e4f5ea", warning_so_shallow: "#fcf4e1", danger_so_shallow: "#f9e9e5", info_so_shallow: "#e4f1fa" },
+  "a4-dark": { bg: "#12170e", bg_tint: "#1f2617", surface: "#1a2113", surface_2: "#222a18", border: "#2d3a20", border_strong: "#637648", text: "#eef4de", text_2: "#aec97f", text_3: "#83a05e", text_inverse: "#ffffff", primary: "#5d8029", primary_deep: "#4f6d23", primary_ink: "#c8e1a4", primary_shallow: "#86a160", primary_so_shallow: "#323e24", primary_soo_shallow: "#1f2617", on_primary: "#ffffff", signal: "#5d8029", success: "#52c878", warning: "#d4a838", danger: "#cd4747", info: "#6aa8e8", success_ink: "#52c878", warning_ink: "#d4a838", danger_ink: "#db7c7c", info_ink: "#6aa8e8", success_fill: "#2b8648", warning_fill: "#91711f", success_so_shallow: "#254227", warning_so_shallow: "#3f3c1a", danger_so_shallow: "#3e2b20", info_so_shallow: "#2a3c3e" },
+  "a5-light": { bg: "#eaf6f5", bg_tint: "#dff1f1", surface: "#ffffff", surface_2: "#dcefed", border: "#bfe2e0", border_strong: "#87aba8", text: "#253736", text_2: "#3a5f5b", text_3: "#556e6a", text_inverse: "#ffffff", primary: "#12828a", primary_deep: "#0f6f75", primary_ink: "#1c7176", primary_shallow: "#65bdc3", primary_so_shallow: "#e8f5f6", primary_soo_shallow: "#dff1f1", on_primary: "#ffffff", signal: "#12828a", success: "#1faa64", warning: "#e8a006", danger: "#ca452c", info: "#1f8ad8", success_ink: "#167947", warning_ink: "#8d6104", danger_ink: "#ba4029", info_ink: "#196eac", success_fill: "#18864f", warning_fill: "#9c6c04", success_so_shallow: "#e4f5ec", warning_so_shallow: "#fcf4e1", danger_so_shallow: "#f9e9e6", info_so_shallow: "#e4f1fa" },
+  "a5-dark": { bg: "#0f1516", bg_tint: "#182425", surface: "#161e1f", surface_2: "#1c2627", border: "#273331", border_strong: "#596966", text: "#e4efee", text_2: "#9db3b0", text_3: "#7b908d", text_inverse: "#ffffff", primary: "#2e817e", primary_deep: "#276e6b", primary_ink: "#a6dfdd", primary_shallow: "#639e9c", primary_so_shallow: "#273b3b", primary_soo_shallow: "#182425", on_primary: "#ffffff", signal: "#2e817e", success: "#4cc290", warning: "#d4a838", danger: "#cc4851", info: "#6aa8e8", success_ink: "#4cc290", warning_ink: "#d4a838", danger_ink: "#da7b80", info_ink: "#6aa8e8", success_fill: "#2d845f", warning_fill: "#91711f", success_so_shallow: "#213f36", warning_so_shallow: "#3c3a24", danger_so_shallow: "#3b2a2c", info_so_shallow: "#273a47" },
+  "a6-light": { bg: "#fbf0f4", bg_tint: "#fae9ef", surface: "#ffffff", surface_2: "#f5e2ea", border: "#f4d3e1", border_strong: "#c692a4", text: "#42232e", text_2: "#86394f", text_3: "#9c4d68", text_inverse: "#ffffff", primary: "#d63865", primary_deep: "#b63056", primary_ink: "#9d4861", primary_shallow: "#ea97af", primary_so_shallow: "#fceff3", primary_soo_shallow: "#fae9ef", on_primary: "#ffffff", signal: "#d63865", success: "#1faa64", warning: "#e8a006", danger: "#c0392b", info: "#1f8ad8", success_ink: "#167645", warning_ink: "#895f04", danger_ink: "#bb382a", info_ink: "#186ba7", success_fill: "#18864f", warning_fill: "#9c6c04", success_so_shallow: "#e4f5ec", warning_so_shallow: "#fcf4e1", danger_so_shallow: "#f7e7e6", info_so_shallow: "#e4f1fa" },
+  "a6-dark": { bg: "#161013", bg_tint: "#271d21", surface: "#20161b", surface_2: "#281c22", border: "#35252d", border_strong: "#765a64", text: "#f4e9ed", text_2: "#d0a3b0", text_3: "#a47c89", text_inverse: "#ffffff", primary: "#d93461", primary_deep: "#b82c52", primary_ink: "#f4c5d2", primary_shallow: "#b38290", primary_so_shallow: "#412e35", primary_soo_shallow: "#271d21", on_primary: "#ffffff", signal: "#d93461", success: "#4cc290", warning: "#d4a838", danger: "#cd4939", info: "#6aa8e8", success_ink: "#4cc290", warning_ink: "#d4a838", danger_ink: "#da776b", info_ink: "#6aa8e8", success_fill: "#2d845f", warning_fill: "#91711f", success_so_shallow: "#293832", warning_so_shallow: "#443321", danger_so_shallow: "#432223", info_so_shallow: "#2f3344" },
+  "b1-light": { bg: "#eaf0f9", bg_tint: "#e0e8f3", surface: "#ffffff", surface_2: "#dee7f3", border: "#ccd6f2", border_strong: "#8f9ab6", text: "#262e3e", text_2: "#3a4664", text_3: "#5d667e", text_inverse: "#ffffff", primary: "#244e7b", primary_deep: "#1f4269", primary_ink: "#254161", primary_shallow: "#6e8aa8", primary_so_shallow: "#e9edf2", primary_soo_shallow: "#e0e8f3", on_primary: "#ffffff", signal: "#386bce", success: "#10a06a", warning: "#cf8a00", danger: "#d92538", info: "#386bce", success_ink: "#0b754e", warning_ink: "#8c5d00", danger_ink: "#c62233", info_ink: "#3062c4", success_fill: "#0d8659", warning_fill: "#a06b00", success_so_shallow: "#e2f4ed", warning_so_shallow: "#f9f1e0", danger_so_shallow: "#fae5e7", info_so_shallow: "#e7edf9" },
+  "b1-dark": { bg: "#0b1320", bg_tint: "#192231", surface: "#131e2d", surface_2: "#1a293b", border: "#2c3d55", border_strong: "#576988", text: "#dae3fa", text_2: "#93a5cf", text_3: "#8190ac", text_inverse: "#ffffff", primary: "#2475d5", primary_deep: "#1f63b5", primary_ink: "#ccdff6", primary_shallow: "#889db8", primary_so_shallow: "#2d3b4d", primary_soo_shallow: "#192231", on_primary: "#ffffff", signal: "#2475d5", success: "#52c878", warning: "#e0ae30", danger: "#cd4747", info: "#8aa4ec", success_ink: "#52c878", warning_ink: "#e0ae30", danger_ink: "#da7979", info_ink: "#8aa4ec", success_fill: "#2b8648", warning_fill: "#947016", success_so_shallow: "#20403c", warning_so_shallow: "#3c3b2e", danger_so_shallow: "#392834", info_so_shallow: "#2b3953" },
+  "b3-light": { bg: "#fbefe8", bg_tint: "#f8e7df", surface: "#ffffff", surface_2: "#f1dfd4", border: "#f2cec2", border_strong: "#b99288", text: "#392a29", text_2: "#6a3e38", text_3: "#7f5c54", text_inverse: "#ffffff", primary: "#b8513d", primary_deep: "#9c4534", primary_ink: "#834135", primary_shallow: "#d08c7f", primary_so_shallow: "#f8eeec", primary_soo_shallow: "#f8e7df", on_primary: "#ffffff", signal: "#b55e21", success: "#22ab4f", warning: "#cd6b25", danger: "#c01428", info: "#1674c8", success_ink: "#177335", warning_ink: "#9a511c", danger_ink: "#c01428", info_ink: "#1366b1", success_fill: "#1b873e", warning_fill: "#b55e21", success_so_shallow: "#e4f5ea", warning_so_shallow: "#f9ede5", danger_so_shallow: "#f7e3e5", info_so_shallow: "#e3eef8" },
+  "b3-dark": { bg: "#131010", bg_tint: "#241c1a", surface: "#1b1715", surface_2: "#241e1b", border: "#302723", border_strong: "#6a5c56", text: "#f0e8e4", text_2: "#b9a49c", text_3: "#93847e", text_inverse: "#ffffff", primary: "#c35332", primary_deep: "#a6472b", primary_ink: "#ebbdb0", primary_shallow: "#a97b6d", primary_so_shallow: "#3b2e29", primary_soo_shallow: "#241c1a", on_primary: "#ffffff", signal: "#b65e19", success: "#4cc290", warning: "#eaa066", danger: "#ce4832", info: "#63a8e8", success_ink: "#4cc290", warning_ink: "#eaa066", danger_ink: "#d97564", info_ink: "#63a8e8", success_fill: "#2d845f", warning_fill: "#b65e19", success_so_shallow: "#25392e", warning_so_shallow: "#443225", danger_so_shallow: "#3f221c", info_so_shallow: "#29343f" },
+  // 素墨（mono）：A/B 共享的中性灰板，色值与语言无关，两语言仅造型分叉
+  "mono-light": { bg: "#f5f5f5", bg_tint: "#ebebeb", surface: "#ffffff", surface_2: "#ebebeb", border: "#dedede", border_strong: "#a3a3a3", text: "#202020", text_2: "#525252", text_3: "#696969", text_inverse: "#ffffff", primary: "#242424", primary_deep: "#1f1f1f", primary_ink: "#222222", primary_shallow: "#6e6e6e", primary_so_shallow: "#e9e9e9", primary_soo_shallow: "#ebebeb", on_primary: "#ffffff", signal: "#242424", success: "#5f5f5f", warning: "#6d6d6d", danger: "#404040", info: "#686868", success_ink: "#5f5f5f", warning_ink: "#696969", danger_ink: "#404040", info_ink: "#686868", success_fill: "#5f5f5f", warning_fill: "#6d6d6d", success_so_shallow: "#ececec", warning_so_shallow: "#ededed", danger_so_shallow: "#e8e8e8", info_so_shallow: "#ededed" },
+  "mono-dark": { bg: "#101010", bg_tint: "#212121", surface: "#191919", surface_2: "#242424", border: "#343434", border_strong: "#6a6a6a", text: "#ededed", text_2: "#b4b4b4", text_3: "#929292", text_inverse: "#ffffff", primary: "#e5e5e5", primary_deep: "#ececec", primary_ink: "#ececec", primary_shallow: "#a9a9a9", primary_so_shallow: "#3a3a3a", primary_soo_shallow: "#212121", on_primary: "#101010", signal: "#e5e5e5", success: "#b8b8b8", warning: "#cccccc", danger: "#757575", info: "#a7a7a7", success_ink: "#b8b8b8", warning_ink: "#cccccc", danger_ink: "#d0d0d0", info_ink: "#a7a7a7", success_fill: "#757575", warning_fill: "#757575", success_so_shallow: "#393939", warning_so_shallow: "#3d3d3d", danger_so_shallow: "#3e3e3e", info_so_shallow: "#353535" },
 };
 
 interface RyuujiThemeDef {
@@ -63,24 +73,61 @@ const DEFS: RyuujiThemeDef[] = [
   { palette: "b1-light", id: "e0f5add7-8b67-42c9-9b2b-c7bbf49e255d", name: "海军冰蓝", lang: "b", scheme: "light" },
   { palette: "b1-dark", id: "6c309a70-ec6a-4429-8299-c4cde7c0ffcc", name: "海军冰蓝", lang: "b", scheme: "dark" },
   { palette: "b3-light", id: "5298ac16-455f-42f8-8bc8-e9b03ee0fdbf", name: "铁锈", lang: "b", scheme: "light" },
-  { palette: "b3-dark", id: "cfaadcb4-7e85-460c-a8fe-52e848959719", name: "铁锈", lang: "b", scheme: "dark" }
+  { palette: "b3-dark", id: "cfaadcb4-7e85-460c-a8fe-52e848959719", name: "铁锈", lang: "b", scheme: "dark" },
+  { palette: "mono-light", id: "f04d4499-8a9c-4c84-b7d1-73574fc98f9e", name: "素墨", lang: "a", scheme: "light" },
+  { palette: "mono-dark", id: "2db7495f-a084-4f7d-ae6d-d06258dc0e3c", name: "素墨", lang: "a", scheme: "dark" },
+  { palette: "mono-light", id: "54a0eaae-9c92-4f4a-b823-b0a33f940bd3", name: "素墨·仪", lang: "b", scheme: "light" },
+  { palette: "mono-dark", id: "c3d01915-3266-4c53-b8ad-badc8089752b", name: "素墨·仪", lang: "b", scheme: "dark" }
 ];
 
-// 标签预设色 = 同语言同亮暗的全部 primary + 语义色，当前主题色提到首位
+// 标签预设色 = 同语言同亮暗的全部 primary（素墨灰计入同亮暗档）+ 语义色，当前主题色提到首位
 const TAGS: Record<string, string> = {
-  "a1-dark": "#5d68e7,#e42435,#8d5ad6,#617f26,#21827e,#e61d3d,#d4a838,#4cc295",
-  "a3-light": "#9550e0,#4a51e8,#e3253f,#568213,#108289,#e7134b,#e89e06,#1faa62",
-  "a3-dark": "#8d5ad6,#5d68e7,#e42435,#617f26,#21827e,#e61d3d,#d4a838,#4cc290",
-  "a4-light": "#568213,#4a51e8,#e3253f,#9550e0,#108289,#e7134b,#e8a006,#22ab4f",
-  "a4-dark": "#617f26,#5d68e7,#e42435,#8d5ad6,#21827e,#e61d3d,#d4a838,#52c878",
-  "a5-light": "#108289,#4a51e8,#e3253f,#9550e0,#568213,#e7134b,#e8a006,#1faa64",
-  "a5-dark": "#21827e,#5d68e7,#e42435,#8d5ad6,#617f26,#e61d3d,#d4a838,#4cc290",
-  "a6-light": "#e7134b,#4a51e8,#e3253f,#9550e0,#568213,#108289,#e8a006,#1faa64",
-  "a6-dark": "#e61d3d,#5d68e7,#e42435,#8d5ad6,#617f26,#21827e,#d4a838,#4cc290",
-  "b1-light": "#163a7a,#0d8198,#d63e2d,#627f0e,#cf8a00,#10a06a,#d92538,#3053e8",
-  "b1-dark": "#3f70dd,#2b808e,#d14338,#637f1a,#e0ae30,#52c878,#cd4747,#8aa4ec",
-  "b3-light": "#d63e2d,#163a7a,#0d8198,#627f0e,#f97d0a,#22ab4f,#c01428,#1674c8",
-  "b3-dark": "#d14338,#3f70dd,#2b808e,#637f1a,#f6852a,#4cc290,#ce4832,#63a8e8"
+  "a1-dark": "#4f6aeb,#9358d5,#5d8029,#2e817e,#d93461,#e5e5e5,#d4a838,#4cc295",
+  "a3-light": "#8f5fc5,#5064d8,#578129,#12828a,#d63865,#242424,#e89e06,#1faa62",
+  "a3-dark": "#9358d5,#4f6aeb,#5d8029,#2e817e,#d93461,#e5e5e5,#d4a838,#4cc290",
+  "a4-light": "#578129,#5064d8,#8f5fc5,#12828a,#d63865,#242424,#e8a006,#22ab4f",
+  "a4-dark": "#5d8029,#4f6aeb,#9358d5,#2e817e,#d93461,#e5e5e5,#d4a838,#52c878",
+  "a5-light": "#12828a,#5064d8,#8f5fc5,#578129,#d63865,#242424,#e8a006,#1faa64",
+  "a5-dark": "#2e817e,#4f6aeb,#9358d5,#5d8029,#d93461,#e5e5e5,#d4a838,#4cc290",
+  "a6-light": "#d63865,#5064d8,#8f5fc5,#578129,#12828a,#242424,#e8a006,#1faa64",
+  "a6-dark": "#d93461,#4f6aeb,#9358d5,#5d8029,#2e817e,#e5e5e5,#d4a838,#4cc290",
+  "b1-light": "#244e7b,#386bce,#b8513d,#242424,#cf8a00,#10a06a,#d92538,#b55e21",
+  "b1-dark": "#2475d5,#c35332,#e5e5e5,#e0ae30,#52c878,#cd4747,#b65e19,#8aa4ec",
+  "b3-light": "#b8513d,#b55e21,#244e7b,#242424,#cd6b25,#22ab4f,#c01428,#1674c8",
+  "b3-dark": "#c35332,#b65e19,#2475d5,#e5e5e5,#eaa066,#4cc290,#ce4832,#63a8e8",
+  "mono-light": "#242424,#6e6e6e,#5f5f5f,#6d6d6d,#404040,#686868,#a3a3a3,#525252",
+  "mono-dark": "#e5e5e5,#a9a9a9,#b8b8b8,#cccccc,#757575,#a7a7a7,#6a6a6a,#929292"
+};
+
+// 素墨纪律：中性板不染色，影一律近黑（亮场把 A/B 的带色影换成中性黑影）
+const MONO_SHADOWS: Record<"a" | "b", Record<"light" | "dark", Record<string, string>>> = {
+  a: {
+    light: {
+      "shadow-sm": "0 1px 2px rgb(0 0 0 / 0.04), 0 4px 12px -4px rgb(0 0 0 / 0.05)",
+      "shadow-md": "0 2px 4px rgb(0 0 0 / 0.07), 0 12px 32px rgb(0 0 0 / 0.08)",
+      "shadow-lg": "0 2px 6px rgb(0 0 0 / 0.08), 0 16px 40px rgb(0 0 0 / 0.1)",
+      "shadow-lift": "0 2px 4px -2px rgb(0 0 0 / 0.1), 0 12px 28px -14px rgb(0 0 0 / 0.16)",
+      "shadow-overlay":
+        "0 2px 4px -2px rgb(0 0 0 / 0.1), 0 12px 28px -14px rgb(0 0 0 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.86)",
+      "shadow-dropdown":
+        "0 2px 6px rgb(0 0 0 / 0.08), 0 16px 40px rgb(0 0 0 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.86)",
+      "shadow-card":
+        "0 2px 4px -2px rgb(0 0 0 / 0.1), 0 12px 28px -14px rgb(0 0 0 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.86)",
+    },
+    dark: {},
+  },
+  b: {
+    light: {
+      "shadow-sm": "0 1px 0 rgb(0 0 0 / 0.06)",
+      "shadow-md": "0 1px 0 rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.08)",
+      "shadow-lg": "0 2px 6px -2px rgb(0 0 0 / 0.1)",
+      "shadow-lift": "0 1px 0 rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.08)",
+      "shadow-overlay": "var(--frame), 0 2px 6px -2px rgb(0 0 0 / 0.1)",
+      "shadow-dropdown": "var(--frame), 0 1px 0 rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.08)",
+      "shadow-card": "var(--frame), 0 1px 0 rgb(0 0 0 / 0.06)",
+    },
+    dark: {},
+  },
 };
 
 function rgba(hex: string, alpha: number): string {
@@ -90,13 +137,17 @@ function rgba(hex: string, alpha: number): string {
 
 function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, string> {
   const light = def.scheme === "light";
+  const isA = def.lang === "a";
+  const isMono = def.palette.startsWith("mono-");
   const tags = TAGS[def.palette];
   // 星标色：B 暗色板的 signal 与 primary 不同时用 signal（仪表读数黄/橙），否则用 warning
   const favorite = !light && def.lang === "b" && p.signal !== p.primary ? p.signal : p.warning;
 
   return {
-    // 结构令牌严格取自 RyuujiDesign 造型语言层（themes/shapeLang.ts）
+    // 结构令牌统一走造型语言层（themes/shapeLang.ts）
     ...shapeLangTokens(def.lang, def.scheme),
+    // 素墨中性影覆盖（mono 板不染色）
+    ...(isMono ? MONO_SHADOWS[def.lang][def.scheme] : {}),
 
     "bg-gradient": light
       ? `linear-gradient(180deg, ${p.bg} 0%, ${p.bg_tint} 100%)`
@@ -114,28 +165,49 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
     "grid-col-min": "256px",
 
     "bg-base": p.bg,
-    "bg-surface": p.surface,
+    // B 暗色深场层次：面板沉入场底（surface := bg），浮层台阶由 surface-2 承担
+    "bg-surface": !light && !isA ? p.bg : p.surface,
     "bg-elevated": light ? p.surface : p.surface_2,
     "bg-overlay": light ? p.surface : p.surface_2,
-    "bg-hover": rgba(p.primary, light ? 0.07 : 0.1),
+    // 行 hover：A = 近白实色罩（与实心选中行拉开层级）；B = primary 浅浅染实色
+    "bg-hover": isA
+      ? light
+        ? `color-mix(in srgb, #ffffff 72%, ${p.bg})`
+        : `color-mix(in srgb, #ffffff 8%, ${p.surface})`
+      : p.primary_soo_shallow,
     "bg-active": rgba(p.primary, light ? 0.13 : 0.16),
-    "bg-card": p.surface,
+    "bg-card": !isA && !light ? `color-mix(in srgb, ${p.text} 5%, transparent)` : p.surface,
     "bg-card-hover": light ? p.surface : p.surface_2,
-    "bg-input": light ? p.surface : p.bg,
+    // 输入底 = 分级表面：A 纸面 ctl 档；B 深槽（亮 text 5% / 暗 surface 94% 混黑）
+    "bg-input": isA
+      ? light
+        ? `color-mix(in srgb, #ffffff 62%, ${p.bg})`
+        : `color-mix(in srgb, ${p.surface} 92%, ${p.bg})`
+      : light
+        ? `color-mix(in srgb, ${p.text} 5%, ${p.surface})`
+        : `color-mix(in srgb, ${p.bg} 94%, #000000)`,
+    // 输入焦点三件套之底档：A focus 底换 ctl-hover（B 焦点只换 signal 描边，底不动）
+    "bg-input-hover": isA
+      ? light
+        ? `color-mix(in srgb, #ffffff 72%, ${p.bg})`
+        : p.surface
+      : light
+        ? `color-mix(in srgb, ${p.text} 5%, ${p.surface})`
+        : `color-mix(in srgb, ${p.bg} 94%, #000000)`,
 
     "text-primary": p.text,
     "text-secondary": p.text_2,
-    "text-tertiary": light ? p.text_3 : rgba(p.text_2, 0.82),
+    "text-tertiary": p.text_3,
     "text-muted": light ? rgba(p.text_3, 0.85) : p.text_3,
     "text-faint": rgba(p.text_3, 0.72),
     "text-ghost": light ? p.border : rgba(p.text_3, 0.3),
     "text-placeholder": rgba(p.text_3, light ? 0.78 : 0.85),
     "text-invert": p.on_primary,
 
-    ...(def.lang === "b" ? {
-      "border-subtle": rgba(p.border_strong, light ? 0.32 : 0.35),
+    ...(isA ? {} : {
+      "border-subtle": `color-mix(in srgb, ${p.text} ${light ? "12%" : "20%"}, transparent)`,
       "border-medium": p.border_strong,
-    } : {}),
+    }),
     "border-default": p.border,
     "border-strong": rgba(p.text, light ? 0.55 : 0.5),
 
@@ -145,22 +217,40 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
       : p.primary_deep,
     "accent-primary-bg": rgba(p.primary, light ? 0.13 : 0.16),
     "accent-primary-bg-light": rgba(p.primary, light ? 0.07 : 0.09),
+    "accent-primary-ink": p.primary_ink,
+    "accent-primary-shallow": p.primary_shallow,
+    // 信号色：B 仪器焦点/当前项通道色（与 primary 可不同）；A 与 primary 同色
+    "accent-signal": p.signal,
+
+    // 选中行配方（lang 层契约）：A = 实心 primary + on-primary 白字 + 顶唇；
+    // B = 15% 浅染 + 字重 600（菜单/命令面板/下拉一致；数据行与瓦片维持浅染）
+    "row-selected-bg": isA ? p.primary : `color-mix(in srgb, ${p.primary} 15%, transparent)`,
+    "row-selected-fg": isA ? p.on_primary : p.text,
+    "row-selected-sub-fg": isA
+      ? `color-mix(in srgb, ${p.on_primary} 72%, transparent)`
+      : p.text_2,
+    "row-selected-shadow": isA
+      ? "inset 0 1px 0 rgb(255 255 255 / 0.22)"
+      : "none",
+    "row-selected-weight": isA ? "500" : "600",
 
     "color-danger": p.danger,
     "color-danger-hover": light
       ? `color-mix(in srgb, ${p.danger} 85%, #000000)`
       : `color-mix(in srgb, ${p.danger} 85%, #ffffff)`,
     "color-danger-bg": p.danger_so_shallow,
+    "color-danger-ink": p.danger_ink,
     "color-warning": p.warning,
     "color-success": p.success,
     "color-favorite": favorite,
-    "color-focus-ring": light ? p.primary : p.primary_ink,
+    // 键盘焦点环：A = primary（暗色换 primary-ink 提亮）；B 仪器焦点 = signal 通道色
+    "color-focus-ring": isA ? (light ? p.primary : p.primary_ink) : p.signal,
 
     "overlay-bg": light ? `color-mix(in srgb, ${p.text} 34%, transparent)` : "rgba(0, 0, 0, 0.56)",
-    "scrollbar-thumb": rgba(p.border_strong, 0.55),
-    "scrollbar-thumb-hover": p.border_strong,
+    "scrollbar-thumb": p.border_strong,
+    "scrollbar-thumb-hover": p.text_2,
 
-    "panel-titlebar-bg": p.surface,
+    "panel-titlebar-bg": light ? p.surface : isA ? p.surface : p.bg,
     "panel-body-bg": light ? p.surface : p.bg,
 
     // 壳层共享令牌（z 层级/拖拽/标签透明度/边框/面板规格）
@@ -174,7 +264,7 @@ function buildTheme(def: RyuujiThemeDef): ThemeDefinition {
     id: def.id,
     name: def.name,
     author: "TagLauncher",
-    version: "6.2.0",
+    version: "7.0.0",
     isPreset: true,
     lang: def.lang,
     variables: buildVariables(def, p),

@@ -85,6 +85,21 @@ function App() {
 
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
 
+  // B 语言签名交互：Reveal 描边跟随——指针位置写入
+  // 悬停卡片的 --reveal-x/--reveal-y；CSS 仅在 data-shape="b" 下渲染描边微光，
+  // A 主题下委托空转（变量写入无副作用）。
+  useEffect(() => {
+    const onMove = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target.closest(".item-card-render-scope") : null;
+      if (!(target instanceof HTMLElement)) return;
+      const rect = target.getBoundingClientRect();
+      target.style.setProperty("--reveal-x", `${event.clientX - rect.left}px`);
+      target.style.setProperty("--reveal-y", `${event.clientY - rect.top}px`);
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    return () => window.removeEventListener("pointermove", onMove);
+  }, []);
+
   // 向 Mod 同步当前复选集合，使 Mod 可读取选择上下文并监听变化（onSelectionChanged）
   useEffect(() => {
     notifySelectionChanged(selectedItemIds);

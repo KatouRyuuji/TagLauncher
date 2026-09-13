@@ -202,7 +202,7 @@ function ItemCardComponent({
         data-selected={selected ? "true" : "false"}
         role="listitem"
         aria-label={`${item.name}${selected ? "，已选择" : ""}`}
-        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-lg)] border bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-card)] ${
+        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-xl)] border bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-card)] ${
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
             : selected

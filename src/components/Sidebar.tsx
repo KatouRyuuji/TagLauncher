@@ -228,7 +228,7 @@ export function Sidebar({
       {activeDragKind === "item" && sidebarTab !== "cabinets" && (
         <div
           role="status"
-          className="mx-2 mt-2 flex shrink-0 items-center gap-2 border-l-2 border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] px-2.5 py-2 text-[13px] leading-4 text-[var(--accent-primary)]"
+          className="mx-2 mt-2 flex shrink-0 items-center gap-2 border-l-2 border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] px-2.5 py-2 text-[13px] leading-4 text-[var(--accent-primary-ink)]"
         >
           <Info className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
           <span>项目拖拽中，已显示归档目标</span>
@@ -423,7 +423,7 @@ export function Sidebar({
                       }}
                       className={`flex h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors ${
                         hovered
-                          ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] text-[var(--accent-primary)]"
+                          ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] text-[var(--accent-primary-ink)]"
                           : active
                             ? "border-[color-mix(in_srgb,var(--accent-primary)_24%,transparent)] bg-[var(--accent-primary-bg)] font-semibold text-[var(--text-primary)]"
                             : "border-transparent text-[var(--text-secondary)] hover:border-[var(--line-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
@@ -646,7 +646,7 @@ function SidebarTabButton({
       onClick={onClick}
       className={`flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-[13px] font-medium transition-colors ${
         active
-          ? "bg-[var(--surface-raised)] text-[var(--accent-primary)] shadow-[inset_0_-2px_0_var(--accent-primary),var(--shadow-sm)]"
+          ? "bg-[var(--surface-raised)] text-[var(--accent-primary-ink)] shadow-[inset_0_-2px_0_var(--accent-primary),var(--shadow-sm)]"
           : "text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       }`}
     >
@@ -691,7 +691,7 @@ function FilterNavButton({
       title={subtitle}
       className={`flex h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors ${
         active
-          ? "border-[color-mix(in_srgb,var(--accent-primary)_24%,transparent)] bg-[var(--accent-primary-bg)] font-semibold text-[var(--accent-primary)]"
+          ? "border-[color-mix(in_srgb,var(--accent-primary)_24%,transparent)] bg-[var(--accent-primary-bg)] font-semibold text-[var(--accent-primary-ink)]"
           : "border-transparent text-[var(--text-secondary)] hover:border-[var(--line-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       } ${className ?? ""}`}
       style={{

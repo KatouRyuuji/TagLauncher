@@ -4,7 +4,7 @@
 
 /** 设置区文本输入框统一样式 */
 export const inputClass =
-  "w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] focus:border-[var(--accent-primary)] focus:outline-none";
+  "input-frame w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] focus:outline-none";
 
 /** 带标题的表单行（label 包裹控件，点击标题即聚焦控件） */
 export function SettingsField({ label, children }: { label: string; children: React.ReactNode }) {

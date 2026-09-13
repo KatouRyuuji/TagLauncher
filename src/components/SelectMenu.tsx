@@ -207,7 +207,7 @@ export function SelectMenu({ value, onChange, ariaLabel, options, groups, classN
                         onClick={() => pick(option.value)}
                         className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] ${
                           selected
-                            ? "bg-[var(--accent-primary)] font-semibold text-[var(--text-invert)]"
+                            ? "row-selected"
                             : active
                               ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
                               : "text-[var(--text-secondary)]"

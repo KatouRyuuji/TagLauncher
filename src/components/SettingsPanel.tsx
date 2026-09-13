@@ -218,7 +218,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
           role="dialog"
           aria-modal="true"
           aria-labelledby="settings-panel-title"
-          className="pointer-events-auto flex h-full w-[980px] max-w-[calc(100vw-12px)] flex-col overflow-hidden border-l border-[var(--border-default)] bg-[var(--surface-raised)] shadow-[var(--shadow-overlay)]"
+          className="drawer-enter pointer-events-auto flex h-full w-[980px] max-w-[calc(100vw-12px)] flex-col overflow-hidden border-l border-[var(--border-default)] bg-[var(--surface-raised)] shadow-[var(--shadow-overlay)]"
         >
           <header className="flex h-[68px] shrink-0 items-center justify-between gap-4 border-b border-[var(--line-hairline)] px-4 sm:px-5">
             <div className="flex min-w-0 items-center gap-3">
@@ -258,7 +258,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                     aria-current={selected ? "location" : undefined}
                     className={`flex min-h-9 shrink-0 items-center gap-2.5 rounded-[var(--radius-md)] px-3 text-left text-sm transition-colors sm:w-full ${
                       selected
-                        ? "bg-[var(--accent-primary-bg)] font-semibold text-[var(--accent-primary)] shadow-[inset_2px_0_0_var(--accent-primary)]"
+                        ? "bg-[var(--accent-primary-bg)] font-semibold text-[var(--accent-primary-ink)] shadow-[inset_2px_0_0_var(--accent-primary)]"
                         : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                     }`}
                   >
@@ -486,7 +486,7 @@ function ThemeSelect({
               }]
             : []),
         ]}
-        className="flex h-10 w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+        className="input-frame flex h-10 w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:outline-none"
       />
     </div>
   );
@@ -515,7 +515,7 @@ function VariantSelect({
             label: variant.name ?? key,
           })),
         ]}
-        className="flex h-10 w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+        className="input-frame flex h-10 w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:outline-none"
       />
     </div>
   );

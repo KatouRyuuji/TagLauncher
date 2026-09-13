@@ -36,7 +36,7 @@ export const CHROME_TOKENS: Record<string, string> = {
 
   "panel-floating-min-width": "320px",
   "panel-floating-min-height": "220px",
-  "panel-floating-border-radius": "var(--radius-lg)",
+  "panel-floating-border-radius": "var(--radius-xl)",
   "panel-titlebar-height": "40px",
   "panel-border-color": "var(--border-default)",
 };

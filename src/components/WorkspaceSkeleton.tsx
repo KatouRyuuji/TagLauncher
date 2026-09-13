@@ -34,7 +34,7 @@ function SkeletonGrid() {
       {Array.from({ length: SKELETON_CARD_COUNT }, (_, index) => (
         <div
           key={index}
-          className="flex flex-col rounded-[var(--radius-lg)] border border-[var(--line-hairline)] bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-card)]"
+          className="flex flex-col rounded-[var(--radius-xl)] border border-[var(--line-hairline)] bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-card)]"
         >
           <div className="flex items-start gap-3">
             <div className="skeleton-block h-11 w-11 shrink-0 rounded-[var(--radius-md)]" />

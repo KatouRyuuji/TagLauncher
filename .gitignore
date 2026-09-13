@@ -61,3 +61,9 @@ design-system/
 
 # verify-layout 本机截图
 scripts/.v-*.png
+
+# 本机 E2E 验证截图
+tmp-verify/
+
+# 本机规划草稿
+plan/

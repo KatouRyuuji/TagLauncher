@@ -96,7 +96,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
       <div className="toolbar-strip flex h-12 items-center gap-2 px-3">
         <div
           role="search"
-          className="workbench-panel flex h-8 min-w-[220px] flex-1 items-center gap-2 overflow-hidden px-2.5 shadow-none focus-within:border-[var(--accent-primary)] focus-within:ring-1 focus-within:ring-[color-mix(in_srgb,var(--accent-primary)_20%,transparent)]"
+          className="workbench-panel input-frame flex h-8 min-w-[220px] flex-1 items-center gap-2 overflow-hidden px-2.5 shadow-none"
         >
           <label htmlFor={WORKSPACE_SEARCH_ID} className="sr-only">
             搜索启动项
