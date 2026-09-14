@@ -59,6 +59,23 @@ describe("useTheme 导入主题后 setTheme 竞态", () => {
     expect(document.documentElement.dataset.scheme).toBe("light");
   });
 
+  it("自定义主题目录未返回时已放行首屏", async () => {
+    let resolveCustoms: (value: { themes: unknown[]; errors: unknown[] }) => void = () => {};
+    mocks.getCustomThemes.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCustoms = resolve;
+      }),
+    );
+    const { result } = renderHook(() => useTheme());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.loading).toBe(false);
+    await act(async () => {
+      resolveCustoms({ themes: [], errors: [] });
+    });
+  });
+
   it("importTheme 返回后立即 setTheme 应能切换到新主题", async () => {
     const { result } = renderHook(() => useTheme());
 

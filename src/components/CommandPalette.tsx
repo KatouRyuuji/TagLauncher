@@ -170,7 +170,7 @@ export function CommandPalette({
     { id: "add-files", title: "添加文件", keywords: "import 导入 添加 文件", icon: FilePlus2, run: () => { void pickFilesToAdd().then((paths) => { if (paths) void onAddItems(paths); }); } },
     { id: "add-folders", title: "添加文件夹", keywords: "import 导入 添加 文件夹", icon: FolderPlus, run: () => { void pickFoldersToAdd().then((paths) => { if (paths) void onAddItems(paths); }); } },
     { id: "refresh", title: "刷新", keywords: "refresh 刷新 reload", icon: RefreshCw, run: () => { void onRefresh(); } },
-    { id: "settings", title: "打开设置", hint: "Ctrl+,", keywords: "settings 设置 偏好", icon: Settings2, run: onOpenSettings },
+    { id: "settings", title: "打开设置", hint: "Ctrl + ,", keywords: "settings 设置 偏好", icon: Settings2, run: onOpenSettings },
     { id: "graph", title: "打开标签图谱", keywords: "graph 图谱 关系", icon: Tags, run: () => setTagGraphOpen(true) },
     { id: "shortcuts", title: "快捷键一览", hint: "?", keywords: "shortcut 快捷键 help", icon: Keyboard, run: () => setShortcutsHelpOpen(true) },
     { id: "about", title: "关于 TagLauncher", keywords: "about 关于 欢迎", icon: Info, run: onOpenAbout },
@@ -347,10 +347,10 @@ export function CommandPalette({
             aria-label="搜索命令或项目"
             className="min-w-0 flex-1 bg-transparent text-[15px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none"
           />
-          <kbd className="kbd hidden sm:inline-flex">Ctrl K</kbd>
+          <kbd className="kbd hidden sm:inline-flex">Ctrl+K</kbd>
         </div>
         <div className="flex items-center justify-between border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-4 py-2">
-          <span className="instrument-label">Commands / Objects</span>
+          <span className="instrument-label">命令 / 项目</span>
           <span className="data-readout text-[13px] text-[var(--text-faint)]">{rows.length.toString().padStart(2, "0")}</span>
         </div>
         <div ref={listRef} className="max-h-[min(56vh,460px)] overflow-y-auto p-2">
@@ -374,7 +374,7 @@ export function CommandPalette({
                 >
                   <Icon aria-hidden="true" size={16} strokeWidth={1.8} className="shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{row.command.title}</span>
-                  {row.command.hint && <kbd className="kbd">{row.command.hint}</kbd>}
+                  {row.command.hint && <kbd className="kbd shrink-0">{row.command.hint}</kbd>}
                 </button>
               );
             }
@@ -405,7 +405,7 @@ export function CommandPalette({
         </div>
         <div className="flex min-h-9 items-center justify-between border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 text-[13px] text-[var(--text-faint)]">
           <span className="flex items-center gap-2"><span className="status-led" aria-hidden="true" />命令索引就绪</span>
-          <span className="data-readout">{matchedCommands.length} CMD · {matchedItems.length} OBJ</span>
+          <span className="data-readout">{matchedCommands.length} 命令 · {matchedItems.length} 对象</span>
         </div>
       </div>
     </div>,

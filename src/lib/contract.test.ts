@@ -123,12 +123,27 @@ test("后端命令列表内部无重复注册（重复通常意味着复制粘�
 // 版本不一致会导致 release 工作流产出与客户端更新检查错乱，发版前必须拦下。
 // ============================================================================
 
-/** 从 Cargo.toml 文本提取 package 段 version（Cargo.toml 无注释 JSON 可解析，用行匹配即可）。 */
+/** 从 Cargo.toml 文本提取 package 段 version。行尾不得有逗号，否则 cargo 无法解析。 */
 function extractCargoVersion(source: string): string {
-  const match = source.match(/^version\s*=\s*"([^"]+)"/m);
-  if (!match) throw new Error("未在 Cargo.toml 中提取到 version 字段");
+  const match = source.match(/^version\s*=\s*"([^"]+)"\s*$/m);
+  if (!match) throw new Error("未在 Cargo.toml 中提取到合法 version 行（引号后不得有逗号）");
   return match[1];
 }
+
+test("Cargo.toml 与 Cargo.lock 的 version 行是合法 TOML（引号后不得有逗号）", () => {
+  const cargoToml = readFileSync(resolve(process.cwd(), "src-tauri/Cargo.toml"), "utf-8");
+  assert.ok(
+    /^version\s*=\s*"[^"]+"\s*$/m.test(cargoToml),
+    "Cargo.toml version 行尾不得有逗号，否则 cargo 无法解析清单",
+  );
+  const lock = readFileSync(resolve(process.cwd(), "src-tauri/Cargo.lock"), "utf-8");
+  const pkg = lock.split("[[package]]").find((block) => /^name\s*=\s*"tag-launcher"\s*$/m.test(block));
+  assert.ok(pkg, "Cargo.lock 须含 name = \"tag-launcher\" 包");
+  assert.ok(
+    /^version\s*=\s*"[^"]+"\s*$/m.test(pkg!),
+    "Cargo.lock 中 tag-launcher 的 version 行尾不得有逗号",
+  );
+});
 
 test("版本号三处一致：package.json / Cargo.toml / tauri.conf.json", () => {
   const pkgVersion = (JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf-8")) as { version?: string }).version;

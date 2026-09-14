@@ -199,7 +199,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                 </div>
               </div>
             ) : (
-              <div ref={contentRef} className="relative inline-block min-w-full">
+              <div ref={contentRef} className="relative inline-block min-w-full pr-10 pb-6">
                 {emptyState === "no-relations" && (
                   <div className="mb-6 flex items-start gap-2.5 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--accent-primary)_28%,transparent)] bg-[var(--accent-primary-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
                     <svg className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>

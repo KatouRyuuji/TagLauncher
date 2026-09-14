@@ -147,6 +147,12 @@ function App() {
     void db.getMods().then(initModRuntime).catch(() => {
       window.dispatchEvent(new Event("taglauncher:mods-settled"));
     });
+    // 首屏后再预取高频浮层，避免第一次打开设置/命令面板等待懒加载分片（demo 实测约 360ms）
+    const prefetch = window.setTimeout(() => {
+      void import("./components/SettingsPanel");
+      void import("./components/CommandPalette");
+    }, 1200);
+    return () => window.clearTimeout(prefetch);
   }, []);
 
   useEffect(() => {

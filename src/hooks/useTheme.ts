@@ -32,6 +32,27 @@ export const MODS_RUNTIME_SETTLED = "taglauncher:mods-settled";
 
 /** 启动 FOUC 门控超时兜底（毫秒）：到时仍未就绪则强制套用默认主题并放行窗口显示 */
 const INIT_TIMEOUT_MS = 2000;
+/** 上次套用的内置主题 id：首屏同步套用，不必等自定义主题目录 IPC */
+const LAST_PRESET_THEME_KEY = "taglauncher.last-preset-theme-id";
+
+function readLastPresetTheme(): ThemeDefinition | undefined {
+  try {
+    const id = localStorage.getItem(LAST_PRESET_THEME_KEY);
+    if (!id) return undefined;
+    return presetThemes.find((theme) => theme.id === id);
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberLastPresetTheme(id: string): void {
+  if (!presetThemes.some((theme) => theme.id === id)) return;
+  try {
+    localStorage.setItem(LAST_PRESET_THEME_KEY, id);
+  } catch {
+    // 隐私模式等写入失败时仅影响下次冷启动缓存
+  }
+}
 
 /** 复刻后端 sanitize_theme_file_stem：把主题 id 规整为目录/文件名安全的 stem */
 function sanitizeThemeFileStem(id: string): string {
@@ -138,6 +159,9 @@ export function useTheme() {
         : undefined;
     applyTheme(normalized, { themeRoot, activeVariant: variant });
     notifyThemeChange(normalized.id);
+    if (normalized.source === "preset" || normalized.isPreset) {
+      rememberLastPresetTheme(normalized.id);
+    }
   }, []);
 
   const syncCurrentTheme = useCallback(
@@ -260,6 +284,14 @@ export function useTheme() {
     }, INIT_TIMEOUT_MS);
 
     const init = async () => {
+      const boot = readLastPresetTheme() ?? getDefaultTheme();
+      if (!hasExternalIntentRef.current) {
+        desiredThemeIdRef.current = boot.id;
+        setCurrentThemeId(boot.id);
+      }
+      applyAndBroadcast(boot);
+      finish();
+
       try {
         const [themeId, customResult, directoryInfo] = await Promise.all([
           db.getCurrentTheme().catch(() => getDefaultTheme().id),

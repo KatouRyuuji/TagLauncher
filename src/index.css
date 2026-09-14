@@ -283,13 +283,13 @@
   select,
   textarea {
     transition:
-      color var(--transition-fast),
-      background-color var(--transition-fast),
-      border-color var(--transition-fast),
-      opacity var(--transition-fast),
+      color 100ms var(--ease, cubic-bezier(0.2, 0.72, 0.2, 1)),
+      background-color 100ms var(--ease, cubic-bezier(0.2, 0.72, 0.2, 1)),
+      border-color 100ms var(--ease, cubic-bezier(0.2, 0.72, 0.2, 1)),
+      opacity 100ms var(--ease, cubic-bezier(0.2, 0.72, 0.2, 1)),
+      outline-color 100ms var(--ease, cubic-bezier(0.2, 0.72, 0.2, 1)),
       box-shadow var(--transition-fast),
-      transform var(--transition-fast),
-      outline-color var(--transition-fast);
+      transform var(--transition-fast);
   }
 
   html.theme-switching,
@@ -457,8 +457,10 @@
   .kbd {
     display: inline-flex;
     align-items: center;
+    flex-shrink: 0;
     min-height: 20px;
     padding: 0 6px;
+    white-space: nowrap;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
     background: var(--bg-input);

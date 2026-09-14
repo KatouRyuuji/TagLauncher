@@ -153,7 +153,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
               <Tag aria-hidden="true" size={21} strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
-              <div className="instrument-label">Welcome / TagLauncher</div>
+              <div className="instrument-label">欢迎 / TagLauncher</div>
               <h2 id="welcome-modal-title" className="mt-1 truncate text-lg font-semibold text-[var(--text-primary)]">
                 欢迎使用 TagLauncher
               </h2>
@@ -189,12 +189,12 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
             <section className="min-w-0 px-4 py-5 sm:px-6" aria-labelledby="welcome-features-title">
               <div className="flex items-end justify-between gap-3">
                 <div>
-                  <div className="instrument-label">Capabilities</div>
+                  <div className="instrument-label">能力一览</div>
                   <h3 id="welcome-features-title" className="mt-1 text-base font-semibold text-[var(--text-primary)]">
                     工作区能力
                   </h3>
                 </div>
-                <span className="data-readout text-[13px] text-[var(--text-faint)]">10 MODULES</span>
+                <span className="data-readout text-[13px] text-[var(--text-faint)]">{FEATURES.length} 项</span>
               </div>
 
               <ul className="mt-3 grid border-l border-t border-[var(--line-hairline)] sm:grid-cols-2">
