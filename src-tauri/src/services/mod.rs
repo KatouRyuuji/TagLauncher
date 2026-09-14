@@ -7,5 +7,6 @@ pub mod object_preview_service;
 pub mod path_service;
 pub mod search_service;
 pub mod settings_service;
+pub mod shell_thumbnail;
 pub mod synonym_service;
 pub mod tag_service;

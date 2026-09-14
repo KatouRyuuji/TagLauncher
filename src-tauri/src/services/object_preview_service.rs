@@ -212,12 +212,12 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn detects_audio_extensions_without_common_video_containers() {
+    fn detects_media_extensions_with_audio_video_boundary() {
         assert_eq!(detect_preview_type(Path::new("track.mp3")), "audio");
         assert_eq!(detect_preview_type(Path::new("track.flac")), "audio");
         assert_eq!(detect_preview_type(Path::new("track.m4a")), "audio");
-        assert_eq!(detect_preview_type(Path::new("clip.mp4")), "exe");
-        assert_eq!(detect_preview_type(Path::new("clip.m4v")), "exe");
+        assert_eq!(detect_preview_type(Path::new("clip.mp4")), "video");
+        assert_eq!(detect_preview_type(Path::new("clip.m4v")), "video");
         assert_eq!(detect_preview_type(Path::new("track.wma")), "exe");
     }
 

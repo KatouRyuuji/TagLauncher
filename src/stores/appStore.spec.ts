@@ -16,6 +16,7 @@ describe("appStore", () => {
       tagRelations: [],
       cabinets: [],
       selectedTagIds: [],
+      excludedTagIds: [],
       selectedCabinetId: null,
       showFavorites: false,
       showRecent: false,
@@ -39,6 +40,50 @@ describe("appStore", () => {
 
     expect(useAppStore.getState().selectedTagIds).toEqual([10, 20]);
     expect(useAppStore.getState().selectedCabinetId).toBeNull();
+    expect(useAppStore.getState().showFavorites).toBe(false);
+  });
+
+  it("toggleTagExclusion 反选标签，与正选互斥", () => {
+    useAppStore.setState({ selectedTagIds: [10], selectedCabinetId: 2, showFavorites: true });
+
+    // 正选中的标签被反选：从正选移除、加入反选，并清空文件柜/收藏
+    useAppStore.getState().toggleTagExclusion(10);
+    expect(useAppStore.getState().excludedTagIds).toEqual([10]);
+    expect(useAppStore.getState().selectedTagIds).toEqual([]);
+    expect(useAppStore.getState().selectedCabinetId).toBeNull();
+    expect(useAppStore.getState().showFavorites).toBe(false);
+
+    // 再次反选 = 取消
+    useAppStore.getState().toggleTagExclusion(10);
+    expect(useAppStore.getState().excludedTagIds).toEqual([]);
+  });
+
+  it("toggleTagSelection 正选时撤销该标签的反选", () => {
+    useAppStore.setState({ excludedTagIds: [10] });
+
+    useAppStore.getState().toggleTagSelection(10);
+
+    expect(useAppStore.getState().selectedTagIds).toEqual([10]);
+    expect(useAppStore.getState().excludedTagIds).toEqual([]);
+  });
+
+  it("setSelectedTagIds([]) 同时清空反选（回到全部标签）", () => {
+    useAppStore.setState({ selectedTagIds: [1], excludedTagIds: [2] });
+
+    useAppStore.getState().setSelectedTagIds([]);
+
+    expect(useAppStore.getState().selectedTagIds).toEqual([]);
+    expect(useAppStore.getState().excludedTagIds).toEqual([]);
+  });
+
+  it("setSelectedCabinetId 会清空标签正反选与收藏筛选", () => {
+    useAppStore.setState({ selectedTagIds: [10], excludedTagIds: [11], showFavorites: true });
+
+    useAppStore.getState().setSelectedCabinetId(2);
+
+    expect(useAppStore.getState().selectedCabinetId).toBe(2);
+    expect(useAppStore.getState().selectedTagIds).toEqual([]);
+    expect(useAppStore.getState().excludedTagIds).toEqual([]);
     expect(useAppStore.getState().showFavorites).toBe(false);
   });
 
@@ -126,6 +171,7 @@ describe("appStore", () => {
   it("clearWorkspaceFilters 重置互斥筛选、类型筛选与搜索词", () => {
     useAppStore.setState({
       selectedTagIds: [1],
+      excludedTagIds: [2],
       showFavorites: true,
       showRecent: true,
       typeFilter: "image",
@@ -137,6 +183,7 @@ describe("appStore", () => {
     useAppStore.getState().clearWorkspaceFilters();
 
     expect(useAppStore.getState().selectedTagIds).toEqual([]);
+    expect(useAppStore.getState().excludedTagIds).toEqual([]);
     expect(useAppStore.getState().showFavorites).toBe(false);
     expect(useAppStore.getState().showRecent).toBe(false);
     expect(useAppStore.getState().typeFilter).toBe("all");

@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { Check, CircleAlert, Info, TriangleAlert, X } from "lucide-react";
 import { showToast, type ToastType } from "../lib/toast";
 
 export interface ToastMessage {
@@ -100,13 +101,13 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
       onMouseLeave={resume}
       role={toast.type === "error" || toast.type === "warning" ? "alert" : "status"}
       style={{
-        backgroundColor: "color-mix(in srgb, var(--bg-elevated) 96%, white)",
+        backgroundColor: "var(--bg-elevated)",
         borderColor: toastBorderColor(toast.type),
         boxShadow: "var(--shadow-overlay)",
         color: "var(--text-primary)",
       }}
     >
-      <span style={{ color: toastIconColor(toast.type), flexShrink: 0 }}>
+      <span aria-hidden="true" style={{ color: toastIconColor(toast.type), flexShrink: 0 }}>
         {toastIcon(toast.type)}
       </span>
       <span className="flex-1 line-clamp-2 break-words">{toast.message}</span>
@@ -116,27 +117,23 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
         style={{ color: "var(--text-muted)" }}
         title="关闭通知"
       >
-        ✕
+        <X size={15} strokeWidth={1.8} aria-hidden="true" />
       </button>
     </div>
   );
 }
 
 function toastIcon(type: ToastMessage["type"]) {
-  switch (type) {
-    case "success": return "✓";
-    case "error":   return "✕";
-    case "warning": return "⚠";
-    default:        return "ℹ";
-  }
+  const Icon = type === "success" ? Check : type === "error" ? CircleAlert : type === "warning" ? TriangleAlert : Info;
+  return <Icon size={18} strokeWidth={1.8} />;
 }
 
 function toastIconColor(type: ToastMessage["type"]) {
   switch (type) {
-    case "success": return "var(--color-success)";
-    case "error":   return "var(--color-danger)";
-    case "warning": return "var(--color-warning)";
-    default:        return "var(--accent-primary)";
+    case "success": return "var(--color-success-ink)";
+    case "error":   return "var(--color-danger-ink)";
+    case "warning": return "var(--color-warning-ink)";
+    default:        return "var(--accent-primary-ink)";
   }
 }
 

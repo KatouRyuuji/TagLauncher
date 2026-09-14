@@ -87,6 +87,7 @@ export function CommandPalette({
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
   const clearWorkspaceFilters = useAppStore((state) => state.clearWorkspaceFilters);
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
+  const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const tagRelations = useAppStore((state) => state.tagRelations);
 
@@ -111,7 +112,7 @@ export function CommandPalette({
     }
     let cancelled = false;
     setCabinetItemIds(new Set());
-    void getCabinetItems(selectedCabinetId)
+    void getCabinetItems(selectedCabinetId, false)
       .then((cabinetItems) => {
         if (!cancelled) setCabinetItemIds(new Set(cabinetItems.map((item) => item.id)));
       })
@@ -141,9 +142,9 @@ export function CommandPalette({
     } else if (selectedCabinetId !== null) {
       base = cabinetItemIds ? items.filter((item) => cabinetItemIds.has(item.id)) : [];
     }
-    const tagScoped = filterItemsByTags(base, selectedTagIds, (id) => descendantsMap.get(id) ?? new Set([id]));
+    const tagScoped = filterItemsByTags(base, selectedTagIds, (id) => descendantsMap.get(id) ?? new Set([id]), excludedTagIds);
     return applyTypeFilter(tagScoped, typeFilter);
-  }, [items, showFavorites, showRecent, selectedCabinetId, cabinetItemIds, selectedTagIds, descendantsMap, typeFilter]);
+  }, [items, showFavorites, showRecent, selectedCabinetId, cabinetItemIds, selectedTagIds, excludedTagIds, descendantsMap, typeFilter]);
 
   const commands = useMemo<CommandDef[]>(() => [
     { id: "search", title: "聚焦搜索", hint: "/", keywords: "search 搜索 find", icon: Search, run: () => focusWorkspaceSearch() },
@@ -339,7 +340,7 @@ export function CommandPalette({
             }}
             onKeyDown={handleKeyDown}
             placeholder={
-              selectedCabinetId !== null || selectedTagIds.length > 0 || showFavorites || showRecent || typeFilter !== "all"
+              selectedCabinetId !== null || selectedTagIds.length > 0 || excludedTagIds.length > 0 || showFavorites || showRecent || typeFilter !== "all"
                 ? "在当前筛选范围内搜索命令或项目…"
                 : "搜索命令或项目…"
             }

@@ -40,6 +40,8 @@ const GROUPS: { title: string; icon: LucideIcon; note?: string; items: ShortcutI
     items: [
       { keys: "Ctrl+A", action: "全选当前结果" },
       { keys: "单击 / Ctrl / Shift+单击", action: "选择 / 加选 / 范围" },
+      { keys: "拖拽框选 / Alt+拖拽", action: "框选 / 减选框内项" },
+      { keys: "右键标签（顶部筛选条）", action: "排除 / 取消排除该标签" },
       { keys: "Shift + 方向键", action: "范围选择" },
       { keys: "Shift+F10 / 菜单键", action: "打开选中项菜单" },
       { keys: "Delete", action: "从应用移除" },

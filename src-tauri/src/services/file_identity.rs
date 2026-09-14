@@ -1,7 +1,7 @@
 //! 对象身份：用 NTFS 卷序列号 + 文件ID 标识同一个文件/文件夹，
 //! 使其在同一磁盘卷内重命名/移动后仍可被追踪并重定位到新路径。
 //!
-//! - 身份捕获 `get_identity`：纯标准库（`std::os::windows::fs::MetadataExt`），无 unsafe。
+//! - 身份捕获 `get_identity`：只读属性句柄与 Windows 文件身份 API。
 //! - 路径重定位 `resolve_path`：少量 Windows FFI（`OpenFileById` + `GetFinalPathNameByHandleW`），
 //!   按文件ID O(1) 反查当前路径，无需扫盘；跨盘符/删除/离线时返回 None。
 
@@ -96,29 +96,42 @@ fn open_metadata_handle(path: &str) -> Option<HANDLE> {
 /// 仅当重定位到的文件身份与 `identity` 完全一致（卷序列号 + 文件ID）时才返回，
 /// 避免不同卷上恰好相同文件ID造成误判。找不到返回 None。
 pub fn resolve_path(identity: FileIdentity, hint_path: &str) -> Option<String> {
-    let mut roots: Vec<String> = Vec::new();
-    // 盘符根（本地盘/映射网络盘）或 UNC 共享根（NAS：\\server\share\）都可作卷句柄；
-    // OpenFileById 经 SMB2+ 同样支持按文件ID打开，失败则自然回退 None。
-    if let Some(root) = drive_root_of(hint_path).or_else(|| unc_root_of(hint_path)) {
-        roots.push(root);
-    }
-    for root in logical_drive_roots() {
-        if !roots.iter().any(|r| r.eq_ignore_ascii_case(&root)) {
-            roots.push(root);
+    FileResolver::default().resolve(identity, hint_path)
+}
+
+struct VolumeHandle(HANDLE);
+
+impl Drop for VolumeHandle {
+    fn drop(&mut self) { unsafe { CloseHandle(self.0) }; }
+}
+
+/// 单次对账期间复用卷句柄和盘符枚举，释放解析器时关闭句柄。
+#[derive(Default)]
+pub struct FileResolver {
+    roots: Option<Vec<String>>,
+    volumes: std::collections::HashMap<String, Option<VolumeHandle>>,
+}
+
+impl FileResolver {
+    pub fn resolve(&mut self, identity: FileIdentity, hint_path: &str) -> Option<String> {
+        let preferred = drive_root_of(hint_path).or_else(|| unc_root_of(hint_path));
+        if let Some(root) = preferred.as_deref() {
+            if let Some(path) = self.resolve_on_volume(root, identity) { return Some(path); }
         }
+        let roots = self.roots.get_or_insert_with(logical_drive_roots).clone();
+        for root in roots {
+            if preferred.as_ref().is_some_and(|hint| hint.eq_ignore_ascii_case(&root)) { continue; }
+            if let Some(path) = self.resolve_on_volume(&root, identity) { return Some(path); }
+        }
+        None
     }
 
-    for root in roots {
-        // 直接用 OpenFileById 得到的句柄读取身份与路径，避免再按路径二次 CreateFileW
-        //（既省一次 syscall，也消除二次打开因共享冲突/瞬时锁失败而把合法移动误标失效的窗口）。
-        if let Some((resolved_identity, resolved_path)) = open_by_id_on_volume(&root, identity.file_id) {
-            // 校验重定位结果确实是同一对象（卷序列号 + 文件ID 都匹配）
-            if resolved_identity == identity {
-                return Some(resolved_path);
-            }
-        }
+    fn resolve_on_volume(&mut self, root: &str, identity: FileIdentity) -> Option<String> {
+        let volume = self.volumes.entry(root.to_ascii_lowercase()).or_insert_with(|| open_volume(root));
+        let handle = volume.as_ref()?.0;
+        let (resolved_identity, path) = open_by_id_on_volume(handle, identity.file_id)?;
+        (resolved_identity == identity).then_some(path)
     }
-    None
 }
 
 /// 从绝对路径取盘符根，如 `D:\dir\file` → `D:\`。兼容扩展前缀形态 `\\?\D:\x`。
@@ -168,7 +181,7 @@ fn logical_drive_roots() -> Vec<String> {
 }
 
 /// 在指定卷上用文件ID打开目标，返回 (该句柄读到的真实身份, 当前路径)。失败返回 None。
-fn open_by_id_on_volume(volume_root: &str, file_id: u64) -> Option<(FileIdentity, String)> {
+fn open_volume(volume_root: &str) -> Option<VolumeHandle> {
     // 1) 打开卷根目录作为 OpenFileById 的卷句柄（目录需 BACKUP_SEMANTICS）
     let root_wide = to_wide(volume_root);
     let hvol = unsafe {
@@ -182,10 +195,11 @@ fn open_by_id_on_volume(volume_root: &str, file_id: u64) -> Option<(FileIdentity
             std::ptr::null_mut(),
         )
     };
-    if hvol == INVALID_HANDLE_VALUE {
-        return None;
-    }
+    if hvol == INVALID_HANDLE_VALUE { None } else { Some(VolumeHandle(hvol)) }
+}
 
+/// 在复用的卷句柄上按文件 ID 获取对象，结果仍校验完整身份。
+fn open_by_id_on_volume(hvol: HANDLE, file_id: u64) -> Option<(FileIdentity, String)> {
     // 2) 按 64 位文件ID打开目标
     let descriptor = FILE_ID_DESCRIPTOR {
         dwSize: std::mem::size_of::<FILE_ID_DESCRIPTOR>() as u32,
@@ -204,8 +218,6 @@ fn open_by_id_on_volume(volume_root: &str, file_id: u64) -> Option<(FileIdentity
             FILE_FLAG_BACKUP_SEMANTICS,
         )
     };
-    unsafe { CloseHandle(hvol) };
-
     if hfile == INVALID_HANDLE_VALUE {
         return None;
     }
@@ -295,7 +307,8 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
 /// 计算文件内容签名。仅对**文件**生效（目录/不存在/读失败返回 None）。
 /// 读取首 16KB 与尾 16KB（小文件则整体），开销恒定，与文件大小无关。
 pub fn compute_signature(path: &str) -> Option<FileSignature> {
-    let meta = std::fs::metadata(Path::new(path)).ok()?;
+    let mut file = std::fs::File::open(Path::new(path)).ok()?;
+    let meta = file.metadata().ok()?;
     if !meta.is_file() {
         return None;
     }
@@ -306,18 +319,21 @@ pub fn compute_signature(path: &str) -> Option<FileSignature> {
         return None;
     }
 
-    let mut file = std::fs::File::open(Path::new(path)).ok()?;
-
     let head_len = size.min(SIGNATURE_SAMPLE) as usize;
     let mut head = vec![0u8; head_len];
     file.read_exact(&mut head).ok()?;
     let head_hash = fnv1a_64(&head);
 
-    let tail_len = size.min(SIGNATURE_SAMPLE);
-    file.seek(SeekFrom::Start(size - tail_len)).ok()?;
-    let mut tail = vec![0u8; tail_len as usize];
-    file.read_exact(&mut tail).ok()?;
-    let tail_hash = fnv1a_64(&tail);
+    let tail_hash = if size <= SIGNATURE_SAMPLE {
+        head_hash
+    } else {
+        file.seek(SeekFrom::Start(size - SIGNATURE_SAMPLE)).ok()?;
+        let mut tail = vec![0u8; SIGNATURE_SAMPLE as usize];
+        file.read_exact(&mut tail).ok()?;
+        fnv1a_64(&tail)
+    };
+    let after = file.metadata().ok()?;
+    if after.len() != size || after.modified().ok() != meta.modified().ok() { return None; }
 
     Some(FileSignature {
         size,
@@ -334,6 +350,51 @@ pub fn candidate_roots() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batch_resolver_reuses_volume_and_keeps_file_identity() {
+        let dir = unique_dir("batch_resolver");
+        let original = dir.join("source.bin");
+        let renamed = dir.join("renamed.bin");
+        std::fs::write(&original, b"identity fixture").unwrap();
+        let original = original.to_string_lossy().into_owned();
+        let identity = get_identity(&original).expect("temp volume file identity");
+        std::fs::rename(&original, &renamed).unwrap();
+        let start = std::time::Instant::now();
+        for _ in 0..200 { assert!(resolve_path(identity, &original).is_some()); }
+        let individual = start.elapsed();
+        let start = std::time::Instant::now();
+        let mut resolver = FileResolver::default();
+        for _ in 0..200 {
+            let path = resolver.resolve(identity, &original).unwrap();
+            assert!(path.ends_with("renamed.bin"));
+        }
+        let batch = start.elapsed();
+        assert_eq!(resolver.volumes.len(), 1);
+        assert!(resolver.roots.is_none(), "所在卷已命中时无需枚举其他卷");
+        drop(resolver);
+        eprintln!("200 identity resolutions: individual={individual:?}, shared={batch:?}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn signature_matches_full_sample_hashes_for_small_and_large_files() {
+        let dir = unique_dir("signature_samples");
+        let path = dir.join("sample.bin");
+        for size in [1, 16384, 16385, 50000] {
+            let data = (0..size).map(|index| (index % 251) as u8).collect::<Vec<_>>();
+            std::fs::write(&path, &data).unwrap();
+            let signature = compute_signature(&path.to_string_lossy()).unwrap();
+            let sample = size.min(SIGNATURE_SAMPLE as usize);
+            assert_eq!(signature.size, size as u64);
+            assert_eq!(signature.head_hash, fnv1a_64(&data[..sample]));
+            assert_eq!(signature.tail_hash, fnv1a_64(&data[size-sample..]));
+        }
+        std::fs::write(&path, []).unwrap();
+        assert!(compute_signature(&path.to_string_lossy()).is_none());
+        assert!(compute_signature(&dir.to_string_lossy()).is_none());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     fn unique_dir(label: &str) -> std::path::PathBuf {
         // 加 label 隔离，避免并行测试共用同一临时目录互相干扰

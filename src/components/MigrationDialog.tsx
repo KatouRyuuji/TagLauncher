@@ -85,7 +85,7 @@ export function MigrationDialog({
                       key={`${migration}-${index}`}
                       className="flex items-start gap-2.5 border-b border-[var(--line-hairline)] py-2.5 text-sm leading-5 text-[var(--text-secondary)] last:border-b-0"
                     >
-                      <Check aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--color-success)]" size={15} strokeWidth={2} />
+                      <Check aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--color-success-ink)]" size={15} strokeWidth={2} />
                       <span>{migration}</span>
                     </li>
                   ))}

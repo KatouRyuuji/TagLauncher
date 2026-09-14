@@ -72,7 +72,7 @@ fn get_tags_for_items(
             .iter()
             .map(|id| id as &dyn rusqlite::ToSql)
             .collect::<Vec<_>>();
-        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare_cached(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params.as_slice(), |row| {
                 Ok((
@@ -183,9 +183,8 @@ pub fn remove_tag(conn: &Connection, id: i64) -> Result<(), String> {
     Ok(())
 }
 
-/// 全量替换单个对象标签的核心逻辑（不含事务，供 set_item_tags 与 set_many_item_tags 复用）。
+/// 写入已校验的对象标签，保留标签顺序并去重，由调用方的事务保证原子性。
 fn set_item_tags_core(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result<(), String> {
-    crate::db::ensure_writes_allowed()?;
     // 入口去重（保序）：前端合并视图等路径可能带上重复 tag_id，
     // 重复值会撞 item_tags 主键，抛裸 UNIQUE 错误
     let mut seen = HashSet::new();
@@ -195,21 +194,15 @@ fn set_item_tags_core(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Resul
         .filter(|id| seen.insert(*id))
         .collect();
 
-    // 先校验对象与全部标签存在：否则 DELETE 之后 INSERT 才撞 FK，把裸约束错误抛给前端
-    // （事务保证回滚无脏数据，但报错文案用户看不懂）。UI 量级下单条 SELECT 开销可忽略。
-    ensure_exists(conn, "items", item_id, "对象")?;
-    for tag_id in &tag_ids {
-        ensure_exists(conn, "tags", *tag_id, "标签")?;
-    }
-
-    conn.execute("DELETE FROM item_tags WHERE item_id = ?1", [item_id])
+    conn.prepare_cached("DELETE FROM item_tags WHERE item_id = ?1")
+        .map_err(|e| e.to_string())?
+        .execute([item_id])
         .map_err(|e| e.to_string())?;
 
+    let mut insert = conn.prepare_cached("INSERT INTO item_tags (item_id, tag_id, position) VALUES (?1, ?2, ?3)")
+        .map_err(|e| e.to_string())?;
     for (position, tag_id) in tag_ids.iter().enumerate() {
-        conn.execute(
-            "INSERT INTO item_tags (item_id, tag_id, position) VALUES (?1, ?2, ?3)",
-            params![item_id, *tag_id, position as i64],
-        )
+        insert.execute(params![item_id, *tag_id, position as i64])
         .map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -217,9 +210,12 @@ fn set_item_tags_core(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Resul
 
 /// 设置项目的标签列表（全量替换）
 pub fn set_item_tags(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     // 用事务把 DELETE + 全部 INSERT 包成原子操作：中途任一失败整体回滚，
     // 避免出现"删光旧标签但只写入部分新标签"导致对象标签丢失的情况。
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    ensure_exists(&tx, "items", item_id, "对象")?;
+    ensure_ids_exist(&tx, "tags", tag_ids, "标签")?;
     set_item_tags_core(&tx, item_id, tag_ids)?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
@@ -227,7 +223,12 @@ pub fn set_item_tags(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result
 
 /// 批量设置多个对象的标签（整批一个事务，原子）。
 pub fn set_many_item_tags(conn: &Connection, changes: &[(i64, Vec<i64>)]) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let item_ids = changes.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+    let tag_ids = changes.iter().flat_map(|(_, ids)| ids.iter().copied()).collect::<Vec<_>>();
+    ensure_ids_exist(&tx, "items", &item_ids, "对象")?;
+    ensure_ids_exist(&tx, "tags", &tag_ids, "标签")?;
     for (item_id, tag_ids) in changes {
         set_item_tags_core(&tx, *item_id, tag_ids)?;
     }
@@ -292,6 +293,25 @@ pub(crate) fn ensure_exists(conn: &Connection, table: &str, id: i64, label: &str
         .map_err(|e| e.to_string())?;
     if !exists {
         return Err(format!("{}不存在（id {}），可能已被删除", label, id));
+    }
+    Ok(())
+}
+
+/// 批量校验代码指定表中的 id，每个唯一 id 仅查询一次，错误保持输入顺序。
+pub(crate) fn ensure_ids_exist(conn: &Connection, table: &str, ids: &[i64], label: &str) -> Result<(), String> {
+    let mut seen = HashSet::new();
+    let unique = ids.iter().copied().filter(|id| seen.insert(*id)).collect::<Vec<_>>();
+    for chunk in unique.chunks(crate::services::item_service::IN_CHUNK) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        let mut stmt = conn.prepare_cached(&format!("SELECT id FROM {table} WHERE id IN ({placeholders})"))
+            .map_err(|e| e.to_string())?;
+        let existing = stmt.query_map(rusqlite::params_from_iter(chunk), |row| row.get::<_, i64>(0))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<HashSet<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        if let Some(id) = chunk.iter().find(|id| !existing.contains(id)) {
+            return Err(format!("{label}不存在（id {id}），可能已被删除"));
+        }
     }
     Ok(())
 }

@@ -144,8 +144,9 @@ function basename(path: string): string {
 
 function detectType(path: string): Item["type"] {
   const name = basename(path).toLowerCase();
-  if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/.test(name)) return "image";
-  if (/\.(mp3|flac|wav|ogg|m4a|aac)$/.test(name)) return "audio";
+  if (/\.(jpg|jpeg|png|gif|webp|bmp|svg|tif|tiff|avif|heic|heif|ico)$/.test(name)) return "image";
+  if (/\.(aac|ape|aiff|aif|afc|aifc|mp3|mp2|mp1|wav|wave|wv|opus|flac|ogg|m4a|m4b|m4p|m4r|mpc|mpp|spx)$/.test(name)) return "audio";
+  if (/\.(mp4|m4v|mkv|avi|mov|wmv|flv|webm|mpg|mpeg|mpe|m2v|3gp|3g2|mts|m2ts|vob|rm|rmvb|asf|divx|ogv|f4v|mxf)$/.test(name)) return "video";
   if (/\.bat$/.test(name)) return "bat";
   if (/\.ps1$/.test(name)) return "ps1";
   if (/\.[a-z0-9]+$/.test(name)) return "exe";
@@ -261,6 +262,10 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return sortItems(state.items).map(withTags);
     case "get_item":
       return withTags(requireItem(num(args.id)));
+    case "get_item_visual": {
+      const item = requireItem(num(args.id));
+      return { path: item.path, icon_path: item.icon_path ?? (item.is_missing ? null : item.path) };
+    }
     case "get_items_by_ids": {
       const wanted = new Set(ids(args.ids));
       return sortItems(state.items.filter((item) => wanted.has(item.id))).map(withTags);

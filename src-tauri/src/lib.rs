@@ -1,7 +1,8 @@
 mod commands;
-// 集成测试（tests/ 目录把本 crate 当外部 rlib 使用）只能访问 pub 项，
-// 故将以下四个模块公开，使其 service/db/model/extension 层可被跨模块链路测试直接调用。
+// 集成测试（tests/ 目录把本 crate 当外部 rlib 使用）与 CLI 二进制（src/bin/tl.rs）
+// 只能访问 pub 项，故将以下模块公开，使其 service/db/model/extension/cli 层可被直接调用。
 // 仅放宽可见性，不改变任何业务逻辑。
+pub mod cli;
 pub mod db;
 pub mod extensions;
 pub mod models;
@@ -229,6 +230,7 @@ pub fn run() {
             update_item_icon,
             get_items,
             get_item,
+            get_item_visual,
             get_items_by_ids,
             get_object_file_info,
             list_object_directory,
@@ -268,6 +270,7 @@ pub fn run() {
             read_synonyms,
             // 设置
             get_app_version,
+            get_cli_integration_info,
             get_current_theme,
             set_current_theme,
             get_setting,

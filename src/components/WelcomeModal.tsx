@@ -136,7 +136,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
     >
       <div
         className="absolute inset-0"
-        style={{ backgroundColor: "var(--overlay-bg)", backdropFilter: "blur(4px)" }}
+        style={{ backgroundColor: "var(--overlay-bg)" }}
         onClick={() => onClose(hideNextTime)}
       />
 
@@ -212,12 +212,12 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-semibold text-[var(--text-primary)]">{feature.title}</span>
                           {feature.isNew && (
-                            <span className="data-readout bg-[var(--accent-primary-bg)] px-1.5 py-0.5 text-[13px] text-[var(--accent-primary)]">
+                            <span className="data-readout rounded-[var(--radius-sm)] bg-[var(--accent-primary-bg)] px-1.5 py-0.5 text-[13px] text-[var(--accent-primary-ink)]">
                               NEW
                             </span>
                           )}
                         </div>
-                        <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">{feature.description}</p>
+                        <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">{feature.description}</p>
                       </div>
                     </li>
                   );
@@ -243,7 +243,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
                 <a
                   href={BILIBILI_URL}
                   onClick={handleOpenBilibili}
-                  className="mt-3 inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)]"
+                  className="mt-3 inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold text-[var(--accent-primary-ink)] underline-offset-4 hover:underline"
                 >
                   B 站主页
                   <ExternalLink aria-hidden="true" size={14} strokeWidth={1.8} />

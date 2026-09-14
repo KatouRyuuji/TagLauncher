@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+import { X } from "lucide-react";
 import type { ItemWithTags } from "../types";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import {
@@ -125,28 +127,26 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
           data-reorder-tag-idx={idx}
           onPointerDown={(event) => handleTagPointerDown(event, idx)}
           onDoubleClick={(event) => event.stopPropagation()}
-          className={`inline-flex items-center rounded-[var(--radius-full)] border font-medium cursor-grab active:cursor-grabbing transition-all group/tag ${
-            compact ? "gap-1 px-2 py-0.5 text-[13px]" : "gap-1.5 px-2.5 py-1 text-[13px]"
+          className={`tag-pill cursor-grab active:cursor-grabbing group/tag ${
+            compact ? "gap-1 px-2 py-0.5 text-[12px]" : "gap-1 px-2 py-1 text-[12px]"
           } ${
             dragIdx === idx ? "opacity-40" : ""
           } ${highlightIdx === idx ? "ring-1 ring-[var(--accent-primary)]" : ""}`}
-          style={{
-            backgroundColor: `color-mix(in srgb, ${tag.color} var(--tag-color-alpha, 20%), var(--bg-card))`,
-            color: tag.color,
-            borderColor: `color-mix(in srgb, ${tag.color} 28%, transparent)`,
-          }}
+          style={{ "--tag-color": tag.color } as CSSProperties}
         >
           {tag.name}
           <button
+            type="button"
+            aria-label={`移除标签「${tag.name}」`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               // 失败提示已由 onRemoveTag 链路（withErrorToast）统一弹出，吞掉 rejection 避免噪音
               void onRemoveTag(item.id, tag.id).catch(() => {});
             }}
-            className="opacity-0 pointer-events-none group-hover/tag:opacity-100 group-hover/tag:pointer-events-auto hover:text-[var(--text-primary)] transition-opacity"
+            className="inline-flex h-4 w-4 items-center justify-center rounded-full opacity-0 pointer-events-none group-hover/tag:opacity-100 group-hover/tag:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto hover:bg-[var(--bg-hover)] transition-opacity"
           >
-            ×
+            <X size={12} strokeWidth={1.8} aria-hidden="true" />
           </button>
         </span>
       ))}
@@ -156,7 +156,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
           onDoubleClick={(event) => event.stopPropagation()}
           className={`inline-flex items-center rounded-[var(--radius-full)] border border-dashed px-2.5 py-1 text-[13px] font-medium transition-all ${
             removeZoneActive
-              ? "border-[var(--color-danger)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]"
+              ? "border-[var(--color-danger)] bg-[var(--color-danger-bg)] text-[var(--color-danger-ink)]"
               : "border-[var(--border-medium)] text-[var(--text-faint)]"
           }`}
         >

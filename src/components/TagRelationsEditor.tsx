@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { Tag, ItemWithTags } from "../types";
 import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { ItemVisualIcon } from "./ItemVisualIcon";
+import { DialogHeader } from "./DialogHeader";
 import { buildDescendantsMap } from "../lib/tagGraph";
 
 interface TagRelationsEditorProps {
@@ -88,28 +89,15 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
     >
       <div
         ref={contentRef}
-        className="modal-surface flex max-h-[85vh] w-[min(880px,calc(100vw-2rem))] flex-col"
+        className="modal-surface dialog-panel w-[min(880px,calc(100vw-2rem))]"
         role="dialog"
         aria-modal="true"
         aria-label="标签关系"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex shrink-0 items-start justify-between gap-4 px-6 pt-5">
-          <div>
-            <div className="text-label">标签关系</div>
-            <h2 className="mt-1 text-xl font-semibold text-[var(--text-primary)]">管理父子层级</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              父标签是子标签的超集——筛选父标签会并入其所有后代对象。一个标签可有多个父（图状，非树状）。
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="icon-button">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
-            </svg>
-          </button>
-        </div>
+        <DialogHeader title="管理父子层级" description="筛选父标签会包含其后代对象。每个标签可以关联多个父标签。" onClose={onClose} />
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-2 pt-4">
+        <div className="dialog-body flex-1">
         {tags.length === 0 ? (
           <div className="surface-card-soft mt-5 flex flex-col items-center px-6 py-10 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-full)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
@@ -142,7 +130,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                         backgroundColor: active
                           ? `color-mix(in srgb, ${tag.color} 16%, var(--bg-card))`
                           : "color-mix(in srgb, var(--bg-card) 82%, transparent)",
-                        color: active ? tag.color : "var(--text-secondary)",
+                        color: active ? `color-mix(in srgb, var(--text-primary) 72%, ${tag.color})` : "var(--text-secondary)",
                         fontWeight: active ? 600 : 500,
                       }}
                     >
@@ -181,12 +169,9 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                             type="button"
                             disabled={busy}
                             onClick={() => runMutation(() => onRemoveRelation(pid, focused.id))}
-                            className="group flex items-center gap-1.5 rounded-[var(--radius-full)] border px-2.5 py-1 text-xs disabled:opacity-50"
-                            style={{
-                              borderColor: `color-mix(in srgb, ${p.color} 40%, transparent)`,
-                              backgroundColor: `color-mix(in srgb, ${p.color} 16%, var(--bg-elevated))`,
-                              color: p.color,
-                            }}
+                            className="tag-pill group gap-1.5 px-2.5 py-1 text-xs disabled:opacity-50"
+                            style={{ "--tag-color": p.color } as CSSProperties}
+                            aria-label={`移除父标签「${p.name}」`}
                             title="点击移除该父标签"
                           >
                             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
@@ -226,7 +211,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                 </div>
 
                 {error && (
-                  <div className="mt-3 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)] bg-[var(--color-danger-bg)] px-3 py-2 text-xs text-[var(--color-danger)]">
+                  <div className="mt-3 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)] bg-[var(--color-danger-bg)] px-3 py-2 text-xs text-[var(--color-danger-ink)]">
                     {error}
                   </div>
                 )}
@@ -265,7 +250,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
         )}
         </div>
 
-        <div className="flex shrink-0 items-center justify-end border-t border-[var(--line-hairline)] px-6 py-3">
+        <div className="dialog-footer justify-end">
           <button type="button" onClick={onClose} className="action-button action-button-primary">
             完成
           </button>

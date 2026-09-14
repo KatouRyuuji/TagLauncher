@@ -37,7 +37,13 @@ impl TempDir {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         let mut path = std::env::temp_dir();
-        path.push(format!("tl_it_{}_{}_{}_{}", label, std::process::id(), n, nanos));
+        path.push(format!(
+            "tl_it_{}_{}_{}_{}",
+            label,
+            std::process::id(),
+            n,
+            nanos
+        ));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).expect("create temp test dir");
         TempDir { path }

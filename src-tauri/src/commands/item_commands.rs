@@ -30,7 +30,7 @@ pub fn remove_item(db: State<Database>, id: i64) -> Result<(), String> {
 }
 
 /// 批量删除项目（500 分块多条 IN 语句 + 单事务，整体原子）
-#[tauri::command]
+#[tauri::command(async)]
 pub fn remove_items(db: State<Database>, ids: Vec<i64>) -> Result<(), String> {
     let conn = db.get_conn();
     item_service::remove_items(&conn, &ids)
@@ -44,7 +44,7 @@ pub struct ItemTagsChange {
     pub tag_ids: Vec<i64>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_many_item_tags(
     db: State<Database>,
     changes: Vec<ItemTagsChange>,
@@ -71,14 +71,17 @@ pub fn update_item_icon(
 // 工作线程执行，不冻结主线程。函数体全同步（无 await），DB 锁只在各短临界区内持有并随即释放，
 // 无跨 await 持锁。
 #[tauri::command(async)]
-pub fn get_items(app: AppHandle, db: State<Database>) -> Result<Vec<ItemWithTags>, String> {
+pub fn get_items(app: AppHandle, db: State<Database>, include_visuals: Option<bool>) -> Result<Vec<ItemWithTags>, String> {
     // 刷新即对账（检测移动/重命名并更新位置、找不到的标记失效），采用三段式把重 IO 移出锁：
     //   ① 锁内取快照 → ② 释放锁做 exists()/FFI/签名等重 IO 生成写入计划 → ③ 锁内批量回写 + 查询。
     // 随后再次释放锁补图标（PowerShell/文件 IO）。锁只在 ①③ 两段短临界区持有，
     // 逐对象的重 IO 全在锁外完成，不再阻塞其它命令。对账失败不阻断列表加载。
     let snapshot = {
         let conn = db.get_conn();
-        item_service::read_reconcile_snapshot(&conn).unwrap_or_default()
+        item_service::read_reconcile_snapshot(&conn).unwrap_or_else(|error| {
+            eprintln!("[get_items] 读取对账快照失败: {error}");
+            Vec::new()
+        })
     };
     let writes = item_service::plan_reconcile(snapshot);
     let mut items = {
@@ -89,8 +92,29 @@ pub fn get_items(app: AppHandle, db: State<Database>) -> Result<Vec<ItemWithTags
         }
         item_service::get_items(&conn)?
     };
-    item_service::fill_visuals(&app, &mut items);
+    if include_visuals.unwrap_or(true) {
+        item_service::fill_visuals(&app, &mut items);
+    }
     Ok(items)
+}
+
+#[derive(serde::Serialize)]
+pub struct ItemVisual {
+    path: String,
+    icon_path: Option<String>,
+}
+
+/// 根据库内对象读取图标，文件和 Shell 操作在数据库锁外执行。
+#[tauri::command(async)]
+pub fn get_item_visual(app: AppHandle, db: State<Database>, id: i64) -> Result<ItemVisual, String> {
+    let mut item = {
+        let conn = db.get_conn();
+        item_service::select_item_by_id(&conn, id)?
+    };
+    if !item.is_missing {
+        crate::services::icon_service::fill_item_visual(&app, &mut item);
+    }
+    Ok(ItemVisual { path: item.path, icon_path: item.icon_path })
 }
 
 // fill_visuals 在图标未缓存时会跑 PowerShell/文件 IO，同步命令会在主线程执行而冻结 UI，
@@ -116,12 +140,15 @@ pub fn get_items_by_ids(
     app: AppHandle,
     db: State<Database>,
     ids: Vec<i64>,
+    include_visuals: Option<bool>,
 ) -> Result<Vec<ItemWithTags>, String> {
     let mut items = {
         let conn = db.get_conn();
         item_service::get_items_by_ids(&conn, &ids)?
     };
-    item_service::fill_visuals(&app, &mut items);
+    if include_visuals.unwrap_or(true) {
+        item_service::fill_visuals(&app, &mut items);
+    }
     Ok(items)
 }
 
@@ -132,7 +159,7 @@ pub fn toggle_favorite(db: State<Database>, id: i64) -> Result<bool, String> {
 }
 
 /// 批量设置收藏状态（单事务，批量收藏热路径）
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_favorites(db: State<Database>, ids: Vec<i64>, favorite: bool) -> Result<(), String> {
     let conn = db.get_conn();
     item_service::set_favorites(&conn, &ids, favorite)
@@ -150,10 +177,11 @@ pub fn relocate_missing(db: State<Database>) -> Result<usize, String> {
     if rows.is_empty() {
         return Ok(0);
     }
-    let found = item_service::scan_for_signatures(&rows);
+    let found = item_service::scan_for_signatures(&rows)?;
     if found.is_empty() {
         return Ok(0);
     }
+    let writes = item_service::plan_signature_relocations(&rows, &found);
     let conn = db.get_conn();
-    item_service::apply_signature_relocations(&conn, &found)
+    item_service::apply_signature_relocations(&conn, &writes)
 }

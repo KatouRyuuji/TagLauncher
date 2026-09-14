@@ -133,6 +133,35 @@ fn breaking_migration_snapshots_backup_when_data_present() {
     assert!(bak_found, "有数据的破坏性迁移应生成 .pre-v*.bak 快照备份");
 }
 
+/// 旧库把 mp4 记成 exe：升级后按扩展名改判 video；名为 *.mp4 的文件夹保持 folder。
+#[test]
+fn upgrade_reclassifies_mock_video_files_not_folders() {
+    let dir = common::TempDir::new("mig_v4_video");
+    let path = dir.db_path();
+    seed_v4_file(&path);
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            r#"
+            INSERT INTO items (id, name, path, type) VALUES (2,'clip','D:\Video\clip.mp4','exe');
+            INSERT INTO items (id, name, path, type) VALUES (3,'mp4dir','D:\Video\backup.mp4','folder');
+            "#,
+        )
+        .unwrap();
+    }
+
+    let db = Database::new(&path).expect("migrate v4 with mock videos");
+    let conn = db.get_conn();
+    let clip: String = conn
+        .query_row("SELECT type FROM items WHERE name = 'clip'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(clip, "video");
+    let folder: String = conn
+        .query_row("SELECT type FROM items WHERE name = 'mp4dir'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(folder, "folder");
+}
+
 /// 幂等重跑：对同一库文件再次 Database::new 不改变版本、数据无损。
 #[test]
 fn reopening_migrated_db_is_idempotent() {

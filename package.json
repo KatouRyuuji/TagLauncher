@@ -14,7 +14,7 @@
     "test:unit": "vitest run",
     "demo": "vite --mode demo --host 127.0.0.1",
     "pack:portable": "node scripts/build-portable.mjs",
-    "pack": "npm run tauri build && npm run pack:portable",
+    "pack": "node scripts/prepare-cli-bin.mjs && npm run tauri build && npm run pack:portable",
     "demo:shots": "node scripts/demo-screenshots.mjs",
     "icon": "node generate-icon.mjs"
   },

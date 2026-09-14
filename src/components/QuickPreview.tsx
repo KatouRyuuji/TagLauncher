@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { Copy, File, Folder, Play, ScanSearch, TriangleAlert, X } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useItemVisual } from "../hooks/useItemVisual";
 import { copyText } from "../lib/clipboard";
 import * as db from "../lib/db";
 import { formatBytes, formatTimestamp } from "../lib/itemQuery";
@@ -74,7 +75,7 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
 
         <div className="min-h-0 flex-1 overflow-auto bg-[var(--surface-recessed)] px-4 py-4 sm:px-5">
           {item.is_missing ? (
-            <div role="alert" className="flex items-start gap-3 border border-[color-mix(in_srgb,var(--color-warning)_28%,transparent)] bg-[var(--status-warning-bg)] p-4 text-sm text-[var(--color-warning)]">
+            <div role="alert" className="flex items-start gap-3 border border-[color-mix(in_srgb,var(--color-warning)_28%,transparent)] bg-[var(--status-warning-bg)] p-4 text-sm text-[var(--color-warning-ink)]">
               <TriangleAlert aria-hidden="true" size={18} strokeWidth={1.8} className="mt-0.5 shrink-0" />
               <p>对象已失效，无法预览当前文件。归类仍保留，文件恢复后会自动关联。</p>
             </div>
@@ -116,12 +117,14 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
 }
 
 function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (tagId: number) => void }) {
+  const iconPath = useItemVisual(item);
   const [info, setInfo] = useState<db.ObjectPreviewFileInfo | null>(null);
   const [entries, setEntries] = useState<db.ObjectDirectoryEntry[]>([]);
   const [audio, setAudio] = useState<db.AudioPreviewInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [imageFailed, setImageFailed] = useState(false);
   const [coverFailed, setCoverFailed] = useState(false);
+  const [videoFailed, setVideoFailed] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -129,6 +132,7 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
     setError(null);
     setImageFailed(false);
     setCoverFailed(false);
+    setVideoFailed(false);
     setInfo(null);
     setEntries([]);
     setAudio(null);
@@ -158,9 +162,8 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
     };
   }, [item.id, item.path, item.type]);
 
-  // 封面图源：图片对象回退到文件本身；音频不回退——把音频文件当 <img> src 必然 onError，
-  // 白发一次无效资源请求。音频封面只取系统缩略图（icon_path）或内嵌专辑封面。
-  const assetUrl = toAssetUrl(item.icon_path || (item.type === "image" ? item.path : null));
+  // 图片使用原文件；音频与视频封面采用系统缩略图或内嵌专辑图。
+  const assetUrl = toAssetUrl(iconPath);
 
   if (loading && !error) {
     return (
@@ -221,7 +224,32 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
         </div>
       )}
 
-      {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
+      {item.type === "video" && (
+        <div className="workbench-panel flex max-h-[52vh] min-h-[180px] items-center justify-center overflow-hidden bg-[var(--bg-base)]">
+          {videoFailed ? (
+            assetUrl ? (
+              <img
+                src={assetUrl}
+                alt={`${item.name} 首帧`}
+                className="max-h-[52vh] max-w-full object-contain"
+              />
+            ) : (
+              <p className="px-4 py-8 text-sm text-[var(--text-muted)]">无法加载视频预览（可能缺少对应解码器）</p>
+            )
+          ) : (
+            <video
+              controls
+              preload="metadata"
+              src={toAssetUrl(item.path) ?? undefined}
+              poster={assetUrl ?? undefined}
+              className="max-h-[52vh] w-full object-contain"
+              onError={() => setVideoFailed(true)}
+            />
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-sm text-[var(--color-danger-ink)]">{error}</p>}
 
       <dl className="workbench-panel grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 p-4 text-sm">
         {item.type === "audio" && audio?.duration_ms != null && (
@@ -248,8 +276,8 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
                   type="button"
                   title={`按「${tag.name}」筛选`}
                   onClick={() => onTagSelect(tag.id)}
-                  className="rounded-[var(--radius-full)] px-2 py-0.5 text-[13px] transition-opacity hover:opacity-80"
-                  style={{ backgroundColor: `color-mix(in srgb, ${tag.color} 18%, transparent)`, color: tag.color }}
+                  className="tag-pill px-2 py-0.5 text-[13px]"
+                  style={{ "--tag-color": tag.color } as CSSProperties}
                 >
                   {tag.name}
                 </button>
@@ -269,7 +297,7 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
               {entries.map((entry) => (
                 <li key={entry.path} className="flex min-h-9 items-center gap-2 px-3 py-2">
                   {entry.is_dir ? (
-                    <Folder aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--color-warning)]" />
+                    <Folder aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--color-warning-ink)]" />
                   ) : (
                     <File aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
                   )}

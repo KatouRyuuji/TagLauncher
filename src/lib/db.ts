@@ -37,9 +37,19 @@ import type {
 
 // ---- 项目操作 ----
 
-/** 获取所有项目（含标签信息），按收藏→最近使用→名称排序 */
-export async function getItems(): Promise<ItemWithTags[]> {
-  return invokeCmd("get_items");
+/** 获取所有项目及标签，按收藏→最近使用→名称排序；可按需省略自动图标。 */
+export async function getItems(includeVisuals = true): Promise<ItemWithTags[]> {
+  return invokeCmd("get_items", { includeVisuals });
+}
+
+export interface ItemVisual {
+  path: string;
+  icon_path: string | null;
+}
+
+/** 读取已登记对象的自动图标，返回路径供调用方核对请求仍属于当前对象。 */
+export async function getItemVisual(id: number): Promise<ItemVisual> {
+  return invokeCmd("get_item_visual", { id });
 }
 
 /** 获取单个项目（含标签信息和自动图标） */
@@ -47,9 +57,9 @@ export async function getItem(id: number): Promise<ItemWithTags> {
   return invokeCmd("get_item", { id });
 }
 
-/** 批量获取指定项目（含标签信息和自动图标） */
-export async function getItemsByIds(ids: number[]): Promise<ItemWithTags[]> {
-  return invokeCmd("get_items_by_ids", { ids });
+/** 批量获取指定项目及标签，自动图标默认开启。 */
+export async function getItemsByIds(ids: number[], includeVisuals = true): Promise<ItemWithTags[]> {
+  return invokeCmd("get_items_by_ids", { ids, includeVisuals });
 }
 
 /** 添加项目，传入文件/文件夹的完整路径，后端自动检测类型 */
@@ -297,9 +307,9 @@ export async function removeItemsFromCabinet(cabinetId: number, itemIds: number[
   return invokeCmd("remove_items_from_cabinet", { cabinetId, itemIds });
 }
 
-/** 获取文件柜内的所有项目（含标签信息） */
-export async function getCabinetItems(cabinetId: number): Promise<ItemWithTags[]> {
-  return invokeCmd("get_cabinet_items", { cabinetId });
+/** 获取文件柜内项目及标签，自动图标默认开启。 */
+export async function getCabinetItems(cabinetId: number, includeVisuals = true): Promise<ItemWithTags[]> {
+  return invokeCmd("get_cabinet_items", { cabinetId, includeVisuals });
 }
 
 /** 各文件柜成员计数（轻量单查询，侧栏徽标用） */
@@ -313,6 +323,17 @@ export async function getCabinetItemCounts(): Promise<Map<number, number>> {
 /** 获取应用版本 */
 export async function getAppVersion(): Promise<string> {
   return invokeCmd("get_app_version");
+}
+
+/** CLI/AI 集成信息（tl 路径与 MCP 配置模板） */
+export interface CliIntegrationInfo {
+  cli_available: boolean;
+  cli_path: string;
+  mcp_config: string;
+}
+
+export async function getCliIntegrationInfo(): Promise<CliIntegrationInfo> {
+  return invokeCmd("get_cli_integration_info");
 }
 
 /** 获取当前主题 ID */

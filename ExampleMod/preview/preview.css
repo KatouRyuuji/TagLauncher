@@ -55,6 +55,14 @@
   object-fit: contain;
 }
 
+/* 视频首帧预览：与图片同框架，宽自适应 */
+.object-preview-video {
+  display: block;
+  width: 100%;
+  max-height: 56vh;
+  background: #000;
+}
+
 .object-preview-cover,
 .object-preview-thumb {
   width: 100%;

@@ -7,6 +7,7 @@ import { buildDescendantsMap } from "../lib/tagGraph";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
 import { TAGS_WRITTEN_EVENT } from "./useTags";
+import { invalidateItemVisuals } from "../lib/itemVisualCache";
 import type { ItemWithTags } from "../types";
 
 /** 批量收藏请求事件（ContextMenu 多选收藏走此通道，detail: { ids, favorite }）。 */
@@ -68,6 +69,7 @@ export function useItems() {
   const searchQuery = useAppStore((state) => state.searchQuery);
   const searchMode = useAppStore((state) => state.searchMode);
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
+  const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const showFavorites = useAppStore((state) => state.showFavorites);
   const showRecent = useAppStore((state) => state.showRecent);
@@ -87,7 +89,7 @@ export function useItems() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const allItemsRef = useRef<ItemWithTags[]>([]);
   const cabinetItemsRef = useRef<ItemWithTags[]>([]);
-  const relocatingRef = useRef(false);
+  const relocatingRef = useRef<Promise<number> | null>(null);
   const relocateMissingRef = useRef<() => void>(() => {});
   // 仅首屏加载显示整屏 loading；后台刷新（刷新按钮/跨盘找回后）保留旧列表原地更新，
   // 不清空、不闪 spinner、不丢滚动位置。
@@ -113,7 +115,8 @@ export function useItems() {
       try {
         // 记录刷新前的失效态，用于检测"本次新变为失效"的对象并主动提示
         const prev = new Map(allItemsRef.current.map((i) => [i.id, i]));
-        const data = await db.getItems();
+        const data = await db.getItems(false);
+        invalidateItemVisuals();
         setAllItems(data);
         setLoadError(null);
 
@@ -152,27 +155,26 @@ export function useItems() {
 
   // 跨盘符兜底找回：对失效对象按内容签名扫描候选盘，命中则刷新并提示。
   // 用 relocatingRef 防止并发/重复扫描；成功找回 0 个时保持安静。
-  const relocateMissing = useCallback(async (): Promise<number> => {
-    if (relocatingRef.current) return 0;
-    relocatingRef.current = true;
-    try {
+  const relocateMissing = useCallback((): Promise<number> => {
+    if (relocatingRef.current) return relocatingRef.current;
+    const task = (async () => {
       const recovered = await db.relocateMissing();
       if (recovered > 0) {
         await loadAll();
         showToast(`已跨盘找回 ${recovered} 个对象`, "success");
       }
       return recovered;
-    } catch (e) {
-      console.error("跨盘找回失败:", e);
-      return 0;
-    } finally {
-      relocatingRef.current = false;
-    }
+    })().finally(() => { relocatingRef.current = null; });
+    relocatingRef.current = task;
+    return task;
   }, [loadAll]);
 
   useEffect(() => {
     relocateMissingRef.current = () => {
-      void relocateMissing();
+      void relocateMissing().catch((error: unknown) => {
+        console.error("跨盘找回失败:", error);
+        showToast(`跨盘找回失败：${error instanceof Error ? error.message : String(error)}`, "error");
+      });
     };
   }, [relocateMissing]);
 
@@ -186,7 +188,7 @@ export function useItems() {
     // 竞态防护：快速切换文件柜时，慢响应不得覆盖已切换的新选择；
     // 数据到达时一并记录归属，供 source 判定是否已对应当前选中柜。
     let cancelled = false;
-    db.getCabinetItems(selectedCabinetId)
+    db.getCabinetItems(selectedCabinetId, false)
       .then((data) => {
         if (!cancelled) {
           setCabinetItems(data);
@@ -267,13 +269,15 @@ export function useItems() {
 
   const tagFiltered = useMemo(
     () =>
-      filterItemsByTags(source, selectedTagIds, (id) => descendantsMap.get(id) ?? new Set([id])),
-    [source, selectedTagIds, descendantsMap],
+      filterItemsByTags(source, selectedTagIds, (id) => descendantsMap.get(id) ?? new Set([id]), excludedTagIds),
+    [source, selectedTagIds, excludedTagIds, descendantsMap],
   );
 
+  const hasSearchQuery = deferredSearchQuery.trim().length > 0;
+  // 浏览和筛选直接使用对象数据；输入搜索词时才构建拼音等派生字段。
   const sourceSearchIndex = useMemo(
-    () => buildSearchIndex(source, searchMode),
-    [source, searchMode],
+    () => hasSearchQuery ? buildSearchIndex(source, searchMode) : null,
+    [source, searchMode, hasSearchQuery],
   );
 
   const tagFilteredIds = useMemo(
@@ -282,18 +286,16 @@ export function useItems() {
   );
 
   const searchIndex = useMemo(
-    () => filterSearchIndex(sourceSearchIndex, tagFilteredIds),
+    () => sourceSearchIndex ? filterSearchIndex(sourceSearchIndex, tagFilteredIds) : null,
     [sourceSearchIndex, tagFilteredIds],
   );
 
   const filtered = useMemo(() => {
-    const searched = searchWithIndex(searchIndex, deferredSearchQuery);
-    // 有搜索词时保留检索命中顺序；空查询才套用工作台排序。
-    if (deferredSearchQuery.trim()) {
-      return applyTypeFilter(searched, typeFilter);
+    if (searchIndex) {
+      return applyTypeFilter(searchWithIndex(searchIndex, deferredSearchQuery), typeFilter);
     }
-    return applyWorkspaceQuery(searched, { typeFilter, sortMode });
-  }, [searchIndex, deferredSearchQuery, typeFilter, sortMode]);
+    return applyWorkspaceQuery(tagFiltered, { typeFilter, sortMode });
+  }, [searchIndex, tagFiltered, deferredSearchQuery, typeFilter, sortMode]);
 
   const addItems = useCallback(async (paths: string[]) => {
     await withErrorToast("批量导入", async () => {
@@ -316,7 +318,7 @@ export function useItems() {
         showToast(`已导入 ${importedCount} 个对象`, "success");
       }
 
-      const changedItems = await db.getItemsByIds(result.items.map((item) => item.id));
+      const changedItems = await db.getItemsByIds(result.items.map((item) => item.id), false);
       applyChangedItems(changedItems);
 
       // 通知新对象已加入（供 AI 自动打标等后台监听）。携带完整对象，
@@ -368,7 +370,7 @@ export function useItems() {
     await withErrorToast("批量设置标签", async () => {
       await db.setManyItemTags(changes);
 
-      const changedItems = await db.getItemsByIds(changes.map((change) => change.itemId));
+      const changedItems = await db.getItemsByIds(changes.map((change) => change.itemId), false);
       applyChangedItems(changedItems);
     });
   }, [applyChangedItems]);
@@ -402,7 +404,7 @@ export function useItems() {
     if (ids.length === 0) return;
     await withErrorToast("批量切换收藏", async () => {
       await db.setFavorites(ids, favorite);
-      const changedItems = await db.getItemsByIds(ids);
+      const changedItems = await db.getItemsByIds(ids, false);
       applyChangedItems(changedItems);
     });
   }, [applyChangedItems]);
@@ -439,7 +441,7 @@ export function useItems() {
       await db.addItemsToCabinet(cabinetId, itemIds);
 
       if (useAppStore.getState().selectedCabinetId === cabinetId) {
-        const changedItems = await db.getItemsByIds(itemIds);
+        const changedItems = await db.getItemsByIds(itemIds, false);
         setCabinetItems((current) => upsertItems(current, changedItems));
       }
     });

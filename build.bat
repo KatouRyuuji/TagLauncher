@@ -44,9 +44,23 @@ if defined TARGET (
         pause
         exit /b 1
     )
+    echo Building tl CLI sidecar for %TARGET%...
+    call node scripts/prepare-cli-bin.mjs --target %TARGET%
+    if errorlevel 1 (
+        echo [ERROR] CLI sidecar build failed.
+        pause
+        exit /b 1
+    )
     echo Building Windows installers for %TARGET%...
     call npm run tauri build -- --target %TARGET%
 ) else (
+    echo Building tl CLI sidecar...
+    call node scripts/prepare-cli-bin.mjs
+    if errorlevel 1 (
+        echo [ERROR] CLI sidecar build failed.
+        pause
+        exit /b 1
+    )
     echo Building Windows installers...
     call npm run tauri build
 )

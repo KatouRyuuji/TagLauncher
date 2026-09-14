@@ -160,6 +160,9 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
       : "linear-gradient(to top, rgba(0, 0, 0, 0.82), transparent)",
     "status-warning-bg": p.warning_so_shallow,
     "status-success-bg": p.success_so_shallow,
+    "color-success-ink": p.success_ink,
+    "color-warning-ink": p.warning_ink,
+    "color-info-ink": p.info_ink,
     "tag-preset-colors": tags,
 
     "grid-col-min": "256px",
@@ -198,10 +201,10 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
     "text-primary": p.text,
     "text-secondary": p.text_2,
     "text-tertiary": p.text_3,
-    "text-muted": light ? rgba(p.text_3, 0.85) : p.text_3,
-    "text-faint": rgba(p.text_3, 0.72),
+    "text-muted": p.text_3,
+    "text-faint": p.text_3,
     "text-ghost": light ? p.border : rgba(p.text_3, 0.3),
-    "text-placeholder": rgba(p.text_3, light ? 0.78 : 0.85),
+    "text-placeholder": p.text_3,
     "text-invert": p.on_primary,
 
     ...(isA ? {} : {
@@ -212,10 +215,8 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
     "border-strong": rgba(p.text, light ? 0.55 : 0.5),
 
     "accent-primary": p.primary,
-    "accent-primary-hover": light
-      ? `color-mix(in srgb, ${p.primary} 85%, #000000)`
-      : p.primary_deep,
-    "accent-primary-bg": rgba(p.primary, light ? 0.13 : 0.16),
+    "accent-primary-hover": `color-mix(in srgb, ${p.primary} 96%, #000000)`,
+    "accent-primary-bg": rgba(p.primary, light ? 0.09 : 0.16),
     "accent-primary-bg-light": rgba(p.primary, light ? 0.07 : 0.09),
     "accent-primary-ink": p.primary_ink,
     "accent-primary-shallow": p.primary_shallow,
@@ -235,9 +236,8 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
     "row-selected-weight": isA ? "500" : "600",
 
     "color-danger": p.danger,
-    "color-danger-hover": light
-      ? `color-mix(in srgb, ${p.danger} 85%, #000000)`
-      : `color-mix(in srgb, ${p.danger} 85%, #ffffff)`,
+    "color-on-danger": "#ffffff",
+    "color-danger-hover": `color-mix(in srgb, ${p.danger} 96%, #000000)`,
     "color-danger-bg": p.danger_so_shallow,
     "color-danger-ink": p.danger_ink,
     "color-warning": p.warning,

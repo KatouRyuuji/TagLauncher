@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type UIEvent } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { open as dialogOpen, save } from "@tauri-apps/plugin-dialog";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import {
@@ -83,6 +83,8 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   } = useThemeContext();
   const [busy, setBusy] = useState<"import" | "export" | "refresh" | "folder" | null>(null);
   const [activeSection, setActiveSection] = useState(loadSettingsSection);
+  const [visitedSections, setVisitedSections] = useState(() => new Set([activeSection]));
+  const contentRef = useRef<HTMLDivElement>(null);
   const trapRef = useFocusTrap<HTMLElement>({ active: open });
 
   useEscapeKey(onClose, open);
@@ -91,10 +93,12 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     if (!open) return;
     const section = loadSettingsSection();
     setActiveSection(section);
-    requestAnimationFrame(() => {
-      document.getElementById(settingsSectionDomId(section))?.scrollIntoView({ block: "start" });
-    });
+    setVisitedSections((current) => current.has(section) ? current : new Set([...current, section]));
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+  }, [activeSection]);
 
   if (!open) return null;
 
@@ -165,39 +169,8 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
   const navigateToSection = (sectionId: string) => {
     setActiveSection(sectionId);
+    setVisitedSections((current) => current.has(sectionId) ? current : new Set([...current, sectionId]));
     persistSettingsSection(sectionId);
-    document
-      .getElementById(settingsSectionDomId(sectionId))
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const handleContentScroll = (event: UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
-    if (scrollTop + clientHeight >= scrollHeight - 4) {
-      const lastSection = SETTINGS_SECTIONS.at(-1)?.id ?? "theme";
-      setActiveSection((current) => {
-        if (current === lastSection) return current;
-        persistSettingsSection(lastSection);
-        return lastSection;
-      });
-      return;
-    }
-
-    const containerTop = event.currentTarget.getBoundingClientRect().top;
-    let nextSection = SETTINGS_SECTIONS[0]?.id ?? "theme";
-
-    for (const section of SETTINGS_SECTIONS) {
-      const element = document.getElementById(settingsSectionDomId(section.id));
-      if (element && element.getBoundingClientRect().top <= containerTop + 48) {
-        nextSection = section.id;
-      }
-    }
-
-    setActiveSection((current) => {
-      if (current === nextSection) return current;
-      persistSettingsSection(nextSection);
-      return nextSection;
-    });
   };
 
   return (
@@ -226,8 +199,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 <Settings2 aria-hidden="true" size={19} strokeWidth={1.8} />
               </div>
               <div className="min-w-0">
-                <div className="instrument-label">Preferences / Workbench</div>
-                <h2 id="settings-panel-title" className="mt-1 truncate text-lg font-semibold text-[var(--text-primary)]">
+                <h2 id="settings-panel-title" className="truncate text-lg font-semibold text-[var(--text-primary)]">
                   设置工作台
                 </h2>
               </div>
@@ -242,20 +214,17 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               aria-label="设置区块导航"
               className="flex min-w-0 gap-1 overflow-x-auto border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] p-2 sm:flex-col sm:overflow-y-auto sm:border-b-0 sm:border-r sm:p-3"
             >
-              <div className="hidden px-2 pb-2 pt-1 sm:block">
-                <div className="instrument-label">Sections</div>
-                <p className="mt-1 text-xs text-[var(--text-faint)]">06 个设置模块</p>
-              </div>
-              {SETTINGS_SECTIONS.map((section, index) => {
+              {SETTINGS_SECTIONS.map((section) => {
                 const Icon = SECTION_ICONS[section.id] ?? PanelRight;
                 const selected = activeSection === section.id;
                 return (
                   <button
                     key={section.id}
+                    id={`settings-nav-${section.id}`}
                     type="button"
                     onClick={() => navigateToSection(section.id)}
                     aria-controls={settingsSectionDomId(section.id)}
-                    aria-current={selected ? "location" : undefined}
+                    aria-current={selected ? "page" : undefined}
                     className={`flex min-h-9 shrink-0 items-center gap-2.5 rounded-[var(--radius-md)] px-3 text-left text-sm transition-colors sm:w-full ${
                       selected
                         ? "bg-[var(--accent-primary-bg)] font-semibold text-[var(--accent-primary-ink)] shadow-[inset_2px_0_0_var(--accent-primary)]"
@@ -264,29 +233,22 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   >
                     <Icon aria-hidden="true" size={16} strokeWidth={1.8} />
                     <span>{section.label}</span>
-                    <span className="data-readout ml-auto hidden text-[13px] text-[var(--text-faint)] sm:inline">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
                   </button>
                 );
               })}
               <div className="mt-auto hidden border-t border-[var(--line-hairline)] px-2 pt-3 text-xs leading-5 text-[var(--text-faint)] sm:block">
-                所有改动即时生效
+                主题即时生效。连接配置请在对应区块保存。
               </div>
             </nav>
 
             <div
-              className="min-h-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6"
-              onScroll={handleContentScroll}
+              ref={contentRef}
+              className="settings-content min-h-0 min-w-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6"
             >
-              <section id={settingsSectionDomId("theme")} className="scroll-mt-5 border-b border-[var(--line-hairline)] pb-6">
+              <section id={settingsSectionDomId("theme")} hidden={activeSection !== "theme"} aria-labelledby="settings-nav-theme">
                 <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 text-[var(--accent-primary)]">
-                      <Palette aria-hidden="true" size={17} strokeWidth={1.8} />
-                      <span className="instrument-label">Appearance / Theme</span>
-                    </div>
-                    <h3 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">主题外观</h3>
+                  <div className="min-w-0 flex-1 basis-[220px]">
+                    <h3 className="text-lg font-semibold text-[var(--text-primary)]">主题外观</h3>
                     <p className="mt-1 text-sm text-[var(--text-muted)]">
                       当前使用 <span className="font-semibold text-[var(--text-primary)]">{currentTheme.name}</span>
                     </p>
@@ -343,45 +305,44 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 </div>
 
                 <div className="mt-4">
-                  <ColorModeSelect colorMode={colorMode} onSelect={changeColorMode} />
+                  <ColorModeSelect colorMode={colorMode} onSelect={changeColorMode} disabled={!findFamilyByThemeId(currentTheme.id)} />
                 </div>
+                <ThemeGallery themes={availableThemes} currentThemeId={currentTheme.id} effectiveMode={effectiveMode} onSelect={setTheme} />
               </section>
 
-              <div id={settingsSectionDomId("ai")} className="scroll-mt-5 pt-6 [&>section]:mt-0">
-                <AiSettingsSection />
+              <div id={settingsSectionDomId("ai")} hidden={activeSection !== "ai"} aria-labelledby="settings-nav-ai">
+                {visitedSections.has("ai") && <AiSettingsSection />}
               </div>
 
-              <div id={settingsSectionDomId("data")} className="scroll-mt-5 pt-6 [&>section]:mt-0">
-                <DataSettingsSection />
+              <div id={settingsSectionDomId("data")} hidden={activeSection !== "data"} aria-labelledby="settings-nav-data">
+                {visitedSections.has("data") && <DataSettingsSection />}
               </div>
 
-              <div id={settingsSectionDomId("sync")} className="scroll-mt-5 pt-6 [&>section]:mt-0">
-                <SyncSettingsSection />
+              <div id={settingsSectionDomId("sync")} hidden={activeSection !== "sync"} aria-labelledby="settings-nav-sync">
+                {visitedSections.has("sync") && <SyncSettingsSection />}
               </div>
 
-              <div id={settingsSectionDomId("update")} className="scroll-mt-5 pt-6 [&>section]:mt-0">
-                <UpdateSettingsSection />
+              <div id={settingsSectionDomId("update")} hidden={activeSection !== "update"} aria-labelledby="settings-nav-update">
+                {visitedSections.has("update") && <UpdateSettingsSection />}
               </div>
 
-              <section id={settingsSectionDomId("mods")} className="scroll-mt-5 pt-6">
+              <section id={settingsSectionDomId("mods")} hidden={activeSection !== "mods"} aria-labelledby="settings-nav-mods">
                 <div className="mb-4 flex items-center gap-3 border-b border-[var(--line-hairline)] pb-4">
                   <div className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
                     <Puzzle aria-hidden="true" size={17} strokeWidth={1.8} />
                   </div>
                   <div>
-                    <div className="instrument-label">Extensions</div>
-                    <h3 className="mt-1 text-lg font-semibold text-[var(--text-primary)]">扩展</h3>
+                    <h3 className="text-lg font-semibold text-[var(--text-primary)]">扩展</h3>
                   </div>
                 </div>
-                <ModManagerPanel />
+                {visitedSections.has("mods") && <ModManagerPanel />}
               </section>
             </div>
           </div>
 
           <footer className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 sm:px-5">
             <span className="hidden items-center gap-2 text-xs text-[var(--text-faint)] sm:flex">
-              <span className="status-led" aria-hidden="true" />
-              设置已连接到当前工作区
+              按 Esc 返回工作台
             </span>
             <button type="button" onClick={onClose} className="action-button action-button-primary ml-auto">
               <Check aria-hidden="true" size={16} strokeWidth={1.9} />
@@ -417,6 +378,55 @@ function ActionButton({
       <Icon aria-hidden="true" size={15} strokeWidth={1.8} className={spinning ? "animate-spin" : undefined} />
       {label}
     </button>
+  );
+}
+
+function ThemeGallery({ themes, currentThemeId, effectiveMode, onSelect }: {
+  themes: ThemeDefinition[];
+  currentThemeId: string;
+  effectiveMode: "light" | "dark";
+  onSelect: (id: string) => Promise<void>;
+}) {
+  const selectedFamily = findFamilyByThemeId(currentThemeId);
+  return (
+    <section className="mt-6 border-t border-[var(--line-hairline)] pt-5" aria-label="内置主题预览">
+      <h4 className="text-sm font-medium text-[var(--text-primary)]">配色预览</h4>
+      <p className="mt-1 text-xs text-[var(--text-secondary)]">预览随外观模式切换，点击即可应用。</p>
+      <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-3">
+        {THEME_FAMILIES.map((family) => {
+          const theme = themes.find((entry) => entry.id === resolveFamilyThemeId(family, effectiveMode));
+          if (!theme) return null;
+          const colors = theme.variables;
+          const selected = selectedFamily?.id === family.id;
+          return (
+            <button key={family.id} type="button" aria-pressed={selected} aria-label={`应用${family.name}主题`}
+              onClick={() => void onSelect(theme.id)} className="theme-choice min-w-0 overflow-hidden rounded-[var(--radius-lg)] border p-2 text-left">
+              <span aria-hidden="true" className="flex h-16 overflow-hidden border p-1.5"
+                style={{ background: colors["bg-base"], borderColor: colors["border-default"], borderRadius: family.lang === "b" ? "2px" : "7px" }}>
+                <span className="mr-1.5 flex w-7 shrink-0 flex-col gap-1 p-1" style={{ background: colors["bg-surface"] }}>
+                  <span className="h-1 w-3" style={{ background: colors["accent-primary"] }} />
+                  <span className="h-1 w-4 opacity-40" style={{ background: colors["text-secondary"] }} />
+                  <span className="h-1 w-3 opacity-40" style={{ background: colors["text-secondary"] }} />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <span className="h-2.5 w-full" style={{ background: colors["bg-input"] }} />
+                  <span className="flex flex-1 gap-1">
+                    {[0, 1].map((index) => <span key={index} className="flex min-w-0 flex-1 items-end border p-1"
+                      style={{ borderColor: colors["border-default"], background: colors["bg-surface"], borderRadius: family.lang === "b" ? "1px" : "4px" }}>
+                      <span className="h-1.5 w-5" style={{ background: colors["accent-primary"] }} />
+                    </span>)}
+                  </span>
+                </span>
+              </span>
+              <span className="mt-2 flex items-center justify-between gap-1 px-0.5 text-xs font-medium">
+                <span className="truncate">{family.name}</span>
+                {selected && <Check size={14} strokeWidth={2} aria-hidden="true" />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -526,9 +536,11 @@ function VariantSelect({
 function ColorModeSelect({
   colorMode,
   onSelect,
+  disabled,
 }: {
   colorMode: ColorMode;
   onSelect: (mode: ColorMode) => void;
+  disabled: boolean;
 }) {
   const OPTIONS: Array<{ value: ColorMode; label: string }> = [
     { value: "system", label: "跟随系统" },
@@ -551,7 +563,18 @@ function ColorModeSelect({
               type="button"
               role="radio"
               aria-checked={active}
+              disabled={disabled}
+              tabIndex={active ? 0 : -1}
               onClick={() => onSelect(option.value)}
+              onKeyDown={(event) => {
+                const offset = ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : ["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 0;
+                if (!offset && event.key !== "Home" && event.key !== "End") return;
+                event.preventDefault();
+                const index = OPTIONS.findIndex((entry) => entry.value === option.value);
+                const next = event.key === "Home" ? 0 : event.key === "End" ? OPTIONS.length - 1 : (index + offset + OPTIONS.length) % OPTIONS.length;
+                onSelect(OPTIONS[next].value);
+                event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+              }}
               className={`h-full rounded-[calc(var(--radius-md)-2px)] px-4 text-sm transition-colors ${
                 active
                   ? "bg-[var(--accent-primary)] font-medium text-[var(--text-invert)]"

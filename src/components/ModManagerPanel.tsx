@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { useMods } from "../hooks/useMods";
 import { useEscapeKey } from "../hooks/useEscapeKey";
@@ -7,6 +8,7 @@ import { reloadModRuntime } from "../lib/modRuntime";
 import { importMod, exportMod } from "../lib/db";
 import { showToast } from "../lib/toast";
 import type { ModPermission } from "../types/mod";
+import { DialogHeader } from "./DialogHeader";
 
 const PERMISSION_META: Record<ModPermission, { label: string; color: string }> = {
   "items:read": { label: "读取项目", color: "var(--accent-primary)" },
@@ -32,12 +34,14 @@ export function ModManagerPanel() {
   const { mods, enableMod, disableMod, uninstallMod, refresh } = useMods();
   const [confirmJsMod, setConfirmJsMod] = useState<string | null>(null);
   const [confirmUninstallMod, setConfirmUninstallMod] = useState<string | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const [reloading, setReloading] = useState<string | null>(null);
   // 确认弹窗可访问性：焦点陷阱 + 栈式 Esc（后注册于 SettingsPanel，Esc 只关确认框不关设置）
   // 启用脚本/卸载两个确认框互斥（不会同时打开），共用同一套 trap/Esc
   const anyConfirmOpen = confirmJsMod !== null || confirmUninstallMod !== null;
   const confirmTrapRef = useFocusTrap<HTMLDivElement>({ active: anyConfirmOpen });
   useEscapeKey(() => {
+    if (confirmBusy) return;
     setConfirmJsMod(null);
     setConfirmUninstallMod(null);
   }, anyConfirmOpen);
@@ -55,17 +59,17 @@ export function ModManagerPanel() {
   };
 
   const handleConfirmEnable = async () => {
-    if (confirmJsMod) {
-      await enableMod(confirmJsMod);
-      setConfirmJsMod(null);
-    }
+    if (!confirmJsMod || confirmBusy) return;
+    setConfirmBusy(true);
+    try { await enableMod(confirmJsMod); setConfirmJsMod(null); }
+    finally { setConfirmBusy(false); }
   };
 
   const handleConfirmUninstall = async () => {
-    if (confirmUninstallMod) {
-      await uninstallMod(confirmUninstallMod);
-      setConfirmUninstallMod(null);
-    }
+    if (!confirmUninstallMod || confirmBusy) return;
+    setConfirmBusy(true);
+    try { await uninstallMod(confirmUninstallMod); setConfirmUninstallMod(null); }
+    finally { setConfirmBusy(false); }
   };
 
   // useMods 的 enable/disable 内部已 toast 并刷新列表，这里只吞掉 rejection 避免未处理拒绝噪音
@@ -176,25 +180,25 @@ export function ModManagerPanel() {
                   <span className="text-base font-semibold text-[var(--text-primary)]">{mod.name}</span>
                   <TypeBadge type={mod.type} />
                   {mod.enabled && (
-                    <span className="rounded-[var(--radius-full)] bg-[var(--status-success-bg)] px-2 py-1 text-[13px] font-semibold text-[var(--color-success)]">
+                    <span className="rounded-[var(--radius-full)] bg-[var(--status-success-bg)] px-2 py-1 text-[13px] font-semibold text-[var(--color-success-ink)]">
                       已启用
                     </span>
                   )}
                   {mod.is_compatible === false && (
                     <span
                       title={mod.incompatible_reason ?? "与当前应用版本不兼容"}
-                      className="rounded-[var(--radius-full)] bg-[var(--color-danger-bg)] px-2 py-1 text-[13px] font-semibold text-[var(--color-danger)]"
+                      className="rounded-[var(--radius-full)] bg-[var(--color-danger-bg)] px-2 py-1 text-[13px] font-semibold text-[var(--color-danger-ink)]"
                     >
                       不兼容
                     </span>
                   )}
                 </div>
-                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">
                   v{mod.version} · {mod.author}
                   {mod.api_version ? ` · API ${mod.api_version}` : ""}
                 </p>
                 {mod.is_compatible === false && mod.incompatible_reason && (
-                  <p className="mt-1 text-xs text-[var(--color-danger)]">{mod.incompatible_reason}</p>
+                  <p className="mt-1 text-xs text-[var(--color-danger-ink)]">{mod.incompatible_reason}</p>
                 )}
                 <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{mod.description}</p>
               </div>
@@ -222,7 +226,7 @@ export function ModManagerPanel() {
                   onClick={() => runQuietly(() => handleToggle(mod.id, mod.type, mod.enabled))}
                   className={mod.enabled ? "action-button min-h-[36px] px-3 text-xs" : "action-button action-button-primary min-h-[36px] px-3 text-xs"}
                   style={mod.enabled ? {
-                    color: "var(--color-danger)",
+                    color: "var(--color-danger-ink)",
                     borderColor: "color-mix(in srgb, var(--color-danger) 24%, transparent)",
                     backgroundColor: "var(--color-danger-bg)",
                   } : undefined}
@@ -234,7 +238,7 @@ export function ModManagerPanel() {
                   onClick={() => setConfirmUninstallMod(mod.id)}
                   className="action-button min-h-[36px] px-3 text-xs"
                   style={{
-                    color: "var(--color-danger)",
+                    color: "var(--color-danger-ink)",
                     borderColor: "color-mix(in srgb, var(--color-danger) 24%, transparent)",
                     backgroundColor: "var(--color-danger-bg)",
                   }}
@@ -251,12 +255,8 @@ export function ModManagerPanel() {
                   return (
                     <span
                       key={permission}
-                      className="rounded-[var(--radius-full)] border px-2.5 py-1 text-[13px] font-medium"
-                      style={{
-                        color: meta.color,
-                        borderColor: `color-mix(in srgb, ${meta.color} 26%, transparent)`,
-                        backgroundColor: `color-mix(in srgb, ${meta.color} 10%, white)`,
-                      }}
+                      className="tag-pill px-2.5 py-1 text-[13px]"
+                      style={{ "--tag-color": meta.color } as CSSProperties}
                     >
                       {meta.label}
                     </span>
@@ -273,13 +273,13 @@ export function ModManagerPanel() {
         const permissions = (mod?.permissions ?? []) as ModPermission[];
         const hasDangerPermission = permissions.includes("dom");
 
-        return (
+        return createPortal(
           <>
             <div
               data-workspace-overlay=""
               className="fixed inset-0"
               style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-mod-confirm-overlay)" }}
-              onClick={() => setConfirmJsMod(null)}
+              onClick={() => { if (!confirmBusy) setConfirmJsMod(null); }}
             />
             <div
               className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
@@ -290,18 +290,18 @@ export function ModManagerPanel() {
                 role="dialog"
                 aria-modal="true"
                 aria-label="启用脚本扩展"
-                className="modal-surface pointer-events-auto w-[420px] max-w-[92vw] p-6"
+                className="modal-surface dialog-panel pointer-events-auto w-[480px] max-w-[92vw]"
               >
-                <div className="text-label">Security</div>
-                <h3 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">启用脚本扩展</h3>
-                <p className="mt-3 text-sm leading-7 text-[var(--text-secondary)]">
+                <DialogHeader title="启用脚本扩展" onClose={() => setConfirmJsMod(null)} disabled={confirmBusy} />
+                <div className="dialog-body">
+                <p className="text-sm leading-7 text-[var(--text-secondary)]">
                   此扩展包含 JavaScript 代码，启用后将以应用的完全权限在本机运行（可读写你的数据、访问网络、调用系统能力）。
                   请仅在信任来源时启用。
                 </p>
 
                 {permissions.length > 0 && (
                   <div className="surface-card-soft mt-5 p-4">
-                    <div className="text-label">Declared capabilities</div>
+                    <div className="text-sm font-medium text-[var(--text-primary)]">声明的用途</div>
                     <p className="mt-2 text-xs leading-6 text-[var(--text-muted)]">
                       以下为扩展自行声明的用途，仅供参考，并非对其能力的安全限制。
                     </p>
@@ -311,12 +311,8 @@ export function ModManagerPanel() {
                         return (
                           <span
                             key={permission}
-                            className="rounded-[var(--radius-full)] border px-2.5 py-1 text-[13px] font-medium"
-                            style={{
-                              color: meta.color,
-                              borderColor: `color-mix(in srgb, ${meta.color} 26%, transparent)`,
-                              backgroundColor: `color-mix(in srgb, ${meta.color} 10%, white)`,
-                            }}
+                            className="tag-pill px-2.5 py-1 text-[13px]"
+                            style={{ "--tag-color": meta.color } as CSSProperties}
                           >
                             {meta.label}
                           </span>
@@ -324,36 +320,37 @@ export function ModManagerPanel() {
                       })}
                     </div>
                     {hasDangerPermission && (
-                      <p className="mt-3 text-xs text-[var(--color-danger)]">
+                      <p className="mt-3 text-xs text-[var(--color-danger-ink)]">
                         此扩展申请了 DOM 访问权限，具备较高的界面操作能力。
                       </p>
                     )}
                   </div>
                 )}
 
-                <div className="mt-6 flex justify-end gap-2">
-                  <button type="button" onClick={() => setConfirmJsMod(null)} className="action-button">
+                </div>
+                <div className="dialog-footer justify-end">
+                  <button type="button" disabled={confirmBusy} onClick={() => setConfirmJsMod(null)} className="action-button">
                     取消
                   </button>
-                  <button type="button" onClick={() => runQuietly(handleConfirmEnable)} className="action-button action-button-primary">
-                    我信任此扩展
+                  <button type="button" disabled={confirmBusy} onClick={() => runQuietly(handleConfirmEnable)} className="action-button action-button-primary">
+                    {confirmBusy ? "启用中…" : "我信任此扩展"}
                   </button>
                 </div>
               </div>
             </div>
-          </>
+          </>, document.body
         );
       })()}
 
       {confirmUninstallMod && (() => {
         const mod = mods.find((item) => item.id === confirmUninstallMod);
-        return (
+        return createPortal(
           <>
             <div
               data-workspace-overlay=""
               className="fixed inset-0"
               style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-mod-confirm-overlay)" }}
-              onClick={() => setConfirmUninstallMod(null)}
+              onClick={() => { if (!confirmBusy) setConfirmUninstallMod(null); }}
             />
             <div
               className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
@@ -364,33 +361,35 @@ export function ModManagerPanel() {
                 role="dialog"
                 aria-modal="true"
                 aria-label="卸载扩展"
-                className="modal-surface pointer-events-auto w-[420px] max-w-[92vw] p-6"
+                className="modal-surface dialog-panel pointer-events-auto w-[480px] max-w-[92vw]"
               >
-                <div className="text-label">Uninstall</div>
-                <h3 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">卸载扩展</h3>
-                <p className="mt-3 text-sm leading-7 text-[var(--text-secondary)]">
+                <DialogHeader title="卸载扩展" onClose={() => setConfirmUninstallMod(null)} disabled={confirmBusy} />
+                <div className="dialog-body">
+                <p className="text-sm leading-7 text-[var(--text-secondary)]">
                   将删除扩展「{mod?.name ?? confirmUninstallMod}」的全部文件与其本地存储数据，此操作不可恢复。
                 </p>
-                <div className="mt-6 flex justify-end gap-2">
-                  <button type="button" onClick={() => setConfirmUninstallMod(null)} className="action-button">
+                </div>
+                <div className="dialog-footer justify-end">
+                  <button type="button" disabled={confirmBusy} onClick={() => setConfirmUninstallMod(null)} className="action-button">
                     取消
                   </button>
                   <button
                     type="button"
+                    disabled={confirmBusy}
                     onClick={() => runQuietly(handleConfirmUninstall)}
                     className="action-button"
                     style={{
-                      color: "var(--color-danger)",
+                      color: "var(--color-danger-ink)",
                       borderColor: "color-mix(in srgb, var(--color-danger) 24%, transparent)",
                       backgroundColor: "var(--color-danger-bg)",
                     }}
                   >
-                    确认卸载
+                    {confirmBusy ? "卸载中…" : "确认卸载"}
                   </button>
                 </div>
               </div>
             </div>
-          </>
+          </>, document.body
         );
       })()}
     </div>
@@ -399,9 +398,9 @@ export function ModManagerPanel() {
 
 function TypeBadge({ type }: { type: string }) {
   const styles: Record<string, { label: string; color: string; bg: string }> = {
-    css: { label: "CSS", color: "var(--accent-primary)", bg: "var(--accent-primary-bg)" },
-    "css+js": { label: "CSS + JS", color: "var(--color-warning)", bg: "var(--status-warning-bg)" },
-    theme: { label: "主题", color: "var(--color-success)", bg: "var(--status-success-bg)" },
+    css: { label: "CSS", color: "var(--accent-primary-ink)", bg: "var(--accent-primary-bg)" },
+    "css+js": { label: "CSS + JS", color: "var(--color-warning-ink)", bg: "var(--status-warning-bg)" },
+    theme: { label: "主题", color: "var(--color-success-ink)", bg: "var(--status-success-bg)" },
   };
   const style = styles[type] ?? { label: type, color: "var(--text-muted)", bg: "var(--bg-hover)" };
 

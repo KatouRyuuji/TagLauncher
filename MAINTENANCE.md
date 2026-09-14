@@ -36,8 +36,10 @@ python scripts/e2e-data-migration.py   # 沙箱隔离（子进程 LOCALAPPDATA �
 3. **本机全量打包（x64 安装包 + 便携 zip）**：发版产物不只走 CI——本机也要出一份（本机打包仅 x64，ARM64 归 CI）：
 
 ```bash
-npm run pack        # tauri build + pack:portable，产物在 src-tauri/target/release/bundle/
+npm run pack        # prepare-cli-bin(tl sidecar) + tauri build + pack:portable，产物在 src-tauri/target/release/bundle/
 ```
+
+> `npm run tauri build` 单独调用前须先执行 `node scripts/prepare-cli-bin.mjs`（生成 `src-tauri/bin/tl-<triple>.exe` sidecar）；`tauri build`/`cargo test`/`tauri dev` 编译主包时 tauri-build 会校验 externalBin 存在——全新克隆先跑一次 `node scripts/ensure-cli-placeholder.mjs`（dev.bat / setup.bat / CI 已自动接线）。
 
 4. **更新文档**：README 版本号、USER_GUIDE；涉及功能差异时在《版本对比.md》同步当前版本列。
 5. **提交并打 tag**：

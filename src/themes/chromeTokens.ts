@@ -27,10 +27,10 @@ export const CHROME_TOKENS: Record<string, string> = {
 
   "drag-ghost-offset-x": "14px",
   "drag-ghost-offset-y": "14px",
-  "tag-color-alpha": "18%",
-  "tag-selected-alpha": "28%",
-  "tag-muted-alpha": "10%",
-  "tag-selected-border-alpha": "62%",
+  "tag-color-alpha": "9%",
+  "tag-selected-alpha": "16%",
+  "tag-muted-alpha": "9%",
+  "tag-selected-border-alpha": "100%",
   "border-width": "1px",
   "border-style": "solid",
 

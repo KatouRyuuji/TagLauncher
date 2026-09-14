@@ -138,7 +138,7 @@ reset()
 d = make_dir("A")
 run_exe(d)
 ver = db_query(local_db(), "SELECT value FROM app_meta WHERE key='schema_version'")
-check("A 全新安装建库", ver and ver[0][0] == "10", f"schema={ver}")
+check("A 全新安装建库", ver and ver[0][0] == "12", f"schema={ver}")
 
 # ── 场景 B：旧版 exe 旁 Save/（健康+备份）→ 自动迁移 ──
 reset()

@@ -12,7 +12,7 @@ import type { ItemWithTags } from "../types";
 export type SortMode = "smart" | "name" | "recent" | "added" | "type";
 
 /** 类型筛选：脚本合并 bat+ps1，避免顶栏 chip 过多 */
-export type TypeFilter = "all" | "folder" | "image" | "audio" | "exe" | "script";
+export type TypeFilter = "all" | "folder" | "image" | "audio" | "video" | "exe" | "script";
 
 export const SORT_OPTIONS: { value: SortMode; label: string }[] = [
   { value: "smart", label: "智能" },
@@ -27,6 +27,7 @@ export const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
   { value: "folder", label: "文件夹" },
   { value: "image", label: "图片" },
   { value: "audio", label: "音频" },
+  { value: "video", label: "视频" },
   { value: "exe", label: "程序" },
   { value: "script", label: "脚本" },
 ];
@@ -35,9 +36,10 @@ const TYPE_ORDER: Record<string, number> = {
   folder: 0,
   image: 1,
   audio: 2,
-  exe: 3,
-  bat: 4,
-  ps1: 5,
+  video: 3,
+  exe: 4,
+  bat: 5,
+  ps1: 6,
 };
 
 // 排序热点：localeCompare 每次调用都会隐式构造 Collator，大库排序时开销显著。
@@ -59,7 +61,7 @@ export function isSortMode(value: unknown): value is SortMode {
 }
 
 export function isTypeFilter(value: unknown): value is TypeFilter {
-  return value === "all" || value === "folder" || value === "image" || value === "audio" || value === "exe" || value === "script";
+  return value === "all" || value === "folder" || value === "image" || value === "audio" || value === "video" || value === "exe" || value === "script";
 }
 
 /** 类型芯片再点一次回到「全部」，与筛选条、命令面板共用。 */
@@ -232,6 +234,25 @@ export function applyPointerSelection(
     return { ids, anchorId: clickedId };
   }
   return { ids: [clickedId], anchorId: clickedId };
+}
+
+/** 框选模式：正选（默认，命中集替换选中集）/ 减选（Alt，从既有选中集扣除命中项）。 */
+export type MarqueeMode = "add" | "subtract";
+
+/**
+ * 框选结算：
+ * - add：框选结果 = 命中集（对齐资源管理器普通框选的替换语义）；
+ * - subtract（Alt+框选）：从框选前的选中集中扣除命中项，保持原有顺序。
+ */
+export function applyMarqueeSelection(
+  mode: MarqueeMode,
+  prevSelected: number[],
+  hit: ReadonlySet<number>,
+): number[] {
+  if (mode === "subtract") {
+    return prevSelected.filter((id) => !hit.has(id));
+  }
+  return Array.from(hit);
 }
 
 /**

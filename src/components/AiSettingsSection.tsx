@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import * as db from "../lib/db";
 import type { AiConfig } from "../lib/db";
+import { copyText } from "../lib/clipboard";
 import { showToast } from "../lib/toast";
-import { SettingsField, inputClass } from "./SettingsField";
+import { SettingsField, SettingsToggle, inputClass } from "./SettingsField";
 
 /** 触发 App 层的批量打标编排 */
 export const AI_TAG_ALL_EVENT = "taglauncher-ai-tag-all";
@@ -102,7 +103,7 @@ export function AiSettingsSection() {
     setBusy("tag");
     let count: number;
     try {
-      const items = await db.getItems();
+      const items = await db.getItems(false);
       count = scope === "untagged" ? items.filter((item) => item.tags.length === 0).length : items.length;
     } catch (e) {
       showToast(`统计对象失败：${e instanceof Error ? e.message : String(e)}`, "error");
@@ -146,24 +147,23 @@ export function AiSettingsSection() {
     <section className="surface-card-soft mt-6 p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-label">AI</div>
-          <h3 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">AI 自动打标</h3>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)]">AI 自动打标</h3>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
             填写兼容 Anthropic 协议的 API，即可一键为对象智能打标
           </p>
         </div>
         <span
-          className="mt-1 shrink-0 rounded-none px-2.5 py-1 text-xs font-medium"
+          className="mt-1 shrink-0 rounded-[var(--radius-full)] px-2.5 py-1 text-xs font-medium"
           style={{
             background: configured ? "var(--status-success-bg)" : "var(--bg-hover)",
-            color: configured ? "var(--color-success)" : "var(--text-muted)",
+            color: configured ? "var(--color-success-ink)" : "var(--text-muted)",
           }}
         >
           {configured ? "已配置" : "未配置"}
         </span>
       </div>
 
-      <div className="mt-4 space-y-3">
+      <fieldset disabled={!loaded || busy !== null} className="mt-4 min-w-0 space-y-3">
         <SettingsField label="API 地址（Base URL）">
           <input
             type="text"
@@ -175,9 +175,10 @@ export function AiSettingsSection() {
           />
         </SettingsField>
 
-        <SettingsField label="API 密钥">
+        <SettingsField label="API 密钥" htmlFor="ai-api-key">
           <div className="flex gap-2">
             <input
+              id="ai-api-key"
               type={showKey ? "text" : "password"}
               value={config.apiKey}
               onChange={(e) => update("apiKey", e.target.value)}
@@ -192,7 +193,7 @@ export function AiSettingsSection() {
           </div>
         </SettingsField>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <SettingsField label="模型">
             <input
               type="text"
@@ -210,7 +211,8 @@ export function AiSettingsSection() {
               max={20}
               value={config.maxTags}
               onChange={(e) => update("maxTags", Number(e.target.value))}
-              className="mt-3 w-full accent-[var(--accent-primary)]"
+              className="settings-range"
+              style={{ "--range-progress": `${((config.maxTags - 1) / 19) * 100}%` } as CSSProperties}
             />
           </SettingsField>
         </div>
@@ -225,19 +227,21 @@ export function AiSettingsSection() {
           />
         </SettingsField>
 
-        <ToggleRow
+        <SettingsToggle
           checked={config.allowNewTags}
           onChange={(v) => update("allowNewTags", v)}
           title="允许创建新标签"
-          desc="关闭后只会从已有标签中挑选"
+          description="开启时可生成新标签，关闭时从已有标签中挑选。"
+          disabled={!loaded}
         />
-        <ToggleRow
+        <SettingsToggle
           checked={config.autoTagOnAdd}
           onChange={(v) => update("autoTagOnAdd", v)}
           title="新对象自动打标"
-          desc="导入新对象时后台自动调用 AI 打标"
+          description="导入新对象时后台自动调用 AI 打标。"
+          disabled={!loaded}
         />
-      </div>
+      </fieldset>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => void handleSave()} disabled={!loaded || busy !== null} className="action-button action-button-primary px-4 text-xs disabled:opacity-50">
@@ -271,41 +275,72 @@ export function AiSettingsSection() {
           {busy === "tag" ? "统计中…" : "为全部对象打标"}
         </button>
       </div>
+
+      <CliIntegrationBlock />
     </section>
   );
 }
 
-function ToggleRow({
-  checked,
-  onChange,
-  title,
-  desc,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  title: string;
-  desc: string;
-}) {
+/** AI 集成区块：CLI（tl）与 MCP 接入说明 + 配置一键复制 */
+function CliIntegrationBlock() {
+  const [info, setInfo] = useState<db.CliIntegrationInfo | null>(null);
+
+  useEffect(() => {
+    void db
+      .getCliIntegrationInfo()
+      .then(setInfo)
+      .catch(() => setInfo(null));
+  }, []);
+
+  if (!info) return null;
+
   return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      aria-pressed={checked}
-      className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3 text-left"
-    >
-      <span>
-        <span className="block text-sm font-medium text-[var(--text-primary)]">{title}</span>
-        <span className="block text-xs text-[var(--text-muted)]">{desc}</span>
-      </span>
-      <span
-        className="relative h-6 w-11 shrink-0 rounded-none transition-colors"
-        style={{ background: checked ? "var(--accent-primary)" : "var(--border-medium)" }}
-      >
-        <span
-          className="absolute top-0.5 h-5 w-5 rounded-none bg-white transition-[left]"
-          style={{ left: checked ? "22px" : "2px" }}
-        />
-      </span>
-    </button>
+    <div className="mt-5 border-t border-[var(--line-hairline)] pt-4">
+      <div className="text-label">AI 集成</div>
+      <p className="mt-2 text-sm text-[var(--text-muted)]">
+        应用随附命令行 <code className="text-[var(--text-secondary)]">tl</code>，供终端脚本与 AI 客户端直接管理对象库：
+        <code className="text-[var(--text-secondary)]">tl search / launch / tag / fav</code>、
+        <code className="text-[var(--text-secondary)]">tl tui</code>（终端界面）、
+        <code className="text-[var(--text-secondary)]">tl mcp</code>（MCP 服务）。
+      </p>
+      {info.cli_available ? (
+        <div className="mt-3 space-y-2">
+          <SettingsField label="Claude Desktop 等 MCP 客户端配置（复制后粘贴到客户端配置文件）">
+            <textarea
+              readOnly
+              rows={7}
+              value={prettyJson(info.mcp_config)}
+              spellCheck={false}
+              className={`${inputClass} font-mono text-xs`}
+              onFocus={(e) => e.target.select()}
+            />
+          </SettingsField>
+          <button
+            type="button"
+            className="action-button px-4 text-xs"
+            onClick={() =>
+              void copyText(
+                prettyJson(info.mcp_config),
+                "MCP 配置已复制",
+              )
+            }
+          >
+            复制 MCP 配置
+          </button>
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-[var(--color-warning-ink)]">
+          未检测到 tl.exe——开发模式下请运行 <code>cargo build --bin tl</code>；安装版/便携版会自带于主程序同级目录。
+        </p>
+      )}
+    </div>
   );
+}
+
+function prettyJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
 }

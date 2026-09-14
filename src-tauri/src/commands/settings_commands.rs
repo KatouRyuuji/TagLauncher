@@ -17,6 +17,47 @@ pub fn get_app_version() -> String {
     settings_service::get_app_version().to_string()
 }
 
+/// CLI/AI 集成信息：tl 二进制的安装位置与 MCP 客户端配置模板。
+/// tl.exe 由安装包/便携版放在主程序同级目录（externalBin sidecar）。
+#[tauri::command]
+pub fn get_cli_integration_info() -> CliIntegrationInfo {
+    let cli_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("tl.exe")))
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "tl.exe".to_string());
+    CliIntegrationInfo {
+        // 0 字节是 ensure-cli-placeholder 的占位文件，不能当可用 CLI
+        cli_available: is_usable_cli_binary(std::path::Path::new(&cli_path)),
+        mcp_config: serde_json::json!({
+            "mcpServers": {
+                "tag-launcher": {
+                    "command": cli_path,
+                    "args": ["mcp"]
+                }
+            }
+        })
+        .to_string(),
+        cli_path,
+    }
+}
+
+fn is_usable_cli_binary(path: &std::path::Path) -> bool {
+    std::fs::metadata(path)
+        .map(|m| m.is_file() && m.len() > 0)
+        .unwrap_or(false)
+}
+
+#[derive(serde::Serialize)]
+pub struct CliIntegrationInfo {
+    /// 主程序同级目录下是否有非空 tl.exe（排除 sidecar 0 字节占位）
+    pub cli_available: bool,
+    /// tl.exe 的绝对路径
+    pub cli_path: String,
+    /// MCP 客户端配置 JSON（Claude Desktop 等可直接粘贴）
+    pub mcp_config: String,
+}
+
 #[tauri::command]
 pub fn get_current_theme(db: State<Database>) -> String {
     let conn = db.get_conn();
@@ -148,6 +189,26 @@ pub struct VersionMigration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_placeholder_is_not_usable() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join("taglauncher-cli-ready");
+        let _ = std::fs::create_dir_all(&dir);
+        let empty = dir.join("empty-tl.exe");
+        std::fs::write(&empty, []).expect("write empty");
+        assert!(!is_usable_cli_binary(&empty));
+
+        let realish = dir.join("real-tl.exe");
+        let mut f = std::fs::File::create(&realish).expect("create");
+        f.write_all(&[0x4D, 0x5A, 0x90, 0x00]).expect("write mz");
+        drop(f);
+        assert!(is_usable_cli_binary(&realish));
+
+        assert!(!is_usable_cli_binary(&dir.join("missing.exe")));
+        let _ = std::fs::remove_file(&empty);
+        let _ = std::fs::remove_file(&realish);
+    }
 
     #[test]
     fn sensitive_prefixes_are_blocked() {

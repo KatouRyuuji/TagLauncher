@@ -1,5 +1,6 @@
 [package]
 name = "tag-launcher"
+default-run = "tag-launcher"
 version = "1.7.11-beta"
 description = "标签式文件管理器"
 authors = ["RyuuJi Soft"]
@@ -22,6 +23,11 @@ rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 lofty = "0.24.0"
 base64 = "0.22.1"
 ureq = "2"
+# tl CLI（src/bin/tl.rs）参数解析；GUI 不使用，但 cargo 依赖为包级共享。
+clap = { version = "4", features = ["derive"] }
+# tl tui 终端界面
+ratatui = "0.29"
+crossterm = "0.28"
 
 [dev-dependencies]
 # 集成测试（tests/）需直接用 rusqlite 播种旧版本 schema 并做原始 SQL 断言。
@@ -30,8 +36,9 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 # 用于按 NTFS 文件ID重定位对象当前路径（OpenFileById / GetFinalPathNameByHandleW），
-# 以及用关联程序打开对象（ShellExecuteW，替代经 cmd.exe 的启动，杜绝命令注入）。
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+# 用关联程序打开对象（ShellExecuteW，替代经 cmd.exe 的启动，杜绝命令注入），
+# 以及视频等内容的系统缩略图提取（IShellItemImageFactory + GDI+ 落盘 PNG）。
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Graphics_GdiPlus", "Win32_System_Com"] }
 
 # 发布构建优化：LTO + 单代码生成单元提升运行性能，strip 移除调试符号显著减小二进制体积。
 # 不启用 panic="abort"：连接层依赖 Mutex 锁中毒恢复（panic 展开），abort 会改变该容错行为。

@@ -26,6 +26,7 @@ export function StatusBar({
   const showFavorites = useAppStore((state) => state.showFavorites);
   const showRecent = useAppStore((state) => state.showRecent);
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
+  const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const [relocating, setRelocating] = useState(false);
 
@@ -47,15 +48,18 @@ export function StatusBar({
     }
   };
 
+  const tagScope = [
+    selectedTagIds.length > 0 ? `${selectedTagIds.length} 个标签` : null,
+    excludedTagIds.length > 0 ? `排除 ${excludedTagIds.length} 个标签` : null,
+  ].filter(Boolean).join(" · ");
+
   const scope = showFavorites
     ? "收藏夹"
     : showRecent
       ? "最近使用"
       : selectedCabinetId !== null
         ? "文件柜"
-        : selectedTagIds.length > 0
-          ? `${selectedTagIds.length} 个标签`
-          : "全部";
+        : tagScope || "全部";
 
   // 防抖窗口内（输入已敲下、搜索词尚未生效）显示"搜索中"指示，
   // 让用户知道当前计数/列表对应的还是上一次搜索词。
@@ -100,7 +104,7 @@ export function StatusBar({
             onClick={() => void handleRelocate()}
             disabled={relocating}
             aria-busy={relocating}
-            className="inline-flex h-6 min-h-6 shrink-0 cursor-pointer items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_45%,transparent)] bg-[var(--status-warning-bg)] px-1.5 font-medium text-[var(--color-warning)] hover:border-[var(--color-warning)] disabled:cursor-wait disabled:opacity-70"
+            className="inline-flex h-6 min-h-6 shrink-0 cursor-pointer items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_45%,transparent)] bg-[var(--status-warning-bg)] px-1.5 font-medium text-[var(--color-warning-ink)] hover:border-[var(--color-warning)] disabled:cursor-wait disabled:opacity-70"
             title="部分对象的文件已丢失或移动到其他磁盘。点击按内容签名扫描候选磁盘尝试找回。"
           >
             {relocating ? (

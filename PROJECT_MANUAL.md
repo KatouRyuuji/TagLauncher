@@ -4,23 +4,24 @@
 
 ## 一、项目简介
 
-TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「标签」管理和快速启动本地文件夹、程序、脚本、图片与音频等对象（folder/image/audio/exe/bat/ps1）。
+TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「标签」管理和快速启动本地文件夹、程序、脚本、图片、音视频等对象（folder/image/audio/video/exe/bat/ps1）。
 
 核心理念：用标签代替传统的树形目录分类，支持一个项目挂多个标签，通过组合筛选快速定位。
 
 ### 现有能力概览
 
-- 对象类型：`folder` / `image` / `audio` / `exe` / `bat` / `ps1`，未知文件按可启动对象归入 `exe`。
+- 对象类型：`folder` / `image` / `audio` / `video` / `exe` / `bat` / `ps1`，未知文件按可启动对象归入 `exe`。
 - 对象身份：以「NTFS 卷序列号 + 文件ID」为唯一标识，跨重命名/同盘移动稳定；`path` 降级为可更新的「最近已知位置」。跨盘符移动（卷序列号变化）时，以内容签名（文件大小 + 首/尾 16KB 的 FNV-1a 哈希）兜底重定位自动找回，详见 `file_identity.rs`。
-- 标签系统（图状层级，DAG）：标签是集合、可多父继承构成有向无环图；选中父标签筛选时并入其所有后代标签的对象。四类筛选（标签/文件柜/收藏夹/最近使用）互斥；标签多选取交集；提供关系编辑器与独立图谱视图。
+- 标签系统（图状层级，DAG）：标签是集合、可多父继承构成有向无环图；选中父标签筛选时并入其所有后代标签的对象。四类筛选（标签/文件柜/收藏夹/最近使用）互斥；标签多选取交集（正选 AND），顶部筛选条支持右键反选（灰色删除线态，排除含该标签的对象，正反选互斥，反选同样展开后代闭包）；提供关系编辑器与独立图谱视图。
 - 工作台查询：类型筛选与五种排序在 `src/lib/itemQuery.ts` 纯函数完成，搜索命中顺序不被排序打乱；视图偏好（网格/列表、搜索模式、排序、类型）写入 localStorage。全屏弹层与选中锚点见 `workspaceChrome.ts`。
 - 键盘优先：`/` 聚焦搜索，Ctrl+K 命令面板，空格预览（方向键/Home/End 切换），Enter 启动；网格方向键按列跳转；Ctrl+C 复制选中路径、Ctrl+D 收藏。
-- 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量收藏/取消收藏（与 Ctrl+D 同逻辑：有未收藏项则全部收藏）、复制路径、批量删除。
+- 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量收藏/取消收藏（与 Ctrl+D 同逻辑：有未收藏项则全部收藏）、复制路径、批量删除。框选默认正选（命中集替换选中集），Alt+框选为减选（虚线灰框，从既有选中集扣除命中项，结算纯函数 `applyMarqueeSelection`）。
 - 失效对象可感知恢复：库内存在失效对象（文件丢失/跨盘移动）时，底部状态栏显示警示徽标，点击即手动触发按内容签名的跨盘找回扫描（含扫描中状态与「未找到」反馈）；自动兜底找回仍在刷新链路后台执行。
 - 加载与通知体验：首屏按当前视图渲染与真实布局同构的骨架屏（`WorkspaceSkeleton`，reduced-motion 下静止）；Toast 悬停暂停自动关闭、错误/警告驻留更久（7s/5s）。
 - 视图虚拟化：网格与列表视图均经 `@tanstack/react-virtual` 虚拟化（measureElement 动态测高），仅渲染可见项，大库滚动流畅、内存可控。
-- 缩略图：支持手动设置/更换/清除；图片对象直接用图片，非图片对象提取系统图标缓存为 PNG，其余回退到类型 Emoji 图标。
-- 音频：提供 `get_audio_preview` 等对象预览命令。
+- 缩略图：支持手动设置/更换/清除；图片对象直接用图片，视频对象经系统缩略图服务提取首帧画面（`shell_thumbnail.rs`，IShellItemImageFactory + GDI+ 落盘 PNG；取不到时负缓存 10 分钟后重试），快捷方式（.lnk）先解析到目标再取图标（不含 Windows 箭头角标），其余非图片对象提取系统图标缓存为 PNG，再其余回退到类型图标。
+- 音视频：音频提供 `get_audio_preview`（时长/采样率/封面等元数据）；视频对象在快速预览中原生可播放（首帧 poster 取系统缩略图；解码失败则回退为首帧静态图）。
+- AI 集成（CLI/TUI/MCP/AISkill）：随安装包附带 `tl` 命令行（externalBin sidecar），覆盖搜索/启动/添加/移除/标签/收藏/文件柜/统计全功能，全命令支持 `--json` 机器可读输出；`tl tui` 提供终端交互界面；`tl mcp` 以 stdio 暴露 MCP 工具面供 Claude Desktop 等 AI 客户端接入；`skills/tag-launcher/SKILL.md` 为 AI 使用本应用的行为准则。详见 §十七。
 - 主题系统：内置主题 + 自定义 JSON 主题 + Mod 主题，支持变量/分层 token/组件 token/资源/字体/变体/自定义 CSS，以及导入、导出、刷新；启动时等待主题就绪再显示主窗口，避免闪烁。
 - 自定义窗口栏：`decorations: false` 隐藏 Windows 原生标题栏，`TitleBar.tsx` 自绘窗口栏（`data-tauri-drag-region` 拖拽 + 双击最大化 + 最小化/最大化/关闭按钮），配色全部取主题 token 随主题联动；窗口权限见 `src-tauri/capabilities/default.json`。
 - 顶层错误边界：`AppErrorBoundary.tsx` 捕获渲染期崩溃，替代白屏为可操作错误页（复制错误详情/重新加载）；崩溃早于主题就绪时强制移除 FOUC 门控并显示窗口，避免进程挂死不可见。列表加载失败时工作台呈现可重试错误面板而非"暂无项目"假象。
@@ -71,7 +72,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands/  ← 93 个 Tauri 命令         │  │
+│  │  commands/  ← 95 个 Tauri 命令         │  │
 │  │             (按 item/cabinet/tag/mod/   │  │
 │  │              net/ai/data/settings/      │  │
 │  │              synonym/launch/            │  │
@@ -219,7 +220,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | id | INTEGER PK | 自增主键 |
 | name | TEXT NOT NULL | 文件/文件夹名（重定位后自动同步） |
 | path | TEXT NOT NULL | 最近已知位置（不再唯一，随重命名/移动自动更新） |
-| type | TEXT | 类型：folder/image/audio/exe/bat/ps1 |
+| type | TEXT | 类型：folder/image/audio/video/exe/bat/ps1 |
 | icon_path | TEXT | 自定义图标路径 |
 | created_at | DATETIME | 添加时间 |
 | last_used_at | DATETIME | 最后启动时间 |
@@ -277,13 +278,15 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ## 五、Tauri 命令清单
 
-后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，合计 93 个 `#[tauri::command]`（含 `#[tauri::command(async)]` 变体），按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
+后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，命令使用 `#[tauri::command]` 或 `#[tauri::command(async)]` 声明，按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
 
 | 命令名 | 参数 | 返回值 | 说明 |
 |--------|------|--------|------|
 | `add_item` | path: String | Item | 添加项目，自动检测类型 |
 | `remove_item` | id: i64 | () | 删除项目 |
-| `get_items` | - | Vec\<ItemWithTags\> | 获取所有项目（含标签） |
+| `get_items` | include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 获取所有项目及标签；自动图标默认开启，工作台传 false 后按可见项目加载 |
+| `get_items_by_ids` | ids: Vec\<i64\>, include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 批量获取指定项目；自动图标默认开启 |
+| `get_item_visual` | id: i64 | { path, icon_path } | 获取已登记对象图标，返回对象路径供异步请求核对 |
 | `toggle_favorite` | id: i64 | bool | 切换收藏状态 |
 | `set_favorites` | ids: Vec\<i64\>, favorite: bool | () | 批量设置收藏状态（单事务，原子、幂等） |
 | `get_tags` | - | Vec\<Tag\> | 获取所有标签 |
@@ -301,7 +304,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `remove_cabinet` | id: i64 | () | 删除文件柜 |
 | `add_item_to_cabinet` | cabinet_id, item_id | () | 添加项目到文件柜 |
 | `remove_item_from_cabinet` | cabinet_id, item_id | () | 从文件柜移除项目 |
-| `get_cabinet_items` | cabinet_id: i64 | Vec\<ItemWithTags\> | 获取文件柜内的项目 |
+| `get_cabinet_items` | cabinet_id: i64, include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 获取文件柜项目；自动图标默认开启 |
 | `get_cabinet_item_counts` | - | Vec\<(i64, i64)\> | 各文件柜成员计数（单次 GROUP BY 查询，侧栏徽标用，不做对账与图标补齐） |
 
 ---
@@ -566,6 +569,8 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src
 | tauri | 2.x | 应用框架 |
 | rusqlite | 0.31 | SQLite 驱动（`bundled` + `backup` feature：Online Backup 用于导入/导出/备份） |
 | ureq | 2.x | 阻塞式 HTTP（Mod `net_fetch`、AI 打标、WebDAV 云同步、更新检查） |
+| clap | 4.x | tl CLI 参数解析（derive） |
+| ratatui / crossterm | 0.29 / 0.28 | tl tui 终端界面 |
 | serde / serde_json | 1.x | 序列化/反序列化 |
 
 ---
@@ -584,8 +589,12 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src
 
 ### 性能
 
-- **列表加载 / 刷新（`get_items`）改用 `#[tauri::command(async)]` 工作线程执行**，不占用主 IPC 线程；并以「锁内取快照 → 锁外做 exists()/FFI/签名/图标抽取等重 IO → 锁内批量回写」三段式，把重 IO 移出 DB 全局锁，首屏与刷新不再冻结界面（图标抽取走 PowerShell / 文件 IO，是卡顿大头）。
-- **批量拖拽导入（`add_item` / `add_items`）改用 async 工作线程**：文件ID FFI、内容签名读取、类型识别等重 IO 从 UI 主线程移到工作线程，导入期间界面不冻结。**注意**——其重 IO 仍在 DB 事务锁内串行执行（既有逻辑未改），async 化仅解决「不冻结主线程」，并不等于「移出 DB 锁」或「并发无阻塞」。
+- **列表加载和刷新**在 async 工作线程执行，依次完成锁内快照、锁外文件对账、锁内批量回写与查询。工作台请求纯列表数据，可见组件通过 `get_item_visual` 加载图标，共享相同对象的请求，并发上限为 4；离屏组件撤销排队任务。完成的图标缓存上限为 512 项，刷新成功后更新缓存快照。
+- **系统图像**由 Windows Shell 原生接口提取普通文件图标、目录图标和视频缩略图，PNG 编码保留透明通道；快捷方式经目标解析提取图标。图片对象直接使用原图。
+- **拖拽导入**在 async 工作线程执行。批量导入先在锁外采集文件身份、签名和类型，再用单个事务落库；单项导入在自身事务中完成元数据与身份校验。
+- **批量标签与文件柜操作**在单个事务中批量验证对象和标签，复用预编译语句；标签顺序、去重和整批回滚保持一致。批量命令运行于工作线程。
+- **索引维护**：正常初始化复用已存在的完整路径索引。全文索引跟随对象 id、名称和路径的实际变更更新；schema v012 升级时重建全文索引一次。
+- **文件扫描**：按大小和首尾签名分组匹配，确认歧义的签名退出扫描索引；达到遍历上限时返回扫描未完成。唯一候选在锁外复核并生成计划，回写同时校验原路径、签名和失效状态。每轮文件身份对账复用卷句柄。
 - 其余重 IO 命令同样以 async 工作线程执行：跨盘找回 `relocate_missing`、数据 `backup_data` / `export_data` / `import_data` / `set_data_directory`、AI `ai_test_connection` / `ai_suggest_tags`、Mod `net_fetch`。
 - **前端排序热点用缓存 Collator**：`localeCompare` 每次调用隐式构造 `Intl.Collator`，大库排序（工作台五种排序、upsert 后重排、标签/文件柜列表）是可测热点；`itemQuery.compareNames` 模块级缓存一份 zh-CN Collator（`numeric: true` 自然数字排序，file2 < file10）供全应用复用，ISO 时间戳降级为纯字符串比较。
 
@@ -749,3 +758,32 @@ npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页�
 `scripts/demo-screenshots.mjs` 启动 demo 服务器后用 Playwright 驱动真实 UI 交互（搜索/拼音、标签筛选、文件柜、命令面板、快速预览、右键菜单、标签编辑器、框选批量、图谱、设置各区块、AI 打标、快捷键、失效找回）——功能截图以**霜靛（A1 家族）主题全覆盖**；再遍历全部 7 个内置配色家族各截一张主界面并列对比。
 
 **产物边界**：截图输出到 `screenshots/`（已 gitignore，不上云）；工具本身（`src/demo/` + 脚本）随仓库分发，clone 后 `npm i && npx playwright install chromium` 即可复现同一套截图。可选参数：`--out <目录>`、`--port <端口>`。
+
+---
+
+## 十七、CLI / TUI / MCP 与 AI 集成
+
+应用级 AI 集成：随安装包附带 `tl` 命令行（与 GUI 共享同一 SQLite 实库），AI 客户端与终端脚本可原生驱动本应用。
+
+### 17.1 tl 命令行
+
+- **分发**：`tl.exe` 以 Tauri `externalBin` sidecar 形式打进安装包并落入主程序同级目录；便携版 zip 同样附带。sidecar 构建由 `scripts/prepare-cli-bin.mjs` 完成（pack/CI 已接线）；`scripts/ensure-cli-placeholder.mjs` 在首次编译前创建占位文件（tauri-build 会校验 externalBin 存在，全新克隆缺它会编译失败，dev.bat/setup.bat/CI 已接线）。
+- **数据库定位**：与 GUI 同一套解析——exe 旁 `datapath.json` 重定向优先，否则 `%LOCALAPPDATA%\TagLauncher\Save\taglauncher.db`（`src-tauri/src/cli/mod.rs`）。数据库不存在时拒绝静默新建并提示先运行主程序。
+- **并发**：WAL 模式下与 GUI 并发安全；CLI 的写操作 GUI 需刷新后可见。
+- **命令面**：`search` / `list` / `get` / `add` / `remove` / `launch`（id 或搜索词首命中）/ `tag list|add|set|clear` / `fav [--off]` / `cabinet list|items` / `stats` / `mcp` / `tui`。全局 `--json` 输出机器可读 JSON（脚本与 AI 消费）。实现：`src-tauri/src/bin/tl.rs`（clap derive）。
+
+### 17.2 tl tui 终端界面
+
+`tl tui` 进入 ratatui 单屏界面：顶部搜索框输入即过滤（数据库全文搜索），↑/↓/PgUp/PgDn 选择，Enter 启动，Ctrl+D 收藏切换（对齐 GUI），Esc/Ctrl+C 退出。实现：`src-tauri/src/cli/tui.rs`（ratatui + crossterm）。
+
+### 17.3 MCP 服务
+
+`tl mcp` 以 stdio（newline-delimited JSON-RPC 2.0）提供 MCP 服务，协议版本 2024-11-05，工具面：`search_items` / `list_items` / `get_item` / `launch_item` / `add_items` / `remove_items` / `list_tags` / `add_tag` / `set_item_tags` / `set_favorite` / `list_cabinets` / `list_cabinet_items` / `stats`，与 CLI 命令一一对应。同步实现、不引异步运行时（`src-tauri/src/cli/mcp.rs`）；数据库延迟到首个 `tools/call` 才打开，握手/列工具不受主程序未初始化影响。设置页「AI → AI 集成」区块展示 Claude Desktop 配置并一键复制（`get_cli_integration_info` 命令；0 字节 sidecar 占位不算可用）。
+
+### 17.4 AISkill
+
+`skills/tag-launcher/SKILL.md` 是 AI 使用本应用的行为准则（启动前确认、id 优先、只读优先、失败重试节制），可被 Claude Code 等支持 Skills 的客户端直接装载。
+
+### 17.5 IM 平台集成（可选扩展）
+
+可行性调研与桥接架构见 `plan/IM集成-可行性与架构.md`：桥接进程经官方机器人通道接入 IM，回调调用 `tl --json` / MCP 工具。飞书/钉钉可行，微信/QQ/网易popo 无合规官方通道不投入。

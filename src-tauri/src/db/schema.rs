@@ -1,6 +1,15 @@
 use crate::db::has_column;
 use rusqlite::Connection;
 
+pub(crate) const FTS_UPDATE_TRIGGER: &str = r#"
+CREATE TRIGGER IF NOT EXISTS items_au AFTER UPDATE OF id, name, path ON items
+WHEN old.id IS NOT new.id OR old.name IS NOT new.name OR old.path IS NOT new.path
+BEGIN
+    INSERT INTO items_fts(items_fts, rowid, name, path) VALUES('delete', old.id, old.name, old.path);
+    INSERT INTO items_fts(rowid, name, path) VALUES(new.id, new.name, new.path);
+END;
+"#;
+
 /// 创建所有基础表（幂等）
 pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
@@ -12,7 +21,7 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
             path TEXT NOT NULL,
-            type TEXT CHECK(type IN ('folder', 'image', 'audio', 'exe', 'bat', 'ps1')),
+            type TEXT CHECK(type IN ('folder', 'image', 'audio', 'video', 'exe', 'bat', 'ps1')),
             icon_path TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             last_used_at DATETIME,
@@ -74,11 +83,6 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             INSERT INTO items_fts(items_fts, rowid, name, path) VALUES('delete', old.id, old.name, old.path);
         END;
 
-        CREATE TRIGGER IF NOT EXISTS items_au AFTER UPDATE ON items BEGIN
-            INSERT INTO items_fts(items_fts, rowid, name, path) VALUES('delete', old.id, old.name, old.path);
-            INSERT INTO items_fts(rowid, name, path) VALUES (new.id, new.name, new.path);
-        END;
-
         -- ========== 文件柜表 ==========
         CREATE TABLE IF NOT EXISTS cabinets (
             id INTEGER PRIMARY KEY,
@@ -126,29 +130,22 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             ON mod_records(mod_id, collection);
         "#,
     )?;
+    conn.execute_batch(FTS_UPDATE_TRIGGER)?;
 
     // 身份唯一索引：仅当 items 已具备 file_id 列时创建（新库由上面的 CREATE TABLE 建出该列；
     // 升级中的老库此时还没有该列，需等 v005 迁移补齐后由迁移内创建，故此处先跳过）。
-    // 同时补齐 idx_items_path 全索引：按 path 去重的查询是 `WHERE path = ?`（不限定 file_id，
-    // 以便瞬时拿不到身份时也能命中既有身份记录）。注意不能用 `WHERE file_id IS NULL` 部分索引——
-    // 查询谓词推不出 `file_id IS NULL`，部分索引永不命中（先 DROP 再建，自愈历史误建的版本）。
+    // path 全索引覆盖所有对象；仅在检测到部分索引时重建。
     if has_column(conn, "items", "file_id") {
+        let partial: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_index_list('items') WHERE name='idx_items_path' AND partial=1)",
+            [], |row| row.get(0),
+        )?;
+        if partial { conn.execute_batch("DROP INDEX idx_items_path;")?; }
         conn.execute_batch(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_identity \
              ON items(volume_serial, file_id) WHERE file_id IS NOT NULL; \
-             DROP INDEX IF EXISTS idx_items_path; \
-             CREATE INDEX idx_items_path ON items(path);",
+             CREATE INDEX IF NOT EXISTS idx_items_path ON items(path);",
         )?;
-    }
-
-    // 幂等自愈 FTS 索引：触发器只对增删改生效，历史版本的表重建 / 备份恢复等路径可能
-    // 让 items_fts 与 items 行数不一致（检索结果悄悄缺行）。行数不一致即对
-    // external-content FTS5 执行 rebuild；正常启动两者相等，零开销。
-    let fts_count: i64 =
-        conn.query_row("SELECT count(*) FROM items_fts", [], |r| r.get(0))?;
-    let items_count: i64 = conn.query_row("SELECT count(*) FROM items", [], |r| r.get(0))?;
-    if fts_count != items_count {
-        conn.execute("INSERT INTO items_fts(items_fts) VALUES('rebuild')", [])?;
     }
 
     Ok(())
@@ -159,6 +156,23 @@ mod tests {
     use super::*;
     use crate::db::migrations;
     use rusqlite::Connection;
+
+    #[test]
+    fn initialization_preserves_valid_path_index_and_repairs_partial_index() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_tables(&conn).unwrap();
+        let schema_version = || conn.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0)).unwrap();
+        let version = schema_version();
+        create_tables(&conn).unwrap();
+        assert_eq!(schema_version(), version, "正常重复初始化保持 schema 不变");
+        conn.execute_batch("DROP INDEX idx_items_path; CREATE INDEX idx_items_path ON items(path) WHERE file_id IS NULL;").unwrap();
+        create_tables(&conn).unwrap();
+        let partial: bool = conn.query_row("SELECT partial FROM pragma_index_list('items') WHERE name='idx_items_path'", [], |row| row.get(0)).unwrap();
+        assert!(!partial);
+        let version = schema_version();
+        create_tables(&conn).unwrap();
+        assert_eq!(schema_version(), version);
+    }
 
     /// 全新库初始化路径：create_tables（新结构）+ run_pending，最终应具备身份列与索引、path 不唯一。
     #[test]

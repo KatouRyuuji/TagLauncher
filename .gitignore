@@ -3,6 +3,7 @@ dist/
 
 src-tauri/target/
 src-tauri/gen/
+src-tauri/bin/tl-*.exe
 
 .idea/
 .vscode/

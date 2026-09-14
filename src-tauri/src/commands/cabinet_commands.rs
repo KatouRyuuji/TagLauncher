@@ -54,7 +54,7 @@ pub fn remove_item_from_cabinet(
 }
 
 /// 批量将项目加入文件柜（整批一个事务，幂等）
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_items_to_cabinet(
     db: State<Database>,
     cabinet_id: i64,
@@ -65,7 +65,7 @@ pub fn add_items_to_cabinet(
 }
 
 /// 批量从文件柜移除项目（500 分块多条 IN 语句 + 单事务，整体原子）
-#[tauri::command]
+#[tauri::command(async)]
 pub fn remove_items_from_cabinet(
     db: State<Database>,
     cabinet_id: i64,
@@ -89,6 +89,7 @@ pub fn get_cabinet_items(
     app: AppHandle,
     db: State<Database>,
     cabinet_id: i64,
+    include_visuals: Option<bool>,
 ) -> Result<Vec<ItemWithTags>, String> {
     // 与 get_items 完全对等的列表刷新热路径，同样用三段式把对账重 IO 移出全局 DB 锁：
     //   ① 锁内取快照 → ② 释放锁做 exists()/FFI/签名等重 IO 生成写入计划 → ③ 锁内批量回写 + 查询。
@@ -96,7 +97,10 @@ pub fn get_cabinet_items(
     // 逐对象的重 IO 全在锁外完成。对账失败不阻断列表加载。
     let snapshot = {
         let conn = db.get_conn();
-        item_service::read_reconcile_snapshot(&conn).unwrap_or_default()
+        item_service::read_cabinet_reconcile_snapshot(&conn, cabinet_id).unwrap_or_else(|error| {
+            eprintln!("[get_cabinet_items] 读取对账快照失败: {error}");
+            Vec::new()
+        })
     };
     let writes = item_service::plan_reconcile(snapshot);
     let mut items = {
@@ -107,6 +111,8 @@ pub fn get_cabinet_items(
         }
         cabinet_service::get_cabinet_items(&conn, cabinet_id)?
     };
-    item_service::fill_visuals(&app, &mut items);
+    if include_visuals.unwrap_or(true) {
+        item_service::fill_visuals(&app, &mut items);
+    }
     Ok(items)
 }

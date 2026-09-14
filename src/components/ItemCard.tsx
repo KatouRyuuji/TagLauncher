@@ -202,11 +202,11 @@ function ItemCardComponent({
         data-selected={selected ? "true" : "false"}
         role="listitem"
         aria-label={`${item.name}${selected ? "，已选择" : ""}`}
-        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-xl)] border bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-card)] ${
+        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-xl)] border bg-[var(--bg-card)] p-3 shadow-[var(--shadow-card)] ${
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
             : selected
-            ? "border-[var(--accent-primary)] bg-[color-mix(in_srgb,var(--surface-raised)_88%,var(--accent-primary-bg))] shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary)_18%,transparent)]"
+            ? "border-[var(--accent-primary)] bg-[color-mix(in_srgb,var(--accent-primary)_12%,var(--bg-surface))]"
             : "border-[var(--line-hairline)] hover:border-[var(--border-default)] hover:bg-[var(--bg-card-hover)]"
         }`}
         style={{ backdropFilter: "var(--card-backdrop-filter)" }}
@@ -241,7 +241,7 @@ function ItemCardComponent({
               </h3>
               {item.is_missing && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning)]"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning-ink)]"
                   title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
                 >
                   <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />

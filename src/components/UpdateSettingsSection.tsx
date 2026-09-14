@@ -38,8 +38,7 @@ export function UpdateSettingsSection() {
     <section className="surface-card-soft mt-6 p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-label">Update</div>
-          <h3 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">软件更新</h3>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)]">软件更新</h3>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
             当前版本 v{currentVersion || "…"} · 更新通过 GitHub Releases 分发
           </p>

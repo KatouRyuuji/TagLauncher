@@ -82,7 +82,7 @@ export function ItemDropActions({
         data-drop-item-remove-from-app={1}
         className={`pointer-events-auto flex min-h-[120px] items-center justify-center rounded-[var(--radius-lg)] border-2 border-dashed px-6 text-center shadow-[var(--shadow-sm)] ${
           rightActive
-            ? "border-[var(--color-danger)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]"
+            ? "border-[var(--color-danger)] bg-[var(--color-danger-bg)] text-[var(--color-danger-ink)]"
             : "border-[color-mix(in_srgb,var(--color-danger)_34%,transparent)] bg-[color-mix(in_srgb,var(--bg-card)_88%,transparent)] text-[var(--text-secondary)]"
         }`}
       >

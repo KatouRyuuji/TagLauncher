@@ -15,7 +15,7 @@ export function WorkspaceLoadError({
   return (
     <div className="flex-1 overflow-auto">
       <section className="empty-state-panel" role="alert" aria-labelledby="workspace-load-error-title">
-        <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--color-danger)_24%,var(--border-subtle))] bg-[var(--color-danger-bg)] text-[var(--color-danger)] shadow-[var(--shadow-sm)]">
+        <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--color-danger)_24%,var(--border-subtle))] bg-[var(--color-danger-bg)] text-[var(--color-danger-ink)] shadow-[var(--shadow-sm)]">
           <CircleAlert className="h-8 w-8" strokeWidth={1.6} aria-hidden="true" />
         </div>
         <div className="max-w-[480px]">

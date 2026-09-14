@@ -60,6 +60,8 @@ fn detect_type_classifies_real_filesystem_objects() {
     let cmd = common::write_file(&t.dir, "run.cmd", b"a");
     let ps1 = common::write_file(&t.dir, "s.ps1", b"a");
     let unknown = common::write_file(&t.dir, "data.xyz", b"a");
+    // 视频：空文件即可（分类只看扩展名，不解码）
+    let mp4 = common::write_file(&t.dir, "clip.MP4", b"mock-mp4");
 
     assert_eq!(item_service::detect_type(&dir), "folder");
     assert_eq!(item_service::detect_type(&mp3), "audio");
@@ -69,6 +71,7 @@ fn detect_type_classifies_real_filesystem_objects() {
     assert_eq!(item_service::detect_type(&cmd), "bat");
     assert_eq!(item_service::detect_type(&ps1), "ps1");
     assert_eq!(item_service::detect_type(&unknown), "exe");
+    assert_eq!(item_service::detect_type(&mp4), "video");
 
     // 经 add_item 落库后类型一致（走完整入库管线）。
     let conn = t.db.get_conn();
@@ -76,6 +79,8 @@ fn detect_type_classifies_real_filesystem_objects() {
     assert_eq!(item.item_type, "audio");
     let folder = item_service::add_item(&conn, &dir).expect("add folder");
     assert_eq!(folder.item_type, "folder");
+    let video = item_service::add_item(&conn, &mp4).expect("add mp4");
+    assert_eq!(video.item_type, "video");
 }
 
 /// get_items 返回全部对象，默认排序：收藏优先。

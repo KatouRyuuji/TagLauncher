@@ -68,4 +68,35 @@ describe("useFocusTrap", () => {
     rerender(<TrapDemo active={false} />);
     expect(outside).toHaveFocus();
   });
+
+  it("隐藏分区与禁用表单控件不进入 Tab 边界", async () => {
+    function Demo() {
+      const ref = useFocusTrap<HTMLDivElement>({ active: true });
+      return <div ref={ref}>
+        <div hidden><input autoFocus aria-label="隐藏区输入" /></div>
+        <fieldset disabled><input aria-label="禁用区输入" /></fieldset>
+        <button>可见操作</button>
+        <div style={{ display: "none" }}><button>隐藏操作</button></div>
+        <button tabIndex={-1}>程序聚焦</button>
+      </div>;
+    }
+    render(<Demo />);
+    const button = screen.getByRole("button", { name: "可见操作" });
+    expect(button).toHaveFocus();
+    await userEvent.tab();
+    expect(button).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(button).toHaveFocus();
+  });
+
+  it("暂时没有可用控件时焦点保留在弹层容器", async () => {
+    function Demo() {
+      const ref = useFocusTrap<HTMLDivElement>({ active: true });
+      return <div ref={ref} data-testid="loading-panel"><button disabled>加载中</button></div>;
+    }
+    render(<Demo />);
+    expect(screen.getByTestId("loading-panel")).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByTestId("loading-panel")).toHaveFocus();
+  });
 });

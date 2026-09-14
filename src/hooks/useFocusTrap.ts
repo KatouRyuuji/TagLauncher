@@ -11,13 +11,24 @@ import { useEffect, useRef } from "react";
 // ============================================================================
 
 const FOCUSABLE_SELECTOR = [
-  "button:not([disabled])",
+  "button",
   "[href]",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  '[tabindex]:not([tabindex="-1"])',
+  "input",
+  "select",
+  "textarea",
+  "[tabindex]",
 ].join(", ");
+
+function focusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter((element) => {
+    if (element.tabIndex < 0 || element.matches(':disabled, input[type="hidden"]') || element.closest("[hidden], [inert]")) return false;
+    if (getComputedStyle(element).visibility !== "visible") return false;
+    for (let parent: HTMLElement | null = element; parent; parent = parent.parentElement) {
+      if (getComputedStyle(parent).display === "none") return false;
+    }
+    return true;
+  });
+}
 
 interface UseFocusTrapOptions {
   active: boolean;
@@ -43,27 +54,33 @@ export function useFocusTrap<T extends HTMLElement>(options: UseFocusTrapOptions
     const container = containerRef.current;
     if (!container) return;
 
-    const focusables = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-    if (focusables.length === 0) return;
+    const focusables = focusableElements(container);
+    const previousTabIndex = container.getAttribute("tabindex");
+    if (previousTabIndex === null) container.tabIndex = -1;
 
     if (options.autoFocus !== false) {
-      const autofocusEl = container.querySelector<HTMLElement>("[autofocus]");
-      (autofocusEl ?? focusables[0]).focus();
+      const autofocusEl = focusables.find((element) => element.hasAttribute("autofocus"));
+      (autofocusEl ?? focusables[0] ?? container).focus();
     }
 
     const handler = (event: KeyboardEvent) => {
       if (event.key !== "Tab") return;
 
-      const currentFocusables = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-      if (currentFocusables.length === 0) return;
+      const currentFocusables = focusableElements(container);
+      if (currentFocusables.length === 0) {
+        event.preventDefault();
+        container.focus();
+        return;
+      }
 
       const first = currentFocusables[0];
       const last = currentFocusables[currentFocusables.length - 1];
 
-      if (event.shiftKey && document.activeElement === first) {
+      const activeIsFocusable = currentFocusables.includes(document.activeElement as HTMLElement);
+      if (event.shiftKey && (document.activeElement === first || !activeIsFocusable)) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && (document.activeElement === last || !activeIsFocusable)) {
         event.preventDefault();
         first.focus();
       }
@@ -72,8 +89,9 @@ export function useFocusTrap<T extends HTMLElement>(options: UseFocusTrapOptions
     container.addEventListener("keydown", handler);
     return () => {
       container.removeEventListener("keydown", handler);
+      if (previousTabIndex === null) container.removeAttribute("tabindex");
       const restoreTo = restoreSnapshotRef.current ?? previousActiveRef.current;
-      if (restoreTo instanceof HTMLElement) {
+      if (restoreTo instanceof HTMLElement && restoreTo.isConnected) {
         restoreTo.focus();
       }
     };

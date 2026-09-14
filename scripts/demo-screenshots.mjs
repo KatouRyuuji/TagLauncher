@@ -11,7 +11,7 @@
 // 快速预览（图片·音频·文件夹）/ 右键菜单（单选·多选·添加到文件柜子菜单）/ 标签编辑 /
 // 框选与批量工具条（含下拉菜单）/ 标签关系编辑 / 标签图谱 / 设置六区块（含主题下拉
 // 打开态）/ AI 打标（进行中 + 完成）/ 快捷键帮助 / F3 / 失效找回 / 批量移除确认 /
-// 空库引导 / 首屏骨架屏；主题形态：7 配色家族 × 亮/暗 + 霜靛亮/暗列表。
+// 空库引导 / 首屏骨架屏；主题形态：全部内置配色家族 × 亮/暗 + 霜靛亮/暗列表。
 //
 // 用法：
 //   npm run demo:shots            # 测试 + 截图到 宣传视频/e2e-review/（自动创建，覆盖旧图）
@@ -124,13 +124,14 @@ async function closeSettings(page) {
   await page.getByRole("dialog", { name: "设置工作台" }).waitFor({ state: "detached" });
 }
 
-async function scrollSettingsTo(page, chipLabel) {
+async function goToSettingsSection(page, chipLabel) {
   await page.locator('nav[aria-label="设置区块导航"] button', { hasText: chipLabel }).click();
   await settle(600);
 }
 
 async function selectTheme(page, themeLabel) {
   const dialog = page.getByRole("dialog", { name: "设置工作台" });
+  await page.locator('nav[aria-label="设置区块导航"]').getByRole("button", { name: "主题外观", exact: true }).click();
   // 主题选择器为自绘 SelectMenu：点开按钮后按选项文本选择
   // （弹层 portal 到 body，不在设置对话框 DOM 内，选项须从 page 范围定位）
   await dialog.locator('button[aria-label="当前主题"]').click();
@@ -139,14 +140,15 @@ async function selectTheme(page, themeLabel) {
   await settle(600);
 }
 
-/** 当前是否为暗色（窗口栏模式按钮的 aria-label 随状态变化） */
+/** 读取已生效的模式，截图命名与根节点状态保持一致。 */
 async function isDarkMode(page) {
-  return (await page.locator('button[aria-label="切换到亮色模式"]').count()) > 0;
+  return (await page.locator("html").getAttribute("data-scheme")) === "dark";
 }
 
 async function setMode(page, wantDark) {
   if ((await isDarkMode(page)) !== wantDark) {
     await page.locator(`button[aria-label="${wantDark ? "切换到暗色模式" : "切换到亮色模式"}"]`).click();
+    await page.waitForFunction((mode) => document.documentElement.dataset.scheme === mode, wantDark ? "dark" : "light");
     await settle(500);
   }
 }
@@ -243,9 +245,9 @@ async function featureTour(page) {
   await page.locator('[data-region="sidebar-nav"] button:has-text("新建标签")').click();
   await settle(400);
   await shot(page, "sidebar-tag-new-侧栏-新建标签");
-  await check("新建标签弹窗打开", page.getByRole("dialog", { name: "编辑标签" }).getByRole("heading", { name: "新建标签" }).isVisible());
+  await check("新建标签弹窗打开", page.getByRole("dialog", { name: "新建标签" }).getByRole("heading", { name: "新建标签" }).isVisible());
   await closeOverlays(page);
-  await page.getByRole("dialog", { name: "编辑标签" }).waitFor({ state: "detached" });
+  await page.getByRole("dialog", { name: "新建标签" }).waitFor({ state: "detached" });
 
   // 03d 侧栏 - 新建文件柜（文件柜页签 → 编辑态 → 回到标签页签）
   await page.locator('[data-region="sidebar"] button:has-text("文件柜")').first().click();
@@ -253,9 +255,9 @@ async function featureTour(page) {
   await page.locator('[data-region="sidebar-nav"] button:has-text("新建文件柜")').click();
   await settle(400);
   await shot(page, "sidebar-cabinet-new-侧栏-新建文件柜");
-  await check("新建文件柜弹窗打开", page.getByRole("dialog", { name: "编辑标签" }).getByRole("heading", { name: "新建文件柜" }).isVisible());
+  await check("新建文件柜弹窗打开", page.getByRole("dialog", { name: "新建文件柜" }).getByRole("heading", { name: "新建文件柜" }).isVisible());
   await closeOverlays(page);
-  await page.getByRole("dialog", { name: "编辑标签" }).waitFor({ state: "detached" });
+  await page.getByRole("dialog", { name: "新建文件柜" }).waitFor({ state: "detached" });
   await page.locator('[data-region="sidebar"] button:has-text("标签")').first().click();
   await settle(300);
 
@@ -494,7 +496,7 @@ async function featureTour(page) {
   await page.locator('[data-region="sidebar"] button[aria-label="打开标签关系图"]').click();
   await settle(900);
   await shot(page, "tag-graph-标签关系图谱");
-  await check("标签图谱渲染 LEVEL 分层", page.getByText(/LEVEL/i).first().isVisible());
+  await check("标签图谱渲染层级", page.getByText(/第\s*1\s*层/).first().isVisible());
   await closeOverlays(page);
 
   // 25-30 设置面板各区块
@@ -512,7 +514,7 @@ async function featureTour(page) {
   await settle(250);
   await check("主题下拉已收起", (await page.locator('[role="listbox"][aria-label="当前主题"]').count()) === 0);
 
-  await scrollSettingsTo(page, "AI");
+  await goToSettingsSection(page, "AI");
   await shot(page, "settings-ai-设置-AI自动打标");
 
   // 26 AI 一键打标（mock 建议 → 真实编排进度：先截进行中，再等完成）
@@ -527,13 +529,13 @@ async function featureTour(page) {
   await page.getByRole("dialog", { name: "AI 打标进度" }).getByRole("button", { name: "完成" }).click();
   await settle();
 
-  await scrollSettingsTo(page, "数据管理");
+  await goToSettingsSection(page, "数据管理");
   await shot(page, "settings-data-设置-数据管理");
-  await scrollSettingsTo(page, "云同步");
+  await goToSettingsSection(page, "云同步");
   await shot(page, "settings-sync-设置-云同步");
-  await scrollSettingsTo(page, "更新");
+  await goToSettingsSection(page, "更新");
   await shot(page, "settings-update-设置-在线更新");
-  await scrollSettingsTo(page, "扩展");
+  await goToSettingsSection(page, "扩展");
   await shot(page, "settings-mods-设置-扩展Mod管理");
   await closeSettings(page);
 
@@ -580,13 +582,14 @@ async function featureTour(page) {
   await check("重新进入后演示数据复位为 10 项", (await itemCount(page)) === 10);
 }
 
-// ---- 主题形态巡演：7 配色家族 × 亮/暗 网格 + 霜靛亮/暗列表 ----
+// ---- 主题形态巡演：全部配色家族 × 亮/暗 网格 + 霜靛亮/暗列表 ----
 
 async function themeTour(page) {
   // 等上一步（失效找回）的 toast 驻留期结束，避免带入主题截图
   await page.locator(".toast-enter").first().waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
   await settle(500);
   await openSettings(page);
+  await page.locator('nav[aria-label="设置区块导航"]').getByRole("button", { name: "主题外观", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "设置工作台" });
   // 收集「内置主题」分组下全部配色家族名（自绘 SelectMenu 的 option 文本）
   await dialog.locator('button[aria-label="当前主题"]').click();
@@ -640,7 +643,8 @@ async function main() {
       locale: "zh-CN",
     });
     const page = await context.newPage();
-    page.on("pageerror", (err) => console.warn("  [pageerror]", err.message));
+    const pageErrors = [];
+    page.on("pageerror", (err) => { pageErrors.push(err.message); console.warn("  [pageerror]", err.message); });
 
     console.log("打开 demo 应用…");
     await page.goto(BASE, { waitUntil: "networkidle" });
@@ -650,9 +654,10 @@ async function main() {
     await featureTour(page);
     console.log("主题形态巡演：");
     await themeTour(page);
+    await check("巡演没有页面运行时错误", pageErrors.length === 0);
 
     console.log(`\n断言：${passCount} 通过 / ${failCount} 失败；截图：${shotIndex} 张 → ${OUT_DIR}`);
-    if (failCount > 0) process.exit(1);
+    if (failCount > 0) process.exitCode = 1;
   } finally {
     await browser.close();
     server?.kill();

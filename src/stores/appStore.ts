@@ -104,7 +104,10 @@ interface AppState {
   cabinets: Cabinet[];
 
   // ---- 筛选状态（四者互斥） ----
+  /** 正选标签：结果须同时包含全部已选标签（AND） */
   selectedTagIds: number[];
+  /** 反选标签：结果排除包含任一已反选标签的对象；与正选不重叠 */
+  excludedTagIds: number[];
   selectedCabinetId: number | null;
   showFavorites: boolean;
   showRecent: boolean;
@@ -138,6 +141,8 @@ interface AppState {
   setCabinets: (cabinets: Cabinet[]) => void;
   setSelectedTagIds: (ids: number[]) => void;
   toggleTagSelection: (id: number) => void;
+  /** 右键标签的反选切换：反选与正选互斥，加入反选时从正选移除 */
+  toggleTagExclusion: (id: number) => void;
   setSelectedCabinetId: (id: number | null) => void;
   setSidebarTab: (tab: SidebarTab) => void;
   setShowFavorites: (v: boolean) => void;
@@ -173,6 +178,7 @@ export const useAppStore = create<AppState>((set, get) => {
   tagRelations: [],
   cabinets: [],
   selectedTagIds: [],
+  excludedTagIds: [],
   selectedCabinetId: null,
   sidebarTab: "tags",
   showFavorites: false,
@@ -192,20 +198,40 @@ export const useAppStore = create<AppState>((set, get) => {
   setTags: (tags) => set((state) => sameTags(state.tags, tags) ? state : { tags }),
   setTagRelations: (relations) => set((state) => sameRelations(state.tagRelations, relations) ? state : { tagRelations: relations }),
   setCabinets: (cabinets) => set((state) => sameCabinets(state.cabinets, cabinets) ? state : { cabinets }),
-  setSelectedTagIds: (ids) => set((state) =>
-    sameNumberArray(state.selectedTagIds, ids) &&
-    state.selectedCabinetId === null &&
-    !state.showFavorites &&
-    !state.showRecent
+  setSelectedTagIds: (ids) => set((state) => {
+    // 空列表 = 回到「全部标签」，正选反选一起清空；非空时剔除与反选的重叠，维持互斥
+    const nextExcluded = ids.length === 0
+      ? []
+      : state.excludedTagIds.filter((id) => !ids.includes(id));
+    const unchanged = sameNumberArray(state.selectedTagIds, ids) &&
+      sameNumberArray(state.excludedTagIds, nextExcluded) &&
+      state.selectedCabinetId === null &&
+      !state.showFavorites &&
+      !state.showRecent;
+    return unchanged
       ? state
-      : { selectedTagIds: ids, selectedCabinetId: null, showFavorites: false, showRecent: false },
-  ),
+      : { selectedTagIds: ids, excludedTagIds: nextExcluded, selectedCabinetId: null, showFavorites: false, showRecent: false };
+  }),
 
   toggleTagSelection: (id) =>
     set((state) => ({
       selectedTagIds: state.selectedTagIds.includes(id)
         ? state.selectedTagIds.filter((i) => i !== id)
         : [...state.selectedTagIds, id],
+      // 正选与反选互斥：点选即撤销该标签的反选
+      excludedTagIds: state.excludedTagIds.filter((i) => i !== id),
+      selectedCabinetId: null,
+      showFavorites: false,
+      showRecent: false,
+    })),
+
+  toggleTagExclusion: (id) =>
+    set((state) => ({
+      excludedTagIds: state.excludedTagIds.includes(id)
+        ? state.excludedTagIds.filter((i) => i !== id)
+        : [...state.excludedTagIds, id],
+      // 反选与正选互斥：加入反选时从正选移除
+      selectedTagIds: state.selectedTagIds.filter((i) => i !== id),
       selectedCabinetId: null,
       showFavorites: false,
       showRecent: false,
@@ -214,10 +240,11 @@ export const useAppStore = create<AppState>((set, get) => {
   setSelectedCabinetId: (id) => set((state) =>
     state.selectedCabinetId === id &&
     state.selectedTagIds.length === 0 &&
+    state.excludedTagIds.length === 0 &&
     !state.showFavorites &&
     !state.showRecent
       ? state
-      : { selectedCabinetId: id, selectedTagIds: [], showFavorites: false, showRecent: false },
+      : { selectedCabinetId: id, selectedTagIds: [], excludedTagIds: [], showFavorites: false, showRecent: false },
   ),
 
   setSidebarTab: (tab) =>
@@ -226,27 +253,29 @@ export const useAppStore = create<AppState>((set, get) => {
         ? state.sidebarTab === tab && state.selectedCabinetId === null && !state.showFavorites && !state.showRecent
           ? state
           : { sidebarTab: tab, selectedCabinetId: null, showFavorites: false, showRecent: false }
-        : state.sidebarTab === tab && state.selectedTagIds.length === 0 && !state.showFavorites && !state.showRecent
+        : state.sidebarTab === tab && state.selectedTagIds.length === 0 && state.excludedTagIds.length === 0 && !state.showFavorites && !state.showRecent
           ? state
-          : { sidebarTab: tab, selectedTagIds: [], showFavorites: false, showRecent: false },
+          : { sidebarTab: tab, selectedTagIds: [], excludedTagIds: [], showFavorites: false, showRecent: false },
     ),
 
   setShowFavorites: (v) => set((state) =>
     state.showFavorites === v &&
     state.selectedCabinetId === null &&
     state.selectedTagIds.length === 0 &&
+    state.excludedTagIds.length === 0 &&
     !state.showRecent
       ? state
-      : { showFavorites: v, selectedCabinetId: null, selectedTagIds: [], showRecent: false },
+      : { showFavorites: v, selectedCabinetId: null, selectedTagIds: [], excludedTagIds: [], showRecent: false },
   ),
 
   setShowRecent: (v) => set((state) =>
     state.showRecent === v &&
     state.selectedCabinetId === null &&
     state.selectedTagIds.length === 0 &&
+    state.excludedTagIds.length === 0 &&
     !state.showFavorites
       ? state
-      : { showRecent: v, selectedCabinetId: null, selectedTagIds: [], showFavorites: false },
+      : { showRecent: v, selectedCabinetId: null, selectedTagIds: [], excludedTagIds: [], showFavorites: false },
   ),
 
   // 直接设置搜索词（跳过防抖）时同步即时输入值，保证"防抖待生效"指示不会误亮。
@@ -296,6 +325,7 @@ export const useAppStore = create<AppState>((set, get) => {
   clearWorkspaceFilters: () => {
     set({
       selectedTagIds: [],
+      excludedTagIds: [],
       selectedCabinetId: null,
       showFavorites: false,
       showRecent: false,

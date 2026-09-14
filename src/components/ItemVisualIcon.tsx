@@ -6,17 +6,20 @@ import {
   FileAudio,
   FileCode,
   FileImage,
+  Film,
   Folder,
   SquareTerminal,
   type LucideIcon,
 } from "lucide-react";
 import type { ItemWithTags } from "../types";
 import { getTypeLabel } from "../lib/itemUtils";
+import { useItemVisual } from "../hooks/useItemVisual";
 
 const FALLBACK_ICONS: Record<string, LucideIcon> = {
   folder: Folder,
   image: FileImage,
   audio: FileAudio,
+  video: Film,
   exe: AppWindow,
   bat: SquareTerminal,
   ps1: FileCode,
@@ -24,7 +27,7 @@ const FALLBACK_ICONS: Record<string, LucideIcon> = {
 
 export function ItemVisualIcon({ item, emojiClass, imageClass }: { item: ItemWithTags; emojiClass: string; imageClass: string }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const iconPath = item.icon_path?.trim();
+  const iconPath = useItemVisual(item);
 
   // 图标路径不变时复用同一资源 URL，避免大列表每次渲染重复做路径转换
   const imageSrc = useMemo(
@@ -43,6 +46,7 @@ export function ItemVisualIcon({ item, emojiClass, imageClass }: { item: ItemWit
         alt={`${item.name} 缩略图`}
         className={imageClass}
         loading="lazy"
+        decoding="async"
         onError={() => setImageFailed(true)}
         draggable={false}
       />

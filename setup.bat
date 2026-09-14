@@ -150,6 +150,9 @@ if errorlevel 1 (
         set "SETUP_FAILED=1"
     ) else (
         echo   npm dependencies installed.
+        :: tauri-build validates bundle.externalBin on every build; fresh clones need
+        :: the sidecar placeholder or the first compile fails.
+        call node scripts/ensure-cli-placeholder.mjs
     )
 )
 echo.

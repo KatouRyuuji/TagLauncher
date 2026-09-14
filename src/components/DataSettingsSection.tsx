@@ -114,8 +114,7 @@ export function DataSettingsSection() {
 
   return (
     <section className="surface-card-soft mt-6 p-5">
-      <div className="text-label">Data</div>
-      <h3 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">数据管理</h3>
+      <h3 className="text-lg font-semibold text-[var(--text-primary)]">数据管理</h3>
       <p className="mt-1 text-sm text-[var(--text-muted)]">自定义数据目录，导出、导入与备份应用数据</p>
 
       <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3">

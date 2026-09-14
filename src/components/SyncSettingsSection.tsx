@@ -3,7 +3,7 @@ import * as db from "../lib/db";
 import type { SyncConfig, RemoteBackup } from "../lib/db";
 import { formatBytes } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
-import { SettingsField, inputClass } from "./SettingsField";
+import { SettingsField, SettingsToggle, inputClass } from "./SettingsField";
 import { useAppStore } from "../stores/appStore";
 
 const EMPTY_CONFIG: SyncConfig = {
@@ -152,24 +152,23 @@ export function SyncSettingsSection() {
     <section className="surface-card-soft mt-6 p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-label">Cloud Sync</div>
-          <h3 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">云同步（WebDAV）</h3>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)]">云同步（WebDAV）</h3>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
             备份到 NAS、Nextcloud、坚果云等任意 WebDAV 服务，数据仍全部由你掌控
           </p>
         </div>
         <span
-          className="mt-1 shrink-0 rounded-none px-2.5 py-1 text-xs font-medium"
+          className="mt-1 shrink-0 rounded-[var(--radius-full)] px-2.5 py-1 text-xs font-medium"
           style={{
             background: configured ? "var(--status-success-bg)" : "var(--bg-hover)",
-            color: configured ? "var(--color-success)" : "var(--text-muted)",
+            color: configured ? "var(--color-success-ink)" : "var(--text-muted)",
           }}
         >
           {configured ? "已配置" : "未配置"}
         </span>
       </div>
 
-      <div className="mt-4 space-y-3">
+      <fieldset disabled={!loaded || busy !== null} className="mt-4 min-w-0 space-y-3">
         <SettingsField label="WebDAV 服务器地址">
           <input
             type="text"
@@ -181,12 +180,12 @@ export function SyncSettingsSection() {
           />
         </SettingsField>
         {insecureHttp && (
-          <p className="text-xs text-[var(--color-warning)]">
+          <p className="text-xs text-[var(--color-warning-ink)]">
             当前为 http 明文连接：凭据与数据不加密传输，仅建议在可信局域网（如家庭 NAS）使用。
           </p>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <SettingsField label="用户名">
             <input
               type="text"
@@ -198,9 +197,10 @@ export function SyncSettingsSection() {
               className={inputClass}
             />
           </SettingsField>
-          <SettingsField label="密码">
+          <SettingsField label="密码" htmlFor="sync-password">
             <div className="flex gap-2">
               <input
+                id="sync-password"
                 type={showPassword ? "text" : "password"}
                 value={config.password}
                 onChange={(e) => update("password", e.target.value)}
@@ -227,29 +227,10 @@ export function SyncSettingsSection() {
           />
         </SettingsField>
 
-        <button
-          type="button"
-          onClick={() => update("autoSync", !config.autoSync)}
-          aria-pressed={config.autoSync}
-          className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3 text-left"
-        >
-          <span>
-            <span className="block text-sm font-medium text-[var(--text-primary)]">自动云备份</span>
-            <span className="block text-xs text-[var(--text-muted)]">
-              启动时后台自动备份到云端（距上次备份超过 24 小时才触发）· 上次备份：{formatLastSync(config.lastSyncTs)}
-            </span>
-          </span>
-          <span
-            className="relative h-6 w-11 shrink-0 rounded-none transition-colors"
-            style={{ background: config.autoSync ? "var(--accent-primary)" : "var(--border-medium)" }}
-          >
-            <span
-              className="absolute top-0.5 h-5 w-5 rounded-none bg-white transition-[left]"
-              style={{ left: config.autoSync ? "22px" : "2px" }}
-            />
-          </span>
-        </button>
-      </div>
+        <SettingsToggle checked={config.autoSync} onChange={(value) => update("autoSync", value)}
+          title="自动云备份" disabled={!loaded}
+          description={`启动时检查，距上次备份超过 24 小时后执行。上次备份：${formatLastSync(config.lastSyncTs)}`} />
+      </fieldset>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => void handleSave()} disabled={!loaded || busy !== null} className="action-button action-button-primary px-4 text-xs disabled:opacity-50">

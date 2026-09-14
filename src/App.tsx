@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { lazy, Suspense, useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Import } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
@@ -6,17 +6,12 @@ import { SearchBar } from "./components/SearchBar";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemListView } from "./components/ItemListView";
 import { WorkspaceLoadError } from "./components/WorkspaceEmptyState";
-import { WelcomeModal } from "./components/WelcomeModal";
 import { ThemeProvider } from "./components/ThemeProvider";
-import { SettingsPanel } from "./components/SettingsPanel";
 import { MigrationDialog } from "./components/MigrationDialog";
 import { InternalDragGhost, ItemDropActions } from "./components/InternalDragOverlays";
 import { BatchSelectionToolbar } from "./components/BatchSelectionToolbar";
 import { RemoveFromAppConfirmDialog } from "./components/RemoveFromAppConfirmDialog";
 import { AiTaggingModal } from "./components/AiTaggingModal";
-import { CommandPalette } from "./components/CommandPalette";
-import { QuickPreview } from "./components/QuickPreview";
-import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { StatusBar } from "./components/StatusBar";
 import { TagFilterBar } from "./components/TagFilterBar";
 import { useItems } from "./hooks/useItems";
@@ -29,7 +24,7 @@ import { useItemTagActions } from "./hooks/useItemTagActions";
 import { useItemRemoval } from "./hooks/useItemRemoval";
 import { useBatchSelection } from "./hooks/useBatchSelection";
 import { useAiTagOrchestration } from "./hooks/useAiTagOrchestration";
-import { TagGraphView } from "./components/TagGraphView";
+import { useCardPointerHighlight } from "./hooks/useCardPointerHighlight";
 import { useAppStore } from "./stores/appStore";
 import { useInternalDragStore } from "./stores/internalDragStore";
 import { loadSynonyms } from "./lib/synonyms";
@@ -46,6 +41,14 @@ import { FloatingPanels } from "./components/FloatingPanels";
 import * as db from "./lib/db";
 
 const WELCOME_HIDE_KEY = "taglauncher.hide_welcome_modal";
+
+// 低频界面在首次打开时加载，首屏只解析工作台所需代码。
+const WelcomeModal = lazy(() => import("./components/WelcomeModal").then((module) => ({ default: module.WelcomeModal })));
+const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
+const CommandPalette = lazy(() => import("./components/CommandPalette").then((module) => ({ default: module.CommandPalette })));
+const QuickPreview = lazy(() => import("./components/QuickPreview").then((module) => ({ default: module.QuickPreview })));
+const ShortcutsHelp = lazy(() => import("./components/ShortcutsHelp").then((module) => ({ default: module.ShortcutsHelp })));
+const TagGraphView = lazy(() => import("./components/TagGraphView").then((module) => ({ default: module.TagGraphView })));
 
 function App() {
   const {
@@ -76,6 +79,7 @@ function App() {
   const tagGraphOpen = useAppStore((state) => state.tagGraphOpen);
   const commandPaletteOpen = useAppStore((state) => state.commandPaletteOpen);
   const shortcutsHelpOpen = useAppStore((state) => state.shortcutsHelpOpen);
+  const previewItemId = useAppStore((state) => state.previewItemId);
   const restartOverlay = useAppStore((state) => state.restartOverlay);
   const clearWorkspaceFilters = useAppStore((state) => state.clearWorkspaceFilters);
   const cabinets = useAppStore((state) => state.cabinets);
@@ -85,20 +89,7 @@ function App() {
 
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
 
-  // B 语言签名交互：Reveal 描边跟随——指针位置写入
-  // 悬停卡片的 --reveal-x/--reveal-y；CSS 仅在 data-shape="b" 下渲染描边微光，
-  // A 主题下委托空转（变量写入无副作用）。
-  useEffect(() => {
-    const onMove = (event: PointerEvent) => {
-      const target = event.target instanceof Element ? event.target.closest(".item-card-render-scope") : null;
-      if (!(target instanceof HTMLElement)) return;
-      const rect = target.getBoundingClientRect();
-      target.style.setProperty("--reveal-x", `${event.clientX - rect.left}px`);
-      target.style.setProperty("--reveal-y", `${event.clientY - rect.top}px`);
-    };
-    window.addEventListener("pointermove", onMove, { passive: true });
-    return () => window.removeEventListener("pointermove", onMove);
-  }, []);
+  useCardPointerHighlight();
 
   // 向 Mod 同步当前复选集合，使 Mod 可读取选择上下文并监听变化（onSelectionChanged）
   useEffect(() => {
@@ -463,21 +454,33 @@ function App() {
         <InternalDragGhost />
       </main>
       </div>
-      <WelcomeModal open={showWelcomeModal} onClose={handleCloseWelcome} />
-      <CommandPalette
-        items={allItems}
-        onLaunch={(id) => { void handleLaunchItem(id); }}
-        onAddItems={addItems}
-        onRefresh={refresh}
-        onOpenSettings={() => setShowSettings(true)}
-        onOpenAbout={handleOpenAbout}
-      />
-      <QuickPreview items={allItems} onLaunch={(id) => { void handleLaunchItem(id); }} />
-      <ShortcutsHelp />
+      <Suspense fallback={null}>
+        {showWelcomeModal && <WelcomeModal open onClose={handleCloseWelcome} />}
+      </Suspense>
+      <Suspense fallback={null}>
+        {commandPaletteOpen && <CommandPalette
+          items={allItems}
+          onLaunch={(id) => { void handleLaunchItem(id); }}
+          onAddItems={addItems}
+          onRefresh={refresh}
+          onOpenSettings={() => setShowSettings(true)}
+          onOpenAbout={handleOpenAbout}
+        />}
+      </Suspense>
+      <Suspense fallback={null}>
+        {previewItemId !== null && <QuickPreview items={allItems} onLaunch={(id) => { void handleLaunchItem(id); }} />}
+      </Suspense>
+      <Suspense fallback={null}>
+        {shortcutsHelpOpen && <ShortcutsHelp />}
+      </Suspense>
       <RemoveFromAppConfirmDialog {...removeDialog} />
-      <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
+      <Suspense fallback={null}>
+        {showSettings && <SettingsPanel open onClose={() => setShowSettings(false)} />}
+      </Suspense>
       <AiTaggingModal progress={aiTagState} onCancel={aiTagCancel} onClose={aiTagReset} />
-      {tagGraphOpen && <TagGraphView allItems={allItems} />}
+      <Suspense fallback={null}>
+        {tagGraphOpen && <TagGraphView allItems={allItems} />}
+      </Suspense>
       <FloatingPanels />
       <ToastContainer />
       {/* 阻断式重启遮罩：数据目录切换/导入/云端恢复成功后激活，自动重启；

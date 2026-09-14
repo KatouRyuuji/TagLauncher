@@ -55,6 +55,8 @@ interface SearchFieldsCacheEntry {
 const searchFieldsCache = new Map<number, SearchFieldsCacheEntry>();
 /** 缓存上限：超限淘汰最旧一半（保留热点），同时避免对象删除后条目长期残留 */
 const SEARCH_FIELDS_CACHE_LIMIT = 20000;
+const tagTextCache = new Map<string, SearchableText>();
+const TAG_TEXT_CACHE_LIMIT = 4096;
 const queryExprCache = new Map<string, Expr | null>();
 
 type Token =
@@ -97,6 +99,24 @@ function deriveEnglishFields(name: string): EnglishNameFields {
   return { initials, compact, wordStarts };
 }
 
+/** 同名标签跨对象复用拼音与英文分词结果，改名后按新文本重新生成。 */
+function getTagSearchText(name: string): SearchableText {
+  const cached = tagTextCache.get(name);
+  if (cached) return cached;
+  const entry = {
+    name: normalize(name),
+    pinyinName: normalize(toPinyinText(name)),
+    pinyinInitials: normalize(toPinyinInitials(name)),
+    englishName: deriveEnglishFields(name),
+  };
+  if (tagTextCache.size >= TAG_TEXT_CACHE_LIMIT) {
+    const oldest = tagTextCache.keys().next();
+    if (!oldest.done) tagTextCache.delete(oldest.value);
+  }
+  tagTextCache.set(name, entry);
+  return entry;
+}
+
 function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
   const tagsKey = item.tags.map((tag) => `${tag.id}:${tag.name}`).join("|");
   const cached = searchFieldsCache.get(item.id);
@@ -107,22 +127,17 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
     return { item, fields: cached.fields };
   }
 
-  const tagEntries = item.tags.map((tag) => ({
-    name: tag.name,
-    pinyinName: toPinyinText(tag.name),
-    pinyinInitials: toPinyinInitials(tag.name),
-    englishName: deriveEnglishFields(tag.name),
-  }));
+  const tagEntries = item.tags.map((tag) => getTagSearchText(tag.name));
 
   const fields = {
     nameEntry: {
-      name: item.name,
-      pinyinName: toPinyinText(item.name),
-      pinyinInitials: toPinyinInitials(item.name),
+      name: normalize(item.name),
+      pinyinName: normalize(toPinyinText(item.name)),
+      pinyinInitials: normalize(toPinyinInitials(item.name)),
       englishName: deriveEnglishFields(item.name),
     },
     // 去盘符路径随拼音一起缓存（与 scoreName 的弱辅助匹配一致），避免每次匹配重跑正则
-    pathWithoutDrive: item.path.replace(/^[a-z]:[\\/]+/i, ""),
+    pathWithoutDrive: normalize(item.path.replace(/^[a-z]:[\\/]+/i, "")),
     tagEntries,
   };
 
@@ -144,23 +159,27 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
 }
 
 /**
- * 按选中标签筛选（AND 交集）。
- * 传入 `expand` 时支持图状层级：每个选中标签的命中条件 = 对象拥有 {该标签 ∪ 其后代} 中任一标签
- * （选中父标签即并入所有后代对象）；不传 `expand` 时退化为精确标签匹配。
+ * 按标签筛选：正选为 AND 交集，反选为排除（命中任一反选标签即剔除）。
+ * 传入 `expand` 时支持图状层级：每个正选标签的命中条件 = 对象拥有 {该标签 ∪ 其后代} 中任一标签
+ * （选中父标签即并入所有后代对象）；反选对称地走同一后代闭包（排除父标签同时排除后代对象）。
+ * 不传 `expand` 时退化为精确标签匹配。
  */
 export function filterItemsByTags(
   items: ItemWithTags[],
   selectedTagIds: number[],
   expand?: (tagId: number) => Set<number>,
+  excludedTagIds: number[] = [],
 ): ItemWithTags[] {
-  if (selectedTagIds.length === 0) return items;
+  if (selectedTagIds.length === 0 && excludedTagIds.length === 0) return items;
+  const matches = (item: ItemWithTags, tid: number) => {
+    const allowed = expand ? expand(tid) : null;
+    return allowed
+      ? item.tags.some((t) => allowed.has(t.id))
+      : item.tags.some((t) => t.id === tid);
+  };
   return items.filter((item) =>
-    selectedTagIds.every((tid) => {
-      const allowed = expand ? expand(tid) : null;
-      return allowed
-        ? item.tags.some((t) => allowed.has(t.id))
-        : item.tags.some((t) => t.id === tid);
-    }),
+    selectedTagIds.every((tid) => matches(item, tid)) &&
+    !excludedTagIds.some((tid) => matches(item, tid)),
   );
 }
 
@@ -423,39 +442,33 @@ function englishPrefixEditDistance(source: string, query: string): number | null
   // 短词（<5 字母）收紧：切片首字符与查询首字符一致，过滤 bode→node 之类误命中
   if (query.length < 5 && sourcePrefix[0] !== query[0]) return null;
 
-  let prev = Array.from({ length: query.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= sourcePrefix.length; i += 1) {
-    const next = [i];
-    for (let j = 1; j <= query.length; j += 1) {
-      const cost = sourcePrefix[i - 1] === query[j - 1] ? 0 : 1;
-      next[j] = Math.min(
-        next[j - 1] + 1,
-        prev[j] + 1,
-        prev[j - 1] + cost,
-      );
+  // 只区分 0、1 与超过 1 次编辑，双指针扫描即可确定结果。
+  let sourceIndex = 0;
+  let queryIndex = 0;
+  let edits = 0;
+  while (sourceIndex < sourcePrefix.length && queryIndex < query.length) {
+    if (sourcePrefix[sourceIndex] === query[queryIndex]) {
+      sourceIndex++;
+      queryIndex++;
+      continue;
     }
-    prev = next;
+    if (++edits > 1) return 2;
+    if (sourcePrefix.length >= query.length) sourceIndex++;
+    if (query.length >= sourcePrefix.length) queryIndex++;
   }
-
-  return prev[query.length];
+  return edits + Number(sourceIndex < sourcePrefix.length || queryIndex < query.length);
 }
 
 /** CJK 统一表意文字与假名：命中即按子串匹配（见 prefixMatches） */
 const CJK_QUERY_RE = /[぀-ヿ㐀-䶿一-鿿豈-﫿]/;
 
 function prefixMatches(value: string, query: string): boolean {
-  const normalizedValue = normalize(value);
-  const normalizedQuery = normalize(query);
-  if (!normalizedQuery) return true;
-  if (normalizedValue.startsWith(normalizedQuery)) return true;
+  if (!query) return true;
+  if (value.startsWith(query)) return true;
   // CJK 查询按子串匹配：中文对象名常以品牌/艺术家等前缀开头（如「周杰伦 - 晴天」），
   // 仅前缀匹配会漏掉名称中后段的命中；拼音/首字母通道仍保持前缀匹配以控制噪声。
-  if (CJK_QUERY_RE.test(normalizedQuery) && normalizedValue.includes(normalizedQuery)) return true;
-  return isEnglishTypoMatch(normalizedValue, normalizedQuery);
-}
-
-function strictMatches(value: string, query: string): boolean {
-  return normalize(value) === normalize(query);
+  if (CJK_QUERY_RE.test(query) && value.includes(query)) return true;
+  return isEnglishTypoMatch(value, query);
 }
 
 /** 缩写弱匹配的查询门槛：纯小写字母且长度 ≥2（单字母与含数字/符号的查询噪声过大，不参与） */
@@ -485,14 +498,13 @@ function isCompactSubsequence(fields: EnglishNameFields, query: string): boolean
 
 /** 英文缩写弱命中：首字母串前缀（vsc）或连写串子序列（vscode） */
 function scoreEnglishAbbrev(fields: EnglishNameFields, query: string): MatchScore {
-  const q = normalize(query);
-  if (fields.compact === "" || !ENGLISH_ABBR_QUERY_RE.test(q)) return 0;
-  if (fields.initials.startsWith(q)) return 1;
-  return isCompactSubsequence(fields, q) ? 1 : 0;
+  if (fields.compact === "" || !ENGLISH_ABBR_QUERY_RE.test(query)) return 0;
+  if (fields.initials.startsWith(query)) return 1;
+  return isCompactSubsequence(fields, query) ? 1 : 0;
 }
 
 function scoreText(text: SearchableText, query: string, strict: boolean): MatchScore {
-  if (strict) return strictMatches(text.name, query) ? 2 : 0;
+  if (strict) return text.name === query ? 2 : 0;
 
   if (
     prefixMatches(text.name, query) ||
@@ -524,42 +536,46 @@ function scoreTag(entry: SearchIndexEntry, query: string, strict: boolean): Matc
   return best;
 }
 
-function scoreTerm(entry: SearchIndexEntry, query: string, mode: SearchMode, strict: boolean): MatchScore {
-  if (!query.trim()) return 2;
-
-  const queries = strict ? [query] : expandQuery(query);
-
+function scoreTerm(entry: SearchIndexEntry, queries: string[], mode: SearchMode, strict: boolean): MatchScore {
   let best: MatchScore = 0;
   for (const term of queries) {
-    const score =
-      mode === "name"
-        ? scoreName(entry, term, strict)
-        : mode === "tag"
-          ? scoreTag(entry, term, strict)
-          : (Math.max(scoreName(entry, term, strict), scoreTag(entry, term, strict)) as MatchScore);
+    if (!term) return 2;
+    let score = mode === "tag" ? scoreTag(entry, term, strict) : scoreName(entry, term, strict);
+    if (mode === "all" && score !== 2) score = Math.max(score, scoreTag(entry, term, strict)) as MatchScore;
     if (score === 2) return 2;
     if (score > best) best = score;
   }
   return best;
 }
 
-function scoreExpr(entry: SearchIndexEntry, expr: Expr, mode: SearchMode): MatchScore {
-  if (expr.type === "term") {
-    return scoreTerm(entry, expr.value, mode, expr.strict);
-  }
+type Scorer = (entry: SearchIndexEntry) => MatchScore;
 
+/** 查询词与同义词在本次搜索开始时解析一次，逐对象循环只做匹配。 */
+function compileScorer(expr: Expr, mode: SearchMode): Scorer {
+  if (expr.type === "term") {
+    const queries = (expr.strict ? [expr.value] : expandQuery(expr.value)).map(normalize);
+    return (entry) => scoreTerm(entry, queries, mode, expr.strict);
+  }
+  const scoreLeft = compileScorer(expr.left, mode);
+  const scoreRight = compileScorer(expr.right, mode);
   if (expr.type === "and") {
-    const left = scoreExpr(entry, expr.left, mode);
-    // 左支落空即整体落空（短路）；两侧均命中时整体强度取较弱一侧
-    return left === 0 ? 0 : (Math.min(left, scoreExpr(entry, expr.right, mode)) as MatchScore);
+    return (entry) => {
+      const left = scoreLeft(entry);
+      return left === 0 ? 0 : Math.min(left, scoreRight(entry)) as MatchScore;
+    };
   }
 
   if (expr.type === "or") {
-    return Math.max(scoreExpr(entry, expr.left, mode), scoreExpr(entry, expr.right, mode)) as MatchScore;
+    return (entry) => {
+      const left = scoreLeft(entry);
+      return left === 2 ? 2 : Math.max(left, scoreRight(entry)) as MatchScore;
+    };
   }
 
-  const left = scoreExpr(entry, expr.left, mode);
-  return left > 0 && scoreExpr(entry, expr.right, mode) === 0 ? left : 0;
+  return (entry) => {
+    const left = scoreLeft(entry);
+    return left > 0 && scoreRight(entry) === 0 ? left : 0;
+  };
 }
 
 export function searchWithIndex(index: SearchIndex, query: string): ItemWithTags[] {
@@ -572,6 +588,7 @@ export function searchWithIndex(index: SearchIndex, query: string): ItemWithTags
 
   const expr = parseQuery(normalized);
   if (!expr) return index.entries.map((entry) => entry.item);
+  const scoreEntry = compileScorer(expr, index.mode);
 
   // 排序契约：收藏绝对置顶（设计 step8）；收藏组与非收藏组内部，强命中排在弱命中
   // （英文缩写/连写子序列）之前，各桶内保持索引原相对顺序（等价稳定排序）。
@@ -581,7 +598,7 @@ export function searchWithIndex(index: SearchIndex, query: string): ItemWithTags
   const restStrong: ItemWithTags[] = [];
   const restWeak: ItemWithTags[] = [];
   for (const entry of index.entries) {
-    const score = scoreExpr(entry, expr, index.mode);
+    const score = scoreEntry(entry);
     if (score === 0) continue;
     const bucket = entry.item.is_favorite
       ? score === 2

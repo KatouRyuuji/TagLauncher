@@ -88,6 +88,22 @@ test("按标签筛选对象（含层级展开）", () => {
   assert.deepEqual(filterItemsByTags(items, [10]).map((i) => i.id), []);
 });
 
+test("按标签筛选：反选排除（含层级展开）", () => {
+  // 反选标签 1（2d游戏）：剔除含该标签的对象 1、3 → 仅剩 2
+  assert.deepEqual(filterItemsByTags(items, [], undefined, [1]).map((i) => i.id), [2]);
+
+  // 正选 {3}（工具）∩ 反选 {1}（2d游戏）→ 对象 3 同时含两者，被剔除 → 空
+  assert.deepEqual(filterItemsByTags(items, [3], undefined, [1]).map((i) => i.id), []);
+
+  // 层级：父标签 10 的后代含 1，反选 10 应连同后代对象一起剔除
+  const descMap = buildDescendantsMap([{ parentId: 10, childId: 1 }]);
+  const expand = (id: number) => descMap.get(id) ?? new Set([id]);
+  assert.deepEqual(filterItemsByTags(items, [], expand, [10]).map((i) => i.id), [2]);
+
+  // 正反选同传一个标签（异常态）：正选命中后又被反选剔除 → 空
+  assert.deepEqual(filterItemsByTags(items, [1], undefined, [1]).map((i) => i.id), []);
+});
+
 test("排除表达式与顺序无关", () => {
   const excludeItems = [item(11, "alpha"), item(12, "beta"), item(13, "gamma")];
   const excludeIndex = buildSearchIndex(excludeItems, "all");
@@ -261,6 +277,25 @@ test("B14 弱命中排序低于强命中，收藏仍绝对置顶", () => {
     "name",
   );
   assert.deepEqual(searchWithIndex(favIndex, "code").map((i) => i.id), [83, 84]);
+});
+
+test("共享标签文本缓存保持改名后的对象索引独立", () => {
+  const original = [item(90001, "一", [{ id: 900, name: "资料" }]), item(90002, "二", [{ id: 900, name: "资料" }])];
+  const before = buildSearchIndex(original, "tag");
+  const renamed = buildSearchIndex([item(90001, "一", [{ id: 900, name: "阅读" }]), original[1]], "tag");
+  assert.deepEqual(searchWithIndex(before, "zl").map((entry) => entry.id), [90001, 90002]);
+  assert.deepEqual(searchWithIndex(renamed, "yd").map((entry) => entry.id), [90001]);
+  assert.deepEqual(searchWithIndex(renamed, "zl").map((entry) => entry.id), [90002]);
+});
+
+test("查询编译使用最新同义词和归一化规则", () => {
+  const index = buildSearchIndex([item(91001, "  VISUAL Studio Code  "), item(91002, "资料", [{ id: 901, name: " 阅读 " }])], "all");
+  assert.deepEqual(searchWithIndex(index, "@VISUAL Studio Code").map((entry) => entry.id), [91001]);
+  assert.deepEqual(searchWithIndex(index, " VSC ").map((entry) => entry.id), [91001]);
+  setSynonymGroups([["读物", "阅读"]]);
+  assert.deepEqual(searchWithIndex(index, "读物").map((entry) => entry.id), [91002]);
+  setSynonymGroups([["读物", "VISUAL Studio Code"]]);
+  assert.deepEqual(searchWithIndex(index, "读物").map((entry) => entry.id), [91001]);
 });
 
 await run("search");

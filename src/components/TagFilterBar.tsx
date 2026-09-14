@@ -13,7 +13,9 @@ import { useAppStore } from "../stores/appStore";
 export function TagFilterBar() {
   const tags = useAppStore((state) => state.tags);
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
+  const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
+  const toggleTagExclusion = useAppStore((state) => state.toggleTagExclusion);
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const showFavorites = useAppStore((state) => state.showFavorites);
@@ -47,6 +49,9 @@ export function TagFilterBar() {
     };
     update();
     el.addEventListener("scroll", update, { passive: true });
+    if (typeof ResizeObserver === "undefined") {
+      return () => el.removeEventListener("scroll", update);
+    }
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => {
@@ -71,9 +76,9 @@ export function TagFilterBar() {
         <button
           type="button"
           onClick={() => setSelectedTagIds([])}
-          aria-pressed={selectedTagIds.length === 0}
+          aria-pressed={selectedTagIds.length === 0 && excludedTagIds.length === 0}
           className={`control-chip h-7 min-h-7 shrink-0 px-2.5 text-[13px] font-medium ${
-            selectedTagIds.length === 0 ? "control-chip-active" : ""
+            selectedTagIds.length === 0 && excludedTagIds.length === 0 ? "control-chip-active" : ""
           }`}
         >
           全部标签
@@ -81,31 +86,47 @@ export function TagFilterBar() {
 
         {tags.map((tag) => {
           const active = selectedTagIds.includes(tag.id);
+          const excluded = excludedTagIds.includes(tag.id);
           return (
             <button
               key={tag.id}
               type="button"
               onClick={() => toggleTagSelection(tag.id)}
-              className="inline-flex h-7 min-h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[13px] font-medium text-[var(--text-secondary)]"
-              aria-pressed={active}
-              title={tag.name}
-              style={{
-                borderColor: active
-                  ? `color-mix(in srgb, ${tag.color} 65%, var(--border-default))`
-                  : `color-mix(in srgb, ${tag.color} 24%, var(--border-subtle))`,
-                backgroundColor: active
-                  ? `color-mix(in srgb, ${tag.color} 20%, var(--bg-card))`
-                  : `color-mix(in srgb, ${tag.color} 7%, transparent)`,
-                color: active ? "var(--text-primary)" : "var(--text-secondary)",
-                boxShadow: active ? `inset 0 -2px 0 ${tag.color}` : "none",
+              onContextMenu={(event) => {
+                event.preventDefault();
+                toggleTagExclusion(tag.id);
               }}
+              className={`inline-flex h-7 min-h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[13px] font-medium ${
+                excluded ? "text-[var(--text-faint)]" : "text-[var(--text-secondary)]"
+              }`}
+              aria-pressed={active}
+              aria-label={excluded ? `${tag.name}（已排除）` : undefined}
+              data-excluded={excluded || undefined}
+              title={excluded ? `${tag.name}（已排除，右键取消排除）` : `${tag.name}（右键排除含此标签的对象）`}
+              style={excluded
+                ? {
+                    // 反选态：整体置灰 + 删除线，表达「从结果中剔除」
+                    borderColor: "var(--border-subtle)",
+                    backgroundColor: "var(--bg-hover)",
+                    boxShadow: "none",
+                  }
+                : {
+                    borderColor: active
+                      ? `color-mix(in srgb, ${tag.color} 65%, var(--border-default))`
+                      : `color-mix(in srgb, ${tag.color} 24%, var(--border-subtle))`,
+                    backgroundColor: active
+                      ? `color-mix(in srgb, ${tag.color} 20%, var(--bg-card))`
+                      : `color-mix(in srgb, ${tag.color} 7%, transparent)`,
+                    color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                    boxShadow: active ? `inset 0 -2px 0 ${tag.color}` : "none",
+                  }}
             >
               <span
                 className="h-1.5 w-1.5 rounded-[1px]"
-                style={{ backgroundColor: tag.color }}
+                style={{ backgroundColor: excluded ? "var(--text-faint)" : tag.color }}
                 aria-hidden="true"
               />
-              <span>{tag.name}</span>
+              <span className={excluded ? "line-through" : undefined}>{tag.name}</span>
             </button>
           );
         })}

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { ItemWithTags, Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { isImeKeyboardEvent } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
+import { DialogHeader } from "./DialogHeader";
 
 interface ItemTagsEditorProps {
   item: ItemWithTags;
@@ -19,6 +20,7 @@ interface ItemTagsEditorProps {
 export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTags, onClose }: ItemTagsEditorProps) {
   const [selectedIds, setSelectedIds] = useState<number[]>(item.tags.map((tag) => tag.id));
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   // 跟踪本次会话中通过 quick-create 真正新建的标签 id（复用同名已有标签不计入）：
   // 进入编辑器时快照已有 id，之后 diff 出的新 id 即为新建。
@@ -37,6 +39,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
 
   // 取消/关闭：回收本次新建且未保存的空标签，避免"点取消却已写入 DB"的残留
   const handleClose = () => {
+    if (saving || creating) return;
     if (createdTagIdsRef.current.length > 0) {
       void onRecycleNewTags?.(createdTagIdsRef.current);
       createdTagIdsRef.current = [];
@@ -44,13 +47,14 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
     onClose();
   };
 
-  useEscapeKey(handleClose);
+  useEscapeKey(handleClose, !saving && !creating);
 
   const toggleTag = (id: number) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
   };
 
   const handleSave = async () => {
+    if (saving || creating) return;
     setSaving(true);
     try {
       // 以原 item.tags 顺序为基准重建：保留原有顺序、剔除被取消项、新增项追加末尾，
@@ -73,8 +77,9 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
 
   const handleAddNewTag = async () => {
     const name = newTagName.trim();
-    if (!name) return;
+    if (!name || saving || creating) return;
 
+    setCreating(true);
     try {
       const nextIds = await onAddNewTag(name, selectedIds);
       setSelectedIds(nextIds);
@@ -82,6 +87,8 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
     } catch (err) {
       // 失败时保留输入便于修正重试（此前是静默的未处理 rejection）
       showToast(`新建标签失败：${err instanceof Error ? err.message : String(err)}`, "error");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -94,26 +101,16 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
     >
       <div
         ref={trapRef}
-        className="modal-surface w-[520px] max-w-[calc(100vw-2rem)] p-6"
+        className="modal-surface dialog-panel w-[560px] max-w-[calc(100vw-2rem)]"
         role="dialog"
         aria-modal="true"
         aria-label="管理项目标签"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-label">Tags</div>
-            <h2 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">管理项目标签</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">{item.name}</p>
-          </div>
-          <button type="button" onClick={handleClose} className="icon-button">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
-            </svg>
-          </button>
-        </div>
+        <DialogHeader title="管理项目标签" description={item.name} onClose={handleClose} disabled={saving || creating} />
 
-        <div className="surface-card-soft mt-5 p-4">
+        <div className="dialog-body">
+        <section aria-label="已有标签">
           <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-muted)]">
             <span>已选 {selectedIds.length} 个标签</span>
             <span>点击即可切换状态</span>
@@ -130,16 +127,10 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
                     key={tag.id}
                     type="button"
                     onClick={() => toggleTag(tag.id)}
-                    className="inline-flex items-center gap-2 rounded-[var(--radius-full)] border px-3 py-2 text-xs font-medium"
-                    style={{
-                      backgroundColor: selected
-                        ? `color-mix(in srgb, ${tag.color} var(--tag-selected-alpha), var(--bg-card))`
-                        : `color-mix(in srgb, ${tag.color} var(--tag-muted-alpha), var(--bg-card))`,
-                      borderColor: selected
-                        ? `color-mix(in srgb, ${tag.color} var(--tag-selected-border-alpha), transparent)`
-                        : `color-mix(in srgb, ${tag.color} 26%, transparent)`,
-                      color: tag.color,
-                    }}
+                    disabled={saving || creating}
+                    aria-pressed={selected}
+                    className="tag-pill gap-2 px-3 py-2 text-xs"
+                    style={{ "--tag-color": tag.color } as CSSProperties}
                   >
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
                     <span>{tag.name}</span>
@@ -149,14 +140,16 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
               })}
             </div>
           )}
-        </div>
+        </section>
 
-        <div className="surface-card-soft mt-4 p-4">
-          <div className="text-label">Quick Create</div>
-          <p className="mt-2 text-sm text-[var(--text-muted)]">新建标签并立即加入当前项目</p>
+        <section className="mt-5 border-t border-[var(--border-subtle)] pt-4" aria-label="新建标签">
+          <h3 className="text-sm font-medium text-[var(--text-primary)]">新建标签</h3>
+          <p className="mt-1 text-[13px] text-[var(--text-secondary)]">创建后加入当前选择，保存时应用到项目。</p>
           <div className="mt-3 flex gap-2">
             <input
               type="text"
+              aria-label="新标签名称"
+              disabled={saving || creating}
               value={newTagName}
               onChange={(event) => setNewTagName(event.target.value)}
               onKeyDown={(event) => {
@@ -166,31 +159,32 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
                 void handleAddNewTag();
               }}
               placeholder="输入新标签名"
-              className="input-frame flex-1 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none"
+              className="input-frame min-w-0 flex-1 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none"
             />
 
             <button
               type="button"
               onClick={() => void handleAddNewTag()}
-              disabled={!newTagName.trim()}
+              disabled={!newTagName.trim() || saving || creating}
               className="action-button action-button-primary disabled:opacity-40"
             >
-              创建
+              {creating ? "创建中…" : "创建"}
             </button>
           </div>
+        </section>
         </div>
 
-        <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={handleClose} className="action-button">
+        <div className="dialog-footer justify-end">
+          <button type="button" disabled={saving || creating} onClick={handleClose} className="action-button">
             取消
           </button>
           <button
             type="button"
             onClick={() => void handleSave()}
-            disabled={saving}
+            disabled={saving || creating}
             className="action-button action-button-primary disabled:opacity-40"
           >
-            保存
+            {saving ? "保存中…" : "保存"}
           </button>
         </div>
       </div>

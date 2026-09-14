@@ -57,6 +57,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # CLI 二进制（tl.exe）sidecar：externalBin 打包前必须就位（x64 宿主构建 / ARM64 交叉编译）
+      - name: Build tl CLI sidecar
+        run: node scripts/prepare-cli-bin.mjs ${{ matrix.portableArgs }}
+
       # 打 tag 触发：构建并上传安装包到草稿 Release
       - name: Build and upload to release
         if: startsWith(github.ref, 'refs/tags/')

@@ -14,6 +14,7 @@ const TYPE_LABELS = {
   folder: "文件夹",
   image: "图片",
   audio: "音频",
+  video: "视频",
   exe: "应用程序",
   bat: "批处理",
   ps1: "PowerShell",
@@ -23,6 +24,7 @@ const TYPE_ICONS = {
   folder: "📁",
   image: "🖼",
   audio: "♪",
+  video: "🎬",
   exe: "⚙",
   bat: "▣",
   ps1: ">",
@@ -166,6 +168,8 @@ async function openPreview(item) {
       await renderAudio(handle.container, item, serial);
     } else if (item.type === "image") {
       await renderImage(handle.container, item, serial);
+    } else if (item.type === "video") {
+      await renderVideo(handle.container, item, serial);
     } else {
       await renderGeneric(handle.container, item, serial);
     }
@@ -281,6 +285,39 @@ async function renderImage(container, item, serial) {
       ])}
     </div>
   `;
+}
+
+async function renderVideo(container, item, serial) {
+  const info = await api.preview.getFileInfo(item.path);
+  if (serial !== renderSerial) return;
+
+  // 首帧预览：<video preload="metadata"> 加载元数据后即显示首帧；
+  // poster 用宿主提取的系统缩略图（icon_path），加载失败时兜底为缩略图静态图。
+  const poster = thumbnailUrl(item);
+  container.innerHTML = `
+    <div class="object-preview-root">
+      <div class="object-preview-image-frame object-preview-video-frame">
+        <video class="object-preview-video" controls preload="metadata"
+          src="${escapeHtml(assetUrl(item.path))}"
+          ${poster ? `poster="${escapeHtml(poster)}"` : ""}></video>
+      </div>
+      ${metaHtml([
+        ["路径", item.path],
+        ["大小", formatSize(info.size)],
+      ])}
+    </div>
+  `;
+
+  const video = container.querySelector(".object-preview-video");
+  video?.addEventListener("error", () => {
+    // 解码器缺失等播放失败：降级为首帧缩略图静态展示
+    if (serial !== renderSerial) return;
+    const frame = container.querySelector(".object-preview-video-frame");
+    if (!frame) return;
+    frame.innerHTML = poster
+      ? `<img class="object-preview-image" src="${escapeHtml(poster)}" alt="${escapeHtml(item.name)} 首帧" draggable="false" />`
+      : `<div class="object-preview-error">无法加载视频预览（可能缺少对应解码器）</div>`;
+  });
 }
 
 async function renderGeneric(container, item, serial) {

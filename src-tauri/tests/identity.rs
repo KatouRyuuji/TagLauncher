@@ -1,10 +1,6 @@
 //! 集成测试：对象身份链路（真实临时文件）。
 //! 覆盖真实文件 add 去重与身份捕获、改名后按身份重定位、惰性对账标记/清除失效、
-//! 失效对象按签名找回的持久化原语（read_missing_signatures + apply_signature_relocations）。
-//!
-//! 说明：真正的"克隆盘身份冲突降级"（同 volume_serial+file_id 指向不同物理文件）无法在
-//! 不 mock Win32 FFI 的前提下构造，其候选收集逻辑已由 item_service 单元测试（scan_dir_tree）覆盖；
-//! 本文件覆盖可从集成层可达的身份行为。
+//! 失效对象按签名找回的快照、锁外计划和受守卫保护的回写。
 
 mod common;
 
@@ -161,7 +157,8 @@ fn signature_relocation_read_and_apply_roundtrip() {
     assert_eq!(rows[0].size, sig.size);
 
     // 回写命中的新路径：更新位置、清除失效、刷新签名/身份。
-    let applied = item_service::apply_signature_relocations(&conn, &[(id, target.clone())])
+    let writes = item_service::plan_signature_relocations(&rows, &[(id, target.clone())]);
+    let applied = item_service::apply_signature_relocations(&conn, &writes)
         .expect("apply relocations");
     assert_eq!(applied, 1, "应成功回写 1 条");
 
@@ -175,4 +172,43 @@ fn signature_relocation_read_and_apply_roundtrip() {
     assert_eq!(new_path, target, "路径应更新为找回的真实路径");
     assert_eq!(missing, 0, "找回后应清除失效标记");
     assert_eq!(new_sig, Some(sig.size as i64), "签名应刷新");
+    assert_eq!(item_service::apply_signature_relocations(&conn, &writes).unwrap(), 0, "计划重复执行保持幂等");
+}
+
+#[test]
+fn stale_signature_plan_preserves_newer_database_state() {
+    let t = common::temp_db();
+    let target = common::write_file(&t.dir, "candidate.bin", b"content signature");
+    let sig = file_identity::compute_signature(&target).unwrap();
+    let conn = t.db.get_conn();
+    for id in 1..=4 {
+        conn.execute("INSERT INTO items(id,name,path,type,is_missing,sig_size,sig_head,sig_tail) VALUES (?1,'missing',?2,'exe',1,?3,?4,?5)",
+            rusqlite::params![id, format!("D:/old-{id}.bin"), sig.size as i64, sig.head_hash as i64, sig.tail_hash as i64]).unwrap();
+    }
+    let rows = item_service::read_missing_signatures(&conn).unwrap();
+    let found = (1..=4).map(|id| (id, target.clone())).collect::<Vec<_>>();
+    let plans = item_service::plan_signature_relocations(&rows, &found);
+    assert_eq!(plans.len(), 4);
+    conn.execute("UPDATE items SET path='D:/new-path.bin' WHERE id=1", []).unwrap();
+    conn.execute("UPDATE items SET is_missing=0 WHERE id=2", []).unwrap();
+    conn.execute("UPDATE items SET sig_head=0 WHERE id=3", []).unwrap();
+    conn.execute("DELETE FROM items WHERE id=4", []).unwrap();
+    assert_eq!(item_service::apply_signature_relocations(&conn, &plans).unwrap(), 0);
+    assert_eq!(item_service::get_item(&conn, 1).unwrap().item.path, "D:/new-path.bin");
+    assert!(!item_service::get_item(&conn, 2).unwrap().item.is_missing);
+    assert_eq!(item_service::get_item(&conn, 3).unwrap().item.path, "D:/old-3.bin");
+}
+
+#[test]
+fn signature_plan_rejects_changed_and_deleted_candidates() {
+    let t = common::temp_db();
+    let target = common::write_file(&t.dir, "candidate.bin", b"original");
+    let sig = file_identity::compute_signature(&target).unwrap();
+    let rows = [item_service::MissingSignatureRow { id: 1, path: "D:/old.bin".into(), size: sig.size, head: sig.head_hash, tail: sig.tail_hash }];
+    let found = [(1, target.clone())];
+    assert_eq!(item_service::plan_signature_relocations(&rows, &found).len(), 1);
+    std::fs::write(&target, b"modified").unwrap();
+    assert!(item_service::plan_signature_relocations(&rows, &found).is_empty());
+    std::fs::remove_file(&target).unwrap();
+    assert!(item_service::plan_signature_relocations(&rows, &found).is_empty());
 }

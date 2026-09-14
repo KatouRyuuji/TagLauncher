@@ -4,6 +4,22 @@
 
 mod common;
 
+#[test]
+fn cabinet_reconcile_only_scans_current_members() {
+    use tag_launcher_lib::services::item_service;
+    let fixture = common::temp_db();
+    let conn = fixture.db.get_conn();
+    conn.execute_batch("INSERT INTO items(id,name,path,type) VALUES(1,'one','Z:/missing-fixture-one','exe'),(2,'two','Z:/missing-fixture-two','exe');
+        INSERT INTO cabinets(id,name) VALUES(1,'current'); INSERT INTO cabinet_items(cabinet_id,item_id) VALUES(1,1);").unwrap();
+    let snapshot = item_service::read_cabinet_reconcile_snapshot(&conn, 1).unwrap();
+    assert_eq!(snapshot.len(), 1);
+    let writes = item_service::plan_reconcile(snapshot);
+    item_service::apply_reconcile(&conn, &writes).unwrap();
+    assert!(item_service::get_item(&conn, 1).unwrap().item.is_missing);
+    assert!(!item_service::get_item(&conn, 2).unwrap().item.is_missing);
+    assert!(item_service::read_cabinet_reconcile_snapshot(&conn, 99).unwrap().is_empty());
+}
+
 use tag_launcher_lib::services::{cabinet_service, item_service};
 
 /// 文件柜 CRUD 往返。

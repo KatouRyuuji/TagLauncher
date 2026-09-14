@@ -69,6 +69,7 @@ export function Sidebar({
   modPanels = [],
 }: SidebarProps) {
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
+  const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
   const tagRelations = useAppStore((state) => state.tagRelations);
@@ -246,7 +247,7 @@ export function Sidebar({
               <SectionHeader id="sidebar-navigation-label" label="导航" />
               <div className="mt-1 space-y-0.5">
                 <FilterNavButton
-                  active={selectedTagIds.length === 0 && selectedCabinetId === null && !showFavorites && !showRecent}
+                  active={selectedTagIds.length === 0 && excludedTagIds.length === 0 && selectedCabinetId === null && !showFavorites && !showRecent}
                   title="全部项目"
                   subtitle="查看所有可启动项"
                   icon={Library}
@@ -279,8 +280,8 @@ export function Sidebar({
                   <Network className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
                 </SidebarIconButton>
                 <SidebarIconButton
-                    disabled={selectedTagIds.length === 0}
-                    label="清空已选标签"
+                    disabled={selectedTagIds.length === 0 && excludedTagIds.length === 0}
+                    label="清空标签筛选"
                     onClick={() => setSelectedTagIds([])}
                 >
                   <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
@@ -290,6 +291,7 @@ export function Sidebar({
               <div className="mt-1 space-y-0.5">
                 {tags.map((tag) => {
                   const active = selectedTagIds.includes(tag.id);
+                  const excluded = excludedTagIds.includes(tag.id);
                   const activeTagStyle = active
                     ? {
                         borderColor: `color-mix(in srgb, ${tag.color} var(--tag-selected-border-alpha), transparent)`,
@@ -302,6 +304,7 @@ export function Sidebar({
                       key={tag.id}
                       type="button"
                       aria-pressed={active}
+                      aria-label={excluded ? `${tag.name}（已排除）` : undefined}
                       style={activeTagStyle}
                       onPointerDown={(event) => handleTagPointerDown(event, tag)}
                       onClick={() => handleTagClick(tag.id)}
@@ -319,17 +322,19 @@ export function Sidebar({
                       className={`group/tag flex h-8 w-full cursor-grab items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors active:cursor-grabbing ${
                         active
                           ? "font-semibold text-[var(--text-primary)]"
-                          : "border-transparent text-[var(--text-secondary)] hover:border-[var(--line-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                          : excluded
+                            ? "border-transparent text-[var(--text-faint)]"
+                            : "border-transparent text-[var(--text-secondary)] hover:border-[var(--line-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                       }`}
                     >
                       <span
                         className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-[color-mix(in_srgb,var(--border-strong)_42%,transparent)]"
                         style={{
-                          backgroundColor: tag.color,
+                          backgroundColor: excluded ? "var(--text-faint)" : tag.color,
                         }}
                         aria-hidden="true"
                       />
-                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{tag.name}</span>
+                      <span className={`min-w-0 flex-1 truncate text-[13px] font-medium ${excluded ? "line-through" : ""}`}>{tag.name}</span>
                       {parentCountByTag.get(tag.id) || childCountByTag.get(tag.id) ? (
                         <span className="data-readout flex shrink-0 items-center gap-1 text-[13px] text-[var(--text-faint)]">
                           {parentCountByTag.get(tag.id) ? (

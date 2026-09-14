@@ -36,13 +36,27 @@ vi.mock("../lib/db", () => ({
 }));
 
 import { useTheme, MOD_THEME_ADDED } from "./useTheme";
+import { THEME_FAMILIES } from "../themes";
+import { COLOR_MODE_KEY } from "../lib/colorMode";
 
 describe("useTheme 导入主题后 setTheme 竞态", () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.clearAllMocks();
     mocks.getCurrentTheme.mockResolvedValue("dark");
     mocks.getCustomThemes.mockResolvedValue({ themes: [], errors: [] });
     mocks.getThemeDirectoryInfo.mockResolvedValue(null);
+  });
+
+  it("启动时按当前模式解析已保存的配色家族", async () => {
+    const family = THEME_FAMILIES[0];
+    localStorage.setItem(COLOR_MODE_KEY, "light");
+    mocks.getCurrentTheme.mockResolvedValue(family.dark);
+    const { result } = renderHook(() => useTheme());
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.currentTheme.id).toBe(family.light);
+    expect(result.current.effectiveMode).toBe("light");
+    expect(document.documentElement.dataset.scheme).toBe("light");
   });
 
   it("importTheme 返回后立即 setTheme 应能切换到新主题", async () => {

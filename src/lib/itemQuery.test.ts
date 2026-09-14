@@ -19,6 +19,7 @@ import {
   rangeSelectionIds,
   applyPointerSelection,
   applyContextSelection,
+  applyMarqueeSelection,
   selectionStep,
   stepMenuIndex,
   sortItemsByMode,
@@ -43,6 +44,8 @@ test("itemMatchesType：脚本合并 bat 与 ps1", () => {
   assert.equal(itemMatchesType({ type: "ps1" }, "script"), true);
   assert.equal(itemMatchesType({ type: "exe" }, "script"), false);
   assert.equal(itemMatchesType({ type: "folder" }, "all"), true);
+  assert.equal(itemMatchesType({ type: "video" }, "video"), true);
+  assert.equal(itemMatchesType({ type: "video" }, "audio"), false);
 });
 
 test("applyTypeFilter：all 返回原数组引用", () => {
@@ -153,6 +156,17 @@ test("applyContextSelection：未选中则单选，已在多选中则保持并�
   assert.deepEqual(applyContextSelection([2, 3, 4], 4, 2), { ids: [2, 3, 4], anchorId: 2 });
 });
 
+test("applyMarqueeSelection：add 命中集替换选中集，subtract 从既有选中集扣除命中项", () => {
+  // 正选：结果即命中集（替换语义），与框选前选中集无关
+  assert.deepEqual(applyMarqueeSelection("add", [1, 2], new Set([3, 4])), [3, 4]);
+  assert.deepEqual(applyMarqueeSelection("add", [1, 2], new Set()), []);
+
+  // 减选：扣除命中项并保持原顺序；未命中项不受影响
+  assert.deepEqual(applyMarqueeSelection("subtract", [1, 2, 3, 4], new Set([2, 4])), [1, 3]);
+  assert.deepEqual(applyMarqueeSelection("subtract", [1, 2], new Set([9])), [1, 2]);
+  assert.deepEqual(applyMarqueeSelection("subtract", [1, 2], new Set([1, 2])), []);
+});
+
 test("filterCommandsByQuery：标题与 keywords 命中，空查询返回全部", () => {
   const commands = [
     { title: "打开设置", keywords: "settings 偏好" },
@@ -208,6 +222,7 @@ test("isSortMode / isTypeFilter 守卫", () => {
   assert.equal(isSortMode("smart"), true);
   assert.equal(isSortMode("nope"), false);
   assert.equal(isTypeFilter("script"), true);
+  assert.equal(isTypeFilter("video"), true);
   assert.equal(isTypeFilter("bat"), false);
 });
 

@@ -43,11 +43,11 @@ export function RemoveFromAppConfirmDialog({
           aria-label="移除对象确认"
         >
           <div className="flex items-start gap-4">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-danger-bg)] text-[var(--color-danger-ink)]">
               <Trash2 aria-hidden="true" size={19} strokeWidth={1.8} />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-label">Confirm</div>
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">移除对象</h2>
               <p className="mt-2 text-sm leading-7 text-[var(--text-secondary)]">
                 这会使得{itemCount > 1 ? `${itemCount} 个对象` : "对象"}在应用内被移除（不删除本地文件），是否确认？
               </p>

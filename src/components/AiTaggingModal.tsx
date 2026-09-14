@@ -50,8 +50,7 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
                 <Sparkles aria-hidden="true" size={22} strokeWidth={1.8} />
               </div>
               <div>
-                <div className="text-label">AI Auto Tag</div>
-                <h2 className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">
                   {progress.running ? "正在自动打标…" : progress.canceled ? "已取消打标" : "打标完成"}
                 </h2>
               </div>
@@ -61,7 +60,7 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
           <div className="px-6 py-5">
             {/* 进度条 */}
             <div
-              className="h-2 w-full overflow-hidden rounded-none bg-[var(--bg-hover)]"
+              className="h-2 w-full overflow-hidden rounded-[var(--radius-sm)] bg-[var(--bg-hover)]"
               role="progressbar"
               aria-valuenow={percent}
               aria-valuemin={0}
@@ -69,8 +68,8 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
               aria-label="打标进度"
             >
               <div
-                className="h-full rounded-none bg-[var(--accent-primary)] transition-[width]"
-                style={{ width: `${percent}%` }}
+                className="h-full origin-left bg-[var(--accent-primary)] transition-transform"
+                style={{ transform: `scaleX(${percent / 100})` }}
               />
             </div>
             <div className="mt-2 flex items-center justify-between text-sm text-[var(--text-muted)]">
@@ -93,7 +92,7 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
             )}
 
             {finished && progress.errors.length > 0 && (
-              <div className="mt-3 max-h-28 overflow-y-auto rounded-[var(--radius-md)] bg-[var(--color-danger-bg)] px-3 py-2 text-xs text-[var(--color-danger)]">
+              <div className="mt-3 max-h-28 overflow-y-auto rounded-[var(--radius-md)] bg-[var(--color-danger-bg)] px-3 py-2 text-xs text-[var(--color-danger-ink)]">
                 {progress.errors.slice(0, 8).map((e, i) => (
                   <div key={i} className="truncate" title={`${e.name}：${e.error}`}>
                     {e.name}：{e.error}
@@ -125,7 +124,7 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
 
 function StatBox({ label, value, tone }: { label: string; value: number; tone: "success" | "muted" | "danger" }) {
   const color =
-    tone === "success" ? "var(--color-success)" : tone === "danger" ? "var(--color-danger)" : "var(--text-muted)";
+    tone === "success" ? "var(--color-success-ink)" : tone === "danger" ? "var(--color-danger-ink)" : "var(--text-muted)";
   return (
     <div className="border border-[var(--line-hairline)] bg-[var(--surface-recessed)] py-2">
       <div className="data-readout text-lg font-semibold" style={{ color }}>

@@ -96,7 +96,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
       <div className="toolbar-strip flex h-12 items-center gap-2 px-3">
         <div
           role="search"
-          className="workbench-panel input-frame flex h-8 min-w-[220px] flex-1 items-center gap-2 overflow-hidden px-2.5 shadow-none"
+          className="input-frame flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2.5"
         >
           <label htmlFor={WORKSPACE_SEARCH_ID} className="sr-only">
             搜索启动项
@@ -289,9 +289,9 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
 
         <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
 
-        {/* 类型始终完整展示（允许换行）；标签筛选条已移至主视图底部（TagFilterBar） */}
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <div role="group" aria-label="文件类型筛选" className="segmented-control h-8 shrink-0">
+        {/* 类型按可用宽度换行，标签筛选位于独立的顶部横向滚动条。 */}
+        <div className="flex min-w-0 flex-1 basis-[360px] flex-wrap items-center gap-2">
+          <div role="group" aria-label="文件类型筛选" className="segmented-control min-h-8 max-w-full flex-wrap">
             {TYPE_FILTERS.map((filter) => (
               <button
                 key={filter.value}
@@ -315,6 +315,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
             onClick={handleBrowse}
             className="action-button h-8 min-h-8 px-2.5 text-xs max-[1150px]:w-8 max-[1150px]:px-0"
             title="添加文件"
+            aria-label="添加文件"
           >
             <FilePlus2 className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
             <span className="max-[1150px]:hidden">添加文件</span>
@@ -325,6 +326,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
             onClick={handleBrowseFolder}
             className="action-button action-button-primary h-8 min-h-8 px-2.5 text-xs max-[1150px]:w-8 max-[1150px]:px-0"
             title="添加文件夹"
+            aria-label="添加文件夹"
           >
             <FolderPlus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
             <span className="max-[1150px]:hidden">添加文件夹</span>

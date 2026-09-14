@@ -138,13 +138,13 @@ pub fn add_items_to_cabinet(
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     // 先校验存在性给友好文案（事务保证校验失败时不留半份写入）
     tag_service::ensure_exists(&tx, "cabinets", cabinet_id, "文件柜")?;
-    for item_id in item_ids {
-        tag_service::ensure_exists(&tx, "items", *item_id, "对象")?;
-        tx.execute(
-            "INSERT OR IGNORE INTO cabinet_items (cabinet_id, item_id) VALUES (?1, ?2)",
-            params![cabinet_id, *item_id],
-        )
-        .map_err(|e| e.to_string())?;
+    tag_service::ensure_ids_exist(&tx, "items", item_ids, "对象")?;
+    {
+        let mut insert = tx.prepare("INSERT OR IGNORE INTO cabinet_items (cabinet_id, item_id) VALUES (?1, ?2)")
+            .map_err(|e| e.to_string())?;
+        for item_id in item_ids {
+            insert.execute(params![cabinet_id, *item_id]).map_err(|e| e.to_string())?;
+        }
     }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())

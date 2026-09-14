@@ -40,6 +40,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # externalBin sidecar 占位：tauri-build 编译主包时校验 bin/tl-<triple>.exe 存在，
+      # 全新克隆没有该文件会编译失败（真实二进制由 release.yml 的 prepare-cli-bin.mjs 生成）
+      - name: Ensure CLI sidecar placeholder
+        run: node scripts/ensure-cli-placeholder.mjs
+
       - name: Run full test suite
         run: npm run test:all
 

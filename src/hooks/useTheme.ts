@@ -289,7 +289,12 @@ export function useTheme() {
 
         // 已有外部意图时以意图为准，持久化值只用于初始化无主意图的场景
         if (!hasExternalIntentRef.current) {
-          desiredThemeIdRef.current = themeId;
+          const mode = getColorMode();
+          const resolved = resolveColorMode(mode);
+          const family = findFamilyByThemeId(themeId);
+          setColorModeState(mode);
+          setEffectiveMode(resolved);
+          desiredThemeIdRef.current = family ? resolveFamilyThemeId(family, resolved) : themeId;
         }
         const desired = desiredThemeIdRef.current;
         const theme =

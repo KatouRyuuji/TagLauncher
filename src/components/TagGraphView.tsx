@@ -1,10 +1,11 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { computeLayers, orderLayersByBarycenter, resolveTagGraphEmptyState } from "../lib/tagGraph";
 import { compareNames } from "../lib/itemQuery";
 import { ItemVisualIcon } from "./ItemVisualIcon";
+import { DialogHeader } from "./DialogHeader";
 import type { ItemWithTags } from "../types";
 
 /** 右侧关联对象列表每页展示数量（点击"显示更多"递增） */
@@ -95,7 +96,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
   const nodeRefs = useRef<Map<number, HTMLElement>>(new Map());
   const [positions, setPositions] = useState<Map<number, NodePos>>(new Map());
 
-  const measure = () => {
+  const measure = useCallback(() => {
     const content = contentRef.current;
     if (!content) return;
     const base = content.getBoundingClientRect();
@@ -108,21 +109,30 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
         bottom: r.top - base.top + r.height,
       });
     }
-    setPositions(next);
-  };
+    setPositions((current) => {
+      if (current.size === next.size && [...next].every(([id, position]) => {
+        const previous = current.get(id);
+        return previous?.cx === position.cx && previous.top === position.top && previous.bottom === position.bottom;
+      })) return current;
+      return next;
+    });
+  }, []);
 
   useLayoutEffect(() => {
     measure();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tags, validRelations, selectedNodeId]);
-
-  useEffect(() => {
     const content = contentRef.current;
     if (!content || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => measure());
+    let frame: number | null = null;
+    const ro = new ResizeObserver(() => {
+      if (frame === null) frame = requestAnimationFrame(() => { frame = null; measure(); });
+    });
     ro.observe(content);
-    return () => ro.disconnect();
-  }, []);
+    for (const node of nodeRefs.current.values()) ro.observe(node);
+    return () => {
+      ro.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [layers, measure]);
 
   const selectedTag = selectedNodeId == null ? null : tagById.get(selectedNodeId) ?? null;
   const selectedItems = selectedNodeId == null ? [] : itemsByTag.get(selectedNodeId) ?? [];
@@ -151,25 +161,13 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
       aria-label="标签关系图"
     >
       <div className="m-4 flex min-h-0 flex-1 flex-col overflow-hidden modal-surface">
-        <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] px-6 py-4">
-          <div>
-            <div className="text-label">标签关系图</div>
-            <h2 className="mt-1 text-xl font-semibold text-[var(--text-primary)]">层级图谱</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              自上而下按层级展示标签父子关系（图状，可多继承）。点击标签查看其关联对象，再决定是否筛选。
-            </p>
-          </div>
-          <button type="button" onClick={() => setTagGraphOpen(false)} className="icon-button" title="关闭 (Esc)">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
-            </svg>
-          </button>
-        </div>
+        <DialogHeader title="层级图谱" description="点击标签查看关系和关联对象，双击标签直接筛选。" onClose={() => setTagGraphOpen(false)} />
 
-        <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 flex-1">
           {/* 左：层级图谱 */}
           <div
-            className="min-h-0 min-w-0 flex-1 overflow-auto px-8 py-8"
+            data-region="tag-graph-canvas"
+            className="min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--bg-base)] px-5 py-6 sm:px-8 sm:py-8"
             onWheel={(event) => {
               // 宽层图谱下滚轮直接水平平移，不依赖触摸板或 Shift+滚轮。
               // 仅在纵向无滚动余量时转换；纵横向均可滚时保留原生纵向滚动。
@@ -216,7 +214,10 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                 <svg className="pointer-events-none absolute inset-0 h-full w-full" style={{ overflow: "visible" }}>
                   <defs>
                     <marker id={arrowMarkerId} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                      <path d="M0,0 L6,3 L0,6 Z" fill="var(--border-default)" />
+                      <path d="M0,0 L6,3 L0,6 Z" fill="var(--border-strong)" />
+                    </marker>
+                    <marker id={`${arrowMarkerId}-active`} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                      <path d="M0,0 L6,3 L0,6 Z" fill="var(--accent-primary)" />
                     </marker>
                   </defs>
                   {validRelations.map((rel) => {
@@ -234,9 +235,9 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                         key={`${rel.parentId}-${rel.childId}`}
                         d={`M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`}
                         fill="none"
-                        stroke={active ? "var(--accent-primary)" : "var(--border-default)"}
+                        stroke={active ? "var(--accent-primary)" : "var(--border-strong)"}
                         strokeWidth={active ? 2 : 1.5}
-                        markerEnd={`url(#${arrowMarkerId})`}
+                        markerEnd={`url(#${arrowMarkerId}${active ? "-active" : ""})`}
                       />
                     );
                   })}
@@ -246,8 +247,8 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                 <div className="relative flex min-w-max flex-col gap-16">
                   {layers.map(({ level, tags: layerTags }) => (
                     <div key={level} className="flex items-center gap-6">
-                      <div className="w-20 shrink-0 text-right text-[13px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
-                        Level {level}
+                      <div className="data-readout w-14 shrink-0 text-right text-[12px] font-medium text-[var(--text-secondary)]">
+                        第 {level + 1} 层
                       </div>
                       <div className="flex flex-nowrap gap-6">
                         {layerTags.map((tag) => {
@@ -257,6 +258,8 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                             <button
                               key={tag.id}
                               type="button"
+                              data-graph-node-id={tag.id}
+                              aria-pressed={active}
                               ref={(el) => {
                                 if (el) nodeRefs.current.set(tag.id, el);
                                 else nodeRefs.current.delete(tag.id);
@@ -271,8 +274,8 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                                 backgroundColor: active
                                   ? `color-mix(in srgb, ${tag.color} 20%, var(--bg-card))`
                                   : "var(--bg-card)",
-                                color: active ? tag.color : "var(--text-primary)",
-                                fontWeight: active ? 600 : 500,
+                                color: active ? `color-mix(in srgb, var(--text-primary) 72%, ${tag.color})` : "var(--text-primary)",
+                                fontWeight: 500,
                               }}
                               title={`${tag.name}（${count} 个对象）双击直接筛选`}
                             >
@@ -281,8 +284,8 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                               <span
                                 className="ml-1 inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-full)] px-1.5 text-[13px] font-semibold"
                                 style={{
-                                  backgroundColor: `color-mix(in srgb, ${tag.color} 18%, var(--bg-elevated))`,
-                                  color: tag.color,
+                                  backgroundColor: `color-mix(in srgb, ${tag.color} 9%, var(--bg-elevated))`,
+                                  color: `color-mix(in srgb, var(--text-primary) 72%, ${tag.color})`,
                                 }}
                               >
                                 {count}
@@ -300,7 +303,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
 
           {/* 右：选中标签的对象面板 */}
           {selectedTag && (
-            <div className="flex w-80 shrink-0 flex-col border-l border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_60%,transparent)]">
+            <div className="graph-details flex w-80 shrink-0 flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-surface)]" aria-label="标签详情">
               <div className="border-b border-[var(--border-subtle)] px-5 py-4">
                 <div className="flex items-center gap-2">
                   <span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ backgroundColor: selectedTag.color }} />
@@ -310,6 +313,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                     onClick={() => setSelectedNodeId(null)}
                     className="icon-button h-7 w-7"
                     title="收起"
+                    aria-label="收起标签详情"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
@@ -326,8 +330,8 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                             key={p.id}
                             type="button"
                             onClick={() => setSelectedNodeId(p.id)}
-                            className="rounded-[var(--radius-full)] px-1.5 py-0.5"
-                            style={{ backgroundColor: `color-mix(in srgb, ${p.color} 16%, transparent)`, color: p.color }}
+                            className="tag-pill px-1.5 py-0.5"
+                            style={{ "--tag-color": p.color } as CSSProperties}
                           >
                             {p.name}
                           </button>
@@ -342,8 +346,8 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                             key={c.id}
                             type="button"
                             onClick={() => setSelectedNodeId(c.id)}
-                            className="rounded-[var(--radius-full)] px-1.5 py-0.5"
-                            style={{ backgroundColor: `color-mix(in srgb, ${c.color} 16%, transparent)`, color: c.color }}
+                            className="tag-pill px-1.5 py-0.5"
+                            style={{ "--tag-color": c.color } as CSSProperties}
                           >
                             {c.name}
                           </button>

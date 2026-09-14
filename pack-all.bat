@@ -40,6 +40,8 @@ if errorlevel 1 (
 
 echo.
 echo Building %HOST_TRIPLE%...
+call node scripts/prepare-cli-bin.mjs
+if errorlevel 1 goto :build_failed
 call npm run tauri build
 if errorlevel 1 goto :build_failed
 call npm run pack:portable

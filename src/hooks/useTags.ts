@@ -81,8 +81,11 @@ export function useTags() {
     const next = useAppStore.getState().tags.filter((t) => t.id !== id);
     setTags(next);
     notifyTagsChanged(next);
-    // 若删除的标签在筛选中，同步移除避免幽灵筛选
-    const { selectedTagIds, setSelectedTagIds } = useAppStore.getState();
+    // 若删除的标签在筛选（正选/反选）中，同步移除避免幽灵筛选
+    const { selectedTagIds, excludedTagIds, setSelectedTagIds } = useAppStore.getState();
+    if (excludedTagIds.includes(id)) {
+      useAppStore.setState({ excludedTagIds: excludedTagIds.filter((tagId) => tagId !== id) });
+    }
     if (selectedTagIds.includes(id)) {
       setSelectedTagIds(selectedTagIds.filter((tagId) => tagId !== id));
     }

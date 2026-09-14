@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyContextSelection, applyPointerSelection } from "../lib/itemQuery";
+import { applyContextSelection, applyMarqueeSelection, applyPointerSelection, type MarqueeMode } from "../lib/itemQuery";
 import { getWorkspaceSelectionAnchor, setWorkspaceSelectionAnchor } from "../lib/workspaceChrome";
 import { shouldSuppressInternalDragClick } from "../stores/internalDragStore";
 
@@ -32,6 +32,8 @@ interface SelectionBox {
   top: number;
   width: number;
   height: number;
+  /** 减选（Alt+框选）时选框渲染为虚线灰调，与正选区分 */
+  mode: MarqueeMode;
 }
 
 /** 距上/下边缘多少 px 内触发框选自动滚动 */
@@ -80,13 +82,14 @@ function getSelectionRect(startX: number, startY: number, currentX: number, curr
   };
 }
 
-function toSelectionBox(rect: Rect, container: HTMLElement): SelectionBox {
+function toSelectionBox(rect: Rect, container: HTMLElement, mode: MarqueeMode): SelectionBox {
   const containerRect = container.getBoundingClientRect();
   return {
     left: rect.left - containerRect.left + container.scrollLeft,
     top: rect.top - containerRect.top + container.scrollTop,
     width: rect.right - rect.left,
     height: rect.bottom - rect.top,
+    mode,
   };
 }
 
@@ -126,8 +129,10 @@ export function SelectionCanvas({
     lastX: number;
     lastY: number;
     active: boolean;
+    /** pointerdown 时刻的 Alt 状态锁定本次框选模式：正选 / 减选 */
+    mode: MarqueeMode;
     selected: Set<number>;
-    /** 框选开始前的选中集快照：pointercancel 中断时恢复，放弃本次框选 */
+    /** 框选开始前的选中集快照：减选从中扣除命中项；pointercancel 中断时恢复 */
     prevSelected: number[];
   } | null>(null);
   const selectedItemIdsRef = useRef(selectedItemIds);
@@ -196,20 +201,24 @@ export function SelectionCanvas({
   }, [getItemRects]);
 
   // 用当前指针位置刷新选框与命中集合。命中项在单次拖拽内累积并集（union），
-  // 使自动滚动经过的行即便随虚拟化卸载出 DOM，也不会从选中集丢失。
+  // 使自动滚动经过的行即便随虚拟化卸载出 DOM，也不会从命中集丢失。
+  // 减选（Alt）模式：命中集从框选前的选中集扣除，而非替换为选中集。
   const applySelectionAt = useCallback((clientX: number, clientY: number) => {
     const drag = dragRef.current;
     const container = containerRef.current;
     if (!drag || !container) return;
 
     const selectionRect = getSelectionRect(drag.startX, drag.startY, clientX, clientY);
-    setSelectionBox(toSelectionBox(selectionRect, container));
+    setSelectionBox(toSelectionBox(selectionRect, container, drag.mode));
 
     for (const id of collectIntersectingItems(selectionRect)) {
       drag.selected.add(id);
     }
-    if (!sameIdSet(selectedItemIdsRef.current, drag.selected)) {
-      const next = Array.from(drag.selected);
+    const next = applyMarqueeSelection(drag.mode, drag.prevSelected, drag.selected);
+    const unchanged = drag.mode === "subtract"
+      ? sameNumberArray(selectedItemIdsRef.current, next)
+      : sameIdSet(selectedItemIdsRef.current, drag.selected);
+    if (!unchanged) {
       selectedItemIdsRef.current = next;
       onSelectItemsRef.current(next);
     }
@@ -292,6 +301,7 @@ export function SelectionCanvas({
       lastX: event.clientX,
       lastY: event.clientY,
       active: false,
+      mode: event.altKey ? "subtract" : "add",
       selected: new Set<number>(),
       prevSelected: selectedItemIdsRef.current,
     };
@@ -334,7 +344,9 @@ export function SelectionCanvas({
       setWorkspaceSelectionAnchor(null);
     } else {
       ignoreClickRef.current = true;
-      const ordered = itemIdsRef.current.filter((id) => drag.selected.has(id));
+      // 锚点取结算后选中集在列表顺序下的首项：正选=命中集，减选=扣除后的剩余集
+      const finalIds = new Set(selectedItemIdsRef.current);
+      const ordered = itemIdsRef.current.filter((id) => finalIds.has(id));
       if (ordered.length > 0) setWorkspaceSelectionAnchor(ordered[0]);
     }
 
@@ -435,7 +447,9 @@ export function SelectionCanvas({
       {children}
       {selectionBox && (
         <div
-          className="pointer-events-none absolute rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent-primary)_72%,transparent)] bg-[var(--accent-primary-bg-light)] shadow-[var(--shadow-glow)]"
+          className={selectionBox.mode === "subtract"
+            ? "pointer-events-none absolute rounded-[var(--radius-sm)] border border-dashed border-[var(--border-strong)] bg-[color-mix(in_srgb,var(--text-faint)_10%,transparent)]"
+            : "pointer-events-none absolute rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent-primary)_72%,transparent)] bg-[var(--accent-primary-bg-light)] shadow-[var(--shadow-glow)]"}
           style={{
             left: selectionBox.left,
             top: selectionBox.top,

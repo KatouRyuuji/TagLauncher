@@ -528,15 +528,15 @@ function MenuItem({
 }) {
   const accentMap = {
     danger: {
-      color: "var(--color-danger)",
+      color: "var(--color-danger-ink)",
       hoverBg: "var(--color-danger-bg)",
     },
     warning: {
-      color: "var(--color-warning)",
+      color: "var(--color-warning-ink)",
       hoverBg: "var(--status-warning-bg)",
     },
     favorite: {
-      color: "var(--color-favorite)",
+      color: "color-mix(in srgb, var(--text-primary) 72%, var(--color-favorite))",
       hoverBg: "color-mix(in srgb, var(--color-favorite) 14%, transparent)",
     },
   } as const;

@@ -5,6 +5,33 @@
 
 mod common;
 
+#[test]
+fn batch_tag_write_rolls_back_after_a_late_insert_failure() {
+    let fixture = common::temp_db();
+    let conn = fixture.db.get_conn();
+    conn.execute_batch("INSERT INTO items(id,name,path,type) VALUES (1,'one','D:/one','exe'),(2,'two','D:/two','exe');
+        INSERT INTO tags(id,name,color) VALUES (1,'old','#fff'),(2,'new','#fff');
+        INSERT INTO item_tags(item_id,tag_id,position) VALUES (1,1,0),(2,1,0);
+        CREATE TRIGGER reject_second BEFORE INSERT ON item_tags WHEN NEW.item_id=2 AND NEW.tag_id=2 BEGIN SELECT RAISE(ABORT,'injected failure'); END;").unwrap();
+    let result = tag_service::set_many_item_tags(&conn, &[(1, vec![2]), (2, vec![2])]);
+    assert!(result.unwrap_err().contains("injected failure"));
+    for id in [1, 2] {
+        assert_eq!(item_service::get_item(&conn, id).unwrap().tags.iter().map(|tag| tag.id).collect::<Vec<_>>(), [1]);
+    }
+}
+
+#[test]
+fn batch_tag_validation_preserves_existing_memberships() {
+    let fixture = common::temp_db();
+    let conn = fixture.db.get_conn();
+    conn.execute_batch("INSERT INTO items(id,name,path,type) VALUES (1,'one','D:/one','exe'),(2,'two','D:/two','exe');
+        INSERT INTO tags(id,name,color) VALUES (1,'old','#fff');
+        INSERT INTO item_tags(item_id,tag_id,position) VALUES (1,1,0),(2,1,0);").unwrap();
+    assert!(tag_service::set_many_item_tags(&conn, &[(1, vec![]), (2, vec![999])]).unwrap_err().contains("标签不存在"));
+    assert_eq!(item_service::get_item(&conn, 1).unwrap().tags.len(), 1);
+    assert_eq!(item_service::get_item(&conn, 2).unwrap().tags.len(), 1);
+}
+
 use tag_launcher_lib::services::{item_service, tag_service};
 
 fn tag_id(conn: &rusqlite::Connection, name: &str) -> i64 {

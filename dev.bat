@@ -38,6 +38,7 @@ if not exist "node_modules" (
 )
 
 echo Starting Tauri dev (first run compiles Rust, may take minutes^)...
+call node scripts/ensure-cli-placeholder.mjs
 call npm run tauri dev
 if errorlevel 1 (
     echo.

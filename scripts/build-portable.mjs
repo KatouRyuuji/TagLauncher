@@ -42,12 +42,24 @@ const bundleDir = join(releaseDir, 'bundle');
 mkdirSync(bundleDir, { recursive: true });
 const zipPath = join(bundleDir, `TagLauncher_${version}_${arch}-portable.zip`);
 
-// 暂存为 TagLauncher/tag-launcher.exe 再压缩，使 zip 内带固定顶层目录
+// 暂存为 TagLauncher/ 再压缩，使 zip 内带固定顶层目录。
+// 含 tl.exe（CLI/TUI/MCP 命令行）：解压覆盖到同一位置时 exe 被替换，
+// 而 exe 同级的 Plugins_Theme/、Plugins_Mods/、synonyms.json、datapath.json
+// （数据目录重定向指针）得以保留。
 const stagingDir = join(releaseDir, '.portable-staging');
 const stagedRoot = join(stagingDir, 'TagLauncher');
 rmSync(stagingDir, { recursive: true, force: true });
 mkdirSync(stagedRoot, { recursive: true });
 copyFileSync(exePath, join(stagedRoot, 'tag-launcher.exe'));
+
+// CLI 二进制随便携版分发（由 scripts/prepare-cli-bin.mjs 构建；缺失时跳过而非失败，
+// 兼容只跑了 tauri build 的旧流程）
+const cliExePath = join(releaseDir, 'tl.exe');
+if (existsSync(cliExePath)) {
+  copyFileSync(cliExePath, join(stagedRoot, 'tl.exe'));
+} else {
+  console.warn('[WARN] tl.exe not found, portable zip will not include the CLI. Run scripts/prepare-cli-bin.mjs first.');
+}
 
 try {
   execFileSync(

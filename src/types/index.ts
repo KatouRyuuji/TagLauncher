@@ -2,7 +2,7 @@
   id: number;
   name: string;
   path: string;
-  type: "folder" | "image" | "audio" | "exe" | "bat" | "ps1";
+  type: "folder" | "image" | "audio" | "video" | "exe" | "bat" | "ps1";
   icon_path?: string | null;
   created_at: string;
   last_used_at?: string;
