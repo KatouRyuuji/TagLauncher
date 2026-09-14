@@ -32,6 +32,7 @@
     "shadow-lg": "0 2px 6px rgb(26 31 36 / 0.08), 0 16px 40px rgb(26 31 36 / 0.1)",
     "shadow-lift": "0 2px 4px -2px rgb(26 31 36 / 0.1), 0 12px 28px -14px rgb(26 31 36 / 0.16)",
     "shadow-well": "inset 0 1px 1px rgb(26 31 36 / 0.04)",
+    "shadow-focus": "0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, transparent)",
     "shadow-overlay": "0 26px 70px -46px color-mix(in srgb, var(--text-primary) 46%, transparent)",
     "shadow-dropdown": "0 2px 4px rgb(26 31 36 / 0.07), 0 12px 32px rgb(26 31 36 / 0.08)",
     "shadow-card": "0 1px 2px rgb(26 31 36 / 0.06), 0 8px 24px rgb(26 31 36 / 0.06)",

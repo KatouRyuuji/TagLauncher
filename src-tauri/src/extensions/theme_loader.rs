@@ -34,6 +34,7 @@ const REQUIRED_VARIABLES: &[&str] = &[
     "shadow-lg",
     "shadow-lift",
     "shadow-well",
+    "shadow-focus",
     "shadow-overlay",
     "shadow-dropdown",
     "shadow-card",

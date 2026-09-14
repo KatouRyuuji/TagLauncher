@@ -15,7 +15,7 @@ export function SettingsField({ label, children, htmlFor }: { label: string; chi
     && typeof children.type === "string" && ["input", "textarea", "select"].includes(children.type);
   const id = htmlFor ?? (directControl ? children.props.id : undefined) ?? generatedId;
   return (
-    <div className="block min-w-0">
+    <div className="settings-field block min-w-0">
       <label htmlFor={id} className="mb-1.5 block text-[13px] font-medium text-[var(--text-primary)]">{label}</label>
       {directControl ? cloneElement(children as ReactElement<{ id?: string }>, { id }) : children}
     </div>

@@ -25,20 +25,25 @@
     --line-height-normal: 1.6;
     --letter-spacing: 0;
 
-    /* Ryuuji 工作台基线：4px 原子间距、克制圆角、发丝边与低接触影。 */
-    --radius-sm: 3px;
-    --radius-md: 5px;
-    --radius-lg: 7px;
-    --radius-xl: 8px;
+    /* 主题未写入前的 A 纸面回退，与 shapeLangTokens("a","light") 同值。 */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 18px;
+    --radius-2xl: 22px;
+    --radius-3xl: 28px;
     --radius-full: 999px;
 
-    --shadow-sm: 0 1px 1px rgba(15, 23, 42, 0.05), 0 5px 16px rgba(15, 23, 42, 0.035);
-    --shadow-md: 0 1px 1px rgba(15, 23, 42, 0.06), 0 10px 28px rgba(15, 23, 42, 0.07);
-    --shadow-lg: 0 2px 3px rgba(15, 23, 42, 0.08), 0 18px 48px rgba(15, 23, 42, 0.1);
-    --shadow-overlay: 0 2px 4px rgba(15, 23, 42, 0.08), 0 24px 70px rgba(15, 23, 42, 0.16);
-    --shadow-dropdown: 0 2px 3px rgba(15, 23, 42, 0.08), 0 14px 36px rgba(15, 23, 42, 0.12);
-    --shadow-card: 0 1px 1px rgba(15, 23, 42, 0.04), 0 6px 18px rgba(15, 23, 42, 0.04);
+    --shadow-sm: 0 1px 2px rgb(26 31 36 / 0.04), 0 4px 12px -4px rgb(26 31 36 / 0.05);
+    --shadow-md: 0 2px 4px rgb(26 31 36 / 0.07), 0 12px 32px rgb(26 31 36 / 0.08);
+    --shadow-lg: 0 2px 6px rgb(26 31 36 / 0.08), 0 16px 40px rgb(26 31 36 / 0.1);
+    --shadow-lift: 0 2px 4px -2px color-mix(in srgb, var(--text-primary) 10%, transparent), 0 12px 28px -14px color-mix(in srgb, var(--text-primary) 16%, transparent);
+    --shadow-overlay: 0 2px 4px -2px color-mix(in srgb, var(--text-primary) 10%, transparent), 0 12px 28px -14px color-mix(in srgb, var(--text-primary) 16%, transparent), inset 0 1px 0 rgb(255 255 255 / 0.86);
+    --shadow-dropdown: 0 2px 6px rgb(26 31 36 / 0.08), 0 16px 40px rgb(26 31 36 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.86);
+    --shadow-card: 0 2px 4px -2px color-mix(in srgb, var(--text-primary) 10%, transparent), 0 12px 28px -14px color-mix(in srgb, var(--text-primary) 16%, transparent), inset 0 1px 0 rgb(255 255 255 / 0.86);
     --shadow-glow: none;
+    --shadow-well: inset 0 1px 1px rgb(26 31 36 / 0.04);
+    --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, transparent);
 
     --spacing-unit: 4px;
     --spacing-xs: 4px;
@@ -47,10 +52,10 @@
     --spacing-lg: 16px;
     --spacing-xl: 24px;
 
-    /* 动效档：hover 位移 180 / 弹窗 240 / 转场上限 400，平滑曲线 */
-    --transition-fast: 180ms cubic-bezier(0.25, 0.8, 0.25, 1);
-    --transition-normal: 240ms cubic-bezier(0.25, 0.8, 0.25, 1);
-    --transition-slow: 400ms cubic-bezier(0.25, 0.8, 0.25, 1);
+    /* 动效档：hover 180 / 弹窗 240 / 转场 400；A 纸面缓动（lang/a.css 覆盖 tokens 默认曲线） */
+    --transition-fast: 180ms cubic-bezier(0.2, 0.72, 0.2, 1);
+    --transition-normal: 240ms cubic-bezier(0.2, 0.72, 0.2, 1);
+    --transition-slow: 400ms cubic-bezier(0.2, 0.72, 0.2, 1);
 
     --bg-gradient: linear-gradient(180deg, #eef4f6 0%, #e9f0f3 100%);
     --card-backdrop-filter: none;
@@ -98,10 +103,10 @@
 
     --drag-ghost-offset-x: 14px;
     --drag-ghost-offset-y: 14px;
-    --tag-color-alpha: 18%;
-    --tag-selected-alpha: 28%;
-    --tag-muted-alpha: 10%;
-    --tag-selected-border-alpha: 62%;
+    --tag-color-alpha: 9%;
+    --tag-selected-alpha: 16%;
+    --tag-muted-alpha: 9%;
+    --tag-selected-border-alpha: 100%;
     --border-width: 1px;
     --border-style: solid;
 
@@ -808,7 +813,12 @@
   }
   :root[data-shape="a"] .input-frame:focus,
   :root[data-shape="a"] .input-frame:focus-within {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, transparent);
+    box-shadow: var(--shadow-focus);
+  }
+  /* 表单行容器外环：lang/a.css .field:focus-within = 4px 12% */
+  :root[data-shape="a"] .settings-field:focus-within {
+    border-radius: var(--radius-md);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-primary) 12%, transparent);
   }
 
   /* 错误输入（forms.css 契约）：danger-ink 文 + 危险浅染底 + 40% 描边；

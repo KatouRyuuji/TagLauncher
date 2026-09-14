@@ -70,6 +70,8 @@ const LANG_TOKENS: Record<ShapeLang, Record<string, string>> = {
     "border-medium": "color-mix(in srgb, var(--text-primary) 24%, transparent)",
     // 输入静息纸槽影（paper-well；B 机械面无槽影）
     "shadow-well": "inset 0 1px 1px rgb(26 31 36 / 0.04)",
+    // 输入焦点环：tokens.css --sys-shadow-focus（控件本体）；容器外环 4px/12% 见 index.css .field
+    "shadow-focus": "0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, transparent)",
     "transition-fast": `180ms ${EASE_A}`,
     "transition-normal": `240ms ${EASE_A}`,
     "transition-slow": `400ms ${EASE_A}`,
@@ -83,6 +85,7 @@ const LANG_TOKENS: Record<ShapeLang, Record<string, string>> = {
     "radius-2xl": "4px",
     "radius-3xl": "4px",
     "shadow-well": "none",
+    "shadow-focus": "none",
     "transition-fast": `180ms ${EASE_B}`,
     "transition-normal": `240ms ${EASE_B}`,
     "transition-slow": `400ms ${EASE_B}`,
