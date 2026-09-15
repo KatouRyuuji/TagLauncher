@@ -60,7 +60,8 @@ export function nameColorByHue(hex: string): string {
   if (h <= 15 || h > 345) return "蔷薇";
   if (h <= 40) return "蜜橙";
   if (h <= 70) return "琥珀";
-  if (h <= 160) return "柳绿";
+  if (h <= 115) return "柳绿";
+  if (h <= 160) return "翠绿";
   if (h <= 200) return "青碧";
   if (h <= 255) return "晴蓝";
   if (h <= 290) return "藤紫";

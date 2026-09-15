@@ -64,37 +64,19 @@ const DEFS: RyuujiThemeDef[] = [
   { palette: "a1-dark", id: "8cebf811-9b9d-4c49-ac9f-1d1fa685ce93", name: "霜靛", lang: "a", scheme: "dark" },
   { palette: "a3-light", id: "668e5856-9d9f-481a-8f82-325372d2e256", name: "藤色", lang: "a", scheme: "light" },
   { palette: "a3-dark", id: "65596bf6-3aaf-4322-93f2-bbb60cb94b5d", name: "藤色", lang: "a", scheme: "dark" },
-  { palette: "a4-light", id: "3f8ae7b3-244f-4429-a7bc-84d8bbde3ca2", name: "柳染", lang: "a", scheme: "light" },
-  { palette: "a4-dark", id: "cd4665e5-081f-434b-943f-bd44b49cd6ac", name: "柳染", lang: "a", scheme: "dark" },
-  { palette: "a5-light", id: "6794e521-fd01-4e6d-997a-c4d0f1c66de2", name: "水浅葱", lang: "a", scheme: "light" },
-  { palette: "a5-dark", id: "f2368e2a-ee19-4192-96ea-3db85f15c74d", name: "水浅葱", lang: "a", scheme: "dark" },
   { palette: "a6-light", id: "70492696-751c-4a29-9ab4-09ad8ddff1a4", name: "樱花", lang: "a", scheme: "light" },
   { palette: "a6-dark", id: "ad9b379f-0f3d-45e3-8b55-bf077b4ab97a", name: "樱花", lang: "a", scheme: "dark" },
-  { palette: "b1-light", id: "e0f5add7-8b67-42c9-9b2b-c7bbf49e255d", name: "海军冰蓝", lang: "b", scheme: "light" },
-  { palette: "b1-dark", id: "6c309a70-ec6a-4429-8299-c4cde7c0ffcc", name: "海军冰蓝", lang: "b", scheme: "dark" },
-  { palette: "b3-light", id: "5298ac16-455f-42f8-8bc8-e9b03ee0fdbf", name: "铁锈", lang: "b", scheme: "light" },
-  { palette: "b3-dark", id: "cfaadcb4-7e85-460c-a8fe-52e848959719", name: "铁锈", lang: "b", scheme: "dark" },
   { palette: "mono-light", id: "f04d4499-8a9c-4c84-b7d1-73574fc98f9e", name: "素墨", lang: "a", scheme: "light" },
   { palette: "mono-dark", id: "2db7495f-a084-4f7d-ae6d-d06258dc0e3c", name: "素墨", lang: "a", scheme: "dark" },
-  { palette: "mono-light", id: "54a0eaae-9c92-4f4a-b823-b0a33f940bd3", name: "素墨·仪", lang: "b", scheme: "light" },
-  { palette: "mono-dark", id: "c3d01915-3266-4c53-b8ad-badc8089752b", name: "素墨·仪", lang: "b", scheme: "dark" }
 ];
 
 // 标签预设色 = 同语言同亮暗的全部 primary（素墨灰计入同亮暗档）+ 语义色，当前主题色提到首位
 const TAGS: Record<string, string> = {
-  "a1-dark": "#4f6aeb,#9358d5,#5d8029,#2e817e,#d93461,#e5e5e5,#d4a838,#4cc295",
-  "a3-light": "#8f5fc5,#5064d8,#578129,#12828a,#d63865,#242424,#e89e06,#1faa62",
-  "a3-dark": "#9358d5,#4f6aeb,#5d8029,#2e817e,#d93461,#e5e5e5,#d4a838,#4cc290",
-  "a4-light": "#578129,#5064d8,#8f5fc5,#12828a,#d63865,#242424,#e8a006,#22ab4f",
-  "a4-dark": "#5d8029,#4f6aeb,#9358d5,#2e817e,#d93461,#e5e5e5,#d4a838,#52c878",
-  "a5-light": "#12828a,#5064d8,#8f5fc5,#578129,#d63865,#242424,#e8a006,#1faa64",
-  "a5-dark": "#2e817e,#4f6aeb,#9358d5,#5d8029,#d93461,#e5e5e5,#d4a838,#4cc290",
-  "a6-light": "#d63865,#5064d8,#8f5fc5,#578129,#12828a,#242424,#e8a006,#1faa64",
-  "a6-dark": "#d93461,#4f6aeb,#9358d5,#5d8029,#2e817e,#e5e5e5,#d4a838,#4cc290",
-  "b1-light": "#244e7b,#386bce,#b8513d,#242424,#cf8a00,#10a06a,#d92538,#b55e21",
-  "b1-dark": "#2475d5,#c35332,#e5e5e5,#e0ae30,#52c878,#cd4747,#b65e19,#8aa4ec",
-  "b3-light": "#b8513d,#b55e21,#244e7b,#242424,#cd6b25,#22ab4f,#c01428,#1674c8",
-  "b3-dark": "#c35332,#b65e19,#2475d5,#e5e5e5,#eaa066,#4cc290,#ce4832,#63a8e8",
+  "a1-dark": "#4f6aeb,#9358d5,#d93461,#e5e5e5,#d4a838,#4cc295,#fb923c,#38bdf8",
+  "a3-light": "#8f5fc5,#5064d8,#d63865,#242424,#e89e06,#1faa62,#ea580c,#2563eb",
+  "a3-dark": "#9358d5,#4f6aeb,#d93461,#e5e5e5,#d4a838,#4cc290,#fb923c,#38bdf8",
+  "a6-light": "#d63865,#5064d8,#8f5fc5,#242424,#e8a006,#1faa64,#ea580c,#2563eb",
+  "a6-dark": "#d93461,#4f6aeb,#9358d5,#e5e5e5,#d4a838,#4cc290,#fb923c,#38bdf8",
   "mono-light": "#242424,#6e6e6e,#5f5f5f,#6d6d6d,#404040,#686868,#a3a3a3,#525252",
   "mono-dark": "#e5e5e5,#a9a9a9,#b8b8b8,#cccccc,#757575,#a7a7a7,#6a6a6a,#929292"
 };

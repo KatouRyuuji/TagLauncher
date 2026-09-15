@@ -43,16 +43,16 @@ function renderToolbar(overrides: Partial<React.ComponentProps<typeof BatchSelec
 }
 
 describe("BatchSelectionToolbar 批量操作进行中状态", () => {
-  it("批量删除进行中：aria-busy=true、spinner 可见、全部操作按钮禁用", async () => {
+  it("从库中移除进行中：aria-busy=true、spinner 可见、全部操作按钮禁用", async () => {
     const user = userEvent.setup();
     const { promise, resolve } = deferred();
     renderToolbar({ onRemoveFromApp: () => promise });
 
-    await user.click(screen.getByRole("button", { name: "批量删除" }));
+    await user.click(screen.getByRole("button", { name: "从库中移除" }));
 
     expect(screen.getByTestId("batch-toolbar")).toHaveAttribute("aria-busy", "true");
     expect(screen.getByTestId("batch-busy-spinner")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "批量删除" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "从库中移除" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "加入标签" })).toBeDisabled();
     expect(screen.getByRole("button", { name: /收藏/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: "复制路径" })).toBeDisabled();
@@ -68,10 +68,10 @@ describe("BatchSelectionToolbar 批量操作进行中状态", () => {
     const user = userEvent.setup();
     renderToolbar({ onRemoveFromApp: async () => { throw new Error("后端失败"); } });
 
-    await user.click(screen.getByRole("button", { name: "批量删除" }));
+    await user.click(screen.getByRole("button", { name: "从库中移除" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "批量删除" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "从库中移除" })).toBeEnabled();
     });
     expect(screen.getByTestId("batch-toolbar")).toHaveAttribute("aria-busy", "false");
   });
@@ -87,7 +87,7 @@ describe("BatchSelectionToolbar 批量操作进行中状态", () => {
       },
     });
 
-    const removeButton = screen.getByRole("button", { name: "批量删除" });
+    const removeButton = screen.getByRole("button", { name: "从库中移除" });
     await user.click(removeButton);
     // disabled 按钮点击不触发，但仍模拟用户狂点
     await user.click(removeButton).catch(() => {});

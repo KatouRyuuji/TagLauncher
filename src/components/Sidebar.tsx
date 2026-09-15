@@ -72,7 +72,6 @@ export function Sidebar({
   const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
-  const tagRelations = useAppStore((state) => state.tagRelations);
   const setTagGraphOpen = useAppStore((state) => state.setTagGraphOpen);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const setSelectedCabinetId = useAppStore((state) => state.setSelectedCabinetId);
@@ -106,18 +105,6 @@ export function Sidebar({
     () => allItems.reduce((count, item) => count + (item.last_used_at ? 1 : 0), 0),
     [allItems],
   );
-
-  // 标签父/子计数：用于标签卡片上的层级标注（⊂父 / ⊃子）
-  const childCountByTag = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const r of tagRelations) m.set(r.parentId, (m.get(r.parentId) ?? 0) + 1);
-    return m;
-  }, [tagRelations]);
-  const parentCountByTag = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const r of tagRelations) m.set(r.childId, (m.get(r.childId) ?? 0) + 1);
-    return m;
-  }, [tagRelations]);
 
   const itemCountByTag = useMemo(() => {
     const m = new Map<number, number>();
@@ -289,7 +276,7 @@ export function Sidebar({
               </SectionHeader>
 
               <div className="mt-1 space-y-0.5">
-                {tags.map((tag) => {
+                {(allItems.length === 0 ? [] : [...tags].sort((a, b) => (itemCountByTag.get(b.id) ?? 0) - (itemCountByTag.get(a.id) ?? 0))).map((tag) => {
                   const active = selectedTagIds.includes(tag.id);
                   const excluded = excludedTagIds.includes(tag.id);
                   const activeTagStyle = active
@@ -335,16 +322,6 @@ export function Sidebar({
                         aria-hidden="true"
                       />
                       <span className={`min-w-0 flex-1 truncate text-[13px] font-medium ${excluded ? "line-through" : ""}`}>{tag.name}</span>
-                      {parentCountByTag.get(tag.id) || childCountByTag.get(tag.id) ? (
-                        <span className="data-readout flex shrink-0 items-center gap-1 text-[13px] text-[var(--text-faint)]">
-                          {parentCountByTag.get(tag.id) ? (
-                            <span title={`${parentCountByTag.get(tag.id)} 个父标签`}>父{parentCountByTag.get(tag.id)}</span>
-                          ) : null}
-                          {childCountByTag.get(tag.id) ? (
-                            <span title={`${childCountByTag.get(tag.id)} 个子标签`}>子{childCountByTag.get(tag.id)}</span>
-                          ) : null}
-                        </span>
-                      ) : null}
                       <NavCount value={itemCountByTag.get(tag.id) ?? 0} />
                     </button>
                   );
@@ -354,6 +331,11 @@ export function Sidebar({
               {tags.length === 0 && (
                 <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[13px] leading-5 text-[var(--text-muted)]">
                   暂无标签
+                </div>
+              )}
+              {tags.length > 0 && allItems.length === 0 && (
+                <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[13px] leading-5 text-[var(--text-muted)]">
+                  导入文件后，标签会出现在这里
                 </div>
               )}
 
@@ -484,7 +466,7 @@ export function Sidebar({
         <span>
           {activeDragKind === "item"
             ? "释放到收藏夹或文件柜完成归档"
-            : "拖标签到项目打标 · 拖项目到柜归档"}
+            : "拖标签到项目打标，拖项目到文件柜"}
         </span>
       </div>
 

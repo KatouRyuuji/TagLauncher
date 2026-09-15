@@ -170,7 +170,7 @@ export function CommandPalette({
     { id: "add-files", title: "添加文件", keywords: "import 导入 添加 文件", icon: FilePlus2, run: () => { void pickFilesToAdd().then((paths) => { if (paths) void onAddItems(paths); }); } },
     { id: "add-folders", title: "添加文件夹", keywords: "import 导入 添加 文件夹", icon: FolderPlus, run: () => { void pickFoldersToAdd().then((paths) => { if (paths) void onAddItems(paths); }); } },
     { id: "refresh", title: "刷新", keywords: "refresh 刷新 reload", icon: RefreshCw, run: () => { void onRefresh(); } },
-    { id: "settings", title: "打开设置", hint: "Ctrl + ,", keywords: "settings 设置 偏好", icon: Settings2, run: onOpenSettings },
+    { id: "settings", title: "打开设置", hint: "Ctrl+,", keywords: "settings 设置 偏好", icon: Settings2, run: onOpenSettings },
     { id: "graph", title: "打开标签图谱", keywords: "graph 图谱 关系", icon: Tags, run: () => setTagGraphOpen(true) },
     { id: "shortcuts", title: "快捷键一览", hint: "?", keywords: "shortcut 快捷键 help", icon: Keyboard, run: () => setShortcutsHelpOpen(true) },
     { id: "about", title: "关于 TagLauncher", keywords: "about 关于 欢迎", icon: Info, run: onOpenAbout },

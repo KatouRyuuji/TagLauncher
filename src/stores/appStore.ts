@@ -124,6 +124,8 @@ interface AppState {
   viewMode: "grid" | "list";
   sortMode: SortMode;
   typeFilter: TypeFilter;
+  /** 主界面「筛选」条是否展开（类型/搜索范围）；有生效筛选时 SearchBar 仍会显示该条 */
+  workspaceFiltersOpen: boolean;
   tagGraphOpen: boolean;
   commandPaletteOpen: boolean;
   shortcutsHelpOpen: boolean;
@@ -153,6 +155,7 @@ interface AppState {
   setViewMode: (mode: "grid" | "list") => void;
   setSortMode: (mode: SortMode) => void;
   setTypeFilter: (filter: TypeFilter) => void;
+  setWorkspaceFiltersOpen: (open: boolean) => void;
   setTagGraphOpen: (open: boolean) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setShortcutsHelpOpen: (open: boolean) => void;
@@ -189,6 +192,7 @@ export const useAppStore = create<AppState>((set, get) => {
   viewMode: initialPrefs.viewMode ?? "grid",
   sortMode: initialPrefs.sortMode ?? "smart",
   typeFilter: initialPrefs.typeFilter ?? "all",
+  workspaceFiltersOpen: false,
   tagGraphOpen: false,
   commandPaletteOpen: false,
   shortcutsHelpOpen: false,
@@ -306,6 +310,7 @@ export const useAppStore = create<AppState>((set, get) => {
     set({ typeFilter: filter });
     persistNow();
   },
+  setWorkspaceFiltersOpen: (open) => set((state) => state.workspaceFiltersOpen === open ? state : { workspaceFiltersOpen: open }),
   setTagGraphOpen: (open) => set((state) => state.tagGraphOpen === open ? state : { tagGraphOpen: open }),
   setCommandPaletteOpen: (open) => set((state) => state.commandPaletteOpen === open ? state : { commandPaletteOpen: open }),
   setShortcutsHelpOpen: (open) => set((state) => state.shortcutsHelpOpen === open ? state : { shortcutsHelpOpen: open }),

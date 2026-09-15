@@ -40,7 +40,7 @@ test("全屏弹层带 data-workspace-overlay，避免漏标后 P 键穿透", () 
 test("欢迎页与命令面板眉题为中文，快捷键完整显示", () => {
   const welcome = readFileSync(resolve(process.cwd(), "src/components/WelcomeModal.tsx"), "utf-8");
   const palette = readFileSync(resolve(process.cwd(), "src/components/CommandPalette.tsx"), "utf-8");
-  assert.ok(welcome.includes("欢迎 / TagLauncher"), "欢迎页眉题应为中文");
+  assert.ok(welcome.includes("欢迎使用 TagLauncher"), "欢迎页眉题应为中文");
   assert.ok(!welcome.includes("Capabilities"), "欢迎页不应残留英文 Capabilities");
   assert.ok(palette.includes("命令 / 项目"), "命令面板分组应为中文");
   assert.ok(palette.includes("Ctrl+K"), "命令面板须完整显示 Ctrl+K");

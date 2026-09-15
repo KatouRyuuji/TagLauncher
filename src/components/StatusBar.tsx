@@ -38,7 +38,7 @@ export function StatusBar({
       // 找回成功的 toast 由 useItems 统一弹出；这里只补"未找到"的反馈,
       // 手动点击必须有可感知结果,不能保持安静。
       if (recovered === 0) {
-        showToast("未能自动找回失效对象：请确认磁盘已连接；文件恢复后会自动重新关联", "info");
+        showToast("未能自动找回失效对象：请确认磁盘已连接；文件恢复后会自动重新关联", "error");
       }
     } catch (err) {
       // 扫描失败（如磁盘不可读）：明确错误反馈，不能静默——用户点击后必须知道发生了什么
@@ -81,7 +81,6 @@ export function StatusBar({
     >
       <div className="flex min-w-0 items-center gap-2">
         <span className="status-led shrink-0" aria-hidden="true" />
-        <span className="instrument-label hidden shrink-0 min-[1120px]:inline">Library</span>
         <span className="data-readout min-w-0 truncate text-[var(--text-muted)]">
           {parts.join(" / ")}
         </span>

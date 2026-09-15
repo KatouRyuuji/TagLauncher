@@ -40,16 +40,18 @@ export function RemoveFromAppConfirmDialog({
           className="modal-surface pointer-events-auto w-[420px] max-w-[92vw] p-6"
           role="dialog"
           aria-modal="true"
-          aria-label="移除对象确认"
+          aria-label="从库中移除"
         >
           <div className="flex items-start gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-danger-bg)] text-[var(--color-danger-ink)]">
               <Trash2 aria-hidden="true" size={19} strokeWidth={1.8} />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-base font-semibold text-[var(--text-primary)]">移除对象</h2>
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                从库中移除{itemCount > 1 ? ` ${itemCount} 项` : ""}
+              </h2>
               <p className="mt-2 text-sm leading-7 text-[var(--text-secondary)]">
-                这会使得{itemCount > 1 ? `${itemCount} 个对象` : "对象"}在应用内被移除（不删除本地文件），是否确认？
+                本地文件不会被删除。只是从 TagLauncher 的库里拿掉这些项目。
               </p>
             </div>
           </div>
@@ -74,7 +76,7 @@ export function RemoveFromAppConfirmDialog({
             </button>
             <button type="button" onClick={() => void onConfirm()} className="action-button action-button-danger">
               <Trash2 aria-hidden="true" size={15} strokeWidth={1.8} />
-              确认移除
+              从库中移除
             </button>
           </div>
         </div>

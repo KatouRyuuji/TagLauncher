@@ -119,6 +119,13 @@ async function openSettings(page) {
   await settle();
 }
 
+async function ensureFiltersOpen(page) {
+  const bar = page.locator('[data-region="filterbar"]');
+  if (await bar.count()) return;
+  await page.getByRole("button", { name: "筛选", exact: true }).click();
+  await settle(250);
+}
+
 async function closeSettings(page) {
   await closeOverlays(page);
   await page.getByRole("dialog", { name: "设置工作台" }).waitFor({ state: "detached" });
@@ -189,6 +196,7 @@ async function featureTour(page) {
   await settle();
   await shot(page, "welcome-欢迎页");
   await check("欢迎页弹出", page.getByRole("button", { name: "开始使用" }).isVisible());
+  await check("欢迎页赞赏码可见", page.getByRole("img", { name: "赞赏码" }).isVisible());
   await page.getByRole("button", { name: "开始使用" }).click();
   await settle();
 
@@ -202,7 +210,7 @@ async function featureTour(page) {
   const themeDock = page.locator('[data-region="sidebar-theme"]');
   await check("侧栏主题快捷切换可见", themeDock.isVisible());
   const familyRadios = themeDock.getByRole("radiogroup", { name: "官方主题" }).getByRole("radio");
-  await check("官方主题色点不少于 7 个", (await familyRadios.count()) >= 7);
+  await check("官方主题色点为 4 个", (await familyRadios.count()) === 4);
   const themeIdBefore = await page.locator("html").getAttribute("data-theme-id");
   await themeDock.locator('[role="radio"][aria-checked="false"]').first().click();
   await settle(500);
@@ -271,6 +279,7 @@ async function featureTour(page) {
   await check("命中词高亮渲染（mark.search-highlight）", page.locator("mark.search-highlight").first().isVisible());
 
   // 04b 搜索模式切换（全部 → 仅名称：范围徽标出现，点击徽标恢复）
+  await ensureFiltersOpen(page);
   await page.locator('[role="group"][aria-label="搜索范围"] button:has-text("名称")').click();
   await settle(600);
   await shot(page, "search-mode-搜索模式切换-仅名称");
@@ -303,7 +312,8 @@ async function featureTour(page) {
   await clearSearch(page);
   await check("清空搜索恢复 10 项", (await itemCount(page)) === 10);
 
-  // 08 类型筛选（筛选栏待选态 → 图片 = 2）
+  // 08 类型筛选（先展开筛选条 → 图片 = 2）
+  await ensureFiltersOpen(page);
   const typeChipImage = page.locator('[role="group"][aria-label="文件类型筛选"] button:has-text("图片")');
   await typeChipImage.hover();
   await settle(250);
@@ -509,7 +519,7 @@ async function featureTour(page) {
   await themeTrigger.click();
   await settle(300);
   await shot(page, "settings-theme-dropdown-设置-主题下拉打开");
-  await check("主题下拉列出内置配色家族", (await page.locator('[role="listbox"][aria-label="当前主题"] [role="option"]').count()) >= 7);
+  await check("主题下拉列出内置配色家族", (await page.locator('[role="listbox"][aria-label="当前主题"] [role="option"]').count()) >= 4);
   await themeTrigger.click();
   await settle(250);
   await check("主题下拉已收起", (await page.locator('[role="listbox"][aria-label="当前主题"]').count()) === 0);
@@ -526,7 +536,7 @@ async function featureTour(page) {
   await settle(400);
   await shot(page, "ai-tagging-AI批量打标");
   await check("AI 打标完成", page.getByText("打标完成").isVisible());
-  await page.getByRole("dialog", { name: "AI 打标进度" }).getByRole("button", { name: "完成" }).click();
+  await page.getByRole("dialog", { name: "AI 打标进度" }).getByRole("button", { name: "关闭" }).click();
   await settle();
 
   await goToSettingsSection(page, "数据管理");
@@ -561,8 +571,8 @@ async function featureTour(page) {
   await page.keyboard.press("Delete");
   await settle(400);
   await shot(page, "remove-confirm-批量移除确认");
-  await check("批量移除确认弹窗打开", page.getByRole("dialog", { name: "移除对象确认" }).isVisible());
-  await page.getByRole("button", { name: "确认移除" }).click();
+  await check("批量移除确认弹窗打开", page.getByRole("dialog", { name: "从库中移除" }).isVisible());
+  await page.getByRole("dialog", { name: "从库中移除" }).getByRole("button", { name: "从库中移除" }).click();
   await settle(700);
   await shot(page, "empty-library-空库引导");
   await check("空库引导出现「暂无项目」", page.getByText("暂无项目").isVisible());

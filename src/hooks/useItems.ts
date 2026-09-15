@@ -341,7 +341,7 @@ export function useItems() {
   const removeItems = useCallback(async (ids: number[]) => {
     if (ids.length === 0) return;
 
-    await withErrorToast("批量删除", async () => {
+    await withErrorToast("从库中移除", async () => {
       await db.removeItems(ids);
 
       const idSet = new Set(ids);

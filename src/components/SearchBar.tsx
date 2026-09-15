@@ -3,6 +3,7 @@ import {
   ArrowUpDown,
   Command,
   FilePlus2,
+  Filter,
   FolderPlus,
   Grid2X2,
   Info,
@@ -17,6 +18,7 @@ import { notifySearchInput } from "../lib/modApi";
 import { useAppStore, type SearchMode } from "../stores/appStore";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
 import { SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter, type SortMode } from "../lib/itemQuery";
+import { classifySearchQuery } from "../lib/search";
 import { SEARCH_RESET_EVENT, WORKSPACE_SEARCH_ID } from "../lib/workspaceChrome";
 import { SelectMenu } from "./SelectMenu";
 import {
@@ -30,6 +32,7 @@ interface SearchBarProps {
   onRefresh: () => Promise<void>;
   onOpenAbout: () => void;
   onOpenSettings?: () => void;
+  hasLibraryItems?: boolean;
 }
 
 const MODES: { value: SearchMode; label: string; hint: string }[] = [
@@ -44,7 +47,7 @@ const PLACEHOLDERS: Record<SearchMode, string> = {
   tag: "搜索标签...",
 };
 
-export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }: SearchBarProps) {
+export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, hasLibraryItems = true }: SearchBarProps) {
   const { handleSearch } = useSearch();
   const viewMode = useAppStore((state) => state.viewMode);
   const setViewMode = useAppStore((state) => state.setViewMode);
@@ -55,7 +58,12 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
   const setCommandPaletteOpen = useAppStore((state) => state.setCommandPaletteOpen);
   const typeFilter = useAppStore((state) => state.typeFilter);
   const setTypeFilter = useAppStore((state) => state.setTypeFilter);
+  const workspaceFiltersOpen = useAppStore((state) => state.workspaceFiltersOpen);
+  const setWorkspaceFiltersOpen = useAppStore((state) => state.setWorkspaceFiltersOpen);
   const [inputValue, setInputValue] = useState("");
+  const queryKind = classifySearchQuery(inputValue);
+  const filtersForcedOpen = typeFilter !== "all" || searchMode !== "all";
+  const showFilterRow = hasLibraryItems && (workspaceFiltersOpen || filtersForcedOpen);
   const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
   const composingRef = useRef(false);
 
@@ -142,6 +150,25 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
             </button>
           )}
 
+          {queryKind === "pinyin" && (
+            <span
+              data-testid="search-kind-pinyin"
+              className="inline-flex h-6 shrink-0 items-center rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] px-1.5 text-[12px] font-medium text-[var(--text-secondary)]"
+              title="按拼音或英文缩写匹配名称与标签"
+            >
+              拼音
+            </span>
+          )}
+          {queryKind === "expression" && (
+            <span
+              data-testid="search-kind-expression"
+              className="inline-flex h-6 shrink-0 items-center rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] px-1.5 text-[12px] font-medium text-[var(--text-secondary)]"
+              title="表达式：&& 同时满足，|| 任一满足，!! 排除"
+            >
+              表达式
+            </span>
+          )}
+
           {inputValue && (
             <button
               type="button"
@@ -162,6 +189,56 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
             aria-label="打开命令面板"
           >
             <Command className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div role="group" aria-label="显示方式" className="segmented-control h-8 shrink-0">
+          <button
+            type="button"
+            onClick={() => setViewMode("grid")}
+            className={`control-chip h-6 min-h-6 w-7 rounded-[var(--radius-sm)] border-0 px-0 ${
+              viewMode === "grid" ? "control-chip-active" : ""
+            }`}
+            title="网格视图"
+            aria-label="网格视图"
+            aria-pressed={viewMode === "grid"}
+          >
+            <Grid2X2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("list")}
+            className={`control-chip h-6 min-h-6 w-7 rounded-[var(--radius-sm)] border-0 px-0 ${
+              viewMode === "list" ? "control-chip-active" : ""
+            }`}
+            title="列表视图"
+            aria-label="列表视图"
+            aria-pressed={viewMode === "list"}
+          >
+            <List className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div role="group" aria-label="导入" className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={handleBrowse}
+            className="action-button h-8 min-h-8 px-2.5 text-xs max-[1150px]:w-8 max-[1150px]:px-0"
+            title="添加文件"
+            aria-label="添加文件"
+          >
+            <FilePlus2 className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
+            <span className="max-[1150px]:hidden">添加文件</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleBrowseFolder}
+            className="action-button h-8 min-h-8 px-2.5 text-xs max-[1150px]:w-8 max-[1150px]:px-0"
+            title="添加文件夹"
+            aria-label="添加文件夹"
+          >
+            <FolderPlus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
+            <span className="max-[1150px]:hidden">添加文件夹</span>
           </button>
         </div>
 
@@ -190,6 +267,18 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
         )}
 
         <div className="flex shrink-0 items-center gap-1 border-l border-[var(--line-hairline)] pl-2">
+          {hasLibraryItems && (
+            <button
+              type="button"
+              onClick={() => setWorkspaceFiltersOpen(!showFilterRow)}
+              className={`icon-button h-8 w-8 ${showFilterRow ? "text-[var(--accent-primary)]" : ""}`}
+              title="筛选"
+              aria-label="筛选"
+              aria-pressed={showFilterRow}
+            >
+              <Filter className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onRefresh}
@@ -224,8 +313,8 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
         </div>
       </div>
 
-      {/* 控制 + 筛选：允许换行，避免类型芯片被单行 overflow 裁成「音…」 */}
-      <div
+      {/* 控制 + 筛选：默认收起，避免与侧栏标签重复占满主路径 */}
+      {showFilterRow && <div
         data-region="filterbar"
         className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 py-1.5"
       >
@@ -248,7 +337,10 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
 
         <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
 
-        <div className="flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[13px] text-[var(--text-secondary)]">
+        <div
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[13px] text-[var(--text-secondary)]"
+          title={SORT_OPTIONS.find((option) => option.value === sortMode)?.hint}
+        >
           <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" strokeWidth={1.8} aria-hidden="true" />
           <span className="instrument-label max-[1250px]:hidden">排序</span>
           <SelectMenu
@@ -260,36 +352,8 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
           />
         </div>
 
-        <div role="group" aria-label="显示方式" className="segmented-control h-8 shrink-0">
-          <button
-            type="button"
-            onClick={() => setViewMode("grid")}
-            className={`control-chip h-6 min-h-6 w-7 rounded-[var(--radius-sm)] border-0 px-0 ${
-              viewMode === "grid" ? "control-chip-active" : ""
-            }`}
-            title="网格视图"
-            aria-label="网格视图"
-            aria-pressed={viewMode === "grid"}
-          >
-            <Grid2X2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("list")}
-            className={`control-chip h-6 min-h-6 w-7 rounded-[var(--radius-sm)] border-0 px-0 ${
-              viewMode === "list" ? "control-chip-active" : ""
-            }`}
-            title="列表视图"
-            aria-label="列表视图"
-            aria-pressed={viewMode === "list"}
-          >
-            <List className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
-          </button>
-        </div>
-
         <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
 
-        {/* 类型按可用宽度换行，标签筛选位于独立的顶部横向滚动条。 */}
         <div className="flex min-w-0 flex-1 basis-[360px] flex-wrap items-center gap-2">
           <div role="group" aria-label="文件类型筛选" className="segmented-control min-h-8 max-w-full flex-wrap">
             {TYPE_FILTERS.map((filter) => (
@@ -308,31 +372,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings }
             ))}
           </div>
         </div>
-
-        <div role="group" aria-label="导入" className="flex shrink-0 items-center gap-1.5 border-l border-[var(--line-hairline)] pl-2">
-          <button
-            type="button"
-            onClick={handleBrowse}
-            className="action-button h-8 min-h-8 px-2.5 text-xs max-[1150px]:w-8 max-[1150px]:px-0"
-            title="添加文件"
-            aria-label="添加文件"
-          >
-            <FilePlus2 className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
-            <span className="max-[1150px]:hidden">添加文件</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleBrowseFolder}
-            className="action-button action-button-primary h-8 min-h-8 px-2.5 text-xs max-[1150px]:w-8 max-[1150px]:px-0"
-            title="添加文件夹"
-            aria-label="添加文件夹"
-          >
-            <FolderPlus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
-            <span className="max-[1150px]:hidden">添加文件夹</span>
-          </button>
-        </div>
-      </div>
+      </div>}
     </header>
   );
 }

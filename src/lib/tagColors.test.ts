@@ -5,7 +5,7 @@ import { FALLBACK_TAG_PRESET_COLORS, nameColorByHue } from "./tagColors";
 // 低饱和度按明度命名，其余按色相段命名；非法输入兜底「自定义」。
 
 test("回退色板 8 色各自得到语义相符的色名", () => {
-  const expected = ["蔷薇", "蜜橙", "琥珀", "柳绿", "青碧", "晴蓝", "藤紫", "莓红"];
+  const expected = ["蔷薇", "蜜橙", "琥珀", "翠绿", "青碧", "晴蓝", "藤紫", "莓红"];
   const actual = FALLBACK_TAG_PRESET_COLORS.map(nameColorByHue);
   assert.deepEqual(actual, expected);
 });
@@ -14,13 +14,13 @@ test("默认主题色板（index.css --tag-preset-colors）色名与色值语义
   // #e11d48 玫红 / #ea580c 橙 / #ca8a04 金黄 / #16a34a 绿
   // #0d9488 青 / #3db8bf 青蓝 / #2563eb 蓝 / #7c3aed 紫
   const themePalette = ["#e11d48", "#ea580c", "#ca8a04", "#16a34a", "#0d9488", "#3db8bf", "#2563eb", "#7c3aed"];
-  assert.deepEqual(themePalette.map(nameColorByHue), ["蔷薇", "蜜橙", "琥珀", "柳绿", "青碧", "青碧", "晴蓝", "藤紫"]);
+  assert.deepEqual(themePalette.map(nameColorByHue), ["蔷薇", "蜜橙", "琥珀", "翠绿", "青碧", "青碧", "晴蓝", "藤紫"]);
 });
 
 test("支持 3 位与 8 位 hex（8 位忽略 alpha）", () => {
   assert.equal(nameColorByHue("#f00"), "蔷薇");
   assert.equal(nameColorByHue("#3b82f6ff"), "晴蓝");
-  assert.equal(nameColorByHue("#22c55e00"), "柳绿");
+  assert.equal(nameColorByHue("#22c55e00"), "翠绿");
 });
 
 test("非法输入兜底「自定义」", () => {

@@ -40,7 +40,7 @@ export function UpdateSettingsSection() {
         <div>
           <h3 className="text-lg font-semibold text-[var(--text-primary)]">软件更新</h3>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
-            当前版本 v{currentVersion || "…"} · 更新通过 GitHub Releases 分发
+            当前版本 v{currentVersion || "…"}。点「检查更新」对照 GitHub Releases，有新版本再手动下载安装。
           </p>
         </div>
         <button

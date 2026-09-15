@@ -124,7 +124,7 @@ test("关键语义色与 RyuujiDesign palettes.css 逐值一致（八套含素�
   const root = ryuujiRoot();
   if (!root) {
     const locked = new Set(THEME_FAMILIES.map((family) => family.id === "mono-b" ? "mono" : family.id));
-    assert.deepEqual([...locked].sort(), ["a1", "a3", "a4", "a5", "a6", "b1", "b3", "mono"]);
+    assert.deepEqual([...locked].sort(), ["a1", "a3", "a6", "mono"]);
     return;
   }
   const source = readFileSync(join(root!, "styles/palettes.css"), "utf-8");

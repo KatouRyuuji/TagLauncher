@@ -21,6 +21,8 @@ export function TagFilterBar() {
   const showFavorites = useAppStore((state) => state.showFavorites);
   const showRecent = useAppStore((state) => state.showRecent);
   const tagFilterAvailable = selectedCabinetId === null && !showFavorites && !showRecent;
+  const workspaceFiltersOpen = useAppStore((state) => state.workspaceFiltersOpen);
+  const filtersVisible = workspaceFiltersOpen || selectedTagIds.length > 0 || excludedTagIds.length > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 横向滚动容器：把纵向滚轮转为横向滚动，标签多时不用拖动滚动条。
@@ -60,7 +62,7 @@ export function TagFilterBar() {
     };
   }, [tagFilterAvailable, tags.length]);
 
-  if (!tagFilterAvailable || tags.length === 0) return null;
+  if (!tagFilterAvailable || tags.length === 0 || !filtersVisible) return null;
 
   return (
     <div

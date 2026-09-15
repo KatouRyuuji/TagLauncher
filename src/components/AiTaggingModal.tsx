@@ -112,7 +112,7 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
             ) : (
               <button type="button" onClick={onClose} className="action-button action-button-primary">
                 <Check aria-hidden="true" size={15} strokeWidth={1.9} />
-                完成
+                关闭
               </button>
             )}
           </div>

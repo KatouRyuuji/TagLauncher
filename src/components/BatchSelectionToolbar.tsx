@@ -223,7 +223,7 @@ export function BatchSelectionToolbar({
           className="action-button action-button-danger min-h-8 shrink-0 px-2.5 text-xs"
         >
           <Trash2 aria-hidden="true" size={14} strokeWidth={1.8} />
-          批量删除
+          从库中移除
         </button>
         <button type="button" onClick={onClearSelection} disabled={busy} className="action-button min-h-8 shrink-0 px-2.5 text-xs">
           <X aria-hidden="true" size={14} strokeWidth={1.8} />

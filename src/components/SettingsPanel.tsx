@@ -237,7 +237,17 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 );
               })}
               <div className="mt-auto hidden border-t border-[var(--line-hairline)] px-2 pt-3 text-xs leading-5 text-[var(--text-faint)] sm:block">
-                主题即时生效。连接配置请在对应区块保存。
+                {activeSection === "theme"
+                  ? "主题即时生效。"
+                  : activeSection === "ai"
+                    ? "连接配置需点「保存配置」。"
+                    : activeSection === "sync"
+                      ? "连接配置请在本区块保存。"
+                      : activeSection === "update"
+                        ? "检查更新不会自动安装。"
+                        : activeSection === "mods"
+                          ? "扩展启用后即时加载。"
+                          : "本页操作立即生效。"}
               </div>
             </nav>
 
@@ -254,7 +264,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                     </p>
                     {themeDirectoryInfo?.themes_dir && (
                       <p className="data-readout mt-1 truncate text-[13px] text-[var(--text-faint)]" title={themeDirectoryInfo.themes_dir}>
-                        {themeDirectoryInfo.themes_dir}
+                        自定义主题目录
                       </p>
                     )}
                   </div>
@@ -346,7 +356,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             </span>
             <button type="button" onClick={onClose} className="action-button action-button-primary ml-auto">
               <Check aria-hidden="true" size={16} strokeWidth={1.9} />
-              完成
+              关闭
             </button>
           </footer>
         </aside>

@@ -255,7 +255,9 @@ export function AiSettingsSection() {
             清除密钥
           </button>
         )}
-        <div className="mx-1 h-6 w-px bg-[var(--border-subtle)]" />
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--line-hairline)] pt-3">
+        <p className="mr-auto text-xs text-[var(--text-faint)]">运行打标</p>
         <button
           type="button"
           onClick={() => void requestTagAll("untagged")}

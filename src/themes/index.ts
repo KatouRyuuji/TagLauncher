@@ -12,7 +12,7 @@ export {
 } from "./tokens";
 
 // 内置主题 = 历史主题 sakura（霜靛·亮，id 已被用户配置持久化）
-// + 色板工厂生成的 17 套（见 ./ryuuji.ts 头部注释）
+// + 色板工厂生成的其余在架套（见 ./ryuuji.ts）
 export const presetThemes: ThemeDefinition[] = [sakuraTheme, ...ryuujiThemes].map((theme) => ({
   ...theme,
   isPreset: true,
@@ -36,14 +36,8 @@ export interface ThemeFamily {
 export const THEME_FAMILIES: ThemeFamily[] = [
   { id: "a1", name: "霜靛", lang: "a", light: "7f47aab2-74bb-4c77-b99b-550f0acf3c9c", dark: "8cebf811-9b9d-4c49-ac9f-1d1fa685ce93" },
   { id: "a3", name: "藤色", lang: "a", light: "668e5856-9d9f-481a-8f82-325372d2e256", dark: "65596bf6-3aaf-4322-93f2-bbb60cb94b5d" },
-  { id: "a4", name: "柳染", lang: "a", light: "3f8ae7b3-244f-4429-a7bc-84d8bbde3ca2", dark: "cd4665e5-081f-434b-943f-bd44b49cd6ac" },
-  { id: "a5", name: "水浅葱", lang: "a", light: "6794e521-fd01-4e6d-997a-c4d0f1c66de2", dark: "f2368e2a-ee19-4192-96ea-3db85f15c74d" },
   { id: "a6", name: "樱花", lang: "a", light: "70492696-751c-4a29-9ab4-09ad8ddff1a4", dark: "ad9b379f-0f3d-45e3-8b55-bf077b4ab97a" },
-  { id: "b1", name: "海军冰蓝", lang: "b", light: "e0f5add7-8b67-42c9-9b2b-c7bbf49e255d", dark: "6c309a70-ec6a-4429-8299-c4cde7c0ffcc" },
-  { id: "b3", name: "铁锈", lang: "b", light: "5298ac16-455f-42f8-8bc8-e9b03ee0fdbf", dark: "cfaadcb4-7e85-460c-a8fe-52e848959719" },
-  // 素墨：A/B 共享中性色板；A 纸面形态沿用家族名，B 仪器形态名带「仪」
   { id: "mono", name: "素墨", lang: "a", light: "f04d4499-8a9c-4c84-b7d1-73574fc98f9e", dark: "2db7495f-a084-4f7d-ae6d-d06258dc0e3c" },
-  { id: "mono-b", name: "素墨·仪", lang: "b", light: "54a0eaae-9c92-4f4a-b823-b0a33f940bd3", dark: "c3d01915-3266-4c53-b8ad-badc8089752b" },
 ];
 
 /** 主题 id 所属的配色家族；自定义/Mod 主题不属于任何家族时返回 undefined */

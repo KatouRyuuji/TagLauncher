@@ -720,7 +720,7 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 | `variants` | 主题变体：每个变体可覆盖部分 `variables` 并附加 `css`（如 SkyCloud 的「静止云层」变体关闭动画） |
 | `css` | 自定义 CSS 文本；非内置主题会经消毒（去 `@import`、中和远程 `url()`、放行 asset/ipc 协议） |
 
-内置主题（`src/themes/`）为「配色家族 × 亮/暗模式」模型：7 个家族（霜靛 / 藤色 / 柳染 / 水浅葱 / 樱花 / 海军冰蓝 / 铁锈）注册于 `src/themes/index.ts` 的 `THEME_FAMILIES`，每个家族声明亮、暗两个具体主题 id。**主题唯一标识为固定 uuid**，与显示名、家族、功能语义完全解耦——显示名是面向用户的自由文本（同一家族亮/暗两套同名，如「霜靛」），身份识别只认 uuid；持久化的旧字符串 id 由迁移 v010 改写为 uuid（此前各代的停用 id 见 v008/v009）。7 个家族共 14 套：1 套为独立文件（`src/themes/sakura.ts`），其余 13 套由 `src/themes/ryuuji.ts` 工厂按锁定色板生成，新增色板只需在工厂的 `DEFS` 加一行（id 填新生成的 uuid）。结构令牌（圆角/阴影/缓动/字体/空间/发丝边）严格取自 RyuujiDesign 造型语言层，单一来源为 `src/themes/shapeLang.ts`（A 纸面 = `lang/a.css`，B 仪表 = `lang/b.css`，共享原语 = `tokens.css`），主题文件一律展开复用、不手改；z 层级、拖拽、标签透明度、边框与面板规格等壳层共享令牌统一来自 `src/themes/chromeTokens.ts`。
+内置主题（`src/themes/`）为「配色家族 × 亮/暗模式」模型：4 个家族（霜靛 / 藤色 / 樱花 / 素墨）注册于 `src/themes/index.ts` 的 `THEME_FAMILIES`，每个家族声明亮、暗两个具体主题 id。**主题唯一标识为固定 uuid**，与显示名、家族、功能语义完全解耦——显示名是面向用户的自由文本（同一家族亮/暗两套同名，如「霜靛」），身份识别只认 uuid；持久化的旧字符串 id 由迁移 v010 改写为 uuid，下架家族由 v013 改写到在架主题。4 个家族共 8 套：1 套为独立文件（`src/themes/sakura.ts`），其余由 `src/themes/ryuuji.ts` 工厂按锁定色板生成。结构令牌（圆角/阴影/缓动/字体/空间/发丝边）严格取自 RyuujiDesign 造型语言层，单一来源为 `src/themes/shapeLang.ts`（A 纸面 = `lang/a.css`，B 仪表 = `lang/b.css`，共享原语 = `tokens.css`），主题文件一律展开复用、不手改；z 层级、拖拽、标签透明度、边框与面板规格等壳层共享令牌统一来自 `src/themes/chromeTokens.ts`。
 
 **亮/暗模式开关**：外观模式（亮色 / 暗色 / 跟随系统）独立于主题，偏好持久化于 localStorage（`taglauncher.color-mode`，单一来源 `src/lib/colorMode.ts`）；`useTheme` 监听偏好与系统亮暗变化，把当前内置家族解析到对应模式的具体主题并持久化。自定义 / Mod 主题自带固定配色方案，外观模式仅作用于内置家族（窗口栏快捷开关对内置家族以外的主题禁用）。**造型语言由主题自身声明**（`ThemeDefinition.lang`），随主题生效——`lib/theme.ts` 的 `applyShapeLang` 在每次 `applyTheme` 时按主题声明写入 `data-shape` / `data-scheme`（`index.css` 据此渲染装饰签名：A 的浮层顶唇、B 的丝印字距/切角/倒角高光/双线内框，纹样仅作点缀）。自定义主题建议以 `toExportableTheme` 导出格式为准，或直接从示例主题改起。
 
@@ -755,7 +755,7 @@ npm run demo        # 浏览器打开 http://127.0.0.1:3456 即完整应用
 npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页面
 ```
 
-`scripts/demo-screenshots.mjs` 启动 demo 服务器后用 Playwright 驱动真实 UI 交互（搜索/拼音、标签筛选、文件柜、命令面板、快速预览、右键菜单、标签编辑器、框选批量、图谱、设置各区块、AI 打标、快捷键、失效找回）——功能截图以**霜靛（A1 家族）主题全覆盖**；再遍历全部 7 个内置配色家族各截一张主界面并列对比。
+`scripts/demo-screenshots.mjs` 启动 demo 服务器后用 Playwright 驱动真实 UI 交互（搜索/拼音、标签筛选、文件柜、命令面板、快速预览、右键菜单、标签编辑器、框选批量、图谱、设置各区块、AI 打标、快捷键、失效找回）——功能截图以**霜靛（A1 家族）主题全覆盖**；再遍历全部 4 个内置配色家族各截一张主界面并列对比。
 
 **产物边界**：截图输出到 `screenshots/`（已 gitignore，不上云）；工具本身（`src/demo/` + 脚本）随仓库分发，clone 后 `npm i && npx playwright install chromium` 即可复现同一套截图。可选参数：`--out <目录>`、`--port <端口>`。
 

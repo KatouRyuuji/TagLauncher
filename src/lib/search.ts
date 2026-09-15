@@ -79,6 +79,17 @@ function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
 
+/** 搜索框教学芯片：表达式语法、纯拉丁拼音/缩写、普通关键词。 */
+export type SearchQueryKind = "plain" | "pinyin" | "expression";
+
+export function classifySearchQuery(query: string): SearchQueryKind {
+  const trimmed = query.trim();
+  if (!trimmed) return "plain";
+  if (/&&|\|\||!!/.test(trimmed) || /[()]/.test(trimmed)) return "expression";
+  if (/^[a-z]{2,}$/i.test(trimmed)) return "pinyin";
+  return "plain";
+}
+
 const EMPTY_ENGLISH_FIELDS: EnglishNameFields = { initials: "", compact: "", wordStarts: [] };
 
 /** 名称含拉丁字母时才构建派生字段；纯 CJK 名称的缩写匹配永远落空，跳过构建 */

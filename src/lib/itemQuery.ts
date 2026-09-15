@@ -14,8 +14,8 @@ export type SortMode = "smart" | "name" | "recent" | "added" | "type";
 /** 类型筛选：脚本合并 bat+ps1，避免顶栏 chip 过多 */
 export type TypeFilter = "all" | "folder" | "image" | "audio" | "video" | "exe" | "script";
 
-export const SORT_OPTIONS: { value: SortMode; label: string }[] = [
-  { value: "smart", label: "智能" },
+export const SORT_OPTIONS: { value: SortMode; label: string; hint?: string }[] = [
+  { value: "smart", label: "智能", hint: "收藏优先，其次最近使用，再按名称" },
   { value: "name", label: "名称" },
   { value: "recent", label: "最近使用" },
   { value: "added", label: "添加时间" },

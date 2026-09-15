@@ -160,7 +160,7 @@ export function SidebarThemeSwitcher() {
           role="radio"
           aria-label="亮色"
           aria-checked={lightSelected}
-          title="亮色"
+          title="浅色"
           disabled={!modeToggleEnabled}
           tabIndex={modeToggleEnabled && lightSelected ? 0 : modeToggleEnabled && !darkSelected ? 0 : -1}
           onClick={() => applyMode("light")}
@@ -172,6 +172,7 @@ export function SidebarThemeSwitcher() {
           } disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-[var(--text-muted)]`}
         >
           <Sun className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+          <span className="ml-1 hidden text-[12px] font-medium min-[200px]:inline">浅色</span>
         </button>
         <button
           id="sidebar-theme-mode-dark"
@@ -191,6 +192,7 @@ export function SidebarThemeSwitcher() {
           } disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-[var(--text-muted)]`}
         >
           <Moon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+          <span className="ml-1 hidden text-[12px] font-medium min-[200px]:inline">深色</span>
         </button>
       </div>
     </div>

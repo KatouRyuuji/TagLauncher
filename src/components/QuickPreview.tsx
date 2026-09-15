@@ -59,7 +59,7 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
               <ScanSearch aria-hidden="true" size={18} strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
-              <p className="instrument-label">Preview / {getTypeLabel(item.type)}</p>
+              <p className="instrument-label">{getTypeLabel(item.type)}</p>
               <h2 className="mt-1 truncate text-base font-semibold text-[var(--text-primary)]" title={item.name}>
                 {item.name}
               </h2>
@@ -183,7 +183,7 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
       {item.type === "image" && (
         <div className="workbench-panel flex max-h-[52vh] min-h-[180px] items-center justify-center overflow-hidden bg-[var(--bg-base)]">
           {imageFailed ? (
-            <p className="px-4 py-8 text-sm text-[var(--text-muted)]">无法加载图片预览</p>
+            <p className="px-4 py-8 text-sm text-[var(--text-muted)]">无法生成预览</p>
           ) : (
             <img
               src={toAssetUrl(item.path) ?? undefined}
@@ -221,6 +221,9 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
             className="w-full"
             onError={() => setError("无法加载音频预览")}
           />
+          {audio?.duration_ms != null && (
+            <p className="text-center text-xs text-[var(--text-faint)]">时长 {formatDurationMs(audio.duration_ms)}</p>
+          )}
         </div>
       )}
 

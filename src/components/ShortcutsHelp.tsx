@@ -102,8 +102,7 @@ export function ShortcutsHelp() {
               <Keyboard aria-hidden="true" size={19} strokeWidth={1.8} />
             </div>
             <div>
-              <div className="instrument-label">Reference / Keyboard</div>
-              <h2 id="shortcuts-help-title" className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+              <h2 id="shortcuts-help-title" className="text-lg font-semibold text-[var(--text-primary)]">
                 键盘快捷键
               </h2>
             </div>
@@ -167,7 +166,7 @@ export function ShortcutsHelp() {
           </span>
           <button type="button" onClick={() => setOpen(false)} className="action-button action-button-primary">
             <Check aria-hidden="true" size={16} strokeWidth={1.9} />
-            完成
+            关闭
           </button>
         </footer>
       </div>

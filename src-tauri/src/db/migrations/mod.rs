@@ -10,6 +10,7 @@ mod v009_retire_palettes;
 mod v010_theme_id_uuid;
 mod v011_video_type;
 mod v012_fts_maintenance;
+mod v013_retire_theme_families;
 
 use rusqlite::Connection;
 
@@ -175,6 +176,7 @@ fn all_migrations() -> Vec<Box<dyn Migration>> {
         Box::new(v010_theme_id_uuid::V010ThemeIdUuid),
         Box::new(v011_video_type::V011VideoType),
         Box::new(v012_fts_maintenance::V012FtsMaintenance),
+        Box::new(v013_retire_theme_families::V013RetireThemeFamilies),
     ]
 }
 

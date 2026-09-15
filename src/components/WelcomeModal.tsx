@@ -2,18 +2,11 @@ import { useEffect, useState, type MouseEvent } from "react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import {
   ArrowRight,
-  Boxes,
   Check,
-  Command,
-  Database,
   ExternalLink,
-  Fingerprint,
-  GitBranch,
   Heart,
-  MousePointer2,
   Play,
   Search,
-  Sparkles,
   Tag,
   Tags,
   X,
@@ -35,66 +28,24 @@ const GREETING = "轻量、极速的标签式资源管理器";
 interface FeatureEntry {
   title: string;
   description: string;
-  isNew?: boolean;
   icon: LucideIcon;
 }
 
-const FEATURES: FeatureEntry[] = [
+const STEPS: FeatureEntry[] = [
   {
-    title: "命令面板与快捷键",
-    description: "Ctrl+K 命令面板，空格快速预览，键盘即可搜索、筛选与启动",
-    isNew: true,
-    icon: Command,
-  },
-  {
-    title: "标签化组织",
-    description: "标签、文件柜、收藏三个维度组织文件与程序，多标签交集筛选",
-    icon: Tags,
-  },
-  {
-    title: "智能搜索",
-    description: "覆盖名称、路径、标签、拼音、首字母与同义词，支持表达式语法",
-    icon: Search,
-  },
-  {
-    title: "一键启动",
-    description: "双击即可启动对象，右键快捷打开所在目录，拖拽导入批量归类",
+    title: "添加文件",
+    description: "把文件或文件夹拖进工作台，或点右上角「添加文件」",
     icon: Play,
   },
   {
-    title: "主题与 Mod 扩展",
-    description: "内置与自定义 JSON 主题，CSS / JS Mod 扩展体系可深度定制",
-    icon: Boxes,
+    title: "打一个标签",
+    description: "从侧栏把标签拖到项目上，或右键选择「管理标签」",
+    icon: Tags,
   },
   {
-    title: "对象身份追踪",
-    description: "NTFS 文件 ID 识别对象，重命名或移动自动跟踪，跨盘签名找回",
-    isNew: true,
-    icon: Fingerprint,
-  },
-  {
-    title: "标签关系图谱",
-    description: "标签支持多父继承构成图状层级，提供关系编辑器与图谱视图",
-    isNew: true,
-    icon: GitBranch,
-  },
-  {
-    title: "批量操作与音频对象",
-    description: "框选批量打标、归档与移除；支持音频对象与元数据预览",
-    isNew: true,
-    icon: MousePointer2,
-  },
-  {
-    title: "AI 自动打标",
-    description: "配置 Anthropic 协议 API 后一键为全库对象打标，新对象可自动打标",
-    isNew: true,
-    icon: Sparkles,
-  },
-  {
-    title: "数据管理",
-    description: "自定义数据存放目录，支持一键导出、导入与备份应用数据",
-    isNew: true,
-    icon: Database,
+    title: "搜索并打开",
+    description: "按 / 或 F3 搜索，双击启动。Ctrl+K 打开命令面板",
+    icon: Search,
   },
 ];
 
@@ -153,8 +104,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
               <Tag aria-hidden="true" size={21} strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
-              <div className="instrument-label">欢迎 / TagLauncher</div>
-              <h2 id="welcome-modal-title" className="mt-1 truncate text-lg font-semibold text-[var(--text-primary)]">
+              <h2 id="welcome-modal-title" className="truncate text-lg font-semibold text-[var(--text-primary)]">
                 欢迎使用 TagLauncher
               </h2>
             </div>
@@ -181,79 +131,68 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
           <div className="border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-4 py-3 sm:px-6">
             <p className="font-body text-sm font-medium text-[var(--text-primary)]">{GREETING}</p>
             <p className="mt-1 font-body text-xs leading-5 text-[var(--text-muted)]">
-              免费、轻量、直观、便捷。用标签、搜索与快捷操作整理并启动本地资源。
+              三步开始：导入、打标签、搜索打开。
             </p>
           </div>
 
-          <div className="grid lg:grid-cols-[minmax(0,1fr)_220px]">
-            <section className="min-w-0 px-4 py-5 sm:px-6" aria-labelledby="welcome-features-title">
-              <div className="flex items-end justify-between gap-3">
-                <div>
-                  <div className="instrument-label">能力一览</div>
-                  <h3 id="welcome-features-title" className="mt-1 text-base font-semibold text-[var(--text-primary)]">
-                    工作区能力
-                  </h3>
-                </div>
-                <span className="data-readout text-[13px] text-[var(--text-faint)]">{FEATURES.length} 项</span>
-              </div>
+          <section className="min-w-0 px-4 py-5 sm:px-6" aria-labelledby="welcome-steps-title">
+            <h3 id="welcome-steps-title" className="text-base font-semibold text-[var(--text-primary)]">
+              三步上手
+            </h3>
+            <ol className="mt-3 grid gap-2 sm:grid-cols-3">
+              {STEPS.map((step, index) => {
+                const Icon = step.icon;
+                return (
+                  <li
+                    key={step.title}
+                    className="flex min-w-0 gap-3 rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--bg-card)] px-3 py-3"
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+                      <Icon aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">
+                        {index + 1}. {step.title}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">{step.description}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
 
-              <ul className="mt-3 grid border-l border-t border-[var(--line-hairline)] sm:grid-cols-2">
-                {FEATURES.map((feature) => {
-                  const Icon = feature.icon;
-                  return (
-                    <li
-                      key={feature.title}
-                      className="flex min-w-0 gap-3 border-b border-r border-[var(--line-hairline)] bg-[var(--bg-card)] px-3 py-3"
-                    >
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-                        <Icon aria-hidden="true" size={16} strokeWidth={1.8} />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-[var(--text-primary)]">{feature.title}</span>
-                          {feature.isNew && (
-                            <span className="data-readout rounded-[var(--radius-sm)] bg-[var(--accent-primary-bg)] px-1.5 py-0.5 text-[13px] text-[var(--accent-primary-ink)]">
-                              NEW
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">{feature.description}</p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              <div className="mt-4 flex items-start gap-2 border-l-2 border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] px-3 py-2.5 text-xs leading-5 text-[var(--text-secondary)]">
-                <Sparkles aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--accent-primary)]" size={15} strokeWidth={1.8} />
-                在设置中填写兼容 Anthropic 协议的 API 地址与密钥，即可一键为全库对象自动打标。
-              </div>
-            </section>
-
-            <aside className="flex items-center gap-4 border-t border-[var(--line-hairline)] bg-[var(--surface-recessed)] p-5 lg:flex-col lg:items-stretch lg:border-l lg:border-t-0">
-              <div className="w-24 shrink-0 border border-[var(--border-subtle)] bg-white p-2 lg:w-full">
-                <img src={qrCodeImage} alt="赞助二维码" className="aspect-square w-full object-contain" draggable={false} />
-              </div>
-              <div className="min-w-0 lg:text-center">
-                <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)] lg:justify-center">
-                  <Heart aria-hidden="true" size={16} strokeWidth={1.8} className="text-[var(--accent-primary)]" />
-                  支持作者
-                </div>
-                <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">感谢你帮助 TagLauncher 持续迭代。</p>
-                <a
-                  href={BILIBILI_URL}
-                  onClick={handleOpenBilibili}
-                  className="mt-3 inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold text-[var(--accent-primary-ink)] underline-offset-4 hover:underline"
-                >
-                  B 站主页
-                  <ExternalLink aria-hidden="true" size={14} strokeWidth={1.8} />
-                </a>
-              </div>
-            </aside>
-          </div>
+          <aside
+            className="mx-4 mb-5 flex items-center gap-4 rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] p-4 sm:mx-6"
+            aria-label="赞助开发者"
+          >
+            <img
+              src={qrCodeImage}
+              alt="赞赏码"
+              className="h-28 w-28 shrink-0 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-white object-contain p-1.5"
+              draggable={false}
+            />
+            <div className="min-w-0">
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-[var(--text-primary)]">
+                <Heart aria-hidden="true" size={16} strokeWidth={1.8} className="text-[var(--accent-primary)]" />
+                赞助开发者
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
+                扫码请作者喝一杯咖啡，帮助 TagLauncher 继续迭代。
+              </p>
+              <a
+                href={BILIBILI_URL}
+                onClick={handleOpenBilibili}
+                className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold text-[var(--accent-primary-ink)] underline-offset-4 hover:underline"
+              >
+                B 站主页
+                <ExternalLink aria-hidden="true" size={14} strokeWidth={1.8} />
+              </a>
+            </div>
+          </aside>
         </div>
 
-        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-4 sm:px-6">
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-3 sm:px-6">
           <button
             type="button"
             onClick={() => setHideNextTime((value) => !value)}
@@ -265,7 +204,6 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
             </span>
             下次不再显示
           </button>
-
           <button
             type="button"
             onClick={() => onClose(hideNextTime)}

@@ -74,8 +74,19 @@ function lookupVisual(path: string): DemoVisual {
   return { emoji: "📄", from, to };
 }
 
-function buildSvg(visual: DemoVisual): string {
+function buildSvg(visual: DemoVisual, path: string): string {
   const id = `g${hashPath(visual.from + visual.to).toString(36)}`;
+  if (/\.(jpe?g|png|webp|gif|bmp)$/i.test(path)) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">`
+      + `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">`
+      + `<stop offset="0" stop-color="${visual.from}"/><stop offset="1" stop-color="${visual.to}"/>`
+      + `</linearGradient></defs>`
+      + `<rect width="960" height="640" fill="url(#${id})"/>`
+      + `<circle cx="760" cy="120" r="72" fill="#ffe8b0"/>`
+      + `<path d="M0 420 C180 360 280 480 480 400 C680 320 780 460 960 380 L960 640 L0 640 Z" fill="#1f2937" opacity="0.35"/>`
+      + `<path d="M0 480 C220 420 360 520 560 450 C740 390 860 500 960 460 L960 640 L0 640 Z" fill="#111827" opacity="0.45"/>`
+      + `</svg>`;
+  }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">`
     + `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">`
     + `<stop offset="0" stop-color="${visual.from}"/><stop offset="1" stop-color="${visual.to}"/>`
@@ -93,7 +104,7 @@ function buildSvg(visual: DemoVisual): string {
  * 改为程序化生成确定性占位图，视觉上等同真实缩略图。
  */
 export function demoAssetUrl(path: string): string {
-  const svg = buildSvg(lookupVisual(path));
+  const svg = buildSvg(lookupVisual(path), path);
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 

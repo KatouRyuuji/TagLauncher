@@ -16,6 +16,7 @@ describe("TagFilterBar 右键反选", () => {
       selectedCabinetId: null,
       showFavorites: false,
       showRecent: false,
+      workspaceFiltersOpen: true,
     });
   });
 

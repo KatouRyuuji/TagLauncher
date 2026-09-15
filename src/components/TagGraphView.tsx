@@ -200,6 +200,9 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
               </div>
             ) : (
               <div ref={contentRef} className="relative inline-block min-w-full pr-10 pb-6">
+                {selectedNodeId == null && emptyState !== "no-relations" && (
+                  <p className="mb-4 text-sm text-[var(--text-faint)]">点选一个标签查看它的父子连线。</p>
+                )}
                 {emptyState === "no-relations" && (
                   <div className="mb-6 flex items-start gap-2.5 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--accent-primary)_28%,transparent)] bg-[var(--accent-primary-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
                     <svg className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -220,7 +223,10 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                       <path d="M0,0 L6,3 L0,6 Z" fill="var(--accent-primary)" />
                     </marker>
                   </defs>
-                  {validRelations.map((rel) => {
+                  {(selectedNodeId == null
+                    ? []
+                    : validRelations.filter((rel) => rel.parentId === selectedNodeId || rel.childId === selectedNodeId)
+                  ).map((rel) => {
                     const p = positions.get(rel.parentId);
                     const c = positions.get(rel.childId);
                     if (!p || !c) return null;
@@ -229,7 +235,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                     const x2 = c.cx;
                     const y2 = c.top;
                     const midY = (y1 + y2) / 2;
-                    const active = selectedNodeId === rel.parentId || selectedNodeId === rel.childId;
+                    const active = true;
                     return (
                       <path
                         key={`${rel.parentId}-${rel.childId}`}
