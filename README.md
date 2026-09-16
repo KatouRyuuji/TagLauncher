@@ -4,7 +4,7 @@
 
 **现代 | 轻量 | 极速 | 标签化管理**
 
-标签式文件管理器与启动器:把本地文件、文件夹、脚本、程序、图片按「标签 + 文件柜 + 收藏」组织,快速搜索、一键启动。
+标签式文件管理器与启动器:把本地文件、文件夹、脚本、程序、图片、音视频按「标签 + 文件柜 + 收藏」组织,快速搜索、一键启动。
 
 [![Release](https://img.shields.io/github/v/release/KatouRyuuji/TagLauncher?include_prereleases&style=flat-square)](https://github.com/KatouRyuuji/TagLauncher/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20%C2%B7%20x64%20%2F%20ARM64-0078D4?style=flat-square)](https://github.com/KatouRyuuji/TagLauncher/releases)
@@ -38,12 +38,12 @@
 |:---:|:---|:---|
 | 🧭 | **文件身份追踪** | 以 NTFS 文件 ID 为身份,改名、同盘移动自动追踪;跨盘移动按内容指纹自动找回;支持 NAS / 网络盘。 |
 | 🕸️ | **图状标签(DAG)** | 标签多父继承构成有向无环图:选中「水果」自动包含「苹果」;关系编辑器 + 可视化标签图谱。 |
-| 🧩 | **Mod + 主题双体系** | CSS / CSS+JS / Theme 三类 Mod,17 种权限管控与网络请求原语;7 大配色家族 × 亮/暗模式,RyuujiDesign 锁定色板。 |
+| 🧩 | **Mod + 主题双体系** | CSS / CSS+JS / Theme 三类 Mod,17 种权限管控与网络请求原语;4 大配色家族(霜靛 / 藤色 / 樱花 / 素墨)× 亮/暗模式,RyuujiDesign 锁定色板。 |
 | 🤖 | **AI 自动打标** | 兼容 Anthropic 协议(可接第三方地址),一键 / 自动打标;密钥只存本机,导出自动剔除。 |
 | 🖥️ | **CLI / MCP 原生集成** | 随附 `tl` 命令行(全功能 + JSON 输出)、`tl tui` 终端界面、`tl mcp` MCP 服务——AI 客户端可直接搜索 / 启动 / 整理你的对象库。 |
 | 🔒 | **数据主权** | 全部本地存储;WebDAV 云备份脱敏(保留最近 10 份);自定义数据目录,一键备份 / 导出 / 导入。 |
 
-> 另有商业级交互(大列表虚拟化、命令面板、空格预览、框选、关键词高亮)与在线更新(x64 / ARM64 双架构安装包,启动自动检查、24h 节流)。工程数据:**94 个后端命令 · 300+ 自动化测试全绿 · CI + tag 触发双架构发版流水线**。
+> 另有商业级交互(大列表虚拟化、命令面板、空格预览图片/音频/视频、框选、关键词高亮)与在线更新(x64 / ARM64 双架构安装包,启动自动检查、24h 节流)。工程数据:**95 个后端命令 · 300+ 自动化测试全绿 · CI + tag 触发双架构发版流水线**。
 
 ## 快速开始
 
@@ -149,7 +149,7 @@ npm run pack:portable  # 打便携版 zip(单 exe;build.bat 会在构建后自�
 | [主题开发指南](./THEME_GUIDE.md) | 主题 JSON 字段与 112 键变量契约 |
 | [源码开发指南](./TUTORIAL.md) | 从源码开始的开发教学 |
 | [维护手册](./MAINTENANCE.md) | 测试、发版与维护流程 |
-| [版本对比](./版本对比.md) | 1.0.0 → 1.7.13-beta 代际升级记录 |
+| [版本对比](./版本对比.md) | 1.0.0 → 1.8.0 代际升级记录 |
 
 ## Star History
 

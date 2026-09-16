@@ -1,6 +1,6 @@
 # TagLauncher 项目手册
 
-> 适用版本：v1.7.13-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
+> 适用版本：v1.8.0 · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
 
 ## 一、项目简介
 
@@ -745,8 +745,8 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 
 - `vite --mode demo` 时 `vite.config.ts` 用 `resolve.alias` 把 5 个 Tauri 模块（`api/core`、`api/window`、`api/webview`、`plugin-dialog`、`plugin-shell`）替换为 `src/demo/tauri/` 下的浏览器内替身，前端代码零改动。
 - `src/demo/backend.ts` 是内存演示后端，覆盖 `lib/db.ts` 全部命令：数据读写、标签 DAG（含成环检测）、文件柜、设置、AI 打标建议、云同步、更新检查、Mod 管理等，并带模拟 IPC 延迟让加载态可见。页面刷新后数据重置。
-- `src/demo/data.ts` 是演示数据集：6 种对象类型（folder/image/audio/exe/bat/ps1）各 4 个，模拟知名软件/游戏/音乐/图片（如 VS Code、原神、周杰伦专辑），全部挂匹配标签；标签构成 DAG（如 娱乐⊃音乐⊃华语流行）；含 3 个文件柜与 1 个失效对象（演示找回流程）。
-- `src/demo/assets.ts` 把虚构路径确定性地生成为内联 SVG data URL（缩略图/专辑封面）；音频路径喂给 `<audio>` 的是生成的静音 WAV，保证播放器正常加载。仓库不含任何第三方版权素材。
+- `src/demo/data.ts` 是演示数据集：11 个对象覆盖 7 种类型（folder/image/audio/video/exe/bat/ps1），模拟知名软件/游戏/音乐/影片/图片（如 VS Code、原神、周杰伦专辑、星际穿越），全部挂匹配标签；标签构成 DAG（如 娱乐⊃音乐⊃华语流行）；含 2 个文件柜与 1 个失效对象（演示找回流程）。
+- `src/demo/assets.ts` 把虚构路径确定性地生成为内联 SVG data URL（缩略图/专辑封面/视频首帧占位）；音频路径喂给 `<audio>` 的是生成的静音 WAV，保证播放器正常加载。仓库不含任何第三方版权素材。
 
 ### 16.2 用法
 

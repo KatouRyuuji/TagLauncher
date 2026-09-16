@@ -1,8 +1,8 @@
 // ============================================================================
 // demo/data.ts — 演示数据集（仅 demo 模式使用，不进正式构建功能路径）
 // ============================================================================
-// 10 个模拟对象，覆盖全部形态：
-//   - 6 种对象类型：folder ×3 / image ×2 / audio / exe ×2 / bat / ps1；
+// 11 个模拟对象，覆盖全部形态：
+//   - 7 种对象类型：folder ×3 / image ×2 / audio / video / exe ×2 / bat / ps1；
 //   - 状态形态：收藏、失效（移动硬盘未连接）、多标签、从未启动（无 last_used_at）；
 //   - 标签构成 DAG（多父继承），含零对象的结构标签（系统工具），用于演示
 //     标签图谱与「选中父标签并入后代对象」。
@@ -53,7 +53,7 @@ export const DEMO_TAG_RELATIONS: TagRelation[] = [
   { parentId: 7, childId: 30 }, // 游戏 ⊃ 开放世界
 ];
 
-// ---- 对象（10 个，6 类型全覆盖） ----
+// ---- 对象（11 个，7 类型全覆盖） ----
 
 export interface DemoItemSeed extends Item {
   /** 标签 id 列表（对应 DEMO_TAGS） */
@@ -79,6 +79,9 @@ export const DEMO_ITEMS: DemoItemSeed[] = [
   // ---- audio ----
   { id: 6, name: "周杰伦 - 晴天", path: "D:\\Music\\华语流行\\周杰伦 - 晴天.mp3", type: "audio", icon_path: thumb(6), created_at: "2025-01-20T13:00:00Z", last_used_at: "2026-08-25T22:18:00Z", is_favorite: true, tagIds: [8, 26] },
 
+  // ---- video ----
+  { id: 11, name: "星际穿越", path: "D:\\Videos\\星际穿越.mp4", type: "video", icon_path: thumb(11), created_at: "2025-06-08T20:30:00Z", last_used_at: "2026-08-22T21:10:00Z", is_favorite: false, tagIds: [2, 9] },
+
   // ---- exe ----
   { id: 7, name: "Visual Studio Code", path: "C:\\Program Files\\Microsoft VS Code\\Code.exe", type: "exe", icon_path: thumb(7), created_at: "2025-01-05T08:00:00Z", last_used_at: "2026-08-26T01:30:00Z", is_favorite: true, tagIds: [1, 10, 11] },
   { id: 8, name: "原神", path: "G:\\Games\\Genshin Impact\\YuanShen.exe", type: "exe", icon_path: thumb(8), created_at: "2025-02-28T14:20:00Z", last_used_at: "2026-08-24T23:37:00Z", is_favorite: false, tagIds: [2, 7, 30] },
@@ -100,7 +103,7 @@ export const DEMO_CABINETS: Cabinet[] = [
 /** 文件柜成员：cabinetId → itemIds */
 export const DEMO_CABINET_ITEMS: Record<number, number[]> = {
   1: [7, 1, 10],
-  2: [8, 6],
+  2: [8, 6, 11],
 };
 
 // ---- 文件夹预览目录列表（虚构条目） ----

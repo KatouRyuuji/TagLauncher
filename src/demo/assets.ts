@@ -24,6 +24,8 @@ const PATH_VISUALS: Record<string, DemoVisual> = {
   "D:/Photos/2024-青海/青海湖日落.jpg": { emoji: "🌅", from: "#fb923c", to: "#c2410c" },
   // audio（专辑封面与卡片缩略图同视觉）
   "D:/Music/华语流行/周杰伦 - 晴天.mp3": { emoji: "🎵", from: "#fb7185", to: "#e11d48" },
+  // video（首帧占位，与卡片缩略图同视觉）
+  "D:/Videos/星际穿越.mp4": { emoji: "🎥", from: "#818cf8", to: "#4f46e5" },
 };
 
 /** 缩略图缓存路径 item-<id>.png → 视觉（与 data.ts 中的对象一一对应） */
@@ -36,6 +38,7 @@ const THUMB_VISUALS: Record<number, DemoVisual> = {
   8: { emoji: "⛩️", from: "#fda4af", to: "#be123c" },
   9: { emoji: "⚙️", from: "#93c5fd", to: "#1d4ed8" },
   10: { emoji: "🔄", from: "#6ee7b7", to: "#047857" },
+  11: { emoji: "🎥", from: "#818cf8", to: "#4f46e5" },
 };
 
 const FALLBACK_PALETTE: Array<[string, string]> = [
@@ -76,7 +79,10 @@ function lookupVisual(path: string): DemoVisual {
 
 function buildSvg(visual: DemoVisual, path: string): string {
   const id = `g${hashPath(visual.from + visual.to).toString(36)}`;
-  if (/\.(jpe?g|png|webp|gif|bmp)$/i.test(path)) {
+  if (/\.(jpe?g|png|webp|gif|bmp|mp4|m4v|mkv|avi|mov|wmv|flv|webm)$/i.test(path)) {
+    const playMark = /\.(mp4|m4v|mkv|avi|mov|wmv|flv|webm)$/i.test(path)
+      ? `<circle cx="480" cy="320" r="64" fill="#111827" opacity="0.55"/><polygon points="468,288 468,352 524,320" fill="#ffffff"/>`
+      : "";
     return `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">`
       + `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">`
       + `<stop offset="0" stop-color="${visual.from}"/><stop offset="1" stop-color="${visual.to}"/>`
@@ -85,6 +91,7 @@ function buildSvg(visual: DemoVisual, path: string): string {
       + `<circle cx="760" cy="120" r="72" fill="#ffe8b0"/>`
       + `<path d="M0 420 C180 360 280 480 480 400 C680 320 780 460 960 380 L960 640 L0 640 Z" fill="#1f2937" opacity="0.35"/>`
       + `<path d="M0 480 C220 420 360 520 560 450 C740 390 860 500 960 460 L960 640 L0 640 Z" fill="#111827" opacity="0.45"/>`
+      + playMark
       + `</svg>`;
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">`

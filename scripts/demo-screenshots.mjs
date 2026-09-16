@@ -1,14 +1,14 @@
 // ============================================================================
 // scripts/demo-screenshots.mjs — 全功能 UI 交互测试 + 全形态截图
 // ============================================================================
-// 启动 demo 模式（浏览器内 mock 后端 + 10 个全覆盖模拟对象，见 src/demo/），
+// 启动 demo 模式（浏览器内 mock 后端 + 11 个全覆盖模拟对象，见 src/demo/），
 // 用 Playwright 驱动真实 UI 交互，逐特性断言行为正确（check 计数，失败以
 // 退出码 1 结束），并在每个形态落截图。
 //
 // 覆盖：欢迎页 / 网格 / 列表 / 侧栏新建标签·文件柜编辑态 / 关键词（含高亮）·拼音·
 // 表达式搜索 / 搜索模式切换 / 类型筛选 / 筛选无结果空态 / 标签 DAG 筛选（父并入后代、
 // 多选交集）/ 收藏 / 最近使用 / 文件柜 / 排序 / 命令面板（打开态·命令过滤·对象搜索）/
-// 快速预览（图片·音频·文件夹）/ 右键菜单（单选·多选·添加到文件柜子菜单）/ 标签编辑 /
+// 快速预览（图片·音频·视频·文件夹）/ 右键菜单（单选·多选·添加到文件柜子菜单）/ 标签编辑 /
 // 框选与批量工具条（含下拉菜单）/ 标签关系编辑 / 标签图谱 / 设置六区块（含主题下拉
 // 打开态）/ AI 打标（进行中 + 完成）/ 快捷键帮助 / F3 / 失效找回 / 批量移除确认 /
 // 空库引导 / 首屏骨架屏；主题形态：全部内置配色家族 × 亮/暗 + 霜靛亮/暗列表。
@@ -202,8 +202,8 @@ async function featureTour(page) {
 
   // 02 网格视图
   await shot(page, "workspace-grid-主界面-网格视图");
-  await check("网格视图渲染 10 个对象", (await itemCount(page)) === 10);
-  await check("状态栏计数 10 项", (await statusText(page))?.includes("10 项"));
+  await check("网格视图渲染 11 个对象", (await itemCount(page)) === 11);
+  await check("状态栏计数 11 项", (await statusText(page))?.includes("11 项"));
   await check("失效对象徽标可见", page.locator("[data-selectable-item-id]").filter({ hasText: "影视收藏" }).getByText("失效", { exact: true }).isVisible());
 
   // 02b 首页侧栏官方主题色点 + 亮/暗分段（用完后回到霜靛亮，避免污染后续巡演）
@@ -236,7 +236,7 @@ async function featureTour(page) {
   await page.locator('button[title="列表视图"]').click();
   await settle();
   await shot(page, "workspace-list-主界面-列表视图");
-  await check("列表视图渲染 10 行", (await itemCount(page)) === 10);
+  await check("列表视图渲染 11 行", (await itemCount(page)) === 11);
   await check("列表表头含名称/标签/类型", page.locator('button:has-text("名称")').first().isVisible());
 
   // 03b 表头点击排序（按名称）→ 再点回智能
@@ -310,7 +310,7 @@ async function featureTour(page) {
   await shot(page, "search-empty-搜索无结果空态");
   await check("无结果空态出现", page.getByText(/没有找到|无结果|清空筛选/).first().isVisible());
   await clearSearch(page);
-  await check("清空搜索恢复 10 项", (await itemCount(page)) === 10);
+  await check("清空搜索恢复 11 项", (await itemCount(page)) === 11);
 
   // 08 类型筛选（先展开筛选条 → 图片 = 2）
   await ensureFiltersOpen(page);
@@ -324,6 +324,12 @@ async function featureTour(page) {
   await check("类型筛选「图片」命中 2 项", (await itemCount(page)) === 2);
   await page.locator('[role="group"][aria-label="文件类型筛选"] button:has-text("图片")').click();
   await settle(400);
+  await page.locator('[role="group"][aria-label="文件类型筛选"] button:has-text("视频")').click();
+  await settle(500);
+  await shot(page, "filter-type-类型筛选-视频");
+  await check("类型筛选「视频」命中 1 项", (await itemCount(page)) === 1);
+  await page.locator('[role="group"][aria-label="文件类型筛选"] button:has-text("视频")').click();
+  await settle(400);
 
   // 08b 筛选无结果空态（类型「图片」∩ 标签「开发」无交集 → 一键清空筛选）
   await page.locator('[role="group"][aria-label="文件类型筛选"] button:has-text("图片")').click();
@@ -333,12 +339,12 @@ async function featureTour(page) {
   await check("筛选无结果空态出现「清空所有筛选」", page.getByRole("button", { name: "清空所有筛选" }).isVisible());
   await page.getByRole("button", { name: "清空所有筛选" }).click();
   await settle(600);
-  await check("清空筛选恢复 10 项", (await itemCount(page)) === 10);
+  await check("清空筛选恢复 11 项", (await itemCount(page)) === 11);
 
-  // 09 标签筛选（父标签并入后代对象：娱乐 ⊃ 游戏/音乐/电影 → 3 项）
+  // 09 标签筛选（父标签并入后代对象：娱乐 ⊃ 游戏/音乐/电影 → 4 项）
   await sidebarTag(page, "娱乐");
   await shot(page, "filter-tag-标签筛选-父标签含后代");
-  await check("父标签「娱乐」并入后代共 3 项", (await itemCount(page)) === 3);
+  await check("父标签「娱乐」并入后代共 4 项", (await itemCount(page)) === 4);
   await sidebarTag(page, "娱乐");
 
   // 10 标签多选交集（开发 ∩ 自动化 = 2）
@@ -363,7 +369,7 @@ async function featureTour(page) {
   await page.locator('[data-region="sidebar-nav"] button:has-text("最近使用")').click();
   await settle();
   await shot(page, "filter-recent-最近使用");
-  await check("最近使用 9 项（失效对象从未启动）", (await itemCount(page)) === 9);
+  await check("最近使用 10 项（失效对象从未启动）", (await itemCount(page)) === 10);
   await page.locator('[data-region="sidebar-nav"] button:has-text("最近使用")').click();
   await settle(300);
 
@@ -427,6 +433,17 @@ async function featureTour(page) {
   await settle(700);
   await shot(page, "preview-audio-快速预览-音频");
   await check("音频预览显示专辑信息", page.getByText("叶惠美").first().isVisible());
+  await closeOverlays(page);
+  await clearSelection(page);
+
+  // 18b 快速预览 - 视频（播放器或首帧占位）
+  await rightClickItem(page, "星际穿越");
+  await clickMenu(page, "快速预览");
+  await settle(700);
+  await shot(page, "preview-video-快速预览-视频");
+  await check("视频预览对话框打开", page.getByRole("dialog", { name: "快速预览" }).getByText("视频", { exact: true }).first().isVisible());
+  await check("视频预览有播放器或首帧图",
+    (await page.locator('[data-quick-preview] video, [data-quick-preview] img[alt$="首帧"]').count()) > 0);
   await closeOverlays(page);
   await clearSelection(page);
 
@@ -567,7 +584,7 @@ async function featureTour(page) {
   await page.locator('[data-region="main"]').click({ position: { x: 6, y: 300 } });
   await page.keyboard.press("Control+a");
   await settle(300);
-  await check("Ctrl+A 全选 10 项", (await page.locator('[data-testid="batch-toolbar"]').textContent())?.includes("10"));
+  await check("Ctrl+A 全选 11 项", (await page.locator('[data-testid="batch-toolbar"]').textContent())?.includes("11"));
   await page.keyboard.press("Delete");
   await settle(400);
   await shot(page, "remove-confirm-批量移除确认");
@@ -589,7 +606,7 @@ async function featureTour(page) {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await page.locator('[data-region="main"] [data-selectable-item-id]').first().waitFor();
   await settle();
-  await check("重新进入后演示数据复位为 10 项", (await itemCount(page)) === 10);
+  await check("重新进入后演示数据复位为 11 项", (await itemCount(page)) === 11);
 }
 
 // ---- 主题形态巡演：全部配色家族 × 亮/暗 网格 + 霜靛亮/暗列表 ----
