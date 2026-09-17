@@ -300,16 +300,18 @@ async function featureTour(page) {
   await check("关键词搜索「晴天」命中 1 项", (await itemCount(page)) === 1);
   await check("命中词高亮渲染（mark.search-highlight）", page.locator("mark.search-highlight").first().isVisible());
 
-  // 04b 搜索模式切换（全部 → 仅名称：范围徽标出现，点击徽标恢复）
+  // 04b 搜索模式切换（全部 → 仅名称：范围页签是唯一控件，筛选行可见时不再画重复徽标）
   await ensureFiltersOpen(page);
-  await page.locator('[role="group"][aria-label="搜索范围"] button:has-text("名称")').click();
+  const searchScopeGroup = page.locator('[role="group"][aria-label="搜索范围"]');
+  await searchScopeGroup.locator('button:has-text("名称")').click();
   await settle(600);
   await shot(page, "search-mode-搜索模式切换-仅名称");
-  await check("仅名称模式徽标出现", page.locator('[data-testid="search-mode-badge"]').isVisible());
+  await check("仅名称页签处于按下态", searchScopeGroup.locator('button[aria-pressed="true"]:has-text("名称")').isVisible());
+  await check("筛选行可见时不画范围徽标（单控件）", (await page.locator('[data-testid="search-mode-badge"]').count()) === 0);
   await check("仅名称模式「晴天」仍命中 1 项", (await itemCount(page)) === 1);
-  await page.locator('[data-testid="search-mode-badge"]').click();
+  await searchScopeGroup.locator('button:has-text("全部")').click();
   await settle(400);
-  await check("恢复全部模式后徽标消失", (await page.locator('[data-testid="search-mode-badge"]').count()) === 0);
+  await check("恢复全部范围页签", searchScopeGroup.locator('button[aria-pressed="true"]:has-text("全部")').isVisible());
 
   // 05 搜索 - 拼音首字母（zjl → 周杰伦）
   await search.fill("zjl");
@@ -367,13 +369,18 @@ async function featureTour(page) {
   await sidebarTag(page, "娱乐");
   await shot(page, "filter-tag-标签筛选-父标签含后代");
   await check("父标签「娱乐」并入后代共 4 项", (await itemCount(page)) === 4);
+  const scopeHeader = page.locator('[data-region="scope-header"]');
+  await check("范围标题写出「娱乐 · 含下级 · 4 项」", (await scopeHeader.textContent())?.replace(/\s+/g, "").includes("娱乐4项含下级"));
   await sidebarTag(page, "娱乐");
+  await check("侧栏「娱乐」未选中时标出含下级", page.locator('[data-region="sidebar-nav"] button:has-text("娱乐")').first().getByText("含下级").isVisible());
 
   // 10 标签多选交集（开发 ∩ 自动化 = 2）
   await sidebarTag(page, "开发");
   await sidebarTag(page, "自动化");
   await shot(page, "filter-tag-multi-标签多选交集");
   await check("「开发 ∩ 自动化」命中 2 项", (await itemCount(page)) === 2);
+  await check("标签芯片之间写「且」", page.locator('[data-region="tagfilterbar"]').getByText("且", { exact: true }).isVisible());
+  await check("范围标题写出「开发 且 自动化」", (await scopeHeader.textContent())?.includes("开发 且 自动化"));
   await sidebarTag(page, "开发");
   await sidebarTag(page, "自动化");
 

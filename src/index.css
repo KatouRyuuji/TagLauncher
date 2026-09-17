@@ -604,6 +604,23 @@
     text-align: center;
   }
 
+  /* 少结果（1–3 项）居中紧凑组：避免一两张卡贴左上像货架被搬空 */
+  .item-grid-few {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1rem;
+    max-width: 1080px;
+    margin-inline: auto;
+    padding: 2rem 1.5rem;
+  }
+  .item-grid-few-card {
+    width: min(320px, 100%);
+  }
+  .item-grid-few-card > * {
+    width: 100%;
+  }
+
   .text-label {
     font-size: 13px;
     letter-spacing: 0;

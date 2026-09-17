@@ -20,6 +20,7 @@ import { TagEditor } from "./TagEditor";
 import { TagRelationsEditor } from "./TagRelationsEditor";
 import { SidebarThemeSwitcher } from "./SidebarThemeSwitcher";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
+import { flattenTagTree } from "../lib/tagTree";
 import { onCabinetItemsChanged } from "../lib/modApi";
 import * as db from "../lib/db";
 import {
@@ -70,6 +71,7 @@ export function Sidebar({
 }: SidebarProps) {
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const excludedTagIds = useAppStore((state) => state.excludedTagIds);
+  const tagRelations = useAppStore((state) => state.tagRelations);
   const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
   const toggleTagExclusion = useAppStore((state) => state.toggleTagExclusion);
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
@@ -118,6 +120,16 @@ export function Sidebar({
     }
     return m;
   }, [allItems]);
+
+  const tagRows = useMemo(
+    () =>
+      flattenTagTree(
+        tags,
+        tagRelations,
+        (a, b) => (itemCountByTag.get(b.id) ?? 0) - (itemCountByTag.get(a.id) ?? 0),
+      ),
+    [tags, tagRelations, itemCountByTag],
+  );
 
   const [itemCountByCabinet, setItemCountByCabinet] = useState<Map<number, number>>(() => new Map());
 
@@ -294,9 +306,10 @@ export function Sidebar({
               </SectionHeader>
 
               <div className="mt-1 space-y-0.5">
-                {[...tags].sort((a, b) => (itemCountByTag.get(b.id) ?? 0) - (itemCountByTag.get(a.id) ?? 0)).map((tag) => {
+                {tagRows.map(({ tag, depth, hasChildren }) => {
                   const active = selectedTagIds.includes(tag.id);
                   const excluded = excludedTagIds.includes(tag.id);
+                  const showDescendantHint = hasChildren && !active && !excluded;
                   const activeTagStyle = active
                     ? {
                         borderColor: `color-mix(in srgb, ${tag.color} var(--tag-selected-border-alpha), transparent)`,
@@ -313,7 +326,7 @@ export function Sidebar({
                       style={activeTagStyle}
                       onPointerDown={(event) => handleTagPointerDown(event, tag)}
                       onClick={(event) => handleTagClick(event, tag.id)}
-                      title="单击筛选；Alt+单击排除含此标签的项目"
+                      title={hasChildren ? "单击筛选；Alt+单击排除含此标签的项目。选中时也包含下级标签的项目" : "单击筛选；Alt+单击排除含此标签的项目"}
                       onKeyDown={(event) => {
                         // 键盘可达的编辑入口（对齐右键菜单）：F2 重命名 / Delete 删除，均打开编辑弹窗
                         if (event.key === "F2" || event.key === "Delete") {
@@ -325,7 +338,7 @@ export function Sidebar({
                         event.preventDefault();
                         setEditingTag(tag);
                       }}
-                      className={`group/tag flex h-8 w-full cursor-grab items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors active:cursor-grabbing ${
+                      className={`group/tag flex h-8 w-full cursor-grab items-center gap-2 rounded-[var(--radius-sm)] border ${depth === 1 ? "pr-2.5 pl-[22px]" : depth === 2 ? "pr-2.5 pl-[36px]" : "px-2.5"} text-left transition-colors active:cursor-grabbing ${
                         active
                           ? "font-semibold text-[var(--text-primary)]"
                           : excluded
@@ -341,6 +354,10 @@ export function Sidebar({
                         aria-hidden="true"
                       />
                       <span className={`min-w-0 flex-1 truncate text-[13px] font-medium ${excluded ? "line-through" : ""}`}>{tag.name}</span>
+                      {showDescendantHint && (
+                        // 缩进已表达层级；文字提示只在悬停/聚焦时浮出，避免半数行都挂着同一枚小字
+                        <span className="ml-1 shrink-0 text-[11px] text-[var(--text-faint)] opacity-0 transition-opacity group-hover/tag:opacity-100 group-focus-visible/tag:opacity-100">含下级</span>
+                      )}
                       <NavCount value={itemCountByTag.get(tag.id) ?? 0} />
                     </button>
                   );

@@ -23,7 +23,7 @@ describe("TagFilterBar 右键反选", () => {
   it("没有已选或排除标签时不渲染全量芯片", () => {
     useAppStore.setState({ selectedTagIds: [], excludedTagIds: [] });
     render(<TagFilterBar />);
-    expect(screen.queryByRole("group", { name: "已选标签" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "已选标签（同时满足）" })).not.toBeInTheDocument();
   });
 
   it("右键标签进入反选态，再次右键取消", () => {
@@ -44,5 +44,41 @@ describe("TagFilterBar 右键反选", () => {
     fireEvent.click(screen.getByLabelText("设计（已排除）"));
     expect(useAppStore.getState().selectedTagIds).toEqual([1]);
     expect(useAppStore.getState().excludedTagIds).toEqual([]);
+  });
+
+  it("两个正选芯片之间写「且」", () => {
+    useAppStore.setState({
+      tags: [
+        { id: 1, name: "设计", color: "#e11d48" },
+        { id: 2, name: "开发", color: "#3b82f6" },
+      ],
+      selectedTagIds: [1, 2],
+      excludedTagIds: [],
+    });
+    render(<TagFilterBar />);
+    expect(screen.getByRole("group", { name: "已选标签（同时满足）" })).toBeInTheDocument();
+    expect(screen.getByText("且")).toBeInTheDocument();
+    expect(screen.queryByText("且非")).not.toBeInTheDocument();
+  });
+
+  it("单个芯片不写「且」", () => {
+    render(<TagFilterBar />);
+    expect(screen.getByRole("group", { name: "已选标签（同时满足）" })).toBeInTheDocument();
+    expect(screen.queryByText("且")).not.toBeInTheDocument();
+    expect(screen.queryByText("且非")).not.toBeInTheDocument();
+  });
+
+  it("排除芯片前写「且非」", () => {
+    useAppStore.setState({
+      tags: [
+        { id: 1, name: "设计", color: "#e11d48" },
+        { id: 2, name: "开发", color: "#3b82f6" },
+      ],
+      selectedTagIds: [1],
+      excludedTagIds: [2],
+    });
+    render(<TagFilterBar />);
+    expect(screen.getByText("且非")).toBeInTheDocument();
+    expect(screen.queryByText("且")).not.toBeInTheDocument();
   });
 });

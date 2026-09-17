@@ -26,6 +26,7 @@ describe("appStore", () => {
       viewMode: "grid",
       sortMode: "smart",
       typeFilter: "all",
+      workspaceFiltersOpen: true,
       tagGraphOpen: false,
       commandPaletteOpen: false,
       shortcutsHelpOpen: false,
@@ -160,13 +161,14 @@ describe("appStore", () => {
     expect(useAppStore.getState().showRecent).toBe(false);
   });
 
-  it("clearWorkspaceFilters 重置互斥筛选、类型筛选与搜索词", () => {
+  it("clearWorkspaceFilters 重置互斥筛选、类型筛选、搜索模式与搜索词", () => {
     useAppStore.setState({
       selectedTagIds: [1],
       excludedTagIds: [2],
       showFavorites: true,
       showRecent: true,
       typeFilter: "image",
+      searchMode: "name",
       searchQuery: "游戏",
       searchInputValue: "游戏机",
       sortMode: "name",
@@ -179,9 +181,20 @@ describe("appStore", () => {
     expect(useAppStore.getState().showFavorites).toBe(false);
     expect(useAppStore.getState().showRecent).toBe(false);
     expect(useAppStore.getState().typeFilter).toBe("all");
+    expect(useAppStore.getState().searchMode).toBe("all");
     expect(useAppStore.getState().searchQuery).toBe("");
     expect(useAppStore.getState().searchInputValue).toBe("");
     expect(useAppStore.getState().sortMode).toBe("name");
+  });
+
+  it("clearWorkspaceFilters 把 searchMode 写回 workspace_prefs", () => {
+    useAppStore.getState().setSearchMode("tag");
+    useAppStore.getState().clearWorkspaceFilters();
+    const stored = JSON.parse(localStorage.getItem("taglauncher.workspace_prefs") ?? "{}") as {
+      searchMode?: string;
+    };
+    expect(useAppStore.getState().searchMode).toBe("all");
+    expect(stored.searchMode).toBe("all");
   });
 
   it("clearWorkspaceFilters 派发搜索框重置事件", () => {
@@ -202,5 +215,25 @@ describe("appStore", () => {
   it("setViewMode 支持大图标", () => {
     useAppStore.getState().setViewMode("icons");
     expect(useAppStore.getState().viewMode).toBe("icons");
+  });
+
+  it("无偏好时 workspaceFiltersOpen 默认为展开", () => {
+    expect(useAppStore.getState().workspaceFiltersOpen).toBe(true);
+  });
+
+  it("setWorkspaceFiltersOpen 写入 workspace_prefs 并记住收起", () => {
+    useAppStore.getState().setWorkspaceFiltersOpen(false);
+    const storedClosed = JSON.parse(localStorage.getItem("taglauncher.workspace_prefs") ?? "{}") as {
+      workspaceFiltersOpen?: boolean;
+    };
+    expect(useAppStore.getState().workspaceFiltersOpen).toBe(false);
+    expect(storedClosed.workspaceFiltersOpen).toBe(false);
+
+    useAppStore.getState().setWorkspaceFiltersOpen(true);
+    const storedOpen = JSON.parse(localStorage.getItem("taglauncher.workspace_prefs") ?? "{}") as {
+      workspaceFiltersOpen?: boolean;
+    };
+    expect(useAppStore.getState().workspaceFiltersOpen).toBe(true);
+    expect(storedOpen.workspaceFiltersOpen).toBe(true);
   });
 });

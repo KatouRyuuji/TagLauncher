@@ -5,6 +5,32 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import type { FolderImportMode } from "../hooks/useFolderImport";
 import { pathBasename } from "../lib/itemActionCopy";
 
+const MODE_OPTIONS: {
+  value: FolderImportMode;
+  icon: typeof Folder;
+  title: string;
+  description: string;
+}[] = [
+  {
+    value: "folder",
+    icon: Folder,
+    title: "只加入文件夹",
+    description: "库里多这几条目录，双击打开文件夹本身，不扫里面的文件。",
+  },
+  {
+    value: "contents",
+    icon: Files,
+    title: "只加入里面的文件",
+    description: "递归收入夹内文件（跳过隐藏/系统项，最多先导入 2000 个），不把文件夹本身加入库。",
+  },
+  {
+    value: "both",
+    icon: Library,
+    title: "两者都加入",
+    description: "文件夹作为入口，里面的文件也能被标签检索。文件同样最多先导入 2000 个。",
+  },
+];
+
 export function AddFolderImportDialog({
   open,
   folderNames,
@@ -32,6 +58,8 @@ export function AddFolderImportDialog({
 
   const previewNames = folderNames.map(pathBasename).filter((name) => name.length > 0);
   const shownNames = previewNames.slice(0, 4);
+  const featured = MODE_OPTIONS.find((option) => option.value === defaultMode) ?? MODE_OPTIONS[0];
+  const alternatives = MODE_OPTIONS.filter((option) => option.value !== featured.value);
 
   return (
     <>
@@ -65,28 +93,25 @@ export function AddFolderImportDialog({
             </p>
           )}
 
-          <div className="mt-4 grid gap-2" role="radiogroup" aria-label="添加方式">
+          <div className="mt-4 flex flex-col gap-2" role="radiogroup" aria-label="添加方式">
             <ModeCard
-              active={mode === "folder"}
-              icon={Folder}
-              title="只加入文件夹"
-              description="库里多这几条目录，双击打开文件夹本身，不扫里面的文件。"
-              onSelect={() => setMode("folder")}
+              active={mode === featured.value}
+              icon={featured.icon}
+              title={featured.title}
+              description={featured.description}
+              onSelect={() => setMode(featured.value)}
             />
-            <ModeCard
-              active={mode === "contents"}
-              icon={Files}
-              title="只加入里面的文件"
-              description="递归收入夹内文件（跳过隐藏/系统项，最多先导入 2000 个），不把文件夹本身加入库。"
-              onSelect={() => setMode("contents")}
-            />
-            <ModeCard
-              active={mode === "both"}
-              icon={Library}
-              title="两者都加入"
-              description="文件夹作为入口，里面的文件也能被标签检索。文件同样最多先导入 2000 个。"
-              onSelect={() => setMode("both")}
-            />
+            <div className="flex gap-2">
+              {alternatives.map((option) => (
+                <ModeCompactRow
+                  key={option.value}
+                  active={mode === option.value}
+                  icon={option.icon}
+                  title={option.title}
+                  onSelect={() => setMode(option.value)}
+                />
+              ))}
+            </div>
           </div>
           <p className="mt-3 text-[12px] leading-5 text-[var(--text-faint)]">
             下次添加文件夹时默认选中此项。
@@ -127,6 +152,7 @@ function ModeCard({
     <button
       type="button"
       role="radio"
+      aria-label={title}
       aria-checked={active}
       onClick={onSelect}
       className={`flex w-full items-start gap-3 rounded-[var(--radius-lg)] border px-3 py-3 text-left ${
@@ -142,6 +168,38 @@ function ModeCard({
         <span className="block text-sm font-semibold text-[var(--text-primary)]">{title}</span>
         <span className="mt-1 block text-[13px] leading-5 text-[var(--text-muted)]">{description}</span>
       </span>
+    </button>
+  );
+}
+
+function ModeCompactRow({
+  active,
+  icon: Icon,
+  title,
+  onSelect,
+}: {
+  active: boolean;
+  icon: typeof Folder;
+  title: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-label={title}
+      aria-checked={active}
+      onClick={onSelect}
+      className={`flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-lg)] border px-3 py-2 text-left ${
+        active
+          ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
+          : "border-[var(--border-subtle)] bg-[var(--bg-input)] hover:border-[var(--border-default)]"
+      }`}
+    >
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+        <Icon size={14} strokeWidth={1.8} aria-hidden="true" />
+      </span>
+      <span className="text-sm font-semibold text-[var(--text-primary)]">{title}</span>
     </button>
   );
 }

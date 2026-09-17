@@ -137,7 +137,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             className="h-full min-w-0 flex-1 appearance-none border-0 bg-transparent text-[14px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none [&::-webkit-search-cancel-button]:hidden"
           />
 
-          {searchMode !== "all" && (
+          {searchMode !== "all" && !showFilterRow && (
             <button
               type="button"
               data-testid="search-mode-badge"
@@ -197,7 +197,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
           <button
             type="button"
             onClick={() => setViewMode("grid")}
-            className={`control-chip h-6 min-h-6 w-7 rounded-[var(--radius-sm)] border-0 px-0 ${
+            className={`control-chip h-6 min-h-6 w-7 gap-1 rounded-[var(--radius-sm)] border-0 px-0 xl:w-auto xl:px-1.5 ${
               viewMode === "grid" ? "control-chip-active" : ""
             }`}
             title="网格视图"
@@ -205,11 +205,12 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             aria-pressed={viewMode === "grid"}
           >
             <Grid2X2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+            <span className="hidden xl:inline">网格</span>
           </button>
           <button
             type="button"
             onClick={() => setViewMode("icons")}
-            className={`control-chip h-6 min-h-6 w-7 rounded-[var(--radius-sm)] border-0 px-0 ${
+            className={`control-chip h-6 min-h-6 w-7 gap-1 rounded-[var(--radius-sm)] border-0 px-0 xl:w-auto xl:px-1.5 ${
               viewMode === "icons" ? "control-chip-active" : ""
             }`}
             title="大图标视图"
@@ -217,11 +218,12 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             aria-pressed={viewMode === "icons"}
           >
             <Images className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+            <span className="hidden xl:inline">大图标</span>
           </button>
           <button
             type="button"
             onClick={() => setViewMode("list")}
-            className={`control-chip h-6 min-h-6 w-7 rounded-[var(--radius-sm)] border-0 px-0 ${
+            className={`control-chip h-6 min-h-6 w-7 gap-1 rounded-[var(--radius-sm)] border-0 px-0 xl:w-auto xl:px-1.5 ${
               viewMode === "list" ? "control-chip-active" : ""
             }`}
             title="列表视图"
@@ -229,6 +231,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             aria-pressed={viewMode === "list"}
           >
             <List className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+            <span className="hidden xl:inline">列表</span>
           </button>
         </div>
 
@@ -326,7 +329,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
         </div>
       </div>
 
-      {/* 控制 + 筛选：默认收起，避免与侧栏标签重复占满主路径 */}
+      {/* 控制 + 筛选：有库时默认展开（尊重 workspaceFiltersOpen 偏好）；空库不显示 */}
       {showFilterRow && <div
         data-region="filterbar"
         className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 py-1.5"

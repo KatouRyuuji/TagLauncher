@@ -5,7 +5,7 @@
 // 顶栏芯片可点掉或右键切换排除。文件柜 / 收藏 / 最近 视图中隐藏。
 // ============================================================================
 
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 
 export function TagFilterBar() {
@@ -66,7 +66,7 @@ export function TagFilterBar() {
       <div
         ref={scrollRef}
         role="group"
-        aria-label="已选标签"
+        aria-label="已选标签（同时满足）"
         className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         <button
@@ -77,49 +77,55 @@ export function TagFilterBar() {
           清除标签筛选
         </button>
 
-        {activeTags.map((tag) => {
+        {activeTags.map((tag, index) => {
           const active = selectedTagIds.includes(tag.id);
           const excluded = excludedTagIds.includes(tag.id);
           return (
-            <button
-              key={tag.id}
-              type="button"
-              onClick={() => toggleTagSelection(tag.id)}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                toggleTagExclusion(tag.id);
-              }}
-              className={`inline-flex h-7 min-h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[13px] font-medium ${
-                excluded ? "text-[var(--text-faint)]" : "text-[var(--text-secondary)]"
-              }`}
-              aria-pressed={active}
-              aria-label={excluded ? `${tag.name}（已排除）` : undefined}
-              data-excluded={excluded || undefined}
-              title={excluded ? `${tag.name}（已排除，右键取消排除）` : `${tag.name}（右键排除含此标签的项目）`}
-              style={excluded
-                ? {
-                    borderColor: "var(--border-subtle)",
-                    backgroundColor: "var(--bg-hover)",
-                    boxShadow: "none",
-                  }
-                : {
-                    borderColor: active
-                      ? `color-mix(in srgb, ${tag.color} 65%, var(--border-default))`
-                      : `color-mix(in srgb, ${tag.color} 24%, var(--border-subtle))`,
-                    backgroundColor: active
-                      ? `color-mix(in srgb, ${tag.color} 20%, var(--bg-card))`
-                      : `color-mix(in srgb, ${tag.color} 7%, transparent)`,
-                    color: active ? "var(--text-primary)" : "var(--text-secondary)",
-                    boxShadow: active ? `inset 0 -2px 0 ${tag.color}` : "none",
-                  }}
-            >
-              <span
-                className="h-1.5 w-1.5 rounded-[1px]"
-                style={{ backgroundColor: excluded ? "var(--text-faint)" : tag.color }}
-                aria-hidden="true"
-              />
-              <span className={excluded ? "line-through" : undefined}>{tag.name}</span>
-            </button>
+            <Fragment key={tag.id}>
+              {index > 0 && activeTags.length >= 2 && (
+                <span aria-hidden="true" className="shrink-0 text-[12px] text-[var(--text-faint)]">
+                  {excluded ? "且非" : "且"}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => toggleTagSelection(tag.id)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  toggleTagExclusion(tag.id);
+                }}
+                className={`inline-flex h-7 min-h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[13px] font-medium ${
+                  excluded ? "text-[var(--text-faint)]" : "text-[var(--text-secondary)]"
+                }`}
+                aria-pressed={active}
+                aria-label={excluded ? `${tag.name}（已排除）` : undefined}
+                data-excluded={excluded || undefined}
+                title={excluded ? `${tag.name}（已排除，右键取消排除）` : `${tag.name}（右键排除含此标签的项目）`}
+                style={excluded
+                  ? {
+                      borderColor: "var(--border-subtle)",
+                      backgroundColor: "var(--bg-hover)",
+                      boxShadow: "none",
+                    }
+                  : {
+                      borderColor: active
+                        ? `color-mix(in srgb, ${tag.color} 65%, var(--border-default))`
+                        : `color-mix(in srgb, ${tag.color} 24%, var(--border-subtle))`,
+                      backgroundColor: active
+                        ? `color-mix(in srgb, ${tag.color} 20%, var(--bg-card))`
+                        : `color-mix(in srgb, ${tag.color} 7%, transparent)`,
+                      color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                      boxShadow: active ? `inset 0 -2px 0 ${tag.color}` : "none",
+                    }}
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-[1px]"
+                  style={{ backgroundColor: excluded ? "var(--text-faint)" : tag.color }}
+                  aria-hidden="true"
+                />
+                <span className={excluded ? "line-through" : undefined}>{tag.name}</span>
+              </button>
+            </Fragment>
           );
         })}
       </div>

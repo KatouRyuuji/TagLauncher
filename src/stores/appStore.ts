@@ -3,7 +3,7 @@
 // ============================================================================
 // 使用 Zustand 管理应用的全局状态，包括数据缓存、筛选条件和 UI 状态。
 // 核心设计：标签筛选、文件柜筛选、收藏夹、最近使用 四种模式互斥。
-// 视图偏好（视图/搜索模式/排序/类型筛选）持久化到 localStorage。
+// 视图偏好（视图/搜索模式/排序/类型筛选/筛选条展开）持久化到 localStorage。
 // ============================================================================
 
 import { create } from "zustand";
@@ -82,6 +82,7 @@ interface WorkspacePrefs {
   searchMode?: SearchMode;
   sortMode?: SortMode;
   typeFilter?: TypeFilter;
+  workspaceFiltersOpen?: boolean;
 }
 
 function loadWorkspacePrefs(): WorkspacePrefs {
@@ -96,6 +97,9 @@ function loadWorkspacePrefs(): WorkspacePrefs {
         : undefined,
       sortMode: isSortMode(parsed.sortMode) ? parsed.sortMode : undefined,
       typeFilter: isTypeFilter(parsed.typeFilter) ? parsed.typeFilter : undefined,
+      workspaceFiltersOpen: typeof parsed.workspaceFiltersOpen === "boolean"
+        ? parsed.workspaceFiltersOpen
+        : undefined,
     };
   } catch {
     return {};
@@ -202,6 +206,7 @@ export const useAppStore = create<AppState>((set, get) => {
       searchMode: state.searchMode,
       sortMode: state.sortMode,
       typeFilter: state.typeFilter,
+      workspaceFiltersOpen: state.workspaceFiltersOpen,
     });
   };
 
@@ -221,7 +226,7 @@ export const useAppStore = create<AppState>((set, get) => {
   viewMode: initialPrefs.viewMode ?? "grid",
   sortMode: initialPrefs.sortMode ?? "smart",
   typeFilter: initialPrefs.typeFilter ?? "all",
-  workspaceFiltersOpen: false,
+  workspaceFiltersOpen: initialPrefs.workspaceFiltersOpen ?? true,
   sidebarHintDismissed: loadSidebarHintDismissed(),
   tagGraphOpen: false,
   commandPaletteOpen: false,
@@ -333,7 +338,11 @@ export const useAppStore = create<AppState>((set, get) => {
     set({ typeFilter: filter });
     persistNow();
   },
-  setWorkspaceFiltersOpen: (open) => set((state) => state.workspaceFiltersOpen === open ? state : { workspaceFiltersOpen: open }),
+  setWorkspaceFiltersOpen: (open) => {
+    if (get().workspaceFiltersOpen === open) return;
+    set({ workspaceFiltersOpen: open });
+    persistNow();
+  },
   setSidebarHintDismissed: (dismissed) => {
     if (get().sidebarHintDismissed === dismissed) return;
     set({ sidebarHintDismissed: dismissed });
@@ -364,6 +373,7 @@ export const useAppStore = create<AppState>((set, get) => {
       showFavorites: false,
       showRecent: false,
       typeFilter: "all",
+      searchMode: "all",
       searchQuery: "",
       searchInputValue: "",
     });

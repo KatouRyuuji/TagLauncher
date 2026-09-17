@@ -15,6 +15,7 @@ import { AddFolderImportDialog } from "./components/AddFolderImportDialog";
 import { AiTaggingModal } from "./components/AiTaggingModal";
 import { StatusBar } from "./components/StatusBar";
 import { TagFilterBar } from "./components/TagFilterBar";
+import { WorkspaceScopeHeader } from "./components/WorkspaceScopeHeader";
 import { useItems } from "./hooks/useItems";
 import { useTags } from "./hooks/useTags";
 import { useCabinets } from "./hooks/useCabinets";
@@ -405,6 +406,7 @@ function App() {
         </h1>
         <SearchBar onAddItems={requestAddPaths} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} hasLibraryItems={allItems.length > 0} />
         {allItems.length > 0 && <TagFilterBar />}
+        {allItems.length > 0 && <WorkspaceScopeHeader visibleCount={items.length} />}
         {/* 加载失败且本地无任何缓存时渲染可重试的错误面板；有缓存时保留旧列表，
             失败已由 toast 提示，避免把可用数据替换成错误页。 */}
         {loadError && !loading && allItems.length === 0 ? (

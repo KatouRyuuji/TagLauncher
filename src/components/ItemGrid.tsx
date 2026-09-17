@@ -146,6 +146,8 @@ export function ItemGrid({
   const viewMode = useAppStore((state) => state.viewMode);
   const iconLayout = viewMode === "icons";
   const rowEstimate = iconLayout ? ICONS_ROW_EST : GRID_ROW_EST;
+  /** 少结果旁路：1–3 张卡居中一组；icons 仍走虚拟化主路径 */
+  const fewResults = Boolean(!libraryEmpty && items.length > 0 && items.length <= 3 && !iconLayout);
   const viewProps = useMemo(() => ({
     tags,
     cabinets,
@@ -212,9 +214,10 @@ export function ItemGrid({
   }, [computeLanes]);
 
   useEffect(() => {
-    setWorkspaceGridLanes(lanes);
+    // 少结果视为单行，键盘左右在组内移动；主路径仍用测量列数
+    setWorkspaceGridLanes(fewResults ? items.length : lanes);
     return () => setWorkspaceGridLanes(1);
-  }, [lanes]);
+  }, [fewResults, items.length, lanes]);
 
   const virtualizer = useVirtualizer({
     count: rowCount,
@@ -271,10 +274,11 @@ export function ItemGrid({
     // 仅键盘单步导航（方向键/Home/End/Shift 扩展）跟随滚动；Ctrl+A 全选、
     // 框选、批量选择不设置跟随标记，视图保持原地（SelectionCanvas 顶部有标记说明）。
     if (consumeSelectionScrollFollow() !== lastSelectedId) return;
+    if (fewResults) return;
     const index = items.findIndex((item) => item.id === lastSelectedId);
     if (index < 0) return;
     virtualizer.scrollToIndex(Math.floor(index / Math.max(1, lanes)), { align: "auto" });
-  }, [lastSelectedId, items, lanes, virtualizer]);
+  }, [lastSelectedId, items, lanes, virtualizer, fewResults]);
 
   // 右键命中多选集时，右键菜单的删除/收藏/复制路径作用于整个选中集；
   // 仅多选（>1）时构造，单选/未选中为 null（菜单回退单对象语义）。
@@ -288,6 +292,17 @@ export function ItemGrid({
       favoriteTarget: selected.some((item) => !item.is_favorite),
     };
   }, [items, selectedItemIds]);
+
+  const renderItemGridCard = (item: ItemViewProps["items"][number]) => (
+    <ItemGridCard
+      key={item.id}
+      item={item}
+      viewProps={viewProps}
+      selected={selectedItemIdSet.has(item.id)}
+      contextSelection={selectedItemIdSet.has(item.id) ? contextSelectionInfo : null}
+      variant={iconLayout ? "icon" : "card"}
+    />
+  );
 
   // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
   // 已渲染行使用真实测量值，未渲染行用 estimateSize 估算，从而支持跨屏框选。
@@ -333,58 +348,59 @@ export function ItemGrid({
   return (
     <SelectionCanvas
       dataRegion="item-grid"
-      className="flex-1 overflow-y-auto p-4"
+      className={fewResults ? "flex-1 overflow-y-auto" : "flex-1 overflow-y-auto p-4"}
       itemIds={itemIds}
       selectedItemIds={selectedItemIds}
       onSelectItems={onSelectItems}
       scrollElementRef={scrollRef}
-      getItemRects={getItemRects}
+      getItemRects={fewResults ? undefined : getItemRects}
     >
-      {/* 虚拟化网格：position:relative 撑开滚动高度，每行绝对定位 */}
-      <div
-        data-region="item-grid-inner"
-        role="list"
-        aria-label="项目列表"
-        style={{ height: virtualizer.getTotalSize(), position: "relative" }}
-      >
-        {virtualizer.getVirtualItems().map((vRow) => {
-          const startIdx = vRow.index * lanes;
-          const rowItems = items.slice(startIdx, Math.min(startIdx + lanes, items.length));
-          return (
-            <div
-              key={vRow.key}
-              data-index={vRow.index}
-              ref={virtualizer.measureElement}
-              role="presentation"
-              style={{
-                // 用 top 而非 transform 定位：transform 会创建新的定位上下文，
-                // 导致卡片右键菜单等 position:fixed 元素错位。
-                position: "absolute",
-                top: vRow.start,
-                left: 0,
-                right: 0,
-                // 不设固定 height：行高由 measureElement 按卡片实际内容动态测量，
-                // 标签较多的卡片不再被裁剪。paddingBottom 充当行间距。
-                paddingBottom: GRID_GAP,
-                display: "grid",
-                gridTemplateColumns: `repeat(${lanes}, minmax(0, 1fr))`,
-                gap: GRID_GAP,
-              }}
-            >
-              {rowItems.map((item) => (
-                <ItemGridCard
-                  key={item.id}
-                  item={item}
-                  viewProps={viewProps}
-                  selected={selectedItemIdSet.has(item.id)}
-                  contextSelection={selectedItemIdSet.has(item.id) ? contextSelectionInfo : null}
-                  variant={iconLayout ? "icon" : "card"}
-                />
-              ))}
+      {fewResults ? (
+        <div data-region="item-grid-inner" role="list" aria-label="项目列表" className="item-grid-few">
+          {items.map((item) => (
+            <div key={item.id} className="item-grid-few-card">
+              {renderItemGridCard(item)}
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      ) : (
+        /* 虚拟化网格：position:relative 撑开滚动高度，每行绝对定位 */
+        <div
+          data-region="item-grid-inner"
+          role="list"
+          aria-label="项目列表"
+          style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+        >
+          {virtualizer.getVirtualItems().map((vRow) => {
+            const startIdx = vRow.index * lanes;
+            const rowItems = items.slice(startIdx, Math.min(startIdx + lanes, items.length));
+            return (
+              <div
+                key={vRow.key}
+                data-index={vRow.index}
+                ref={virtualizer.measureElement}
+                role="presentation"
+                style={{
+                  // 用 top 而非 transform 定位：transform 会创建新的定位上下文，
+                  // 导致卡片右键菜单等 position:fixed 元素错位。
+                  position: "absolute",
+                  top: vRow.start,
+                  left: 0,
+                  right: 0,
+                  // 不设固定 height：行高由 measureElement 按卡片实际内容动态测量，
+                  // 标签较多的卡片不再被裁剪。paddingBottom 充当行间距。
+                  paddingBottom: GRID_GAP,
+                  display: "grid",
+                  gridTemplateColumns: `repeat(${lanes}, minmax(0, 1fr))`,
+                  gap: GRID_GAP,
+                }}
+              >
+                {rowItems.map((item) => renderItemGridCard(item))}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </SelectionCanvas>
   );
 }
