@@ -117,11 +117,39 @@ function rgba(hex: string, alpha: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
+function familyKeyOf(palette: string): string {
+  return palette.replace(/-(light|dark)$/, "");
+}
+
+/** 把 ink 按百分比混进 base；0 则原样返回，避免无偏家族写出多余 color-mix。 */
+function biasMix(base: string, ink: string, percent: number): string {
+  if (percent <= 0) return base;
+  return `color-mix(in srgb, ${base} ${100 - percent}%, ${ink})`;
+}
+
+/**
+ * 纸色拉开（W4 G1）：不改 PALETTES 原相（与 RyuujiDesign lock 同源），
+ * 按家族把 primary 混进纸/描边。藤色提高紫含量；樱花发丝沾春色；霜靛/素墨为 0。
+ */
+const PAPER_BIAS: Record<string, { paper: number; surface: number; border: number; hairline: number; subtle: number }> = {
+  a1: { paper: 0, surface: 0, border: 0, hairline: 0, subtle: 0 },
+  a3: { paper: 16, surface: 8, border: 22, hairline: 28, subtle: 16 },
+  a6: { paper: 6, surface: 3, border: 12, hairline: 20, subtle: 0 },
+  mono: { paper: 0, surface: 0, border: 0, hairline: 0, subtle: 0 },
+};
+
 function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, string> {
   const light = def.scheme === "light";
   const isA = def.lang === "a";
   const isMono = def.palette.startsWith("mono-");
   const tags = TAGS[def.palette];
+  const bias = PAPER_BIAS[familyKeyOf(def.palette)] ?? PAPER_BIAS.a1;
+  const paperAmt = light ? bias.paper : Math.round(bias.paper * 0.75);
+  const surfaceAmt = light ? bias.surface : Math.round(bias.surface * 0.8);
+  const paper = biasMix(p.bg, p.primary, paperAmt);
+  const paperTint = biasMix(p.bg_tint, p.primary, paperAmt);
+  const paperSurface = biasMix(!light && !isA ? p.bg : p.surface, p.primary, surfaceAmt);
+  const paperBorder = biasMix(p.border, p.primary, bias.border);
   // 星标色：B 暗色板的 signal 与 primary 不同时用 signal（仪表读数黄/橙），否则用 warning
   const favorite = !light && def.lang === "b" && p.signal !== p.primary ? p.signal : p.warning;
 
@@ -132,8 +160,8 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
     ...(isMono ? MONO_SHADOWS[def.lang][def.scheme] : {}),
 
     "bg-gradient": light
-      ? `linear-gradient(180deg, ${p.bg} 0%, ${p.bg_tint} 100%)`
-      : `linear-gradient(180deg, ${p.bg} 0%, color-mix(in srgb, ${p.bg} 92%, #000000) 100%)`,
+      ? `linear-gradient(180deg, ${paper} 0%, ${paperTint} 100%)`
+      : `linear-gradient(180deg, ${paper} 0%, color-mix(in srgb, ${paper} 92%, #000000) 100%)`,
     "card-backdrop-filter": "none",
     "sidebar-backdrop-filter": "none",
     "welcome-accent-gradient": `linear-gradient(180deg, ${rgba(p.primary, light ? 0.1 : 0.12)}, transparent)`,
@@ -149,36 +177,36 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
 
     "grid-col-min": "256px",
 
-    "bg-base": p.bg,
+    "bg-base": paper,
     // B 暗色深场层次：面板沉入场底（surface := bg），浮层台阶由 surface-2 承担
-    "bg-surface": !light && !isA ? p.bg : p.surface,
-    "bg-elevated": light ? p.surface : p.surface_2,
-    "bg-overlay": light ? p.surface : p.surface_2,
+    "bg-surface": paperSurface,
+    "bg-elevated": light ? paperSurface : p.surface_2,
+    "bg-overlay": light ? paperSurface : p.surface_2,
     // 行 hover：A = 近白实色罩（与实心选中行拉开层级）；B = primary 浅浅染实色
     "bg-hover": isA
       ? light
-        ? `color-mix(in srgb, #ffffff 72%, ${p.bg})`
-        : `color-mix(in srgb, #ffffff 8%, ${p.surface})`
+        ? `color-mix(in srgb, #ffffff 72%, ${paper})`
+        : `color-mix(in srgb, #ffffff 8%, ${paperSurface})`
       : p.primary_soo_shallow,
     "bg-active": rgba(p.primary, light ? 0.13 : 0.16),
-    "bg-card": !isA && !light ? `color-mix(in srgb, ${p.text} 5%, transparent)` : p.surface,
-    "bg-card-hover": light ? p.surface : p.surface_2,
+    "bg-card": !isA && !light ? `color-mix(in srgb, ${p.text} 5%, transparent)` : paperSurface,
+    "bg-card-hover": light ? paperSurface : p.surface_2,
     // 输入底 = 分级表面：A 纸面 ctl 档；B 深槽（亮 text 5% / 暗 surface 94% 混黑）
     "bg-input": isA
       ? light
-        ? `color-mix(in srgb, #ffffff 62%, ${p.bg})`
-        : `color-mix(in srgb, ${p.surface} 92%, ${p.bg})`
+        ? `color-mix(in srgb, #ffffff 62%, ${paper})`
+        : `color-mix(in srgb, ${paperSurface} 92%, ${paper})`
       : light
-        ? `color-mix(in srgb, ${p.text} 5%, ${p.surface})`
-        : `color-mix(in srgb, ${p.bg} 94%, #000000)`,
+        ? `color-mix(in srgb, ${p.text} 5%, ${paperSurface})`
+        : `color-mix(in srgb, ${paper} 94%, #000000)`,
     // 输入焦点三件套之底档：A focus 底换 ctl-hover（B 焦点只换 signal 描边，底不动）
     "bg-input-hover": isA
       ? light
-        ? `color-mix(in srgb, #ffffff 72%, ${p.bg})`
-        : p.surface
+        ? `color-mix(in srgb, #ffffff 72%, ${paper})`
+        : paperSurface
       : light
-        ? `color-mix(in srgb, ${p.text} 5%, ${p.surface})`
-        : `color-mix(in srgb, ${p.bg} 94%, #000000)`,
+        ? `color-mix(in srgb, ${p.text} 5%, ${paperSurface})`
+        : `color-mix(in srgb, ${paper} 94%, #000000)`,
 
     "text-primary": p.text,
     "text-secondary": p.text_2,
@@ -193,8 +221,13 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
       "border-subtle": `color-mix(in srgb, ${p.text} ${light ? "12%" : "20%"}, transparent)`,
       "border-medium": p.border_strong,
     }),
-    "border-default": p.border,
+    "border-default": paperBorder,
     "border-strong": rgba(p.text, light ? 0.55 : 0.5),
+    ...(bias.subtle > 0
+      ? {
+          "border-subtle": `color-mix(in srgb, ${p.primary} ${light ? bias.subtle : bias.subtle + 8}%, transparent)`,
+        }
+      : {}),
 
     "accent-primary": p.primary,
     "accent-primary-hover": `color-mix(in srgb, ${p.primary} 96%, #000000)`,
@@ -237,11 +270,24 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
 
     // 壳层共享令牌（z 层级/拖拽/标签透明度/边框/面板规格）
     ...CHROME_TOKENS,
+    // 暗色标签胶囊加实底：提高不透明度，字仍走 text-primary（见 index.css .tag-pill）
+    ...(!light
+      ? {
+          "tag-color-alpha": "30%",
+          "tag-selected-alpha": "40%",
+          "tag-muted-alpha": "22%",
+        }
+      : {}),
   };
 }
 
 function buildTheme(def: RyuujiThemeDef): ThemeDefinition {
   const p = PALETTES[def.palette];
+  const bias = PAPER_BIAS[familyKeyOf(def.palette)] ?? PAPER_BIAS.a1;
+  // line-hairline 不是契约键：只在主题 css 里覆盖，避免扩 THEME_VARIABLE_KEYS
+  const hairline = bias.hairline > 0
+    ? `:root { --line-hairline: color-mix(in srgb, var(--accent-primary) ${bias.hairline}%, color-mix(in srgb, var(--border-default) 72%, transparent)); }`
+    : "";
   return {
     id: def.id,
     name: def.name,
@@ -255,6 +301,7 @@ function buildTheme(def: RyuujiThemeDef): ThemeDefinition {
       ".app-frame {",
       "  background: var(--bg-base);",
       "}",
+      ...(hairline ? [hairline] : []),
       ...(def.lang === "a" && def.scheme === "light" ? [".text-label { color: var(--text-faint); }"] : []),
     ].join("\n"),
   };

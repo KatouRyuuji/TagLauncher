@@ -25,6 +25,7 @@ function renderToolbar(overrides: Partial<React.ComponentProps<typeof BatchSelec
       totalCount={10}
       tags={[{ id: 1, name: "游戏", color: "#3b82f6" }]}
       removableTags={[]}
+      selectedItems={[]}
       cabinets={[]}
       canRemoveFromCabinet={false}
       onAddTag={async () => {}}
@@ -53,6 +54,35 @@ describe("BatchSelectionToolbar 覆盖层让位", () => {
     expect(screen.getByTestId("batch-toolbar")).toBeInTheDocument();
     expect(screen.getByTestId("batch-toolbar").textContent).toContain("11");
     expect(screen.getByTestId("batch-toolbar").textContent).toContain("已选中");
+  });
+});
+
+describe("BatchSelectionToolbar 加入标签已有态", () => {
+  it("将加到 N 个对象；全有显示勾；部分显示 k/N", async () => {
+    const user = userEvent.setup();
+    const selectedItems = Array.from({ length: 11 }, (_, index) => ({
+      tags: index < 3 ? [{ id: 1 }, { id: 2 }] : [{ id: 1 }],
+    }));
+    renderToolbar({
+      selectedCount: 11,
+      tags: [
+        { id: 1, name: "游戏", color: "#3b82f6" },
+        { id: 2, name: "开发", color: "#22c55e" },
+      ],
+      selectedItems,
+    });
+
+    await user.click(screen.getByRole("button", { name: "加入标签" }));
+
+    expect(screen.getByText("将加到 11 个对象")).toBeInTheDocument();
+
+    const owned = screen.getByRole("menuitem", { name: /^游戏/ });
+    expect(owned).toHaveAttribute("title", "已全部拥有");
+    expect(owned.querySelector("svg")).not.toBeNull();
+
+    const partial = screen.getByRole("menuitem", { name: /开发/ });
+    expect(partial.textContent).toContain("3/11");
+    expect(screen.getByText("3/11")).toBeInTheDocument();
   });
 });
 

@@ -154,6 +154,14 @@ export async function updateTag(id: number, name: string, color: string): Promis
   return invokeCmd("update_tag", { id, name, color });
 }
 
+/** 官方主题切家族：单事务批量只改标签/文件柜 color，禁止 N 次 update_tag。 */
+export async function recolorTagsAndCabinets(
+  tags: { id: number; color: string }[],
+  cabinets: { id: number; color: string }[],
+): Promise<void> {
+  return invokeCmd("recolor_tags_and_cabinets", { tags, cabinets });
+}
+
 /** 删除标签 */
 export async function removeTag(id: number): Promise<void> {
   return invokeCmd("remove_tag", { id });

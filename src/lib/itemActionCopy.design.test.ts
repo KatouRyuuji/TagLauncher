@@ -6,6 +6,9 @@ import {
   folderTypeBadge,
   libraryRemoveLabel,
   libraryRemoveNotDeleteHint,
+  batchAddTagTargetCopy,
+  tagAlreadyOwnedTitle,
+  tagFilterPlaceholder,
   openMenuLabel,
   parentDirectoryPath,
   pathBasename,
@@ -30,6 +33,13 @@ test("多选右键第一项写打开 N 项，单选仍是打开", () => {
   assert.equal(openMenuLabel("video", 3), "打开 3 项");
   assert.equal(openMenuLabel("folder", 2), "打开 2 项");
   assert.equal(libraryRemoveNotDeleteHint, "从库中移除 ≠ 删除本地文件");
+});
+
+test("批量加标签菜单：将加到 N 个对象、已全部拥有、过滤占位", () => {
+  assert.equal(batchAddTagTargetCopy(1), "将加到 1 个对象");
+  assert.equal(batchAddTagTargetCopy(11), "将加到 11 个对象");
+  assert.equal(tagAlreadyOwnedTitle, "已全部拥有");
+  assert.equal(tagFilterPlaceholder, "过滤标签");
 });
 
 test("卡片主按钮：脚本说启动，文件夹说打开", () => {

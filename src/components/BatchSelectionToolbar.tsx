@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  Check,
   CheckCheck,
   ChevronUp,
   Copy,
@@ -15,7 +16,15 @@ import {
 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { stepMenuIndex } from "../lib/itemQuery";
-import { libraryRemoveNotDeleteHint } from "../lib/itemActionCopy";
+import {
+  batchAddTagTargetCopy,
+  libraryRemoveNotDeleteHint,
+  tagAlreadyOwnedTitle,
+  tagFilterPlaceholder,
+} from "../lib/itemActionCopy";
+import { summarizeTagOwnership, type TaggableItem } from "../lib/tagOwnership";
+
+const TAG_MENU_FILTER_THRESHOLD = 8;
 
 /** 主内容区底部的批量操作工具条（选中对象时出现） */
 export function BatchSelectionToolbar({
@@ -24,6 +33,7 @@ export function BatchSelectionToolbar({
   totalCount,
   tags,
   removableTags,
+  selectedItems,
   cabinets,
   canRemoveFromCabinet,
   onAddTag,
@@ -44,6 +54,8 @@ export function BatchSelectionToolbar({
   totalCount: number;
   tags: Array<{ id: number; name: string; color: string }>;
   removableTags: Array<{ id: number; name: string; color: string }>;
+  /** 当前选中对象（含各自 tags），由 useBatchSelection 导出后经 App 传入。 */
+  selectedItems: TaggableItem[];
   cabinets: Array<{ id: number; name: string; color: string }>;
   canRemoveFromCabinet: boolean;
   onAddTag: (tagId: number) => Promise<void>;
@@ -82,11 +94,16 @@ export function BatchSelectionToolbar({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.isComposing) return;
       const root = document.querySelector("[data-floating-menu]");
       if (!(root instanceof HTMLElement)) return;
-      const items = Array.from(root.querySelectorAll<HTMLElement>('button:not([disabled])'));
-      if (items.length === 0) return;
       const active = event.target instanceof HTMLElement ? event.target : null;
+      const inFilter = active instanceof HTMLInputElement;
+      if (inFilter && (event.key === "Home" || event.key === "End" || event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+        return;
+      }
+      const items = Array.from(root.querySelectorAll<HTMLElement>("button:not([disabled])"));
+      if (items.length === 0) return;
       const current = items.findIndex((el) => el === active || (active !== null && el.contains(active)));
       const next = stepMenuIndex(items.length, current, event.key);
       if (next == null) return;
@@ -144,13 +161,14 @@ export function BatchSelectionToolbar({
           open={openMenu === "add-tag"}
           onClick={() => setOpenMenu(openMenu === "add-tag" ? null : "add-tag")}
         >
-          {tags.length === 0 ? (
-            <MenuEmptyText>暂无标签</MenuEmptyText>
-          ) : (
-            tags.map((tag) => (
-              <MenuOption key={tag.id} color={tag.color} label={tag.name} onClick={() => runAction(() => onAddTag(tag.id))} />
-            ))
-          )}
+          <TagOwnershipMenu
+            tags={tags}
+            selectedCount={selectedCount}
+            selectedItems={selectedItems}
+            showTargetHint
+            emptyText="暂无标签"
+            onPick={(tagId) => runAction(() => onAddTag(tagId))}
+          />
         </ToolbarMenuButton>
 
         <ToolbarMenuButton
@@ -160,13 +178,13 @@ export function BatchSelectionToolbar({
           open={openMenu === "remove-tag"}
           onClick={() => setOpenMenu(openMenu === "remove-tag" ? null : "remove-tag")}
         >
-          {removableTags.length === 0 ? (
-            <MenuEmptyText>选中对象没有可移除标签</MenuEmptyText>
-          ) : (
-            removableTags.map((tag) => (
-              <MenuOption key={tag.id} color={tag.color} label={tag.name} onClick={() => runAction(() => onRemoveTag(tag.id))} />
-            ))
-          )}
+          <TagOwnershipMenu
+            tags={removableTags}
+            selectedCount={selectedCount}
+            selectedItems={selectedItems}
+            emptyText="选中对象没有可移除标签"
+            onPick={(tagId) => runAction(() => onRemoveTag(tagId))}
+          />
         </ToolbarMenuButton>
 
         <ToolbarMenuButton
@@ -329,24 +347,90 @@ function ToolbarMenuButton({
   );
 }
 
+function TagOwnershipMenu({
+  tags,
+  selectedCount,
+  selectedItems,
+  showTargetHint = false,
+  emptyText,
+  onPick,
+}: {
+  tags: Array<{ id: number; name: string; color: string }>;
+  selectedCount: number;
+  selectedItems: TaggableItem[];
+  showTargetHint?: boolean;
+  emptyText: string;
+  onPick: (tagId: number) => void;
+}) {
+  const [filter, setFilter] = useState("");
+  const showFilter = tags.length > TAG_MENU_FILTER_THRESHOLD;
+  const query = filter.trim().toLowerCase();
+  const visible = query ? tags.filter((tag) => tag.name.toLowerCase().includes(query)) : tags;
+
+  return (
+    <>
+      {showTargetHint && (
+        <div className="px-3 py-1.5 text-[11px] text-[var(--text-faint)]">
+          {batchAddTagTargetCopy(selectedCount)}
+        </div>
+      )}
+      {showFilter && (
+        <input
+          type="search"
+          autoFocus
+          placeholder={tagFilterPlaceholder}
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          className="mb-1 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
+        />
+      )}
+      {visible.length === 0 ? (
+        <MenuEmptyText>{tags.length === 0 ? emptyText : "无匹配标签"}</MenuEmptyText>
+      ) : (
+        visible.map((tag) => (
+          <MenuOption
+            key={tag.id}
+            color={tag.color}
+            label={tag.name}
+            ownership={summarizeTagOwnership(selectedItems, tag.id)}
+            onClick={() => onPick(tag.id)}
+          />
+        ))
+      )}
+    </>
+  );
+}
+
 function MenuOption({
   color,
   label,
   onClick,
+  ownership,
 }: {
   color: string;
   label: string;
   onClick: () => void;
+  ownership?: { have: number; total: number };
 }) {
+  const allOwned = ownership != null && ownership.total > 0 && ownership.have === ownership.total;
+  const someOwned = ownership != null && ownership.have > 0 && ownership.have < ownership.total;
+
   return (
     <button
       type="button"
       role="menuitem"
+      title={allOwned ? tagAlreadyOwnedTitle : undefined}
       onClick={onClick}
       className="flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
     >
       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {allOwned && <Check aria-hidden="true" size={14} strokeWidth={2.2} className="shrink-0 text-[var(--accent-primary)]" />}
+      {someOwned && (
+        <span className="data-readout shrink-0 text-[11px] tabular-nums text-[var(--text-faint)]">
+          {ownership.have}/{ownership.total}
+        </span>
+      )}
     </button>
   );
 }

@@ -414,6 +414,24 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       tag.color = str(args.color);
       return null;
     }
+    case "recolor_tags_and_cabinets": {
+      const hex = /^#[0-9a-fA-F]{6}$/;
+      const tagPatches = (Array.isArray(args.tags) ? args.tags : []) as Array<{ id: unknown; color: unknown }>;
+      const cabinetPatches = (Array.isArray(args.cabinets) ? args.cabinets : []) as Array<{
+        id: unknown;
+        color: unknown;
+      }>;
+      for (const patch of [...tagPatches, ...cabinetPatches]) {
+        if (!hex.test(str(patch.color))) {
+          throw new Error(`颜色格式无效（须为 #RRGGBB）：${str(patch.color)}`);
+        }
+      }
+      for (const patch of tagPatches) requireTag(num(patch.id));
+      for (const patch of cabinetPatches) requireCabinet(num(patch.id));
+      for (const patch of tagPatches) requireTag(num(patch.id)).color = str(patch.color);
+      for (const patch of cabinetPatches) requireCabinet(num(patch.id)).color = str(patch.color);
+      return null;
+    }
     case "remove_tag": {
       const id = num(args.id);
       state.tags = state.tags.filter((tag) => tag.id !== id);

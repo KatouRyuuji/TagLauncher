@@ -134,6 +134,18 @@ export function ContextMenu({
     setShowCabinetSub(true);
   }, [clearSubmenuHideTimer]);
 
+  // 悬停展开时：把 roving focus 从「打开」等项挪到父项，去掉错位焦点环。
+  // 焦点已在子菜单内则不动（键盘 ArrowRight 已把焦点交给首项）。
+  const focusCabinetTriggerFromMainMenu = useCallback(() => {
+    const trigger = cabinetTriggerRef.current;
+    const submenu = submenuRef.current;
+    const active = document.activeElement;
+    if (!trigger) return;
+    if (active instanceof Node && submenu?.contains(active)) return;
+    if (active === trigger || (active instanceof Node && trigger.contains(active))) return;
+    trigger.focus({ preventScroll: true });
+  }, []);
+
   const scheduleCloseCabinetSubmenu = useCallback(() => {
     clearSubmenuHideTimer();
     submenuHideTimerRef.current = window.setTimeout(() => {
@@ -146,7 +158,8 @@ export function ContextMenu({
     if (!triggerEl) return;
 
     const viewportGap = 8;
-    const gap = 8;
+    // 与父项顶部对齐，横向重叠 3px，避免子菜单像掉在网格里的便利贴。
+    const overlap = 3;
     const fallbackWidth = 220;
     const fallbackHeight = Math.min(320, cabinets.length * 40 + 20);
     const rect = triggerEl.getBoundingClientRect();
@@ -154,15 +167,15 @@ export function ContextMenu({
     const panelHeight = submenuRef.current?.offsetHeight ?? fallbackHeight;
 
     const placeLeft =
-      rect.right + gap + panelWidth > window.innerWidth - viewportGap &&
-      rect.left - gap - panelWidth >= viewportGap;
+      rect.right - overlap + panelWidth > window.innerWidth - viewportGap &&
+      rect.left + overlap - panelWidth >= viewportGap;
 
     const left = placeLeft
-      ? Math.max(viewportGap, rect.left - panelWidth - gap)
-      : Math.min(window.innerWidth - panelWidth - viewportGap, rect.right + gap);
+      ? Math.max(viewportGap, rect.left - panelWidth + overlap)
+      : Math.min(window.innerWidth - panelWidth - viewportGap, rect.right - overlap);
 
     const top = Math.min(
-      Math.max(viewportGap, rect.top - 6),
+      Math.max(viewportGap, rect.top),
       Math.max(viewportGap, window.innerHeight - panelHeight - viewportGap),
     );
 
@@ -458,18 +471,30 @@ export function ContextMenu({
         )}
 
         {cabinets.length > 0 && (
-          <div onMouseEnter={openCabinetSubmenu} onMouseLeave={scheduleCloseCabinetSubmenu}>
+          <div
+            onMouseEnter={() => {
+              openCabinetSubmenu();
+              focusCabinetTriggerFromMainMenu();
+            }}
+            onMouseLeave={scheduleCloseCabinetSubmenu}
+          >
             <button
               ref={cabinetTriggerRef}
               type="button"
               role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={showCabinetSub}
               onClick={(event) => {
                 // 鼠标靠 hover 已展开子菜单，点击保持展开即可；
                 // 键盘 Enter/Space（event.detail === 0）打开子菜单并把焦点移入首项。
                 if (event.detail === 0) focusSubmenuOnOpenRef.current = true;
                 openCabinetSubmenu();
               }}
-              className="flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              className={`flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm ${
+                showCabinetSub
+                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              }`}
             >
               <FolderInput aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
               <span className="min-w-0 flex-1">添加到文件柜</span>
@@ -509,6 +534,7 @@ export function ContextMenu({
       {showCabinetSub && (
         <div
           ref={submenuRef}
+          role="menu"
           style={{ ...submenuStyle, boxShadow: "var(--shadow-dropdown)" }}
           onMouseEnter={openCabinetSubmenu}
           onMouseLeave={scheduleCloseCabinetSubmenu}

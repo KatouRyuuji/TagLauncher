@@ -19,6 +19,7 @@ import { WorkspaceScopeHeader } from "./components/WorkspaceScopeHeader";
 import { useItems } from "./hooks/useItems";
 import { useTags } from "./hooks/useTags";
 import { useCabinets } from "./hooks/useCabinets";
+import { TagColorSlotSync } from "./hooks/useTagColorSlotSync";
 import { useTagRelations } from "./hooks/useTagRelations";
 import { useExternalFileDrop } from "./hooks/useExternalFileDrop";
 import { useFolderImport } from "./hooks/useFolderImport";
@@ -221,6 +222,7 @@ function App() {
 
   // 复选集合的批量动作 + 可移除标签并集。
   const {
+    selectedItems,
     selectedItemsTags,
     batchAddTag,
     batchRemoveTag,
@@ -355,6 +357,7 @@ function App() {
 
   return (
     <ThemeProvider>
+    <TagColorSlotSync />
     <div data-region="root" className="select-none" style={{ fontFamily: "var(--font-family)" }}>
       <a href="#workspace-main" className="skip-link">
         跳到主工作区
@@ -422,6 +425,7 @@ function App() {
           totalCount={items.length}
           tags={tags}
           removableTags={selectedItemsTags}
+          selectedItems={selectedItems}
           cabinets={cabinets}
           canRemoveFromCabinet={selectedCabinetId !== null}
           onAddTag={batchAddTag}

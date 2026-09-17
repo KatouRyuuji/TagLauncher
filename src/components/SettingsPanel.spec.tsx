@@ -54,10 +54,12 @@ describe("设置分区", () => {
     expect(mocks.ai).not.toHaveBeenCalled();
   });
 
-  it("主题预览使用当前模式对应的内置主题", async () => {
+  it("主题 Gallery 使用当前模式对应的内置主题", async () => {
     render(<SettingsPanel open onClose={vi.fn()} />);
     const family = THEME_FAMILIES.find((entry) => entry.name === "藤色")!;
-    await userEvent.click(screen.getByRole("button", { name: "应用藤色主题" }));
+    expect(screen.getByRole("radiogroup", { name: "官方配色" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "当前主题" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "藤色" }));
     expect(mocks.setTheme).toHaveBeenCalledWith(family.light);
   });
 });

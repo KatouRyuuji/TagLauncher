@@ -36,6 +36,17 @@ export function deleteFilesLabel(count: number): string {
 /** 批量条指挥台：出库 ≠ 删盘，避免全选后把描边危险键读成删文件。 */
 export const libraryRemoveNotDeleteHint = "从库中移除 ≠ 删除本地文件";
 
+/** 批量「加入标签」菜单顶栏：写清会作用到几个对象。 */
+export function batchAddTagTargetCopy(count: number): string {
+  return `将加到 ${count} 个对象`;
+}
+
+/** 选中对象已全部拥有该标签时的菜单项提示（点击仍幂等）。 */
+export const tagAlreadyOwnedTitle = "已全部拥有";
+
+/** 标签数超过阈值时，菜单内过滤框的占位。 */
+export const tagFilterPlaceholder = "过滤标签";
+
 /** 默认入口（右键「从库中移除」）的确认框标题：移出资料库 ≠ 删盘。 */
 export function removeFromLibraryDialogTitle(count: number): string {
   return count > 1 ? `移出资料库 ${count} 项` : "移出资料库";

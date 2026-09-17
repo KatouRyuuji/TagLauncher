@@ -353,7 +353,8 @@
     border-color: var(--border-medium);
   }
 
-  .theme-choice[aria-pressed="true"] {
+  .theme-choice[aria-pressed="true"],
+  .theme-choice[aria-checked="true"] {
     border-color: var(--accent-primary);
     background: var(--accent-primary-bg);
     color: var(--accent-primary-ink);
@@ -519,7 +520,7 @@
     font-weight: var(--font-weight-semibold);
   }
 
-  /* 标签保留用户色相，文字混入正文色以适应亮暗背景。 */
+  /* 标签保留用户色相；字用正文色。暗色靠更高 alpha / 本段实底与底分开。 */
   .tag-pill {
     --tag-color: var(--accent-primary);
     display: inline-flex;
@@ -527,7 +528,7 @@
     border: 1px solid color-mix(in srgb, var(--tag-color) 22%, transparent);
     border-radius: var(--radius-full);
     background: color-mix(in srgb, var(--tag-color) var(--tag-color-alpha), var(--bg-surface));
-    color: color-mix(in srgb, var(--text-primary) 72%, var(--tag-color));
+    color: var(--text-primary);
     font-weight: var(--font-weight-medium);
     transition: background-color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast);
   }
@@ -539,6 +540,15 @@
   .tag-pill[aria-pressed="true"] {
     background: color-mix(in srgb, var(--tag-color) var(--tag-selected-alpha), var(--bg-surface));
     border-color: var(--tag-color);
+  }
+
+  /* 暗色胶囊加实底：即使自定义主题仍用 9% alpha，也不让字融进纸色。 */
+  :root[data-scheme="dark"] .tag-pill {
+    background: color-mix(in srgb, var(--tag-color) 30%, var(--bg-surface));
+  }
+
+  :root[data-scheme="dark"] .tag-pill[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--tag-color) 40%, var(--bg-surface));
   }
 
   .action-button-primary:hover:not(:disabled) {

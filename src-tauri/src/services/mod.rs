@@ -4,6 +4,7 @@ pub mod icon_service;
 pub mod import_paths;
 pub mod item_service;
 pub mod recycle_bin;
+pub mod recolor_service;
 pub mod launch_service;
 pub mod object_preview_service;
 pub mod path_service;

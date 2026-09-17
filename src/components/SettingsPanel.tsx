@@ -21,7 +21,7 @@ import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { showToast } from "../lib/toast";
 import { SETTINGS_SECTIONS, settingsSectionDomId } from "../lib/settingsSections";
-import { THEME_FAMILIES, findFamilyByThemeId, listOfficialFamilySwatches, resolveFamilyThemeId } from "../themes";
+import { findFamilyByThemeId } from "../themes";
 import type { ColorMode } from "../lib/colorMode";
 import type { ThemeDefinition, ThemeVariant } from "../types/theme";
 import { AiSettingsSection } from "./AiSettingsSection";
@@ -29,6 +29,7 @@ import { DataSettingsSection } from "./DataSettingsSection";
 import { ModManagerPanel } from "./ModManagerPanel";
 import { SelectMenu } from "./SelectMenu";
 import { SyncSettingsSection } from "./SyncSettingsSection";
+import { ThemeFamilyGallery } from "./ThemeFamilyGallery";
 import { useThemeContext } from "./ThemeProvider";
 import { UpdateSettingsSection } from "./UpdateSettingsSection";
 
@@ -178,8 +179,18 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
       <div
         data-settings-overlay=""
         data-workspace-overlay=""
+        data-settings-stage={activeSection === "theme" ? "preview" : "dim"}
         className="fixed inset-0"
-        style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-overlay)" }}
+        style={
+          activeSection === "theme"
+            ? { backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-overlay)" }
+            : {
+                backgroundColor: "color-mix(in srgb, var(--overlay-bg) 100%, black 25%)",
+                backdropFilter: "blur(var(--overlay-blur))",
+                WebkitBackdropFilter: "blur(var(--overlay-blur))",
+                zIndex: "var(--z-settings-overlay)",
+              }
+        }
         onClick={onClose}
       />
       <div
@@ -298,26 +309,31 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   </div>
                 </div>
 
-                <div className={`mt-5 grid gap-4 ${currentTheme.variants && Object.keys(currentTheme.variants).length > 0 ? "md:grid-cols-2" : ""}`}>
-                  <ThemeSelect
+                <div className="mt-5 flex flex-wrap items-start gap-4">
+                  <ThemeFamilyGallery
                     themes={availableThemes}
                     currentThemeId={currentTheme.id}
                     effectiveMode={effectiveMode}
                     onSelect={setTheme}
                   />
-                  {currentTheme.variants && Object.keys(currentTheme.variants).length > 0 && (
+                  <ColorModeSelect colorMode={colorMode} onSelect={changeColorMode} disabled={!findFamilyByThemeId(currentTheme.id)} />
+                </div>
+
+                {currentTheme.variants && Object.keys(currentTheme.variants).length > 0 && (
+                  <div className="mt-4 max-w-sm">
                     <VariantSelect
                       variants={currentTheme.variants}
                       activeVariant={activeVariant}
                       onSelect={setActiveVariant}
                     />
-                  )}
-                </div>
+                  </div>
+                )}
 
-                <div className="mt-4">
-                  <ColorModeSelect colorMode={colorMode} onSelect={changeColorMode} disabled={!findFamilyByThemeId(currentTheme.id)} />
-                </div>
-                <ThemeGallery themes={availableThemes} currentThemeId={currentTheme.id} effectiveMode={effectiveMode} onSelect={setTheme} />
+                <ExtensionThemeSelect
+                  themes={availableThemes}
+                  currentThemeId={currentTheme.id}
+                  onSelect={setTheme}
+                />
               </section>
 
               <div id={settingsSectionDomId("ai")} hidden={activeSection !== "ai"} aria-labelledby="settings-nav-ai">
@@ -391,123 +407,67 @@ function ActionButton({
   );
 }
 
-function ThemeGallery({ themes, currentThemeId, effectiveMode, onSelect }: {
-  themes: ThemeDefinition[];
-  currentThemeId: string;
-  effectiveMode: "light" | "dark";
-  onSelect: (id: string) => Promise<void>;
-}) {
-  const selectedFamily = findFamilyByThemeId(currentThemeId);
-  return (
-    <section className="mt-6 border-t border-[var(--line-hairline)] pt-5" aria-label="内置主题预览">
-      <h4 className="text-sm font-medium text-[var(--text-primary)]">配色预览</h4>
-      <p className="mt-1 text-xs text-[var(--text-secondary)]">预览随外观模式切换，点击即可应用。</p>
-      <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-3">
-        {THEME_FAMILIES.map((family) => {
-          const theme = themes.find((entry) => entry.id === resolveFamilyThemeId(family, effectiveMode));
-          if (!theme) return null;
-          const colors = theme.variables;
-          const selected = selectedFamily?.id === family.id;
-          return (
-            <button key={family.id} type="button" aria-pressed={selected} aria-label={`应用${family.name}主题`}
-              onClick={() => void onSelect(theme.id)} className="theme-choice min-w-0 overflow-hidden rounded-[var(--radius-lg)] border p-2 text-left">
-              <span aria-hidden="true" className="flex h-16 overflow-hidden border p-1.5"
-                style={{ background: colors["bg-base"], borderColor: colors["border-default"], borderRadius: family.lang === "b" ? "2px" : "7px" }}>
-                <span className="mr-1.5 flex w-7 shrink-0 flex-col gap-1 p-1" style={{ background: colors["bg-surface"] }}>
-                  <span className="h-1 w-3" style={{ background: colors["accent-primary"] }} />
-                  <span className="h-1 w-4 opacity-40" style={{ background: colors["text-secondary"] }} />
-                  <span className="h-1 w-3 opacity-40" style={{ background: colors["text-secondary"] }} />
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <span className="h-2.5 w-full" style={{ background: colors["bg-input"] }} />
-                  <span className="flex flex-1 gap-1">
-                    {[0, 1].map((index) => <span key={index} className="flex min-w-0 flex-1 items-end border p-1"
-                      style={{ borderColor: colors["border-default"], background: colors["bg-surface"], borderRadius: family.lang === "b" ? "1px" : "4px" }}>
-                      <span className="h-1.5 w-5" style={{ background: colors["accent-primary"] }} />
-                    </span>)}
-                  </span>
-                </span>
-              </span>
-              <span className="mt-2 flex items-center justify-between gap-1 px-0.5 text-xs font-medium">
-                <span className="truncate">{family.name}</span>
-                {selected && <Check size={14} strokeWidth={2} aria-hidden="true" />}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
+function extensionThemeLabel(theme: ThemeDefinition): string {
+  return `${theme.name}${theme.version ? ` · v${theme.version}` : ""}${theme.author ? ` · ${theme.author}` : ""}`;
 }
 
-function ThemeSelect({
+/** 下拉只列自定义 / Mod；没有扩展主题时隐藏触发按钮，只留空态句。 */
+function ExtensionThemeSelect({
   themes,
   currentThemeId,
-  effectiveMode,
   onSelect,
 }: {
   themes: ThemeDefinition[];
   currentThemeId: string;
-  /** 当前生效的亮/暗模式：选择内置家族时据此解析到具体主题 */
-  effectiveMode: "light" | "dark";
   onSelect: (id: string) => Promise<void>;
 }) {
-  // 内置主题以配色家族为粒度（亮/暗由独立开关决定）；自定义/Mod 主题按具体主题列出
-  const currentFamily = findFamilyByThemeId(currentThemeId);
   const customThemes = themes.filter((theme) => theme.source === "custom");
   const modThemes = themes.filter((theme) => theme.source === "mod");
-  const value = currentFamily ? `family:${currentFamily.id}` : currentThemeId;
-  // 选项左侧色点：内置家族取代表色（复用首页色点的同一来源），自定义/Mod 主题取自身 accent
-  const familySwatches = new Map(listOfficialFamilySwatches(effectiveMode).map((swatch) => [swatch.id, swatch.swatchColor]));
-
-  const handleChange = (raw: string) => {
-    if (raw.startsWith("family:")) {
-      const family = THEME_FAMILIES.find((item) => item.id === raw.slice("family:".length));
-      if (family) void onSelect(resolveFamilyThemeId(family, effectiveMode));
-      return;
-    }
-    void onSelect(raw);
-  };
+  const hasExtensions = customThemes.length > 0 || modThemes.length > 0;
+  const usingExtension = customThemes.some((theme) => theme.id === currentThemeId)
+    || modThemes.some((theme) => theme.id === currentThemeId);
 
   return (
-    <div className="block min-w-0">
-      <span className="instrument-label mb-2 block">当前主题</span>
-      <SelectMenu
-        value={value}
-        onChange={handleChange}
-        ariaLabel="当前主题"
-        groups={[
-          {
-            label: "内置主题",
-            options: THEME_FAMILIES.map((family) => ({
-              value: `family:${family.id}`,
-              label: `${family.name}${family.lang === "b" ? " · 仪表" : ""}`,
-              swatch: familySwatches.get(family.id),
-            })),
-          },
-          ...(customThemes.length > 0
-            ? [{
-                label: "自定义主题",
-                options: customThemes.map((theme) => ({
-                  value: theme.id,
-                  label: `${theme.name}${theme.version ? ` · v${theme.version}` : ""}${theme.author ? ` · ${theme.author}` : ""}`,
-                  swatch: theme.variables["accent-primary"],
-                })),
-              }]
-            : []),
-          ...(modThemes.length > 0
-            ? [{
-                label: "Mod 主题",
-                options: modThemes.map((theme) => ({
-                  value: theme.id,
-                  label: `${theme.name}${theme.version ? ` · v${theme.version}` : ""}${theme.author ? ` · ${theme.author}` : ""}`,
-                  swatch: theme.variables["accent-primary"],
-                })),
-              }]
-            : []),
-        ]}
-        className="input-frame flex h-10 w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:outline-none"
-      />
+    <div className="mt-6 border-t border-[var(--line-hairline)] pt-5">
+      <span className="instrument-label mb-2 block">自定义与扩展主题</span>
+      {!hasExtensions ? (
+        <p className="text-sm text-[var(--text-muted)]">导入 JSON 或安装 Mod 后会出现在这里</p>
+      ) : (
+        <SelectMenu
+          value={usingExtension ? currentThemeId : ""}
+          onChange={(raw) => {
+            if (raw) void onSelect(raw);
+          }}
+          ariaLabel="当前主题"
+          groups={[
+            {
+              label: "",
+              options: [{ value: "", label: "使用上方官方配色" }],
+            },
+            ...(customThemes.length > 0
+              ? [{
+                  label: "自定义主题",
+                  options: customThemes.map((theme) => ({
+                    value: theme.id,
+                    label: extensionThemeLabel(theme),
+                    swatch: theme.variables["accent-primary"],
+                  })),
+                }]
+              : []),
+            ...(modThemes.length > 0
+              ? [{
+                  label: "Mod 主题",
+                  options: modThemes.map((theme) => ({
+                    value: theme.id,
+                    label: extensionThemeLabel(theme),
+                    swatch: theme.variables["accent-primary"],
+                  })),
+                }]
+              : []),
+          ]}
+          className="input-frame flex h-10 w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] focus:outline-none"
+        />
+      )}
     </div>
   );
 }

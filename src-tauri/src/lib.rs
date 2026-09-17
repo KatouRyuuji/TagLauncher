@@ -247,6 +247,7 @@ pub fn run() {
             get_tag_relations,
             add_tag_relation,
             remove_tag_relation,
+            recolor_tags_and_cabinets,
             // 搜索
             search_items,
             // 启动/打开

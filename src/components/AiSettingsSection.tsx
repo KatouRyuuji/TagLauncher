@@ -263,7 +263,7 @@ export function AiSettingsSection() {
           onClick={() => void requestTagAll("untagged")}
           aria-disabled={!configured}
           title={configured ? undefined : "未配置 AI 服务"}
-          className={`action-button px-4 text-xs ${configured ? "" : "opacity-50"}`}
+          className={`action-button action-button-primary px-4 text-xs ${configured ? "" : "opacity-50"}`}
         >
           {busy === "tag" ? "统计中…" : "为未打标对象打标"}
         </button>
@@ -274,7 +274,7 @@ export function AiSettingsSection() {
           title={configured ? undefined : "未配置 AI 服务"}
           className={`action-button px-4 text-xs ${configured ? "" : "opacity-50"}`}
         >
-          {busy === "tag" ? "统计中…" : "为全部对象打标"}
+          {busy === "tag" ? "统计中…" : "为全部重新打标"}
         </button>
       </div>
 

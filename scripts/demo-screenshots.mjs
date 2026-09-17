@@ -137,15 +137,15 @@ async function goToSettingsSection(page, chipLabel) {
   await settle(600);
 }
 
+/** 设置内的官方配色 Gallery（2×2 radio 卡；侧栏「官方主题」色点同名，须限定在此 radiogroup 内） */
+const themeGallery = (page) =>
+  page.getByRole("dialog", { name: "设置工作台" }).getByRole("radiogroup", { name: "官方配色" });
+
 async function selectTheme(page, themeLabel) {
-  const dialog = page.getByRole("dialog", { name: "设置工作台" });
   await page.locator('nav[aria-label="设置区块导航"]').getByRole("button", { name: "主题外观", exact: true }).click();
-  // 主题选择器为自绘 SelectMenu：点开按钮后按选项文本选择
-  // （弹层 portal 到 body，不在设置对话框 DOM 内，选项须从 page 范围定位）
-  await dialog.locator('button[aria-label="当前主题"]').click();
-  await settle(250);
-  await page.locator('[role="listbox"] [role="option"]', { hasText: themeLabel }).first().click();
-  await settle(600);
+  await themeGallery(page).getByRole("radio", { name: themeLabel, exact: true }).click();
+  // 切官方家族会按色位一次批量写回 tags/cabinets 的 color，多留一点稳定时间
+  await settle(800);
 }
 
 /** 读取已生效的模式，截图命名与根节点状态保持一致。 */
@@ -560,21 +560,20 @@ async function featureTour(page) {
   await shot(page, "settings-theme-设置-主题外观");
   await check("设置面板打开", page.getByRole("dialog", { name: "设置工作台" }).isVisible());
 
-  // 25b 主题下拉打开态（再点触发按钮收起，避免 Escape 误关设置对话框）
+  // 25b 官方配色 Gallery 是主选择器；「当前主题」下拉只在有自定义/Mod 主题时渲染
   const themeTrigger = page.getByRole("dialog", { name: "设置工作台" }).locator('button[aria-label="当前主题"]');
-  await themeTrigger.click();
   await settle(300);
-  await shot(page, "settings-theme-dropdown-设置-主题下拉打开");
-  await check("主题下拉列出内置配色家族", (await page.locator('[role="listbox"][aria-label="当前主题"] [role="option"]').count()) >= 4);
-  await themeTrigger.click();
-  await settle(250);
-  await check("主题下拉已收起", (await page.locator('[role="listbox"][aria-label="当前主题"]').count()) === 0);
+  await shot(page, "settings-theme-gallery-设置-官方配色Gallery");
+  await check("Gallery 列出 4 个官方配色家族", (await themeGallery(page).getByRole("radio").count()) === 4);
+  await check("Gallery 当前勾选霜靛", themeGallery(page).getByRole("radio", { name: "霜靛", exact: true }).getAttribute("aria-checked").then((v) => v === "true"));
+  await check("无自定义主题时不再渲染重复的主题下拉", (await themeTrigger.count()) === 0);
 
   await goToSettingsSection(page, "AI");
   await shot(page, "settings-ai-设置-AI自动打标");
 
   // 26 AI 一键打标（mock 建议 → 真实编排进度：先截进行中，再等完成）
-  await page.getByRole("button", { name: "为全部对象打标" }).click();
+  await check("AI 区块以「为未打标对象打标」为主按钮", page.getByRole("button", { name: /为未打标/ }).evaluate((el) => el.classList.contains("action-button-primary")));
+  await page.getByRole("button", { name: "为全部重新打标" }).click();
   await page.getByRole("dialog", { name: "AI 打标进度" }).waitFor();
   await shot(page, "ai-tagging-running-AI打标-进行中");
   await check("AI 打标进行中弹窗出现", page.getByText("正在自动打标…").isVisible());
@@ -657,14 +656,10 @@ async function themeTour(page) {
   await settle(500);
   await openSettings(page);
   await page.locator('nav[aria-label="设置区块导航"]').getByRole("button", { name: "主题外观", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "设置工作台" });
-  // 收集「内置主题」分组下全部配色家族名（自绘 SelectMenu 的 option 文本）
-  await dialog.locator('button[aria-label="当前主题"]').click();
-  await settle(250);
-  const themeLabels = await page.locator('[role="listbox"] [role="option"]').evaluateAll(
-    (options) => options.map((option) => option.textContent?.trim() ?? ""),
+  // 收集 Gallery 里全部官方配色家族名（radio 的 aria-label）
+  const themeLabels = await themeGallery(page).getByRole("radio").evaluateAll(
+    (radios) => radios.map((radio) => radio.getAttribute("aria-label") ?? ""),
   );
-  await page.keyboard.press("Escape");
   await closeSettings(page);
   console.log(`  共 ${themeLabels.length} 套配色家族 × 亮/暗`);
 
@@ -675,6 +670,23 @@ async function themeTour(page) {
     const slug = themeLabel.replace(/[\s·]+/g, "");
     await setMode(page, false);
     await shot(page, `theme-${slug}-亮-grid-主界面`);
+    if (themeLabel.includes("素墨")) {
+      // 房间验收：素墨下库里的标签色必须已写成墨阶，而不是渲染层滤镜——读侧栏色点的实际背景色判饱和度
+      // color-mix 的计算值可能是 `rgb(...)` 也可能是 `color(srgb r g b)`，两种都解析
+      const allLowChroma = (els) =>
+        els.length > 0 && els.every((el) => {
+          const bg = getComputedStyle(el).backgroundColor;
+          let rgb = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(bg)?.slice(1, 4).map(Number);
+          if (!rgb) {
+            const m = /color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/.exec(bg);
+            if (m) rgb = m.slice(1, 4).map((v) => Math.round(Number(v) * 255));
+          }
+          if (!rgb) return false;
+          return Math.max(...rgb) - Math.min(...rgb) <= 12;
+        });
+      await check("素墨主题下卡片标签胶囊也是墨阶（对象副本已随库刷新）", page.locator('[data-region="main"] .tag-pill').evaluateAll(allLowChroma));
+      await check("素墨主题下侧栏标签色点全部为墨阶（低饱和）", page.locator('[data-region="sidebar-nav"] [data-tag-color-dot]').evaluateAll(allLowChroma));
+    }
     await setMode(page, true);
     await shot(page, `theme-${slug}-暗-grid-主界面`);
     // 霜靛（默认主题）补亮/暗列表形态

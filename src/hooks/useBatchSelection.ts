@@ -21,6 +21,8 @@ interface UseBatchSelectionParams {
 }
 
 export interface UseBatchSelectionResult {
+  /** 当前选中的对象（含各自 tags；供工具条计算「全有 / 部分有」）。 */
+  selectedItems: ItemWithTags[];
   /** 选中对象实际拥有标签的并集（供"移除标签"菜单）。 */
   selectedItemsTags: Array<{ id: number; name: string; color: string }>;
   batchAddTag: (tagId: number) => Promise<void>;
@@ -92,5 +94,5 @@ export function useBatchSelection({
     setSelectedItemIds([]);
   }, [removeItemsFromCabinet, selectedCabinetId, selectedItemIds, setSelectedItemIds]);
 
-  return { selectedItemsTags, batchAddTag, batchRemoveTag, batchAddToCabinet, batchRemoveFromCabinet };
+  return { selectedItems, selectedItemsTags, batchAddTag, batchRemoveTag, batchAddToCabinet, batchRemoveFromCabinet };
 }

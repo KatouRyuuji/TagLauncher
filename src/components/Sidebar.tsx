@@ -347,6 +347,7 @@ export function Sidebar({
                       }`}
                     >
                       <span
+                        data-tag-color-dot=""
                         className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-[color-mix(in_srgb,var(--border-strong)_42%,transparent)]"
                         style={{
                           backgroundColor: excluded ? "var(--text-faint)" : tag.color,

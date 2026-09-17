@@ -4,6 +4,7 @@ import { assert, test, run } from "./__testutil";
 import { sakuraTheme } from "../themes/sakura";
 import { ryuujiThemes } from "../themes/ryuuji";
 import { THEME_FAMILIES, presetThemes } from "../themes";
+import { DEFAULT_THEME_VARIABLES } from "../themes/tokens";
 import { shapeLangTokens } from "../themes/shapeLang";
 
 // 规范主题：工厂生成的霜靛·暗，与 tokens.ts 的 DEFAULT_THEME_VARIABLES 同源
@@ -148,10 +149,13 @@ test("关键语义色与 RyuujiDesign palettes.css 逐值一致（八套含素�
       const theme = presetThemes.find((item) => item.id === family[mode]);
       assert.ok(theme, `缺少预设主题 ${family.name}/${mode}`);
       const expectedBg = mode === "light" ? lock.named[paletteId]?.bgLight : lock.named[paletteId]?.bgDark;
-      if (expectedBg && theme!.variables["bg-base"] !== expectedBg) {
+      // 藤色 / 樱花纸色由工厂 PAPER_BIAS 派生，不再与 lock 原值逐字相等
+      const paperDerived = family.id === "a3" || family.id === "a6";
+      if (expectedBg && !paperDerived && theme!.variables["bg-base"] !== expectedBg) {
         mismatches.push(`${family.name}/${mode} bg-base ${theme!.variables["bg-base"]} ≠ lock ${expectedBg}`);
       }
       for (const [appKey, sysKey] of Object.entries(SEMANTIC_TO_SYS)) {
+        if (appKey === "bg-base" && paperDerived) continue;
         if (theme!.variables[appKey] !== sys[sysKey]) {
           mismatches.push(`${family.name}/${mode} ${appKey}: ${theme!.variables[appKey]} ≠ --sys-${sysKey} ${sys[sysKey]}`);
         }
@@ -186,6 +190,26 @@ test("结构令牌与 lang/{a,b}.css、tokens.css 对应值一致", () => {
   assert.equal(normalizeCssValue(a["shadow-well"]), normalizeCssValue(cssVar(langA, "sys-shadow-paper-well")!));
   assert.equal(normalizeCssValue(a["shadow-focus"]), normalizeCssValue(cssVar(tokens, "sys-shadow-focus")!.replace("var(--sys-primary)", "var(--accent-primary)")));
   assert.equal(b["shadow-focus"], "none");
+});
+
+test("藤色纸色由工厂拉开，樱花发丝沾春色，素墨 accent 仍是墨阶", () => {
+  const frostLight = presetThemes.find((theme) => theme.id === THEME_FAMILIES[0].light);
+  const fujiLight = presetThemes.find((theme) => theme.id === THEME_FAMILIES[1].light);
+  const sakuraLight = presetThemes.find((theme) => theme.id === THEME_FAMILIES[2].light);
+  const inkLight = presetThemes.find((theme) => theme.id === THEME_FAMILIES[3].light);
+  assert.ok(frostLight && fujiLight && sakuraLight && inkLight);
+  assert.ok(fujiLight!.variables["bg-base"].includes("color-mix"));
+  assert.notEqual(fujiLight!.variables["bg-base"], frostLight!.variables["bg-base"]);
+  assert.ok(fujiLight!.variables["border-subtle"].includes("#8f5fc5") || fujiLight!.variables["border-subtle"].includes("8f5fc5"));
+  assert.ok(sakuraLight!.css?.includes("--line-hairline"));
+  assert.equal(inkLight!.variables["accent-primary"], "#242424");
+  assert.equal(inkLight!.variables["bg-base"], "#f5f5f5");
+});
+
+test("暗色主题提高标签胶囊不透明度，缺省补齐仍是 9%", () => {
+  assert.equal(canonicalTheme.variables["tag-color-alpha"], "30%");
+  assert.equal(sakuraTheme.variables["tag-color-alpha"], "9%");
+  assert.equal(DEFAULT_THEME_VARIABLES["tag-color-alpha"], "9%");
 });
 
 test("已交付 CSS 含签名配方与 reduced-motion 静态化", () => {
