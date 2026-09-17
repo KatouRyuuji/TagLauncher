@@ -3,12 +3,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsPanel } from "./SettingsPanel";
-import { presetThemes, THEME_FAMILIES } from "../themes";
+import { DEFAULT_FAMILY, presetThemes, THEME_FAMILIES, resolveFamilyThemeId } from "../themes";
+import type { ThemeDefinition } from "../types/theme";
 
 const mocks = vi.hoisted(() => ({ ai: vi.fn(), sync: vi.fn(), data: vi.fn(), update: vi.fn(), mods: vi.fn(), setTheme: vi.fn() }));
+const themeState = vi.hoisted(() => ({
+  currentTheme: { id: "", name: "", variables: {} } as ThemeDefinition,
+  availableThemes: [] as ThemeDefinition[],
+  effectiveMode: "light" as "light" | "dark",
+}));
 vi.mock("./ThemeProvider", () => ({ useThemeContext: () => ({
-  currentTheme: presetThemes[0], availableThemes: presetThemes, setTheme: mocks.setTheme,
-  effectiveMode: "light", colorMode: "light", changeColorMode: vi.fn(),
+  currentTheme: themeState.currentTheme, availableThemes: themeState.availableThemes, setTheme: mocks.setTheme,
+  effectiveMode: themeState.effectiveMode, colorMode: "light", changeColorMode: vi.fn(),
 }) }));
 vi.mock("./AiSettingsSection", () => ({ AiSettingsSection: () => {
   const [value, setValue] = useState("");
@@ -23,7 +29,13 @@ vi.mock("./DataSettingsSection", () => ({ DataSettingsSection: () => { useEffect
 vi.mock("./UpdateSettingsSection", () => ({ UpdateSettingsSection: () => { useEffect(() => { mocks.update(); }, []); return null; } }));
 vi.mock("./ModManagerPanel", () => ({ ModManagerPanel: () => { useEffect(() => { mocks.mods(); }, []); return null; } }));
 
-beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); });
+beforeEach(() => {
+  localStorage.clear();
+  vi.clearAllMocks();
+  themeState.currentTheme = presetThemes[0];
+  themeState.availableThemes = presetThemes;
+  themeState.effectiveMode = "light";
+});
 
 describe("设置分区", () => {
   it("只挂载访问过的区块，返回区块时保留草稿", async () => {
@@ -61,5 +73,21 @@ describe("设置分区", () => {
     expect(screen.queryByRole("button", { name: "当前主题" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "藤色" }));
     expect(mocks.setTheme).toHaveBeenCalledWith(family.light);
+  });
+
+  it("当前为自定义主题时选「使用上方官方配色」会套用官方家族", async () => {
+    const custom: ThemeDefinition = {
+      ...presetThemes[0],
+      id: "custom-sky",
+      name: "天空",
+      isPreset: false,
+      source: "custom",
+    };
+    themeState.currentTheme = custom;
+    themeState.availableThemes = [...presetThemes, custom];
+    render(<SettingsPanel open onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "当前主题" }));
+    await userEvent.click(screen.getByRole("option", { name: "使用上方官方配色" }));
+    expect(mocks.setTheme).toHaveBeenCalledWith(resolveFamilyThemeId(DEFAULT_FAMILY, "light"));
   });
 });

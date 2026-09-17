@@ -10,6 +10,7 @@
 import { type KeyboardEvent } from "react";
 import { Check } from "lucide-react";
 import type { ResolvedColorMode } from "../lib/colorMode";
+import { parsePalette } from "../lib/tagColorSlots";
 import {
   THEME_FAMILIES,
   findFamilyByThemeId,
@@ -18,14 +19,6 @@ import {
   type ThemeFamily,
 } from "../themes";
 import type { ThemeDefinition } from "../types/theme";
-
-function firstPresetColors(value: string | undefined, count: number): string[] {
-  return (value ?? "")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .slice(0, count);
-}
 
 function familyTheme(themes: ThemeDefinition[], family: ThemeFamily, mode: ResolvedColorMode): ThemeDefinition | undefined {
   const id = resolveFamilyThemeId(family, mode);
@@ -99,7 +92,7 @@ export function ThemeFamilyGallery({
           if (!theme) return null;
           const colors = theme.variables;
           const selected = selectedFamily?.id === family.id;
-          const presets = firstPresetColors(colors["tag-preset-colors"], 3);
+          const presets = parsePalette(colors["tag-preset-colors"] ?? "").slice(0, 3);
           const radius = family.lang === "b" ? "2px" : "8px";
           return (
             <button

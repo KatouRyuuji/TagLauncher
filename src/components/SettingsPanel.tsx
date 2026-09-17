@@ -21,7 +21,7 @@ import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { showToast } from "../lib/toast";
 import { SETTINGS_SECTIONS, settingsSectionDomId } from "../lib/settingsSections";
-import { findFamilyByThemeId } from "../themes";
+import { DEFAULT_FAMILY, findFamilyByThemeId, resolveFamilyThemeId } from "../themes";
 import type { ColorMode } from "../lib/colorMode";
 import type { ThemeDefinition, ThemeVariant } from "../types/theme";
 import { AiSettingsSection } from "./AiSettingsSection";
@@ -332,6 +332,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 <ExtensionThemeSelect
                   themes={availableThemes}
                   currentThemeId={currentTheme.id}
+                  effectiveMode={effectiveMode}
                   onSelect={setTheme}
                 />
               </section>
@@ -411,14 +412,28 @@ function extensionThemeLabel(theme: ThemeDefinition): string {
   return `${theme.name}${theme.version ? ` · v${theme.version}` : ""}${theme.author ? ` · ${theme.author}` : ""}`;
 }
 
+/** 与 useTheme 的 last-preset 缓存同键；读不到或不是官方家族则回默认族。 */
+const LAST_PRESET_THEME_KEY = "taglauncher.last-preset-theme-id";
+
+function lastOfficialFamily() {
+  try {
+    const id = localStorage.getItem(LAST_PRESET_THEME_KEY);
+    return (id ? findFamilyByThemeId(id) : undefined) ?? DEFAULT_FAMILY;
+  } catch {
+    return DEFAULT_FAMILY;
+  }
+}
+
 /** 下拉只列自定义 / Mod；没有扩展主题时隐藏触发按钮，只留空态句。 */
 function ExtensionThemeSelect({
   themes,
   currentThemeId,
+  effectiveMode,
   onSelect,
 }: {
   themes: ThemeDefinition[];
   currentThemeId: string;
+  effectiveMode: "light" | "dark";
   onSelect: (id: string) => Promise<void>;
 }) {
   const customThemes = themes.filter((theme) => theme.source === "custom");
@@ -436,7 +451,11 @@ function ExtensionThemeSelect({
         <SelectMenu
           value={usingExtension ? currentThemeId : ""}
           onChange={(raw) => {
-            if (raw) void onSelect(raw);
+            if (raw) {
+              void onSelect(raw);
+              return;
+            }
+            void onSelect(resolveFamilyThemeId(lastOfficialFamily(), effectiveMode));
           }}
           ariaLabel="当前主题"
           groups={[

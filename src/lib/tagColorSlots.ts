@@ -173,7 +173,7 @@ function planGroup(
   nextPalette: string[],
 ): { updates: RecolorItem[]; nextRecords: Record<string, ColorSlotRecord> } {
   const updates: RecolorItem[] = [];
-  const nextRecords: Record<string, ColorSlotRecord> = {};
+  const nextRecords: Record<string, ColorSlotRecord> = { ...records };
   for (const item of items) {
     const key = String(item.id);
     const slot = resolveSlot(records[key], item.color, previousPalette, nextPalette);
@@ -186,7 +186,7 @@ function planGroup(
   return { updates, nextRecords };
 }
 
-/** 按色位规划写回：只把颜色会变的条目放进 updates，并重写全部色位记忆。 */
+/** 按色位规划写回：只把颜色会变的条目放进 updates；nextSlotMap 从旧图出发只覆写本次出现的 id。 */
 export function planRecolor(input: {
   tags: RecolorItem[];
   cabinets: RecolorItem[];

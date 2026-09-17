@@ -23,6 +23,25 @@ describe("分类编辑器状态", () => {
     expect(screen.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
   });
 
+  it("文件柜新建标题下强调分组用途，颜色是色点阵", () => {
+    render(<TagEditor tag={null} label="文件柜" onSave={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByRole("dialog", { name: "新建文件柜" })).toBeInTheDocument();
+    expect(screen.getByText("文件柜是分组，不是磁盘目录；一个对象可以进多个柜")).toBeInTheDocument();
+    const group = screen.getByRole("radiogroup", { name: "分类颜色" });
+    expect(group.querySelectorAll('[role="radio"]')).toHaveLength(8);
+    expect(screen.getByRole("radio", { name: "蔷薇" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "晴蓝" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("现有色不在预设里时多一颗当前点，点预设后收回", async () => {
+    render(<TagEditor tag={{ id: 1, name: "工作", color: "#111111" }} onSave={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByRole("radio", { name: "当前" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText("墨黑")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "蔷薇" }));
+    expect(screen.queryByRole("radio", { name: "当前" })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "蔷薇" })).toHaveAttribute("aria-checked", "true");
+  });
+
   it("取消删除确认后返回原按钮，保留键盘焦点", async () => {
     const remove = vi.fn();
     render(<TagEditor tag={{ id: 1, name: "工作", color: "#5064d8" }} onSave={vi.fn()} onDelete={remove} onClose={vi.fn()} />);

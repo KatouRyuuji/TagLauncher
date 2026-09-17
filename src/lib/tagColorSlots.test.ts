@@ -97,4 +97,43 @@ test("中性色在彩色板上不会抛错", () => {
   }
 });
 
+test("planRecolor 空输入保留旧色位记录", () => {
+  const slotMap: ColorSlotMap = {
+    tags: { "7": { slot: 3, hex: "#22c55e" } },
+    cabinets: { "2": { slot: 1, hex: "#111111" } },
+    lastOfficialThemeId: "kept",
+  };
+  const planned = planRecolor({
+    tags: [],
+    cabinets: [],
+    slotMap,
+    previousPalette: frost,
+    nextPalette: mono,
+  });
+  assert.deepEqual(planned.updates, { tags: [], cabinets: [] });
+  assert.deepEqual(planned.nextSlotMap.tags, slotMap.tags);
+  assert.deepEqual(planned.nextSlotMap.cabinets, slotMap.cabinets);
+  assert.equal(planned.nextSlotMap.lastOfficialThemeId, "kept");
+});
+
+test("planRecolor 只覆写出现过的 id", () => {
+  const slotMap: ColorSlotMap = {
+    tags: {
+      "1": { slot: 0, hex: frost[0] ?? "#000000" },
+      "9": { slot: 2, hex: frost[2] ?? "#111111" },
+    },
+    cabinets: {},
+  };
+  const planned = planRecolor({
+    tags: [{ id: 1, color: frost[0] ?? "#000000" }],
+    cabinets: [],
+    slotMap,
+    previousPalette: frost,
+    nextPalette: mono,
+  });
+  assert.equal(planned.nextSlotMap.tags["9"]?.slot, 2);
+  assert.equal(planned.nextSlotMap.tags["9"]?.hex, frost[2]);
+  assert.equal(planned.nextSlotMap.tags["1"]?.hex, mono[0]);
+});
+
 await run("tagColorSlots");

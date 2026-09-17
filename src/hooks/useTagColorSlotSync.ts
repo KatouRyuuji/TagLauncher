@@ -41,18 +41,34 @@ function paletteOfTheme(themeId: string | undefined | null): string[] | null {
   return parsePalette(csv);
 }
 
+function resolvePreviousPalette(
+  slotMap: ColorSlotMap,
+  previousThemeId: string | null,
+  themeId: string,
+): string[] {
+  const remembered = paletteOfTheme(slotMap.lastOfficialThemeId);
+  if (remembered) return remembered;
+  if (previousThemeId && previousThemeId !== themeId && findFamilyByThemeId(previousThemeId)) {
+    const previous = paletteOfTheme(previousThemeId);
+    if (previous) return previous;
+  }
+  return [...FALLBACK_TAG_PRESET_COLORS];
+}
+
 /**
- * 官方家族切换时按色位写回标签/文件柜颜色。
- * 局部替换 store 的 color（不用再打 get_tags）：planRecolor 已给出精确补丁，
- * 并派发 TAGS_WRITTEN_EVENT 让对象卡片上的 pill 跟着换色。
+ * 官方家族切换 / 首次进入时按色位写回标签/文件柜颜色。
+ * store 里 tags 与 cabinets 都空时不规划、不 persist，等数据到齐再补跑。
+ * 局部替换 store 的 color，并派发 TAGS_WRITTEN_EVENT 让对象卡片 pill 跟着换色。
  */
 export function useTagColorSlotSync() {
   const { currentTheme } = useThemeContext();
   const themeId = currentTheme.id;
+  const hasCatalog = useAppStore((state) => state.tags.length > 0 || state.cabinets.length > 0);
   const chainRef = useRef(Promise.resolve());
   const prevThemeIdRef = useRef<string | null>(null);
   const slotMapRef = useRef<ColorSlotMap>(emptySlotMap());
   const bootstrappedRef = useRef(false);
+  const appliedThemeIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const run = async () => {
@@ -62,29 +78,22 @@ export function useTagColorSlotSync() {
         } catch {
           slotMapRef.current = emptySlotMap();
         }
-        if (!slotMapRef.current.lastOfficialThemeId && findFamilyByThemeId(themeId)) {
-          slotMapRef.current = { ...slotMapRef.current, lastOfficialThemeId: themeId };
-        }
         bootstrappedRef.current = true;
-        prevThemeIdRef.current = themeId;
-        return;
       }
 
-      if (prevThemeIdRef.current === themeId) return;
       const previousThemeId = prevThemeIdRef.current;
       prevThemeIdRef.current = themeId;
 
+      if (!hasCatalog) return;
       if (!findFamilyByThemeId(themeId)) return;
+      if (appliedThemeIdRef.current === themeId) return;
 
       const slotMap = slotMapRef.current;
-      let previousPalette = paletteOfTheme(slotMap.lastOfficialThemeId);
-      if (!previousPalette && previousThemeId && findFamilyByThemeId(previousThemeId)) {
-        previousPalette = paletteOfTheme(previousThemeId);
-      }
-      if (!previousPalette) previousPalette = [...FALLBACK_TAG_PRESET_COLORS];
-
+      const previousPalette = resolvePreviousPalette(slotMap, previousThemeId, themeId);
       const nextPalette = paletteOfTheme(themeId) ?? [...FALLBACK_TAG_PRESET_COLORS];
       const { tags, cabinets } = useAppStore.getState();
+      if (tags.length === 0 && cabinets.length === 0) return;
+
       const planned = planRecolor({
         tags: tags.map((tag) => ({ id: tag.id, color: tag.color })),
         cabinets: cabinets.map((cabinet) => ({ id: cabinet.id, color: cabinet.color })),
@@ -111,8 +120,9 @@ export function useTagColorSlotSync() {
         window.dispatchEvent(new Event(TAGS_WRITTEN_EVENT));
       }
 
-      slotMapRef.current = planned.nextSlotMap;
       await db.setSetting(SLOT_SETTING_KEY, JSON.stringify(planned.nextSlotMap));
+      slotMapRef.current = planned.nextSlotMap;
+      appliedThemeIdRef.current = themeId;
     };
 
     chainRef.current = chainRef.current
@@ -124,7 +134,7 @@ export function useTagColorSlotSync() {
           "error",
         );
       });
-  }, [themeId]);
+  }, [themeId, hasCatalog]);
 }
 
 /** App 在 ThemeProvider 外，不能直接调 useThemeContext；作为 Provider 子节点挂载。 */

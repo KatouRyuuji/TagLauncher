@@ -16,6 +16,10 @@ interface TagEditorProps {
   onClose: () => void;
 }
 
+function sameHex(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: TagEditorProps) {
   const [presetColors] = useState(getThemeTagPresetColors);
   const [name, setName] = useState(tag?.name || "");
@@ -27,6 +31,9 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
   // 删除为不可撤销的级联操作（标签会从所有对象上移除）：两步内联确认，
   // 与 DataSettingsSection 的内联确认同模式，避免再叠一层模态焦点陷阱。
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const description = label === "文件柜"
+    ? "文件柜是分组，不是磁盘目录；一个对象可以进多个柜"
+    : "名称与颜色用于识别分类。";
 
   useEscapeKey(onClose, !saving && !deleting);
   const contentRef = useFocusTrap<HTMLDivElement>({ active: true });
@@ -73,7 +80,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
         aria-label={title}
         onClick={(event) => event.stopPropagation()}
       >
-        <DialogHeader title={title} description="名称与颜色用于识别分类。" onClose={onClose} disabled={saving || deleting} />
+        <DialogHeader title={title} description={description} onClose={onClose} disabled={saving || deleting} />
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-col">
           <fieldset className="dialog-body" disabled={saving || deleting}>
@@ -94,31 +101,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
             />
           </label>
 
-          <div className="mt-5">
-            <div className="text-[13px] font-medium text-[var(--text-primary)]">颜色</div>
-            <div className="mt-2 grid grid-cols-2 gap-2" role="group" aria-label="分类颜色">
-              {presetColors.map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => setColor(preset)}
-                  aria-pressed={color === preset}
-                  className="flex min-w-0 items-center gap-3 rounded-[var(--radius-md)] border px-3 py-2.5 text-left"
-                  style={{
-                    borderColor: color === preset ? preset : "var(--border-subtle)",
-                    backgroundColor: color === preset
-                      ? `color-mix(in srgb, ${preset} 12%, var(--bg-surface))`
-                      : "color-mix(in srgb, var(--bg-card) 78%, transparent)",
-                  }}
-                >
-                  <span className="h-4 w-4 rounded-full" style={{ backgroundColor: preset }} />
-                  <span className="text-xs font-medium text-[var(--text-secondary)]">
-                    {nameColorByHue(preset)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <ColorDotField colors={presetColors} value={color} onChange={setColor} />
           </fieldset>
 
           <div className="dialog-footer">
@@ -165,5 +148,70 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
       </div>
     </div>,
     document.body,
+  );
+}
+
+function ColorDotField({
+  colors,
+  value,
+  onChange,
+}: {
+  colors: string[];
+  value: string;
+  onChange: (color: string) => void;
+}) {
+  const hasCurrent = !colors.some((preset) => sameHex(preset, value));
+  const options = hasCurrent ? [...colors, value] : colors;
+
+  return (
+    <div className="mt-5">
+      <div className="text-[13px] font-medium text-[var(--text-primary)]">颜色</div>
+      <div className="mt-2 flex items-center gap-3">
+        <div role="radiogroup" aria-label="分类颜色" className="flex flex-wrap items-center gap-2">
+          {options.map((preset, index) => {
+            const selected = sameHex(value, preset);
+            const isCurrentExtra = hasCurrent && index === options.length - 1;
+            const label = isCurrentExtra ? "当前" : nameColorByHue(preset);
+            return (
+              <button
+                key={isCurrentExtra ? `current:${preset}` : preset}
+                type="button"
+                role="radio"
+                aria-label={label}
+                aria-checked={selected}
+                title={label}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => onChange(preset)}
+                onKeyDown={(event) => {
+                  const offset = ["ArrowRight", "ArrowDown"].includes(event.key)
+                    ? 1
+                    : ["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 0;
+                  if (!offset && event.key !== "Home" && event.key !== "End") return;
+                  event.preventDefault();
+                  const nextIndex = event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? options.length - 1
+                      : (index + offset + options.length) % options.length;
+                  const next = options[nextIndex];
+                  if (next) onChange(next);
+                  event.currentTarget.parentElement
+                    ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[nextIndex]
+                    ?.focus();
+                }}
+                className={`h-6 w-6 rounded-full ${
+                  selected ? "ring-2 ring-offset-2 ring-offset-[var(--bg-surface)]" : ""
+                }`}
+                style={{
+                  backgroundColor: preset,
+                  ...(selected ? { ["--tw-ring-color" as string]: preset } : {}),
+                }}
+              />
+            );
+          })}
+        </div>
+        <span className="text-xs text-[var(--text-secondary)]">{nameColorByHue(value)}</span>
+      </div>
+    </div>
   );
 }

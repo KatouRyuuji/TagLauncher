@@ -1,4 +1,4 @@
-import { Check, Sparkles, X } from "lucide-react";
+import { Check, LoaderCircle, Sparkles, X } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import type { AiTagProgress } from "../hooks/useAiTagging";
@@ -11,11 +11,12 @@ interface AiTaggingModalProps {
 
 /**
  * AI 批量打标进度弹窗。silent 模式（新对象自动打标）不渲染。
- * 运行中显示进度条与实时计数；结束后显示汇总并允许关闭。
+ * 开始瞬间用读取句代替全零收据；进行中露出 currentName；结束后写结果总结。
  */
 export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalProps) {
   const visible = (progress.running || progress.done > 0) && !progress.silent;
   const finished = !progress.running && progress.done > 0;
+  const starting = progress.running && progress.done === 0;
   const trapRef = useFocusTrap<HTMLElement>({ active: visible });
 
   useEscapeKey(() => {
@@ -25,6 +26,8 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
   if (!visible) return null;
 
   const percent = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+  const currentName = progress.currentName;
+  const recentSuggestions = progress.lastNames;
 
   return (
     <>
@@ -58,7 +61,6 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
           </div>
 
           <div className="px-6 py-5">
-            {/* 进度条 */}
             <div
               className="h-2 w-full overflow-hidden rounded-[var(--radius-sm)] bg-[var(--bg-hover)]"
               role="progressbar"
@@ -77,17 +79,43 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
               <span>{percent}%</span>
             </div>
 
-            {/* 计数 */}
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-              <StatBox label="已打标" value={progress.succeeded} tone="success" />
-              <StatBox label="无建议" value={progress.skipped} tone="muted" />
-              {/* 失败为 0 时保持中性色，避免无失败也亮红灯造成误读 */}
-              <StatBox label="失败" value={progress.failed} tone={progress.failed > 0 ? "danger" : "muted"} />
-            </div>
+            {starting ? (
+              <p className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">
+                正在读取第 1 / {progress.total} 个对象…
+              </p>
+            ) : (
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <StatBox label="已打标" value={progress.succeeded} tone="success" />
+                <StatBox label="无建议" value={progress.skipped} tone="muted" />
+                {/* 失败为 0 时保持中性色，避免无失败也亮红灯造成误读 */}
+                <StatBox label="失败" value={progress.failed} tone={progress.failed > 0 ? "danger" : "muted"} />
+              </div>
+            )}
 
-            {progress.running && progress.lastNames.length > 0 && (
-              <p className="mt-3 truncate text-xs text-[var(--text-faint)]" title={progress.lastNames.join("、")}>
-                最近：{progress.lastNames.join("、")}
+            {progress.running && currentName && (
+              <div className="mt-4 min-w-0">
+                <div className="flex items-center gap-2">
+                  <LoaderCircle
+                    aria-hidden="true"
+                    size={18}
+                    strokeWidth={2}
+                    className="shrink-0 animate-spin text-[var(--accent-primary)]"
+                  />
+                  <p className="data-readout min-w-0 truncate text-lg text-[var(--text-primary)]" title={currentName}>
+                    {currentName}
+                  </p>
+                </div>
+                {recentSuggestions.length > 0 && (
+                  <p className="mt-1 truncate text-xs text-[var(--text-faint)]" title={recentSuggestions.join("、")}>
+                    最近建议：{recentSuggestions.join("、")}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {finished && (
+              <p className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">
+                已为 {progress.succeeded} 个对象添加标签，{progress.skipped} 个无建议，{progress.failed} 个失败
               </p>
             )}
 

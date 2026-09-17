@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Check,
@@ -5,6 +6,7 @@ import {
   Keyboard,
   MousePointer2,
   Navigation,
+  Search,
   Settings2,
   X,
   type LucideIcon,
@@ -72,12 +74,37 @@ const GROUPS: { title: string; icon: LucideIcon; note?: string; items: ShortcutI
   },
 ];
 
+function itemMatches(item: ShortcutItem, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const keys = Array.isArray(item.keys) ? item.keys : [item.keys];
+  return item.action.toLowerCase().includes(needle) || keys.some((key) => key.toLowerCase().includes(needle));
+}
+
 export function ShortcutsHelp() {
   const open = useAppStore((state) => state.shortcutsHelpOpen);
   const setOpen = useAppStore((state) => state.setShortcutsHelpOpen);
+  const [query, setQuery] = useState("");
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open });
-  useEscapeKey(() => setOpen(false), open);
+
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
+
+  // 输入框有内容时 Esc 先清空；空时再关帮助。走同一条 useEscapeKey 栈，不另挂监听。
+  useEscapeKey(() => {
+    if (query) {
+      setQuery("");
+      return;
+    }
+    setOpen(false);
+  }, open);
+
   if (!open) return null;
+
+  const visibleGroups = GROUPS
+    .map((group) => ({ ...group, items: group.items.filter((item) => itemMatches(item, query)) }))
+    .filter((group) => group.items.length > 0);
 
   return createPortal(
     <div
@@ -96,16 +123,29 @@ export function ShortcutsHelp() {
         aria-labelledby="shortcuts-help-title"
         className="modal-surface flex max-h-[88dvh] w-[620px] max-w-[calc(100vw-24px)] flex-col overflow-hidden"
       >
-        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-[var(--line-hairline)] px-4 py-4 sm:px-5">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-              <Keyboard aria-hidden="true" size={19} strokeWidth={1.8} />
+        <header className="flex shrink-0 items-center gap-3 border-b border-[var(--line-hairline)] px-4 py-3 sm:px-5">
+          <div className="flex min-w-0 shrink-0 items-center gap-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+              <Keyboard aria-hidden="true" size={17} strokeWidth={1.8} />
             </div>
-            <div>
-              <h2 id="shortcuts-help-title" className="text-lg font-semibold text-[var(--text-primary)]">
+            <div className="min-w-0">
+              <h2 id="shortcuts-help-title" className="text-base font-semibold leading-5 text-[var(--text-primary)]">
                 键盘快捷键
               </h2>
+              <p className="text-[12px] leading-4 text-[var(--text-faint)]">速查表</p>
             </div>
+          </div>
+          <div className="input-frame flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2.5">
+            <Search aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" strokeWidth={1.8} />
+            <input
+              type="search"
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜快捷键或动作"
+              aria-label="搜索快捷键"
+              className="min-w-0 flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none"
+            />
           </div>
           <button
             type="button"
@@ -118,49 +158,53 @@ export function ShortcutsHelp() {
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
-          <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
-            {GROUPS.map((group, groupIndex) => {
-              const Icon = group.icon;
-              return (
-                <section key={group.title} className={groupIndex === GROUPS.length - 1 ? "sm:col-span-2" : undefined}>
-                  <div className="flex items-center gap-2 border-b border-[var(--line-hairline)] pb-2">
-                    <Icon aria-hidden="true" size={15} strokeWidth={1.8} className="text-[var(--accent-primary)]" />
-                    <h3 className="instrument-label text-[var(--text-secondary)]">{group.title}</h3>
-                    <span className="data-readout ml-auto text-[13px] text-[var(--text-faint)]">
-                      {String(group.items.length).padStart(2, "0")}
-                    </span>
-                  </div>
-                  <ul className={groupIndex === GROUPS.length - 1 ? "grid sm:grid-cols-2 sm:gap-x-6" : undefined}>
-                    {group.items.map((item) => {
-                      const chips = Array.isArray(item.keys) ? item.keys : [item.keys];
-                      return (
-                        <li
-                          key={item.action}
-                          className="flex min-h-9 items-center justify-between gap-3 border-b border-[var(--line-hairline)] py-1.5 text-sm last:border-b-0"
-                        >
-                          <span className="min-w-0 text-[var(--text-secondary)]">{item.action}</span>
-                          <span className="flex max-w-[58%] shrink-0 flex-wrap justify-end gap-1">
-                            {chips.map((chip) => (
-                              <kbd key={chip} className="kbd whitespace-normal py-1 text-right leading-4">
-                                {chip}
-                              </kbd>
-                            ))}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {group.note && (
-                    <p className="mt-2 text-xs leading-5 text-[var(--text-faint)]">{group.note}</p>
-                  )}
-                </section>
-              );
-            })}
-          </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
+          {visibleGroups.length === 0 ? (
+            <p className="py-8 text-center text-sm text-[var(--text-muted)]">没有匹配的快捷键</p>
+          ) : (
+            <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+              {visibleGroups.map((group, groupIndex) => {
+                const Icon = group.icon;
+                return (
+                  <section key={group.title} className={groupIndex === visibleGroups.length - 1 ? "sm:col-span-2" : undefined}>
+                    <div className="flex items-center gap-1.5 border-b border-[var(--line-hairline)] pb-1">
+                      <Icon aria-hidden="true" size={14} strokeWidth={1.8} className="text-[var(--accent-primary)]" />
+                      <h3 className="instrument-label text-[var(--text-secondary)]">{group.title}</h3>
+                      <span className="data-readout ml-auto text-[12px] text-[var(--text-faint)]">
+                        {String(group.items.length).padStart(2, "0")}
+                      </span>
+                    </div>
+                    <ul className={groupIndex === visibleGroups.length - 1 ? "grid sm:grid-cols-2 sm:gap-x-6" : undefined}>
+                      {group.items.map((item) => {
+                        const chips = Array.isArray(item.keys) ? item.keys : [item.keys];
+                        return (
+                          <li
+                            key={item.action}
+                            className="flex min-h-7 items-center justify-between gap-3 border-b border-[var(--line-hairline)] py-1 text-sm leading-4 last:border-b-0"
+                          >
+                            <span className="min-w-0 text-[var(--text-secondary)]">{item.action}</span>
+                            <span className="flex max-w-[58%] shrink-0 flex-wrap justify-end gap-1">
+                              {chips.map((chip) => (
+                                <kbd key={chip} className="kbd whitespace-normal py-0.5 text-right leading-4">
+                                  {chip}
+                                </kbd>
+                              ))}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {group.note && (
+                      <p className="mt-1.5 text-xs leading-4 text-[var(--text-faint)]">{group.note}</p>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-3 sm:px-5">
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-2.5 sm:px-5">
           <span className="text-xs text-[var(--text-faint)]">
             按 <kbd className="kbd mx-1">Esc</kbd> 关闭
           </span>

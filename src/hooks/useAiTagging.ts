@@ -23,6 +23,8 @@ export interface AiTagProgress {
   skipped: number;
   failed: number;
   lastNames: string[];
+  /** 正在处理的对象名；每件开始处理时设置，整批结束或取消时置 null */
+  currentName: string | null;
   errors: Array<{ name: string; error: string }>;
   canceled: boolean;
 }
@@ -56,6 +58,7 @@ const INITIAL: AiTagProgress = {
   skipped: 0,
   failed: 0,
   lastNames: [],
+  currentName: null,
   errors: [],
   canceled: false,
 };
@@ -71,7 +74,7 @@ export function useAiTagging() {
 
   const cancel = useCallback(() => {
     cancelRef.current = true;
-    setState((s) => ({ ...s, canceled: true }));
+    setState((s) => ({ ...s, canceled: true, currentName: null }));
   }, []);
 
   const reset = useCallback(() => {
@@ -103,6 +106,7 @@ export function useAiTagging() {
           if (cancelRef.current) break;
           const item = queue.shift();
           if (!item) break;
+          setState((s) => ({ ...s, currentName: item.name }));
 
           try {
             const names = await db.aiSuggestTags(
@@ -168,7 +172,7 @@ export function useAiTagging() {
       const poolSize = Math.min(CONCURRENCY, items.length);
       await Promise.all(Array.from({ length: poolSize }, () => worker()));
 
-      setState((s) => ({ ...s, running: false, canceled: cancelRef.current }));
+      setState((s) => ({ ...s, running: false, canceled: cancelRef.current, currentName: null }));
       runningRef.current = false;
       return { tagged: succeededCount, failed: failedCount, failures };
     },
