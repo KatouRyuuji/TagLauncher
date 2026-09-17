@@ -5,6 +5,7 @@ import {
   deleteFilesLabel,
   folderTypeBadge,
   libraryRemoveLabel,
+  libraryRemoveNotDeleteHint,
   openMenuLabel,
   parentDirectoryPath,
   pathBasename,
@@ -21,6 +22,14 @@ test("文件夹与文件的打开 / 揭示用词分开", () => {
   assert.equal(revealMenuLabel("folder"), "打开上一级");
   assert.equal(revealMenuLabel("image"), "打开所在文件夹");
   assert.ok(revealFailedToast("folder").includes("上一级"));
+});
+
+test("多选右键第一项写打开 N 项，单选仍是打开", () => {
+  assert.equal(openMenuLabel("video", 1), "打开");
+  assert.equal(openMenuLabel("folder", 1), "打开此文件夹");
+  assert.equal(openMenuLabel("video", 3), "打开 3 项");
+  assert.equal(openMenuLabel("folder", 2), "打开 2 项");
+  assert.equal(libraryRemoveNotDeleteHint, "从库中移除 ≠ 删除本地文件");
 });
 
 test("卡片主按钮：脚本说启动，文件夹说打开", () => {

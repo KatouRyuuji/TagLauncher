@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { computeLayers, orderLayersByBarycenter, resolveTagGraphEmptyState } from "../lib/tagGraph";
+import { computeLayers, orderLayersByBarycenter, pickDefaultGraphNode, resolveTagGraphEmptyState } from "../lib/tagGraph";
 import { compareNames } from "../lib/itemQuery";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import { DialogHeader } from "./DialogHeader";
@@ -35,7 +35,17 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
   // SVG marker id 实例唯一化：多实例共存（未来弹窗+预览）时硬编码 id 会互相覆盖
   const arrowMarkerId = useId();
 
-  const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
+  // 初值在首次渲染用 store 里已有的关系挑选；若当时还没有边，后面用 effect 补选。
+  const [selectedNodeId, setSelectedNodeId] = useState<number | null>(() => {
+    const ids = tags.map((t) => t.id);
+    const allowed = new Set(ids);
+    return pickDefaultGraphNode(
+      ids,
+      relations.filter((r) => allowed.has(r.parentId) && allowed.has(r.childId)),
+    );
+  });
+  // 用户点空白 / 再点同一节点 / 收起详情 主动取消后，不再自动补选。
+  const userClearedSelectionRef = useRef(false);
   // 右侧关联对象列表分页：热门标签可能关联数千对象，避免一次性全量渲染卡顿。
   const [visibleCount, setVisibleCount] = useState(RIGHT_PANEL_PAGE_SIZE);
   const trapRef = useFocusTrap<HTMLDivElement>({ active: true });
@@ -73,6 +83,13 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
   // 空态语义：无标签（图无从谈起）与无关系（节点可画但没有层级）分开引导
   const emptyState = resolveTagGraphEmptyState(tags.length, validRelations.length);
 
+  // 关系晚到时补选一次；手动取消后不再抢回选中。
+  useEffect(() => {
+    if (selectedNodeId !== null || userClearedSelectionRef.current) return;
+    const picked = pickDefaultGraphNode(sortedTags.map((t) => t.id), validRelations);
+    if (picked != null) setSelectedNodeId(picked);
+  }, [selectedNodeId, validRelations, sortedTags]);
+
   // 按层级分组，层内用 barycenter 排序减少连线交叉
   const layers = useMemo(() => {
     const layerOf = computeLayers(sortedTags.map((t) => t.id), validRelations);
@@ -92,6 +109,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
     }));
   }, [sortedTags, validRelations, tagById]);
 
+  const canvasRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef<Map<number, HTMLElement>>(new Map());
   const [positions, setPositions] = useState<Map<number, NodePos>>(new Map());
@@ -121,18 +139,54 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
   useLayoutEffect(() => {
     measure();
     const content = contentRef.current;
-    if (!content || typeof ResizeObserver === "undefined") return;
+    const canvas = canvasRef.current;
+    if (typeof ResizeObserver === "undefined") return;
     let frame: number | null = null;
     const ro = new ResizeObserver(() => {
       if (frame === null) frame = requestAnimationFrame(() => { frame = null; measure(); });
     });
-    ro.observe(content);
+    if (content) ro.observe(content);
+    if (canvas) ro.observe(canvas);
     for (const node of nodeRefs.current.values()) ro.observe(node);
     return () => {
       ro.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
     };
   }, [layers, measure]);
+
+  const relatedNodeIds = useMemo(() => {
+    if (selectedNodeId == null) return null;
+    const ids = new Set<number>([selectedNodeId]);
+    for (const rel of validRelations) {
+      if (rel.parentId === selectedNodeId) ids.add(rel.childId);
+      if (rel.childId === selectedNodeId) ids.add(rel.parentId);
+    }
+    return ids;
+  }, [selectedNodeId, validRelations]);
+
+  const clearSelection = useCallback(() => {
+    userClearedSelectionRef.current = true;
+    setSelectedNodeId(null);
+  }, []);
+
+  const selectNode = useCallback((tagId: number) => {
+    setSelectedNodeId((current) => {
+      if (current === tagId) {
+        userClearedSelectionRef.current = true;
+        return null;
+      }
+      userClearedSelectionRef.current = false;
+      return tagId;
+    });
+  }, []);
+
+  const handleCanvasBackgroundClick = useCallback((event: { target: EventTarget | null }) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest("[data-graph-node-id]")) return;
+    if (selectedNodeId == null) return;
+    clearSelection();
+  }, [clearSelection, selectedNodeId]);
 
   const selectedTag = selectedNodeId == null ? null : tagById.get(selectedNodeId) ?? null;
   const selectedItems = selectedNodeId == null ? [] : itemsByTag.get(selectedNodeId) ?? [];
@@ -166,16 +220,10 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
         <div className="relative flex min-h-0 flex-1">
           {/* 左：层级图谱 */}
           <div
+            ref={canvasRef}
             data-region="tag-graph-canvas"
-            className="min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--bg-base)] px-5 py-6 sm:px-8 sm:py-8"
-            onWheel={(event) => {
-              // 宽层图谱下滚轮直接水平平移，不依赖触摸板或 Shift+滚轮。
-              // 仅在纵向无滚动余量时转换；纵横向均可滚时保留原生纵向滚动。
-              const el = event.currentTarget;
-              if (el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth > el.clientWidth + 1) {
-                el.scrollLeft += event.deltaY;
-              }
-            }}
+            className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[var(--bg-base)] px-5 py-6 sm:px-8 sm:py-8"
+            onClick={handleCanvasBackgroundClick}
           >
             {emptyState === "no-tags" ? (
               <div className="flex h-full items-center justify-center">
@@ -199,7 +247,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                 </div>
               </div>
             ) : (
-              <div ref={contentRef} className="relative inline-block min-w-full pr-10 pb-6">
+              <div ref={contentRef} className="relative w-full min-w-0 pr-10 pb-6">
                 {selectedNodeId == null && emptyState !== "no-relations" && (
                   <p className="mb-4 text-sm text-[var(--text-faint)]">点选一个标签查看它的父子连线。</p>
                 )}
@@ -250,15 +298,16 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                 </svg>
 
                 {/* 分层节点 */}
-                <div className="relative flex min-w-max flex-col gap-16">
+                <div className="relative flex w-full min-w-0 flex-col gap-16">
                   {layers.map(({ level, tags: layerTags }) => (
-                    <div key={level} className="flex items-center gap-6">
-                      <div className="data-readout w-14 shrink-0 text-right text-[12px] font-medium text-[var(--text-secondary)]">
+                    <div key={level} className="flex w-full items-start gap-6">
+                      <div className="data-readout flex h-12 w-14 shrink-0 items-center justify-end text-right text-[12px] font-medium text-[var(--text-secondary)]">
                         第 {level + 1} 层
                       </div>
-                      <div className="flex flex-nowrap gap-6">
+                      <div className="flex min-w-0 flex-1 flex-wrap gap-6">
                         {layerTags.map((tag) => {
                           const active = selectedNodeId === tag.id;
+                          const dimmed = relatedNodeIds != null && !relatedNodeIds.has(tag.id);
                           const count = itemsByTag.get(tag.id)?.length ?? 0;
                           return (
                             <button
@@ -270,9 +319,9 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                                 if (el) nodeRefs.current.set(tag.id, el);
                                 else nodeRefs.current.delete(tag.id);
                               }}
-                              onClick={() => setSelectedNodeId(tag.id)}
+                              onClick={() => selectNode(tag.id)}
                               onDoubleClick={() => applyFilter(tag.id)}
-                              className="relative flex items-center gap-2.5 rounded-[var(--radius-md)] border px-5 py-3 text-base shadow-[var(--shadow-card)]"
+                              className={`relative flex max-w-full shrink-0 items-center gap-2.5 rounded-[var(--radius-md)] border px-5 py-3 text-base shadow-[var(--shadow-card)]${dimmed ? " opacity-55" : ""}`}
                               style={{
                                 borderColor: active
                                   ? tag.color
@@ -286,7 +335,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                               title={`${tag.name}（${count} 个对象）双击直接筛选`}
                             >
                               <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
-                              <span className="max-w-[180px] truncate">{tag.name}</span>
+                              <span className="min-w-0 max-w-[180px] truncate">{tag.name}</span>
                               <span
                                 className="ml-1 inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-full)] px-1.5 text-[13px] font-semibold"
                                 style={{
@@ -316,7 +365,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                   <h3 className="min-w-0 flex-1 truncate text-base font-semibold text-[var(--text-primary)]">{selectedTag.name}</h3>
                   <button
                     type="button"
-                    onClick={() => setSelectedNodeId(null)}
+                    onClick={clearSelection}
                     className="icon-button h-7 w-7"
                     title="收起"
                     aria-label="收起标签详情"
@@ -335,7 +384,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                           <button
                             key={p.id}
                             type="button"
-                            onClick={() => setSelectedNodeId(p.id)}
+                            onClick={() => selectNode(p.id)}
                             className="tag-pill px-1.5 py-0.5"
                             style={{ "--tag-color": p.color } as CSSProperties}
                           >
@@ -351,7 +400,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                           <button
                             key={c.id}
                             type="button"
-                            onClick={() => setSelectedNodeId(c.id)}
+                            onClick={() => selectNode(c.id)}
                             className="tag-pill px-1.5 py-0.5"
                             style={{ "--tag-color": c.color } as CSSProperties}
                           >

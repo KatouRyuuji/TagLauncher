@@ -1,18 +1,21 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { Copy, File, Folder, FolderOpen, Play, Plus, ScanSearch, TriangleAlert, X } from "lucide-react";
+import { Copy, FolderOpen, Play, ScanSearch, TriangleAlert, X } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useItemVisual } from "../hooks/useItemVisual";
 import { copyText } from "../lib/clipboard";
 import * as db from "../lib/db";
-import { cardOpenLabel } from "../lib/itemActionCopy";
-import { formatBytes, formatTimestamp } from "../lib/itemQuery";
+import { cardOpenLabel, openMenuLabel } from "../lib/itemActionCopy";
 import { getTypeLabel } from "../lib/itemUtils";
-import { showToast } from "../lib/toast";
 import { useAppStore } from "../stores/appStore";
 import type { ItemWithTags } from "../types";
+import { AudioPreviewBody } from "./preview/AudioPreviewBody";
+import { FolderPreviewBody } from "./preview/FolderPreviewBody";
+import { ImagePreviewBody } from "./preview/ImagePreviewBody";
+import { PreviewPropertyList } from "./preview/PreviewPropertyList";
+import { VideoPreviewBody } from "./preview/VideoPreviewBody";
+import { toAssetUrl } from "./preview/previewFormat";
 
 interface QuickPreviewProps {
   items: ItemWithTags[];
@@ -38,12 +41,14 @@ export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps)
 
   if (!item) return null;
 
+  const isFolder = item.type === "folder";
+
   return createPortal(
     <div
       data-quick-preview=""
       data-workspace-overlay=""
-      className="fixed inset-0 flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-base)_72%,transparent)] px-3 py-4 sm:px-6 sm:py-8"
-      style={{ zIndex: "var(--z-quick-preview)" }}
+      className="fixed inset-0 flex items-center justify-center px-3 py-4 sm:px-6 sm:py-8"
+      style={{ zIndex: "var(--z-quick-preview)", backgroundColor: "var(--overlay-bg)" }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) setPreviewItemId(null);
       }}
@@ -66,9 +71,22 @@ export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps)
               <h2 className="mt-1 truncate text-base font-semibold text-[var(--text-primary)]" title={item.name}>
                 {item.name}
               </h2>
-              <p className="data-readout mt-1 truncate text-[13px] text-[var(--text-faint)]" title={item.path}>
-                {item.path}
-              </p>
+              <div className="mt-1 flex min-w-0 items-center gap-1.5">
+                <p className="data-readout min-w-0 flex-1 truncate text-[13px] text-[var(--text-faint)]" title={item.path}>
+                  {item.path}
+                </p>
+                {isFolder && (
+                  <button
+                    type="button"
+                    className="icon-button shrink-0"
+                    title="复制路径"
+                    aria-label="复制路径"
+                    onClick={() => void copyText(item.path, "已复制路径")}
+                  >
+                    <Copy aria-hidden="true" size={15} strokeWidth={1.8} />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <button type="button" className="icon-button shrink-0" title="关闭" aria-label="关闭预览" onClick={() => setPreviewItemId(null)}>
@@ -76,7 +94,7 @@ export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps)
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-auto bg-[var(--surface-recessed)] px-4 py-4 sm:px-5">
+        <div className={previewContentClassName(item)}>
           {item.is_missing ? (
             <div role="alert" className="flex items-start gap-3 border border-[color-mix(in_srgb,var(--color-warning)_28%,transparent)] bg-[var(--status-warning-bg)] p-4 text-sm text-[var(--color-warning-ink)]">
               <TriangleAlert aria-hidden="true" size={18} strokeWidth={1.8} className="mt-0.5 shrink-0" />
@@ -109,10 +127,12 @@ export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps)
         <footer className="flex min-h-[56px] flex-wrap items-center justify-between gap-2 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-2.5 sm:px-5">
           <p className="flex items-center gap-2 text-[13px] text-[var(--text-faint)]"><span className="status-led" aria-hidden="true" />本地预览</p>
           <div className="flex items-center gap-2">
-            <button type="button" className="action-button" onClick={() => void copyText(item.path, "已复制路径")}>
-              <Copy aria-hidden="true" size={15} strokeWidth={1.8} />
-              复制路径
-            </button>
+            {!isFolder && (
+              <button type="button" className="action-button" onClick={() => void copyText(item.path, "已复制路径")}>
+                <Copy aria-hidden="true" size={15} strokeWidth={1.8} />
+                复制路径
+              </button>
+            )}
             <button
               type="button"
               className="action-button action-button-primary"
@@ -121,12 +141,12 @@ export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps)
                 void onLaunch(item.id);
               }}
             >
-              {item.type === "folder" ? (
+              {isFolder ? (
                 <FolderOpen aria-hidden="true" size={15} strokeWidth={1.9} />
               ) : (
                 <Play aria-hidden="true" size={15} strokeWidth={1.9} />
               )}
-              {cardOpenLabel(item.type)}
+              {isFolder ? openMenuLabel("folder") : cardOpenLabel(item.type)}
             </button>
           </div>
         </footer>
@@ -134,6 +154,14 @@ export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps)
     </div>,
     document.body,
   );
+}
+
+function previewContentClassName(item: ItemWithTags): string {
+  const base = "min-h-0 flex-1 bg-[var(--surface-recessed)]";
+  if (item.is_missing) return `${base} overflow-auto px-4 py-4 sm:px-5`;
+  if (item.type === "folder") return `${base} flex flex-col overflow-hidden`;
+  if (item.type === "image" || item.type === "video") return `${base} overflow-auto`;
+  return `${base} overflow-auto px-4 py-4 sm:px-5`;
 }
 
 function PreviewBody({
@@ -151,17 +179,11 @@ function PreviewBody({
   const [entryTotal, setEntryTotal] = useState(0);
   const [audio, setAudio] = useState<db.AudioPreviewInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [imageFailed, setImageFailed] = useState(false);
-  const [coverFailed, setCoverFailed] = useState(false);
-  const [videoFailed, setVideoFailed] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    setImageFailed(false);
-    setCoverFailed(false);
-    setVideoFailed(false);
     setInfo(null);
     setEntries([]);
     setEntryTotal(0);
@@ -195,214 +217,79 @@ function PreviewBody({
     };
   }, [item.id, item.path, item.type]);
 
-  // 图片使用原文件；音频与视频封面采用系统缩略图或内嵌专辑图。
-  const assetUrl = toAssetUrl(iconPath);
+  const fill = item.type === "folder";
 
   if (loading && !error) {
-    return (
-      <div className="space-y-4" aria-busy="true" aria-label="加载预览">
-        <div className="skeleton-block h-40 rounded-[var(--radius-md)]" />
-        <div className="space-y-2">
-          <div className="skeleton-block h-3 w-24 rounded" />
-          <div className="skeleton-block h-3 w-full rounded" />
-          <div className="skeleton-block h-3 w-2/3 rounded" />
-        </div>
-      </div>
-    );
+    return <PreviewSkeleton type={item.type} />;
   }
 
   return (
-      <div className="space-y-4">
+    <div className={fill ? "flex min-h-0 flex-1 flex-col" : "space-y-4"}>
+      {error && <p className="px-4 text-sm text-[var(--color-danger-ink)]">{error}</p>}
       {item.type === "image" && (
-        <div className="workbench-panel flex max-h-[52vh] min-h-[180px] items-center justify-center overflow-hidden bg-[var(--bg-base)]">
-          {imageFailed ? (
-            <p className="px-4 py-8 text-sm text-[var(--text-muted)]">无法生成预览</p>
-          ) : (
-            <img
-              src={toAssetUrl(item.path) ?? undefined}
-              alt={item.name}
-              decoding="async"
-              className="max-h-[52vh] max-w-full object-contain"
-              onError={() => setImageFailed(true)}
-            />
-          )}
-        </div>
+        <ImagePreviewBody key={item.id} item={item} info={info} onTagSelect={onTagSelect} />
       )}
-
       {item.type === "audio" && (
-        <div className="space-y-3">
-          {audio?.album_cover_data_url || assetUrl ? (
-            coverFailed ? null : (
-            <img
-              src={audio?.album_cover_data_url ?? assetUrl ?? undefined}
-              alt=""
-              className="mx-auto h-44 w-44 rounded-[var(--radius-md)] border border-[var(--line-hairline)] object-cover shadow-[var(--shadow-md)]"
-              onError={() => setCoverFailed(true)}
-            />
-            )
-          ) : null}
-          <div className="text-center text-sm text-[var(--text-secondary)]">
-            <p className="font-medium text-[var(--text-primary)]">{audio?.title || item.name}</p>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              {[audio?.artist, audio?.album].filter(Boolean).join(" · ") || "音频对象"}
-            </p>
-          </div>
-          <audio
-            controls
-            preload="metadata"
-            src={toAssetUrl(item.path) ?? undefined}
-            className="w-full"
-            onError={() => setError("无法加载音频预览")}
-          />
-          {audio?.duration_ms != null && (
-            <p className="text-center text-xs text-[var(--text-faint)]">时长 {formatDurationMs(audio.duration_ms)}</p>
-          )}
-        </div>
+        <AudioPreviewBody
+          key={item.id}
+          item={item}
+          info={info}
+          audio={audio}
+          coverFallbackUrl={toAssetUrl(iconPath)}
+          onTagSelect={onTagSelect}
+        />
       )}
-
       {item.type === "video" && (
-        <div className="workbench-panel flex max-h-[52vh] min-h-[180px] items-center justify-center overflow-hidden bg-[var(--bg-base)]">
-          {videoFailed ? (
-            assetUrl ? (
-              <img
-                src={assetUrl}
-                alt={`${item.name} 首帧`}
-                className="max-h-[52vh] max-w-full object-contain"
-              />
-            ) : (
-              <p className="px-4 py-8 text-sm text-[var(--text-muted)]">无法加载视频预览（可能缺少对应解码器）</p>
-            )
-          ) : (
-            <video
-              controls
-              preload="metadata"
-              src={toAssetUrl(item.path) ?? undefined}
-              poster={assetUrl ?? undefined}
-              className="max-h-[52vh] w-full object-contain"
-              onError={() => setVideoFailed(true)}
-            />
-          )}
-        </div>
+        <VideoPreviewBody
+          key={item.id}
+          item={item}
+          info={info}
+          posterUrl={toAssetUrl(iconPath)}
+          onTagSelect={onTagSelect}
+        />
       )}
-
-      {error && <p className="text-sm text-[var(--color-danger-ink)]">{error}</p>}
-
-      <dl className="workbench-panel grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 p-4 text-sm">
-        {item.type === "audio" && audio?.duration_ms != null && (
-          <>
-            <dt className="text-[var(--text-faint)]">时长</dt>
-            <dd className="text-[var(--text-secondary)]">{formatDurationMs(audio.duration_ms)}</dd>
-          </>
-        )}
-        {item.type === "folder" ? (
-          <>
-            <dt className="text-[var(--text-faint)]">内容</dt>
-            <dd className="text-[var(--text-secondary)]">
-              {entryTotal > 0 ? `列出 ${Math.min(48, entryTotal)} 项` : "目录"}
-            </dd>
-          </>
-        ) : (
-          <>
-            <dt className="text-[var(--text-faint)]">大小</dt>
-            <dd className="text-[var(--text-secondary)]">{info?.size != null ? formatBytes(info.size) : "未知"}</dd>
-          </>
-        )}
-        <dt className="text-[var(--text-faint)]">修改时间</dt>
-        <dd className="text-[var(--text-secondary)]">
-          {info?.modified_at_secs ? formatLocalDateTime(info.modified_at_secs) : "未知"}
-        </dd>
-        <dt className="text-[var(--text-faint)]">最近使用</dt>
-        <dd className="text-[var(--text-secondary)]">{formatTimestamp(item.last_used_at)}</dd>
-        {item.tags.length > 0 && (
-          <>
-            <dt className="text-[var(--text-faint)]">标签</dt>
-            <dd className="flex flex-wrap gap-1.5">
-              {item.tags.map((tag) => (
-                <button
-                  key={tag.id}
-                  type="button"
-                  title={`按「${tag.name}」筛选`}
-                  onClick={() => onTagSelect(tag.id)}
-                  className="tag-pill px-2 py-0.5 text-[13px]"
-                  style={{ "--tag-color": tag.color } as CSSProperties}
-                >
-                  {tag.name}
-                </button>
-              ))}
-            </dd>
-          </>
-        )}
-      </dl>
-
       {item.type === "folder" && (
-        <div>
-          <p className="mb-2 text-xs font-medium text-[var(--text-faint)]">
-            目录内容（最多 48 项）
-            {entryTotal > 48 ? " · 还有更多" : ""}
-          </p>
-          {entries.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">空文件夹或无法列出</p>
-          ) : (
-            <ul className="workbench-panel divide-y divide-[var(--line-hairline)] overflow-hidden text-sm text-[var(--text-secondary)]">
-              {entries.map((entry) => (
-                <li key={entry.path} className="flex min-h-9 items-center gap-2 px-3 py-2">
-                  {entry.is_dir ? (
-                    <Folder aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--color-warning-ink)]" />
-                  ) : (
-                    <File aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                  <button
-                    type="button"
-                    className="action-button h-7 min-h-7 shrink-0 px-2 text-[12px]"
-                    onClick={() => {
-                      void db.openInExplorer(entry.path).catch((error) => {
-                        showToast(`打开失败：${error instanceof Error ? error.message : String(error)}`, "error");
-                      });
-                    }}
-                  >
-                    打开
-                  </button>
-                  {onAddItems && (
-                    <button
-                      type="button"
-                      className="action-button h-7 min-h-7 shrink-0 px-2 text-[12px]"
-                      onClick={() => {
-                        void onAddItems([entry.path]).catch((error) => {
-                          showToast(`加入库失败：${error instanceof Error ? error.message : String(error)}`, "error");
-                        });
-                      }}
-                    >
-                      <Plus aria-hidden="true" size={13} strokeWidth={1.8} />
-                      加入库
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <FolderPreviewBody
+          key={item.id}
+          item={item}
+          info={info}
+          entries={entries}
+          entryTotal={entryTotal}
+          onTagSelect={onTagSelect}
+          onAddItems={onAddItems}
+        />
+      )}
+      {item.type !== "image" && item.type !== "audio" && item.type !== "video" && item.type !== "folder" && (
+        <PreviewPropertyList item={item} info={info} onTagSelect={onTagSelect} />
       )}
     </div>
   );
 }
 
-function toAssetUrl(path: string | null | undefined): string | null {
-  if (!path) return null;
-  return convertFileSrc(path.replace(/\\/g, "/"));
-}
-
-/** 音频总时长（元数据 duration_ms）→ m:ss；demo 模式下 <audio> 无法加载真实文件，以此兜底展示。 */
-function formatDurationMs(ms: number): string {
-  const totalSeconds = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
-function formatLocalDateTime(epochSeconds: number): string {
-  const date = new Date(epochSeconds * 1000);
-  if (Number.isNaN(date.getTime())) return "未知";
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+function PreviewSkeleton({ type }: { type: string }) {
+  if (type === "image") {
+    return <div className="preview-image-stage skeleton-block rounded-none" aria-busy="true" aria-label="加载预览" />;
+  }
+  if (type === "video") {
+    return <div className="preview-video-stage skeleton-block rounded-none" aria-busy="true" aria-label="加载预览" />;
+  }
+  if (type === "folder") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 py-3" aria-busy="true" aria-label="加载预览">
+        <div className="skeleton-block h-4 w-48 rounded" />
+        <div className="skeleton-block h-3 w-72 rounded" />
+        <div className="skeleton-block min-h-0 flex-1 rounded-[var(--radius-md)]" />
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4" aria-busy="true" aria-label="加载预览">
+      <div className="skeleton-block h-24 rounded-[var(--radius-md)]" />
+      <div className="space-y-2">
+        <div className="skeleton-block h-3 w-24 rounded" />
+        <div className="skeleton-block h-3 w-full rounded" />
+        <div className="skeleton-block h-3 w-2/3 rounded" />
+      </div>
+    </div>
+  );
 }

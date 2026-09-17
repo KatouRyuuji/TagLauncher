@@ -42,6 +42,20 @@ function renderToolbar(overrides: Partial<React.ComponentProps<typeof BatchSelec
   );
 }
 
+describe("BatchSelectionToolbar 覆盖层让位", () => {
+  it("suppressed 时不渲染，避免键盘可达", () => {
+    renderToolbar({ suppressed: true });
+    expect(screen.queryByTestId("batch-toolbar")).not.toBeInTheDocument();
+  });
+
+  it("非 suppressed 时仍有 batch-toolbar，选中计数保留", () => {
+    renderToolbar({ selectedCount: 11 });
+    expect(screen.getByTestId("batch-toolbar")).toBeInTheDocument();
+    expect(screen.getByTestId("batch-toolbar").textContent).toContain("11");
+    expect(screen.getByTestId("batch-toolbar").textContent).toContain("已选中");
+  });
+});
+
 describe("BatchSelectionToolbar 批量操作进行中状态", () => {
   it("从库中移除进行中：aria-busy=true、spinner 可见、全部操作按钮禁用", async () => {
     const user = userEvent.setup();

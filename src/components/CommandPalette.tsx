@@ -310,8 +310,8 @@ export function CommandPalette({
       role="dialog"
       aria-modal="true"
       aria-label="命令面板"
-      className="fixed inset-0 flex items-start justify-center bg-[color-mix(in_srgb,var(--bg-base)_70%,transparent)] px-3 pt-[10vh] sm:px-4"
-      style={{ zIndex: "var(--z-command-palette)" }}
+      className="fixed inset-0 flex items-start justify-center px-3 pt-[10vh] sm:px-4"
+      style={{ backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-command-palette)" }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) setOpen(false);
       }}

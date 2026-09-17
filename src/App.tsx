@@ -417,6 +417,7 @@ function App() {
           <ItemGrid {...viewProps} />
         )}
         <BatchSelectionToolbar
+          suppressed={previewItemId !== null || commandPaletteOpen}
           selectedCount={isDraggingItem ? 0 : selectedItemIds.length}
           totalCount={items.length}
           tags={tags}

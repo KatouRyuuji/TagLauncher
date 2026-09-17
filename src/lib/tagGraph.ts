@@ -140,6 +140,32 @@ export function resolveTagGraphEmptyState(tagCount: number, relationCount: numbe
   return null;
 }
 
+/**
+ * 图谱打开时的默认选中：直接子节点最多的标签。
+ * 只统计两端都在 tagIds 内的关系（与视图里的 validRelations 一致）；
+ * 平局取 id 较小者；没有任何可用关系时返回 null。
+ */
+export function pickDefaultGraphNode(tagIds: number[], relations: TagRelation[]): number | null {
+  if (tagIds.length === 0 || relations.length === 0) return null;
+
+  const allowed = new Set(tagIds);
+  const childCount = new Map<number, number>();
+  for (const { parentId, childId } of relations) {
+    if (!allowed.has(parentId) || !allowed.has(childId)) continue;
+    childCount.set(parentId, (childCount.get(parentId) ?? 0) + 1);
+  }
+
+  let bestId: number | null = null;
+  let bestCount = 0;
+  for (const [id, count] of childCount) {
+    if (count > bestCount || (count === bestCount && count > 0 && (bestId === null || id < bestId))) {
+      bestId = id;
+      bestCount = count;
+    }
+  }
+  return bestCount > 0 ? bestId : null;
+}
+
 export function computeLayers(nodeIds: number[], relations: TagRelation[]): Map<number, number> {
   const parents = buildParentsMap(relations);
   const layer = new Map<number, number>();

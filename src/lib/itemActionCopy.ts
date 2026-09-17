@@ -5,8 +5,9 @@
 // 这里集中卡片、菜单、预览、确认框要用的短句，避免各处各写一套。
 // ============================================================================
 
-/** 右键「打开」：文件夹打开自身，其余打开该项目。 */
-export function openMenuLabel(itemType: string): string {
+/** 右键「打开」：文件夹打开自身，其余打开该项目。多选写「打开 N 项」。 */
+export function openMenuLabel(itemType: string, count = 1): string {
+  if (count > 1) return `打开 ${count} 项`;
   return itemType === "folder" ? "打开此文件夹" : "打开";
 }
 
@@ -31,6 +32,9 @@ export function libraryRemoveLabel(count: number): string {
 export function deleteFilesLabel(count: number): string {
   return count > 1 ? `删除 ${count} 个本地文件` : "删除本地文件";
 }
+
+/** 批量条指挥台：出库 ≠ 删盘，避免全选后把描边危险键读成删文件。 */
+export const libraryRemoveNotDeleteHint = "从库中移除 ≠ 删除本地文件";
 
 /** 默认入口（右键「从库中移除」）的确认框标题：移出资料库 ≠ 删盘。 */
 export function removeFromLibraryDialogTitle(count: number): string {

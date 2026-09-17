@@ -15,9 +15,11 @@ import {
 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { stepMenuIndex } from "../lib/itemQuery";
+import { libraryRemoveNotDeleteHint } from "../lib/itemActionCopy";
 
 /** 主内容区底部的批量操作工具条（选中对象时出现） */
 export function BatchSelectionToolbar({
+  suppressed = false,
   selectedCount,
   totalCount,
   tags,
@@ -35,6 +37,8 @@ export function BatchSelectionToolbar({
   onSelectAll,
   onClearSelection,
 }: {
+  /** 预览 / 命令面板打开时不渲染，避免从覆盖层底下露出且保持键盘不可达。 */
+  suppressed?: boolean;
   selectedCount: number;
   /** 当前结果集总数（用于"全选当前结果"兜底，覆盖虚拟化未渲染的条目）。 */
   totalCount: number;
@@ -62,8 +66,8 @@ export function BatchSelectionToolbar({
   useEscapeKey(() => setOpenMenu(null), openMenu !== null);
 
   useEffect(() => {
-    if (selectedCount === 0 && openMenu !== null) setOpenMenu(null);
-  }, [selectedCount, openMenu]);
+    if ((selectedCount === 0 || suppressed) && openMenu !== null) setOpenMenu(null);
+  }, [selectedCount, suppressed, openMenu]);
 
   useEffect(() => {
     if (!openMenu) return;
@@ -94,7 +98,8 @@ export function BatchSelectionToolbar({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [openMenu]);
 
-  if (selectedCount === 0) return null;
+  // 无选中或被覆盖层让位时走同一条卸载路径（不改 opacity，避免键盘仍能 Tab 到按钮）。
+  if (selectedCount === 0 || suppressed) return null;
 
   const runAction = (action: () => Promise<void>) => {
     if (busy) return;
@@ -125,6 +130,11 @@ export function BatchSelectionToolbar({
             )}
           </span>
           {busy ? "处理中…" : "已选中"}
+          {!busy && (
+            <span className="hidden xl:inline text-[12px] font-normal text-[var(--text-faint)]">
+              {libraryRemoveNotDeleteHint}
+            </span>
+          )}
         </div>
 
         <ToolbarMenuButton
@@ -216,6 +226,7 @@ export function BatchSelectionToolbar({
           <Copy aria-hidden="true" size={14} strokeWidth={1.8} />
           复制路径
         </button>
+        <span className="mx-0.5 h-5 w-px shrink-0 self-center bg-[var(--border-subtle)]" aria-hidden="true" />
         <button
           type="button"
           onClick={() => runAction(onRemoveFromApp)}

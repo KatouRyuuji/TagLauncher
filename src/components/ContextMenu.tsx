@@ -325,6 +325,7 @@ export function ContextMenu({
 
   // 右击项属于当前多选集时，复制路径/收藏/删除作用于整个选中集；
   // 打开/预览/文件柜等保持单对象语义（对齐资源管理器）。
+  // 多选时第一项文案写「打开 N 项」（§6.I），动作仍打开右击项。
   const multi = contextSelection ?? null;
 
   const handleCopyPaths = () => {
@@ -408,7 +409,7 @@ export function ContextMenu({
         <MenuGroupLabel>操作</MenuGroupLabel>
         <MenuItem
           icon={item.type === "folder" ? FolderOpen : Play}
-          label={openMenuLabel(item.type)}
+          label={openMenuLabel(item.type, multi ? multi.ids.length : 1)}
           onClick={() => { onLaunch(); onClose(); }}
         />
         {onPreview && <MenuItem icon={Eye} label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
