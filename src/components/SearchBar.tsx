@@ -6,6 +6,7 @@ import {
   Filter,
   FolderPlus,
   Grid2X2,
+  Images,
   Info,
   List,
   RefreshCw,
@@ -107,13 +108,13 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
           className="input-frame flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2.5"
         >
           <label htmlFor={WORKSPACE_SEARCH_ID} className="sr-only">
-            搜索启动项
+            搜索项目
           </label>
           <Search className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" strokeWidth={1.8} aria-hidden="true" />
           <input
             id={WORKSPACE_SEARCH_ID}
             type="search"
-            aria-label="搜索启动项"
+            aria-label="搜索项目"
             placeholder={PLACEHOLDERS[searchMode]}
             value={inputValue}
             onCompositionStart={() => {
@@ -204,6 +205,18 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             aria-pressed={viewMode === "grid"}
           >
             <Grid2X2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("icons")}
+            className={`control-chip h-6 min-h-6 w-7 rounded-[var(--radius-sm)] border-0 px-0 ${
+              viewMode === "icons" ? "control-chip-active" : ""
+            }`}
+            title="大图标视图"
+            aria-label="大图标视图"
+            aria-pressed={viewMode === "icons"}
+          >
+            <Images className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
           </button>
           <button
             type="button"

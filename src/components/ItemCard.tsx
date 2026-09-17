@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from "react";
-import { Check, Play, TriangleAlert } from "lucide-react";
+import { Check, FolderOpen, Play, TriangleAlert } from "lucide-react";
 import { ContextMenu } from "./ContextMenu";
 import { DraggableTagList } from "./DraggableTagList";
 import { FavoriteStar } from "./FavoriteStar";
@@ -10,6 +10,7 @@ import {
   beginInternalPointerDrag,
   findClosestNumberDataAttribute,
 } from "../lib/internalPointerDrag";
+import { cardOpenLabel } from "../lib/itemActionCopy";
 import { getFileSuffix, getTypeLabel } from "../lib/itemUtils";
 import { showToast } from "../lib/toast";
 import { useInternalDragStore } from "../stores/internalDragStore";
@@ -44,11 +45,13 @@ export interface ItemCardProps {
   onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onRemoveItemFromCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onClearCurrentFilter: (itemId: number) => Promise<void>;
-  onRequestRemoveFromApp: (itemId: number) => Promise<void>;
+  onRequestRemoveFromApp: (itemId: number, options?: { forceDialog?: boolean; preferDeleteFiles?: boolean }) => Promise<void>;
   onUpdateThumbnail: (itemId: number, iconPath: string | null) => Promise<void>;
   selected: boolean;
   /** 右击项属于当前多选集时非 null；ContextMenu 据此把部分动作扩展到整个选中集 */
   contextSelection?: ContextSelectionInfo | null;
+  /** 大图标模式：封面为主，名称在下，不显示路径 */
+  variant?: "card" | "icon";
 }
 
 function useItemDrag(
@@ -147,6 +150,40 @@ export function useSlotContainer(slots: ItemSlotDescriptor[], item: ItemWithTags
   return ref;
 }
 
+function ItemOpenButton({
+  item,
+  onLaunch,
+  compact = false,
+}: {
+  item: ItemWithTags;
+  onLaunch: () => void;
+  compact?: boolean;
+}) {
+  const label = cardOpenLabel(item.type);
+  const Icon = item.type === "folder" ? FolderOpen : Play;
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onLaunch();
+      }}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+      }}
+      title={label}
+      aria-label={`${label} ${item.name}`}
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] text-[var(--accent-primary)] opacity-0 transition-[color,background-color,opacity] hover:bg-[var(--accent-primary)] hover:text-[var(--text-invert)] focus-visible:opacity-100 group-hover:opacity-100 ${
+        compact
+          ? "bg-[color-mix(in_srgb,var(--bg-card)_88%,transparent)]"
+          : "bg-[var(--accent-primary-bg)]"
+      }`}
+    >
+      <Icon className="h-3 w-3" fill={item.type === "folder" ? "none" : "currentColor"} aria-hidden="true" />
+    </button>
+  );
+}
+
 function ItemCardComponent({
   item,
   tags,
@@ -165,7 +202,9 @@ function ItemCardComponent({
   onUpdateThumbnail,
   selected,
   contextSelection,
+  variant = "card",
 }: ItemCardProps) {
+  const iconLayout = variant === "icon";
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [showTagEditor, setShowTagEditor] = useState(false);
   const tagDragOver = useInternalDragStore((state) =>
@@ -202,7 +241,9 @@ function ItemCardComponent({
         data-selected={selected ? "true" : "false"}
         role="listitem"
         aria-label={`${item.name}${selected ? "，已选择" : ""}`}
-        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-xl)] border bg-[var(--bg-card)] p-3 shadow-[var(--shadow-card)] ${
+        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-xl)] border bg-[var(--bg-card)] shadow-[var(--shadow-card)] ${
+          iconLayout ? "items-center p-2.5" : "p-3"
+        } ${
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
             : selected
@@ -224,6 +265,58 @@ function ItemCardComponent({
         }}
         tabIndex={0}
       >
+        {iconLayout ? (
+          <>
+            <div className="relative w-full">
+              <div className="aspect-square w-full overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-[42px]">
+                <ItemVisualIcon
+                  item={item}
+                  emojiClass="leading-none"
+                  imageClass="h-full w-full object-cover"
+                />
+              </div>
+              <span className="absolute left-1.5 bottom-1.5 inline-flex items-center rounded-[var(--radius-sm)] border border-[var(--line-hairline)] bg-[color-mix(in_srgb,var(--bg-card)_88%,transparent)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]">
+                {getTypeLabel(item.type)}
+              </span>
+              {item.is_missing && (
+                <span
+                  className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[12px] font-semibold text-[var(--color-warning-ink)]"
+                  title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
+                >
+                  <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
+                  失效
+                </span>
+              )}
+              <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5">
+                {selected && (
+                  <span
+                    className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary)] text-[var(--text-invert)]"
+                    role="img"
+                    aria-label="已选择"
+                    title="已选择"
+                  >
+                    <Check className="h-3.5 w-3.5" strokeWidth={2.2} aria-hidden="true" />
+                  </span>
+                )}
+                <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
+              </div>
+              <div className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5">
+                <ItemOpenButton item={item} onLaunch={onLaunch} compact />
+                <ItemDragHandle
+                  onPointerDown={handleItemHandlePointerDown}
+                  className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                />
+              </div>
+            </div>
+            <h3
+              className="mt-2 line-clamp-2 w-full text-center text-[13px] font-medium leading-4 text-[var(--text-primary)]"
+              title={item.name}
+            >
+              <SearchHighlightText text={item.name} query={searchQuery} />
+            </h3>
+          </>
+        ) : (
+          <>
         <div className="flex min-w-0 items-start gap-3">
           <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-[26px]">
             <ItemVisualIcon
@@ -297,21 +390,7 @@ function ItemCardComponent({
           <div className="flex shrink-0 items-center gap-0.5">
             {/* Mod 插槽：actions */}
             {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="flex items-center gap-1" />}
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onLaunch();
-              }}
-              onDoubleClick={(event) => {
-                event.stopPropagation();
-              }}
-              title="启动"
-              aria-label={`启动 ${item.name}`}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)] opacity-0 transition-[color,background-color,opacity] hover:bg-[var(--accent-primary)] hover:text-[var(--text-invert)] focus-visible:opacity-100 group-hover:opacity-100"
-            >
-              <Play className="h-3 w-3" fill="currentColor" aria-hidden="true" />
-            </button>
+            <ItemOpenButton item={item} onLaunch={onLaunch} />
             <ItemDragHandle
               onPointerDown={handleItemHandlePointerDown}
               className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
@@ -322,6 +401,8 @@ function ItemCardComponent({
         {/* Mod 插槽：footer */}
         {modSlots.footer.length > 0 && (
           <div ref={footerSlotRef} className="mt-2 border-t border-[var(--line-hairline)] pt-2" />
+        )}
+          </>
         )}
       </article>
 
@@ -336,6 +417,7 @@ function ItemCardComponent({
           onClose={() => setMenuPos(null)}
           onLaunch={onLaunch}
           onRemove={() => void onRequestRemoveFromApp(item.id)}
+          onRemoveFiles={() => void onRequestRemoveFromApp(item.id, { forceDialog: true, preferDeleteFiles: true })}
           onEditTags={() => setShowTagEditor(true)}
           onToggleFavorite={onToggleFavorite}
           onPreview={() => setPreviewItemId(item.id)}

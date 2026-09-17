@@ -1,27 +1,36 @@
 import { Check, Trash2 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import type { RemoveConfirmItem, RemoveFromAppMode } from "../hooks/useItemRemoval";
+import { truncatePathMiddle } from "../lib/itemUtils";
 
-/** 拖拽对象到"从应用移除"区时的确认弹窗（带"下次不再确认"） */
+/** 从库移除确认：可选仅出库，或连本地文件一起移到回收站。 */
 export function RemoveFromAppConfirmDialog({
   open,
-  itemCount,
+  items,
   skipNextTime,
+  preferDeleteFiles,
   onSkipNextTimeChange,
   onConfirm,
   onCancel,
 }: {
   open: boolean;
-  itemCount: number;
+  items: RemoveConfirmItem[];
   skipNextTime: boolean;
+  preferDeleteFiles: boolean;
   onSkipNextTimeChange: (value: boolean) => void;
-  onConfirm: () => Promise<void>;
+  onConfirm: (mode: RemoveFromAppMode) => Promise<void>;
   onCancel: () => void;
 }) {
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open });
   useEscapeKey(onCancel, open);
 
   if (!open) return null;
+
+  const itemCount = items.length;
+  const countLabel = itemCount > 1 ? ` ${itemCount} 项` : "";
+  const folderCount = items.filter((item) => item.type === "folder").length;
+  const previewItems = items.slice(0, 3);
 
   return (
     <>
@@ -37,10 +46,10 @@ export function RemoveFromAppConfirmDialog({
       >
         <div
           ref={trapRef}
-          className="modal-surface pointer-events-auto w-[420px] max-w-[92vw] p-6"
+          className="modal-surface pointer-events-auto w-[480px] max-w-[92vw] p-6"
           role="dialog"
           aria-modal="true"
-          aria-label="从库中移除"
+          aria-label="移除项目"
         >
           <div className="flex items-start gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-danger-bg)] text-[var(--color-danger-ink)]">
@@ -48,13 +57,34 @@ export function RemoveFromAppConfirmDialog({
             </div>
             <div className="min-w-0 flex-1">
               <h2 className="text-base font-semibold text-[var(--text-primary)]">
-                从库中移除{itemCount > 1 ? ` ${itemCount} 项` : ""}
+                移除{countLabel}
               </h2>
-              <p className="mt-2 text-sm leading-7 text-[var(--text-secondary)]">
-                本地文件不会被删除。只是从 TagLauncher 的库里拿掉这些项目。
+              <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                仅出库不会动磁盘上的文件。删除本地文件会把磁盘上的文件或整个文件夹移到回收站，并从库里拿掉。
               </p>
+              {folderCount > 0 && (
+                <p className="mt-2 text-sm leading-6 text-[var(--color-danger-ink)]">
+                  其中有 {folderCount} 个文件夹：删除本地文件会把整个目录树送进回收站。
+                </p>
+              )}
             </div>
           </div>
+
+          {previewItems.length > 0 && (
+            <ul className="mt-4 space-y-1.5 rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-3 py-2">
+              {previewItems.map((item) => (
+                <li key={`${item.path}-${item.name}`} className="min-w-0">
+                  <p className="truncate text-sm font-medium text-[var(--text-primary)]">{item.name}</p>
+                  <p className="truncate text-[12px] text-[var(--text-faint)]" title={item.path}>
+                    {truncatePathMiddle(item.path, 56)}
+                  </p>
+                </li>
+              ))}
+              {itemCount > previewItems.length && (
+                <li className="text-[12px] text-[var(--text-muted)]">等 {itemCount} 项</li>
+              )}
+            </ul>
+          )}
 
           <button
             type="button"
@@ -67,16 +97,24 @@ export function RemoveFromAppConfirmDialog({
                 <Check aria-hidden="true" size={12} strokeWidth={2} className="text-[var(--accent-primary)]" />
               )}
             </span>
-            下次不再确认
+            下次仅出库时不再询问
           </button>
 
-          <div className="mt-6 flex justify-end gap-2">
-            <button type="button" autoFocus onClick={onCancel} className="action-button">
+          <div className="mt-6 flex flex-wrap justify-end gap-2">
+            <button type="button" autoFocus={!preferDeleteFiles} onClick={onCancel} className="action-button">
               取消
             </button>
-            <button type="button" onClick={() => void onConfirm()} className="action-button action-button-danger">
+            <button type="button" onClick={() => void onConfirm("library")} className="action-button">
+              仅出库
+            </button>
+            <button
+              type="button"
+              autoFocus={preferDeleteFiles}
+              onClick={() => void onConfirm("files")}
+              className="action-button action-button-danger"
+            >
               <Trash2 aria-hidden="true" size={15} strokeWidth={1.8} />
-              从库中移除
+              删除本地文件
             </button>
           </div>
         </div>

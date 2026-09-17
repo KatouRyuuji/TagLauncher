@@ -9,6 +9,30 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StatusBar } from "./StatusBar";
 import { useAppStore } from "../stores/appStore";
+import type { ItemWithTags } from "../types";
+
+const missingItems: ItemWithTags[] = [
+  {
+    id: 1,
+    name: "失效影片",
+    path: "E:\\Videos\\gone.mp4",
+    type: "video",
+    created_at: "2026-01-01T00:00:00Z",
+    is_favorite: false,
+    is_missing: true,
+    tags: [],
+  },
+  {
+    id: 2,
+    name: "失效程序",
+    path: "E:\\Apps\\gone.exe",
+    type: "exe",
+    created_at: "2026-01-01T00:00:00Z",
+    is_favorite: false,
+    is_missing: true,
+    tags: [],
+  },
+];
 
 function renderStatusBar() {
   return render(
@@ -16,8 +40,9 @@ function renderStatusBar() {
       visibleCount={3}
       selectedCount={0}
       libraryCount={10}
-      missingCount={0}
+      missingItems={[]}
       onRelocateMissing={async () => 0}
+      onRemoveMissing={async () => {}}
     />,
   );
 }
@@ -81,20 +106,21 @@ describe("StatusBar 失效对象找回", () => {
           visibleCount={3}
           selectedCount={0}
           libraryCount={10}
-          missingCount={2}
+          missingItems={missingItems}
           onRelocateMissing={async () => {
             throw new Error("磁盘不可读");
           }}
+          onRemoveMissing={async () => {}}
         />,
       );
-      const button = screen.getByRole("button", { name: /尝试找回/ });
+      fireEvent.click(screen.getByRole("button", { name: /失效项目/ }));
+      const button = screen.getByRole("button", { name: /尝试找回全部失效项/ });
       fireEvent.click(button);
       await waitFor(() => {
         expect(toasts.some((t) => t.type === "error" && t.message.includes("磁盘不可读"))).toBe(true);
       });
-      // finally 复位：失败后按钮不应卡在"扫描中"禁用态
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: /尝试找回/ })).not.toBeDisabled();
+        expect(screen.getByRole("button", { name: /尝试找回全部失效项/ })).not.toBeDisabled();
       });
     } finally {
       window.removeEventListener("taglauncher-toast", listener);

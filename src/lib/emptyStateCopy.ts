@@ -1,21 +1,35 @@
 // ============================================================================
 // lib/emptyStateCopy.ts — 工作台空态文案（纯逻辑，供 WorkspaceEmptyState 使用）
 // ============================================================================
-// 三种空态语义不同，混为一谈会误导用户：
-//   library — 库里一个对象都没有：引导导入，清筛选没有意义；
-//   search  — 搜索词无命中：优先引导改词/清空搜索，其次才是清全部筛选；
-//   filter  — 标签/类型/范围筛选无命中（无搜索词）：引导清空筛选。
+// 空态语义不同，混为一谈会误导用户：
+//   library   — 库里一个项目都没有：引导导入；
+//   search    — 搜索词无命中；
+//   filter    — 标签/类型筛选无命中；
+//   cabinet   — 当前文件柜没有项目；
+//   favorites — 收藏夹为空；
+//   recent    — 还没有打开过项目。
 // ============================================================================
 
-export type EmptyStateVariant = "library" | "search" | "filter";
+export type EmptyStateVariant = "library" | "search" | "filter" | "cabinet" | "favorites" | "recent";
 
-/** 根据「库是否为空」与「是否有生效中的搜索词」解析空态语义。 */
+export interface EmptyStateScope {
+  cabinet?: boolean;
+  favorites?: boolean;
+  recent?: boolean;
+}
+
+/** 根据「库是否为空」、搜索词与当前范围解析空态语义。 */
 export function resolveEmptyStateVariant(
   kind: "library" | "filter",
   searchQuery: string,
+  scope: EmptyStateScope = {},
 ): EmptyStateVariant {
   if (kind === "library") return "library";
-  return searchQuery.trim() !== "" ? "search" : "filter";
+  if (searchQuery.trim() !== "") return "search";
+  if (scope.favorites) return "favorites";
+  if (scope.recent) return "recent";
+  if (scope.cabinet) return "cabinet";
+  return "filter";
 }
 
 export interface EmptyStateCopy {
@@ -23,7 +37,7 @@ export interface EmptyStateCopy {
   description: string;
   /** 是否显示「清空搜索」按钮（仅搜索无命中时） */
   showClearSearch: boolean;
-  /** 是否显示「清空所有筛选」按钮（筛选/搜索无命中时） */
+  /** 是否显示「清空所有筛选」按钮（筛选/搜索/柜/收藏/最近无命中时） */
   showClearFilters: boolean;
 }
 
@@ -41,7 +55,7 @@ export function emptyStateCopy(variant: EmptyStateVariant, searchQuery: string):
     case "library":
       return {
         title: "暂无项目",
-        description: "将文件或文件夹拖拽到主区域，或点击下方按钮开始导入。",
+        description: "将文件或文件夹拖到主区域，或点下方按钮加入库。文件柜只是分组，不会移动磁盘上的文件。",
         showClearSearch: false,
         showClearFilters: false,
       };
@@ -50,6 +64,27 @@ export function emptyStateCopy(variant: EmptyStateVariant, searchQuery: string):
         title: `没有找到“${truncateQueryForDisplay(searchQuery)}”`,
         description: "试试换个关键词、切换搜索范围（全部 / 名称 / 标签），或清空搜索。",
         showClearSearch: true,
+        showClearFilters: true,
+      };
+    case "cabinet":
+      return {
+        title: "这个文件柜还是空的",
+        description: "文件柜是标签式分组，不会移动磁盘上的文件。把项目拖进来，或退出当前文件柜查看全部项目。",
+        showClearSearch: false,
+        showClearFilters: true,
+      };
+    case "favorites":
+      return {
+        title: "收藏夹是空的",
+        description: "给常用项目点星标，它们会出现在这里。",
+        showClearSearch: false,
+        showClearFilters: true,
+      };
+    case "recent":
+      return {
+        title: "还没有最近使用",
+        description: "打开过的项目会出现在这里。",
+        showClearSearch: false,
         showClearFilters: true,
       };
     case "filter":

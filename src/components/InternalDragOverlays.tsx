@@ -22,7 +22,7 @@ export function InternalDragGhost() {
           />
         )}
         <span className="max-w-[220px] truncate">
-          {activeInternalDrag.kind === "item" ? `添加对象: ${activeInternalDrag.label}` : activeInternalDrag.label}
+          {activeInternalDrag.kind === "item" ? `拖动项目：${activeInternalDrag.label}` : activeInternalDrag.label}
         </span>
       </div>
     </div>
@@ -47,12 +47,12 @@ export function ItemDropActions({
   const leftTitle = enabled
     ? mode === "tags"
       ? "清空当前标签"
-      : "移出当前文件夹"
-    : "选择标签或文件夹后可用";
+      : "移出当前文件柜"
+    : "选择标签或文件柜后可用";
   const leftDescription = enabled
     ? mode === "tags"
-      ? "从对象上移除当前激活标签"
-      : "对象保留在应用中"
+      ? "从项目上移除当前激活标签"
+      : "项目仍留在库里"
     : "当前没有可清理的分类筛选";
 
   return (
@@ -92,8 +92,8 @@ export function ItemDropActions({
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12m-8 4v6m4-6v6M9 7l1-2h4l1 2m-8 0 1 13h8l1-13" />
             </svg>
           </div>
-          <p className="text-sm font-semibold">从应用移除</p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">不删除本地文件</p>
+          <p className="text-sm font-semibold">仅出库</p>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">不删除磁盘上的文件</p>
         </div>
       </div>
     </div>

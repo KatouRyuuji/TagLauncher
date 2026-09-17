@@ -68,6 +68,7 @@
 
     --sidebar-width: 232px;
     --grid-col-min: 256px;
+    --grid-col-min-icons: 168px;
     --titlebar-height: 40px;
 
     /* 层级约定：100 以下保留给组件内局部层级，全局浮层从 100 起编排 */

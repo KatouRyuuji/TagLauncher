@@ -11,6 +11,7 @@ import { vi } from "vitest";
 // Tauri core API mock：避免测试中调用真实 WebView 接口
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
+  convertFileSrc: (path: string) => path,
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({

@@ -338,8 +338,30 @@ export function useItems() {
     });
   }, [removeLocalItem]);
 
-  const removeItems = useCallback(async (ids: number[]) => {
+  const removeItems = useCallback(async (ids: number[], options?: { deleteFiles?: boolean }) => {
     if (ids.length === 0) return;
+
+    if (options?.deleteFiles) {
+      await withErrorToast("删除本地文件", async () => {
+        const result = await db.removeItemsAndFiles(ids);
+        const idSet = new Set(result.removedIds);
+        setAllItems((current) => current.filter((item) => !idSet.has(item.id)));
+        setCabinetItems((current) => current.filter((item) => !idSet.has(item.id)));
+        if (result.failed.length > 0) {
+          const first = result.failed[0];
+          showToast(
+            `有 ${result.failed.length} 项未能删除本地文件：${first.error}`,
+            "warning",
+          );
+        } else if (result.removedIds.length > 0) {
+          showToast(
+            result.removedIds.length === 1 ? "已移到回收站并从库中移除" : `已移到回收站并移除 ${result.removedIds.length} 项`,
+            "success",
+          );
+        }
+      });
+      return;
+    }
 
     await withErrorToast("从库中移除", async () => {
       await db.removeItems(ids);

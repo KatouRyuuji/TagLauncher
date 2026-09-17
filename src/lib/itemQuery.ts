@@ -11,6 +11,9 @@ import type { ItemWithTags } from "../types";
 /** 工作台排序：智能（收藏→最近使用→名称）/ 名称 / 最近使用 / 添加时间 / 类型 */
 export type SortMode = "smart" | "name" | "recent" | "added" | "type";
 
+/** 工作台视图：卡片网格 / 大图标 / 列表 */
+export type ViewMode = "grid" | "list" | "icons";
+
 /** 类型筛选：脚本合并 bat+ps1，避免顶栏 chip 过多 */
 export type TypeFilter = "all" | "folder" | "image" | "audio" | "video" | "exe" | "script";
 
@@ -54,6 +57,10 @@ export function compareNames(a: string, b: string): number {
 /** ISO 时间戳是 ASCII 字典序可比的，纯字符串比较即可，避免 localeCompare 开销。 */
 function compareTimestamps(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+export function isViewMode(value: unknown): value is ViewMode {
+  return value === "grid" || value === "list" || value === "icons";
 }
 
 export function isSortMode(value: unknown): value is SortMode {
@@ -162,14 +169,14 @@ export function nextSelectionIndex(count: number, currentIndex: number, delta: n
   return Math.max(0, Math.min(count - 1, currentIndex + delta));
 }
 
-/** 网格下上下键按列数跳转，翻页一次约 4 行；列表上下为 ±1，翻页 ±4。左右始终 ±1。 */
+/** 网格/大图标按列跳转，翻页约 4 行；列表上下为 ±1，翻页 ±4。左右始终 ±1。 */
 export function selectionStep(
-  viewMode: "grid" | "list",
+  viewMode: ViewMode,
   lanes: number,
   key: string,
 ): number | null {
   const cols = Math.max(1, lanes);
-  const vertical = viewMode === "grid" ? cols : 1;
+  const vertical = viewMode === "list" ? 1 : cols;
   switch (key) {
     case "ArrowRight":
       return 1;

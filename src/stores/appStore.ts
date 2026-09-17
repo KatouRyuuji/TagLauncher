@@ -12,8 +12,10 @@ import * as db from "../lib/db";
 import {
   isSortMode,
   isTypeFilter,
+  isViewMode,
   type SortMode,
   type TypeFilter,
+  type ViewMode,
 } from "../lib/itemQuery";
 import { SEARCH_RESET_EVENT } from "../lib/workspaceChrome";
 
@@ -50,12 +52,12 @@ export type SearchMode = "all" | "name" | "tag";
 /** 侧边栏页签：标签 / 文件柜 */
 export type SidebarTab = "tags" | "cabinets";
 
-export type { SortMode, TypeFilter };
+export type { SortMode, TypeFilter, ViewMode };
 
 const PREFS_KEY = "taglauncher.workspace_prefs";
 
 interface WorkspacePrefs {
-  viewMode?: "grid" | "list";
+  viewMode?: ViewMode;
   searchMode?: SearchMode;
   sortMode?: SortMode;
   typeFilter?: TypeFilter;
@@ -67,7 +69,7 @@ function loadWorkspacePrefs(): WorkspacePrefs {
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return {
-      viewMode: parsed.viewMode === "list" || parsed.viewMode === "grid" ? parsed.viewMode : undefined,
+      viewMode: isViewMode(parsed.viewMode) ? parsed.viewMode : undefined,
       searchMode: parsed.searchMode === "all" || parsed.searchMode === "name" || parsed.searchMode === "tag"
         ? parsed.searchMode
         : undefined,
@@ -121,7 +123,7 @@ interface AppState {
    */
   searchInputValue: string;
   searchMode: SearchMode;
-  viewMode: "grid" | "list";
+  viewMode: ViewMode;
   sortMode: SortMode;
   typeFilter: TypeFilter;
   /** 主界面「筛选」条是否展开（类型/搜索范围）；有生效筛选时 SearchBar 仍会显示该条 */
@@ -130,6 +132,8 @@ interface AppState {
   commandPaletteOpen: boolean;
   shortcutsHelpOpen: boolean;
   previewItemId: number | null;
+  /** 状态栏 / 右键 / 命令面板共用的失效项目复核弹窗 */
+  missingReviewOpen: boolean;
   /**
    * 阻断式重启遮罩：切换数据目录 / 导入数据 / 云端恢复成功后激活。
    * 这些操作后旧库写入已冻结、重启才生效，遮罩阻断一切交互并自动重启，
@@ -152,7 +156,7 @@ interface AppState {
   setSearchQuery: (query: string) => void;
   setSearchInputValue: (value: string) => void;
   setSearchMode: (mode: SearchMode) => void;
-  setViewMode: (mode: "grid" | "list") => void;
+  setViewMode: (mode: ViewMode) => void;
   setSortMode: (mode: SortMode) => void;
   setTypeFilter: (filter: TypeFilter) => void;
   setWorkspaceFiltersOpen: (open: boolean) => void;
@@ -160,6 +164,7 @@ interface AppState {
   setCommandPaletteOpen: (open: boolean) => void;
   setShortcutsHelpOpen: (open: boolean) => void;
   setPreviewItemId: (id: number | null) => void;
+  setMissingReviewOpen: (open: boolean) => void;
   /** 激活重启遮罩并自动重启；重启失败时遮罩转为"请手动重启" */
   beginRestart: (message: string) => void;
   clearWorkspaceFilters: () => void;
@@ -197,6 +202,7 @@ export const useAppStore = create<AppState>((set, get) => {
   commandPaletteOpen: false,
   shortcutsHelpOpen: false,
   previewItemId: null,
+  missingReviewOpen: false,
   restartOverlay: null,
 
   setTags: (tags) => set((state) => sameTags(state.tags, tags) ? state : { tags }),
@@ -252,15 +258,7 @@ export const useAppStore = create<AppState>((set, get) => {
   ),
 
   setSidebarTab: (tab) =>
-    set((state) =>
-      tab === "tags"
-        ? state.sidebarTab === tab && state.selectedCabinetId === null && !state.showFavorites && !state.showRecent
-          ? state
-          : { sidebarTab: tab, selectedCabinetId: null, showFavorites: false, showRecent: false }
-        : state.sidebarTab === tab && state.selectedTagIds.length === 0 && state.excludedTagIds.length === 0 && !state.showFavorites && !state.showRecent
-          ? state
-          : { sidebarTab: tab, selectedTagIds: [], excludedTagIds: [], showFavorites: false, showRecent: false },
-    ),
+    set((state) => (state.sidebarTab === tab ? state : { sidebarTab: tab })),
 
   setShowFavorites: (v) => set((state) =>
     state.showFavorites === v &&
@@ -315,6 +313,7 @@ export const useAppStore = create<AppState>((set, get) => {
   setCommandPaletteOpen: (open) => set((state) => state.commandPaletteOpen === open ? state : { commandPaletteOpen: open }),
   setShortcutsHelpOpen: (open) => set((state) => state.shortcutsHelpOpen === open ? state : { shortcutsHelpOpen: open }),
   setPreviewItemId: (id) => set((state) => state.previewItemId === id ? state : { previewItemId: id }),
+  setMissingReviewOpen: (open) => set((state) => state.missingReviewOpen === open ? state : { missingReviewOpen: open }),
   beginRestart: (message) => {
     set({ restartOverlay: { message, restartFailed: false } });
     // 自动重启；失败时遮罩切换为"请手动重启"，不再放回主界面

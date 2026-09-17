@@ -71,6 +71,7 @@ export function Sidebar({
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
+  const toggleTagExclusion = useAppStore((state) => state.toggleTagExclusion);
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
   const setTagGraphOpen = useAppStore((state) => state.setTagGraphOpen);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
@@ -169,8 +170,12 @@ export function Sidebar({
     });
   };
 
-  const handleTagClick = (tagId: number) => {
+  const handleTagClick = (event: React.MouseEvent, tagId: number) => {
     if (shouldSuppressInternalDragClick()) return;
+    if (event.altKey) {
+      toggleTagExclusion(tagId);
+      return;
+    }
     toggleTagSelection(tagId);
   };
 
@@ -196,6 +201,49 @@ export function Sidebar({
         </div>
       </header>
 
+      <div data-region="sidebar-nav" className="flex min-h-0 flex-1 flex-col">
+      <nav
+        aria-label="工作台导航"
+        className="shrink-0 border-b border-[var(--line-hairline)] px-2 py-3"
+      >
+        <section aria-labelledby="sidebar-navigation-label">
+          <SectionHeader id="sidebar-navigation-label" label="导航" />
+          <div className="mt-1 space-y-0.5">
+            <FilterNavButton
+              active={selectedTagIds.length === 0 && excludedTagIds.length === 0 && selectedCabinetId === null && !showFavorites && !showRecent}
+              title="全部项目"
+              subtitle="查看库里的全部项目"
+              icon={Library}
+              count={allItems.length}
+              onClick={() => {
+                setSelectedTagIds([]);
+                setSelectedCabinetId(null);
+                setShowFavorites(false);
+                setShowRecent(false);
+              }}
+            />
+            <FilterNavButton
+              active={showFavorites}
+              title="收藏夹"
+              subtitle="优先展示常用项目"
+              accent={hoveredFavorites ? "favorite" : undefined}
+              icon={Star}
+              count={favoriteCount}
+              onClick={() => setShowFavorites(!showFavorites)}
+              data-drop-item-favorite={1}
+            />
+            <FilterNavButton
+              active={showRecent}
+              title="最近使用"
+              subtitle="打开过的项目"
+              icon={Clock}
+              count={recentCount}
+              onClick={() => setShowRecent(!showRecent)}
+            />
+          </div>
+        </section>
+      </nav>
+
       <div className="shrink-0 border-b border-[var(--line-hairline)] px-2 py-2">
         <div className="segmented-control flex w-full" role="group" aria-label="资源分类">
           <SidebarTabButton
@@ -219,45 +267,13 @@ export function Sidebar({
           className="mx-2 mt-2 flex shrink-0 items-center gap-2 border-l-2 border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] px-2.5 py-2 text-[13px] leading-4 text-[var(--accent-primary-ink)]"
         >
           <Info className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
-          <span>项目拖拽中，已显示归档目标</span>
+          <span>项目拖拽中，已显示文件柜</span>
         </div>
       )}
 
-      <nav
-        data-region="sidebar-nav"
-        aria-label="工作台导航"
-        className="min-h-0 flex-1 overflow-y-auto px-2 py-3"
-      >
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {visibleSection === "tags" && (
           <div className="space-y-5">
-            <section aria-labelledby="sidebar-navigation-label">
-              <SectionHeader id="sidebar-navigation-label" label="导航" />
-              <div className="mt-1 space-y-0.5">
-                <FilterNavButton
-                  active={selectedTagIds.length === 0 && excludedTagIds.length === 0 && selectedCabinetId === null && !showFavorites && !showRecent}
-                  title="全部项目"
-                  subtitle="查看所有可启动项"
-                  icon={Library}
-                  count={allItems.length}
-                  onClick={() => {
-                    setSelectedTagIds([]);
-                    setSelectedCabinetId(null);
-                    setShowFavorites(false);
-                    setShowRecent(false);
-                  }}
-                />
-
-                <FilterNavButton
-                  active={showRecent}
-                  title="最近使用"
-                  subtitle="按上次启动时间浏览"
-                  icon={Clock}
-                  count={recentCount}
-                  onClick={() => setShowRecent(!showRecent)}
-                />
-              </div>
-            </section>
-
             <section aria-labelledby="sidebar-tags-label">
               <SectionHeader id="sidebar-tags-label" label="标签" count={tags.length}>
                 <SidebarIconButton label="管理标签父子关系" onClick={() => setShowRelationsEditor(true)}>
@@ -294,7 +310,8 @@ export function Sidebar({
                       aria-label={excluded ? `${tag.name}（已排除）` : undefined}
                       style={activeTagStyle}
                       onPointerDown={(event) => handleTagPointerDown(event, tag)}
-                      onClick={() => handleTagClick(tag.id)}
+                      onClick={(event) => handleTagClick(event, tag.id)}
+                      title="单击筛选；Alt+单击排除含此标签的项目"
                       onKeyDown={(event) => {
                         // 键盘可达的编辑入口（对齐右键菜单）：F2 重命名 / Delete 删除，均打开编辑弹窗
                         if (event.key === "F2" || event.key === "Delete") {
@@ -335,7 +352,7 @@ export function Sidebar({
               )}
               {tags.length > 0 && allItems.length === 0 && (
                 <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[13px] leading-5 text-[var(--text-muted)]">
-                  导入文件后，标签会出现在这里
+                  导入项目后，标签会出现在这里
                 </div>
               )}
 
@@ -346,31 +363,6 @@ export function Sidebar({
 
         {visibleSection === "cabinets" && (
           <div className="space-y-5">
-            <section aria-labelledby="sidebar-cabinet-navigation-label">
-              <SectionHeader id="sidebar-cabinet-navigation-label" label="导航" />
-              <div className="mt-1 space-y-0.5">
-                <FilterNavButton
-                  active={showFavorites}
-                  title="收藏夹"
-                  subtitle="优先展示常用项目"
-                  accent={hoveredFavorites ? "favorite" : undefined}
-                  icon={Star}
-                  count={favoriteCount}
-                  onClick={() => setShowFavorites(!showFavorites)}
-                  data-drop-item-favorite={1}
-                />
-
-                <FilterNavButton
-                  active={showRecent}
-                  title="最近使用"
-                  subtitle="启动过的项目"
-                  icon={Clock}
-                  count={recentCount}
-                  onClick={() => setShowRecent(!showRecent)}
-                />
-              </div>
-            </section>
-
             <section aria-labelledby="sidebar-cabinets-label">
               <SectionHeader id="sidebar-cabinets-label" label="文件柜" count={cabinets.length}>
                 <SidebarIconButton
@@ -438,7 +430,8 @@ export function Sidebar({
             </section>
           </div>
         )}
-      </nav>
+      </div>
+      </div>
 
       {modPanels.filter((panel) => panel.visible !== false).length > 0 && (
         <div
@@ -465,8 +458,8 @@ export function Sidebar({
         <Info className="mt-px h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" strokeWidth={1.8} aria-hidden="true" />
         <span>
           {activeDragKind === "item"
-            ? "释放到收藏夹或文件柜完成归档"
-            : "拖标签到项目打标，拖项目到文件柜"}
+            ? "释放到收藏夹或文件柜完成归档（不会移动磁盘文件）"
+            : "拖标签到项目打标，拖项目到文件柜。文件柜是分组，不是磁盘文件夹。"}
         </span>
       </div>
 

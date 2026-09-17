@@ -53,7 +53,7 @@ export interface ItemViewProps {
   onRemoveItemFromCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onRemoveItemsFromCabinet: (cabinetId: number, itemIds: number[]) => Promise<void>;
   onClearCurrentFilter: (itemId: number) => Promise<void>;
-  onRequestRemoveFromApp: (itemId: number) => Promise<void>;
+  onRequestRemoveFromApp: (itemId: number, options?: { forceDialog?: boolean; preferDeleteFiles?: boolean }) => Promise<void>;
   onUpdateThumbnail: (itemId: number, iconPath: string | null) => Promise<void>;
   selectedItemIds: number[];
   onSelectItems: (itemIds: number[]) => void;

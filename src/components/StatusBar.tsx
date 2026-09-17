@@ -1,24 +1,26 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowUpDown, Command, LoaderCircle, Search, TriangleAlert } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { useSearch } from "../hooks/useSearch";
 import { sortModeLabel, typeFilterLabel } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
+import type { ItemWithTags } from "../types";
+import { MissingItemsReviewDialog } from "./MissingItemsReviewDialog";
 
 export function StatusBar({
   visibleCount,
   selectedCount,
   libraryCount,
-  missingCount,
+  missingItems,
   onRelocateMissing,
+  onRemoveMissing,
 }: {
   visibleCount: number;
   selectedCount: number;
   libraryCount: number;
-  /** 库内已失效（文件丢失/跨盘移动）的对象数，>0 时显示可操作的找回入口。 */
-  missingCount: number;
-  /** 手动触发按内容签名跨盘找回，返回成功找回的对象数。 */
+  missingItems: ItemWithTags[];
   onRelocateMissing: () => Promise<number>;
+  onRemoveMissing: (ids: number[]) => Promise<void>;
 }) {
   const { searchQuery, inputValue } = useSearch();
   const sortMode = useAppStore((state) => state.sortMode);
@@ -28,21 +30,27 @@ export function StatusBar({
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
+  const reviewOpen = useAppStore((state) => state.missingReviewOpen);
+  const setReviewOpen = useAppStore((state) => state.setMissingReviewOpen);
   const [relocating, setRelocating] = useState(false);
+  const missingCount = missingItems.length;
+
+  useEffect(() => {
+    if (reviewOpen && missingCount === 0) {
+      setReviewOpen(false);
+    }
+  }, [missingCount, reviewOpen, setReviewOpen]);
 
   const handleRelocate = async () => {
     if (relocating) return;
     setRelocating(true);
     try {
       const recovered = await onRelocateMissing();
-      // 找回成功的 toast 由 useItems 统一弹出；这里只补"未找到"的反馈,
-      // 手动点击必须有可感知结果,不能保持安静。
       if (recovered === 0) {
-        showToast("未能自动找回失效对象：请确认磁盘已连接；文件恢复后会自动重新关联", "error");
+        showToast("未能自动找回失效项目：请确认磁盘已连接；文件恢复后会自动重新关联", "error");
       }
     } catch (err) {
-      // 扫描失败（如磁盘不可读）：明确错误反馈，不能静默——用户点击后必须知道发生了什么
-      showToast(`找回失效对象失败：${err instanceof Error ? err.message : String(err)}`, "error");
+      showToast(`找回失效项目失败：${err instanceof Error ? err.message : String(err)}`, "error");
     } finally {
       setRelocating(false);
     }
@@ -61,11 +69,9 @@ export function StatusBar({
         ? "文件柜"
         : tagScope || "全部";
 
-  // 防抖窗口内（输入已敲下、搜索词尚未生效）显示"搜索中"指示，
-  // 让用户知道当前计数/列表对应的还是上一次搜索词。
   const searchPending = inputValue !== searchQuery;
 
-  const parts = [`${visibleCount} 项`, scope];
+  const parts = [`${visibleCount} 项目`, scope];
   if (selectedCount > 0) parts.push(`已选 ${selectedCount}`);
   if (typeFilter !== "all") parts.push(typeFilterLabel(typeFilter));
   if (searchQuery.trim()) parts.push(`“${searchQuery.trim()}”`);
@@ -74,6 +80,7 @@ export function StatusBar({
   }
 
   return (
+    <>
     <footer
       data-region="statusbar"
       aria-label="工作区状态"
@@ -100,18 +107,13 @@ export function StatusBar({
         {missingCount > 0 && (
           <button
             type="button"
-            onClick={() => void handleRelocate()}
-            disabled={relocating}
-            aria-busy={relocating}
-            className="inline-flex h-6 min-h-6 shrink-0 cursor-pointer items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_45%,transparent)] bg-[var(--status-warning-bg)] px-1.5 font-medium text-[var(--color-warning-ink)] hover:border-[var(--color-warning)] disabled:cursor-wait disabled:opacity-70"
-            title="部分对象的文件已丢失或移动到其他磁盘。点击按内容签名扫描候选磁盘尝试找回。"
+            onClick={() => setReviewOpen(true)}
+            aria-label={`${missingCount} 个失效项目，打开待处理`}
+            className="inline-flex h-6 min-h-6 shrink-0 cursor-pointer items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_45%,transparent)] bg-[var(--status-warning-bg)] px-1.5 font-medium text-[var(--color-warning-ink)] hover:border-[var(--color-warning)]"
+            title="查看失效项目：可尝试找回全部，或勾选后从库中移除。"
           >
-            {relocating ? (
-              <LoaderCircle className="h-3 w-3 animate-spin" strokeWidth={2} aria-hidden="true" />
-            ) : (
-              <TriangleAlert className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
-            )}
-            {relocating ? "正在扫描候选磁盘…" : `${missingCount} 个失效 · 尝试找回`}
+            <TriangleAlert className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+            {`${missingCount} 个失效 · 待处理`}
           </button>
         )}
       </div>
@@ -133,5 +135,14 @@ export function StatusBar({
         </span>
       </div>
     </footer>
+    <MissingItemsReviewDialog
+      open={reviewOpen}
+      items={missingItems}
+      relocating={relocating}
+      onClose={() => setReviewOpen(false)}
+      onRelocate={handleRelocate}
+      onRemove={onRemoveMissing}
+    />
+    </>
   );
 }

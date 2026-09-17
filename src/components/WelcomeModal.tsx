@@ -4,8 +4,8 @@ import {
   ArrowRight,
   Check,
   ExternalLink,
+  FilePlus2,
   Heart,
-  Play,
   Search,
   Tag,
   Tags,
@@ -33,9 +33,9 @@ interface FeatureEntry {
 
 const STEPS: FeatureEntry[] = [
   {
-    title: "添加文件",
-    description: "把文件或文件夹拖进工作台，或点右上角「添加文件」",
-    icon: Play,
+    title: "添加文件或文件夹",
+    description: "拖进工作台，或点右上角「添加文件 / 添加文件夹」。侧栏「文件柜」只是分组，不是磁盘目录。",
+    icon: FilePlus2,
   },
   {
     title: "打一个标签",
@@ -44,7 +44,7 @@ const STEPS: FeatureEntry[] = [
   },
   {
     title: "搜索并打开",
-    description: "按 / 或 F3 搜索，双击启动。Ctrl+K 打开命令面板",
+    description: "按 / 或 F3 搜索，双击打开。Ctrl+K 打开命令面板",
     icon: Search,
   },
 ];

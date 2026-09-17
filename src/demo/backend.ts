@@ -300,13 +300,31 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return cmd === "add_item" ? added[0] : { items: added, failed, createdCount };
     }
     case "remove_item":
-    case "remove_items": {
+    case "remove_items":
+    case "remove_items_and_files": {
       const removing = new Set(cmd === "remove_item" ? [num(args.id)] : ids(args.ids));
       state.items = state.items.filter((item) => !removing.has(item.id));
       for (const members of state.cabinetItems.values()) {
         for (const id of removing) members.delete(id);
       }
+      if (cmd === "remove_items_and_files") {
+        return { removedIds: [...removing], failed: [] };
+      }
       return null;
+    }
+    case "classify_import_paths": {
+      const files: string[] = [];
+      const folders: string[] = [];
+      for (const path of (args.paths as string[]) ?? []) {
+        if (!path.trim()) continue;
+        if (detectType(path) === "folder") folders.push(path);
+        else files.push(path);
+      }
+      return { files, folders };
+    }
+    case "expand_folder_import": {
+      const paths = ((args.paths as string[]) ?? []).filter((path) => path.trim() && detectType(path) !== "folder");
+      return { paths, truncated: false };
     }
     case "set_item_tags":
     case "set_many_item_tags": {

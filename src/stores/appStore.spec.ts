@@ -30,6 +30,7 @@ describe("appStore", () => {
       commandPaletteOpen: false,
       shortcutsHelpOpen: false,
       previewItemId: null,
+      missingReviewOpen: false,
     });
   });
 
@@ -107,24 +108,15 @@ describe("appStore", () => {
     expect(useAppStore.getState().selectedCabinetId).toBeNull();
   });
 
-  it("setSidebarTab('cabinets') 会清空标签与收藏筛选（页签与主视图保持一致）", () => {
-    useAppStore.setState({ sidebarTab: "tags", selectedTagIds: [10], showFavorites: true });
+  it("setSidebarTab 只切换侧栏页签，不清空全部 / 收藏 / 文件柜筛选", () => {
+    useAppStore.setState({ sidebarTab: "tags", selectedTagIds: [10], showFavorites: true, selectedCabinetId: 2 });
 
     useAppStore.getState().setSidebarTab("cabinets");
 
     expect(useAppStore.getState().sidebarTab).toBe("cabinets");
-    expect(useAppStore.getState().selectedTagIds).toEqual([]);
-    expect(useAppStore.getState().showFavorites).toBe(false);
-  });
-
-  it("setSidebarTab('tags') 会清空文件柜与收藏筛选", () => {
-    useAppStore.setState({ sidebarTab: "cabinets", selectedCabinetId: 2, showFavorites: true });
-
-    useAppStore.getState().setSidebarTab("tags");
-
-    expect(useAppStore.getState().sidebarTab).toBe("tags");
-    expect(useAppStore.getState().selectedCabinetId).toBeNull();
-    expect(useAppStore.getState().showFavorites).toBe(false);
+    expect(useAppStore.getState().selectedTagIds).toEqual([10]);
+    expect(useAppStore.getState().showFavorites).toBe(true);
+    expect(useAppStore.getState().selectedCabinetId).toBe(2);
   });
 
   it("setSearchQuery 更新搜索词并同步即时输入值（跳过防抖的直达路径）", () => {
@@ -205,5 +197,10 @@ describe("appStore", () => {
     useAppStore.getState().setTypeFilter("script");
     expect(useAppStore.getState().sortMode).toBe("recent");
     expect(useAppStore.getState().typeFilter).toBe("script");
+  });
+
+  it("setViewMode 支持大图标", () => {
+    useAppStore.getState().setViewMode("icons");
+    expect(useAppStore.getState().viewMode).toBe("icons");
   });
 });

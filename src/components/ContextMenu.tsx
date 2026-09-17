@@ -14,6 +14,7 @@ import {
   Star,
   Tags,
   Trash2,
+  TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
@@ -21,9 +22,18 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { SET_FAVORITES_EVENT } from "../hooks/useItems";
 import { BATCH_REMOVE_REQUEST_EVENT } from "../hooks/useItemRemoval";
 import { stepMenuIndex, formatPathCopy } from "../lib/itemQuery";
+import {
+  deleteFilesLabel,
+  libraryRemoveLabel,
+  openMenuLabel,
+  parentDirectoryPath,
+  revealFailedToast,
+  revealMenuLabel,
+} from "../lib/itemActionCopy";
 import * as db from "../lib/db";
 import { showToast } from "../lib/toast";
 import { copyText } from "../lib/clipboard";
+import { useAppStore } from "../stores/appStore";
 import type { Cabinet, ItemWithTags } from "../types";
 import type { ContextSelectionInfo } from "./ItemCard";
 
@@ -38,6 +48,7 @@ interface ContextMenuProps {
   onClose: () => void;
   onLaunch: () => void;
   onRemove: () => void;
+  onRemoveFiles?: () => void;
   onEditTags: () => void;
   onToggleFavorite: () => void;
   onPreview?: () => void;
@@ -56,6 +67,7 @@ export function ContextMenu({
   onClose,
   onLaunch,
   onRemove,
+  onRemoveFiles,
   onEditTags,
   onToggleFavorite,
   onPreview,
@@ -271,13 +283,21 @@ export function ContextMenu({
   }, [openCabinetSubmenu]);
 
   const handleOpenFolder = async () => {
-    // 按 id 打开：后端会先按文件ID重定位到当前真实路径，避免对象被移动后打开失败
     try {
-      await db.openInExplorerById(item.id);
+      if (item.type === "folder") {
+        const parent = parentDirectoryPath(item.path);
+        if (!parent) {
+          showToast("已经在磁盘根目录，没有上一级", "info");
+          return;
+        }
+        await db.openInExplorer(parent);
+      } else {
+        // 按 id 打开：后端会先按文件ID重定位到当前真实路径
+        await db.openInExplorerById(item.id);
+      }
     } catch (e) {
-      // 对象已丢失/无法定位时给出明确反馈，避免"点了没反应"
       const detail = e instanceof Error ? e.message : String(e);
-      showToast(`打开所在文件夹失败：${detail}`, "error");
+      showToast(`${revealFailedToast(item.type)}：${detail}`, "error");
     } finally {
       onClose();
     }
@@ -337,6 +357,15 @@ export function ContextMenu({
     onClose();
   };
 
+  const handleRemoveFilesClick = () => {
+    if (multi) {
+      window.dispatchEvent(new CustomEvent(BATCH_REMOVE_REQUEST_EVENT, { detail: { deleteFiles: true } }));
+    } else {
+      onRemoveFiles?.();
+    }
+    onClose();
+  };
+
   // 通过 Portal 渲染到 body：彻底免疫祖先的 transform / will-change / overflow，
   // 保证 position:fixed 始终相对视口定位（虚拟化列表内右键也精准跟随鼠标）。
   return createPortal(
@@ -377,9 +406,23 @@ export function ContextMenu({
         className="modal-surface w-[220px] max-h-[72vh] max-w-[72vw] overflow-y-auto p-1.5"
       >
         <MenuGroupLabel>操作</MenuGroupLabel>
-        <MenuItem icon={Play} label="打开" onClick={() => { onLaunch(); onClose(); }} />
+        <MenuItem
+          icon={item.type === "folder" ? FolderOpen : Play}
+          label={openMenuLabel(item.type)}
+          onClick={() => { onLaunch(); onClose(); }}
+        />
         {onPreview && <MenuItem icon={Eye} label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
-        <MenuItem icon={FolderOpen} label="打开所在文件夹" onClick={() => void handleOpenFolder()} />
+        <MenuItem icon={FolderOpen} label={revealMenuLabel(item.type)} onClick={() => void handleOpenFolder()} />
+        {item.is_missing && (
+          <MenuItem
+            icon={TriangleAlert}
+            label="查看失效项目"
+            onClick={() => {
+              useAppStore.getState().setMissingReviewOpen(true);
+              onClose();
+            }}
+          />
+        )}
         <MenuItem
           icon={Copy}
           label={multi ? `复制 ${multi.paths.length} 条路径` : "复制路径"}
@@ -393,8 +436,8 @@ export function ContextMenu({
           label={
             multi
               ? multi.favoriteTarget
-                ? `收藏 ${multi.ids.length} 个对象`
-                : `取消收藏 ${multi.ids.length} 个对象`
+                ? `收藏 ${multi.ids.length} 个项目`
+                : `取消收藏 ${multi.ids.length} 个项目`
               : item.is_favorite
               ? "取消收藏"
               : "加入收藏"
@@ -450,8 +493,14 @@ export function ContextMenu({
         <MenuGroupLabel>危险操作</MenuGroupLabel>
         <MenuItem
           icon={Trash2}
-          label={multi ? `删除 ${multi.ids.length} 个对象` : "删除"}
+          label={libraryRemoveLabel(multi ? multi.ids.length : 1)}
           onClick={handleRemoveClick}
+          accent="danger"
+        />
+        <MenuItem
+          icon={Trash2}
+          label={deleteFilesLabel(multi ? multi.ids.length : 1)}
+          onClick={handleRemoveFilesClick}
           accent="danger"
         />
       </div>

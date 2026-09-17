@@ -229,6 +229,7 @@ function ItemRowComponent({
           onClose={() => setMenuPos(null)}
           onLaunch={onLaunch}
           onRemove={() => void onRequestRemoveFromApp(item.id)}
+          onRemoveFiles={() => void onRequestRemoveFromApp(item.id, { forceDialog: true, preferDeleteFiles: true })}
           onEditTags={() => setShowTagEditor(true)}
           onToggleFavorite={onToggleFavorite}
           onPreview={() => setPreviewItemId(item.id)}

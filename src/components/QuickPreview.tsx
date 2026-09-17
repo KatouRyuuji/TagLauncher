@@ -1,23 +1,26 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Copy, File, Folder, Play, ScanSearch, TriangleAlert, X } from "lucide-react";
+import { Copy, File, Folder, FolderOpen, Play, Plus, ScanSearch, TriangleAlert, X } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useItemVisual } from "../hooks/useItemVisual";
 import { copyText } from "../lib/clipboard";
 import * as db from "../lib/db";
+import { cardOpenLabel } from "../lib/itemActionCopy";
 import { formatBytes, formatTimestamp } from "../lib/itemQuery";
 import { getTypeLabel } from "../lib/itemUtils";
+import { showToast } from "../lib/toast";
 import { useAppStore } from "../stores/appStore";
 import type { ItemWithTags } from "../types";
 
 interface QuickPreviewProps {
   items: ItemWithTags[];
   onLaunch: (id: number) => void;
+  onAddItems?: (paths: string[]) => Promise<void>;
 }
 
-export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
+export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps) {
   const previewItemId = useAppStore((state) => state.previewItemId);
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
@@ -77,11 +80,24 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
           {item.is_missing ? (
             <div role="alert" className="flex items-start gap-3 border border-[color-mix(in_srgb,var(--color-warning)_28%,transparent)] bg-[var(--status-warning-bg)] p-4 text-sm text-[var(--color-warning-ink)]">
               <TriangleAlert aria-hidden="true" size={18} strokeWidth={1.8} className="mt-0.5 shrink-0" />
-              <p>对象已失效，无法预览当前文件。归类仍保留，文件恢复后会自动关联。</p>
+              <div>
+                <p>项目已失效，无法预览当前文件。归类仍保留，文件恢复后会自动关联。</p>
+                <button
+                  type="button"
+                  className="action-button mt-3"
+                  onClick={() => {
+                    setPreviewItemId(null);
+                    useAppStore.getState().setMissingReviewOpen(true);
+                  }}
+                >
+                  查看失效项目
+                </button>
+              </div>
             </div>
           ) : (
             <PreviewBody
               item={item}
+              onAddItems={onAddItems}
               onTagSelect={(tagId) => {
                 setSelectedTagIds([tagId]);
                 setPreviewItemId(null);
@@ -91,7 +107,7 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
         </div>
 
         <footer className="flex min-h-[56px] flex-wrap items-center justify-between gap-2 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-2.5 sm:px-5">
-          <p className="flex items-center gap-2 text-[13px] text-[var(--text-faint)]"><span className="status-led" aria-hidden="true" />本地对象预览</p>
+          <p className="flex items-center gap-2 text-[13px] text-[var(--text-faint)]"><span className="status-led" aria-hidden="true" />本地预览</p>
           <div className="flex items-center gap-2">
             <button type="button" className="action-button" onClick={() => void copyText(item.path, "已复制路径")}>
               <Copy aria-hidden="true" size={15} strokeWidth={1.8} />
@@ -105,8 +121,12 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
                 void onLaunch(item.id);
               }}
             >
-              <Play aria-hidden="true" size={15} strokeWidth={1.9} />
-              启动
+              {item.type === "folder" ? (
+                <FolderOpen aria-hidden="true" size={15} strokeWidth={1.9} />
+              ) : (
+                <Play aria-hidden="true" size={15} strokeWidth={1.9} />
+              )}
+              {cardOpenLabel(item.type)}
             </button>
           </div>
         </footer>
@@ -116,10 +136,19 @@ export function QuickPreview({ items, onLaunch }: QuickPreviewProps) {
   );
 }
 
-function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (tagId: number) => void }) {
+function PreviewBody({
+  item,
+  onTagSelect,
+  onAddItems,
+}: {
+  item: ItemWithTags;
+  onTagSelect: (tagId: number) => void;
+  onAddItems?: (paths: string[]) => Promise<void>;
+}) {
   const iconPath = useItemVisual(item);
   const [info, setInfo] = useState<db.ObjectPreviewFileInfo | null>(null);
   const [entries, setEntries] = useState<db.ObjectDirectoryEntry[]>([]);
+  const [entryTotal, setEntryTotal] = useState(0);
   const [audio, setAudio] = useState<db.AudioPreviewInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [imageFailed, setImageFailed] = useState(false);
@@ -135,6 +164,7 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
     setVideoFailed(false);
     setInfo(null);
     setEntries([]);
+    setEntryTotal(0);
     setAudio(null);
     setLoading(true);
 
@@ -145,7 +175,10 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
         setInfo(fileInfo);
         if (item.type === "folder") {
           const listed = await db.listObjectDirectory(item.path);
-          if (!cancelled) setEntries(listed.slice(0, 48));
+          if (!cancelled) {
+            setEntries(listed.slice(0, 48));
+            setEntryTotal(listed.length);
+          }
         } else if (item.type === "audio") {
           const preview = await db.getAudioPreview(item.path);
           if (!cancelled) setAudio(preview);
@@ -261,8 +294,19 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
             <dd className="text-[var(--text-secondary)]">{formatDurationMs(audio.duration_ms)}</dd>
           </>
         )}
-        <dt className="text-[var(--text-faint)]">大小</dt>
-        <dd className="text-[var(--text-secondary)]">{info?.size != null ? formatBytes(info.size) : "未知"}</dd>
+        {item.type === "folder" ? (
+          <>
+            <dt className="text-[var(--text-faint)]">内容</dt>
+            <dd className="text-[var(--text-secondary)]">
+              {entryTotal > 0 ? `列出 ${Math.min(48, entryTotal)} 项` : "目录"}
+            </dd>
+          </>
+        ) : (
+          <>
+            <dt className="text-[var(--text-faint)]">大小</dt>
+            <dd className="text-[var(--text-secondary)]">{info?.size != null ? formatBytes(info.size) : "未知"}</dd>
+          </>
+        )}
         <dt className="text-[var(--text-faint)]">修改时间</dt>
         <dd className="text-[var(--text-secondary)]">
           {info?.modified_at_secs ? formatLocalDateTime(info.modified_at_secs) : "未知"}
@@ -292,7 +336,10 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
 
       {item.type === "folder" && (
         <div>
-          <p className="mb-2 text-xs font-medium text-[var(--text-faint)]">目录内容（最多 48 项）</p>
+          <p className="mb-2 text-xs font-medium text-[var(--text-faint)]">
+            目录内容（最多 48 项）
+            {entryTotal > 48 ? " · 还有更多" : ""}
+          </p>
           {entries.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)]">空文件夹或无法列出</p>
           ) : (
@@ -304,7 +351,32 @@ function PreviewBody({ item, onTagSelect }: { item: ItemWithTags; onTagSelect: (
                   ) : (
                     <File aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
                   )}
-                  <span className="truncate">{entry.name}</span>
+                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                  <button
+                    type="button"
+                    className="action-button h-7 min-h-7 shrink-0 px-2 text-[12px]"
+                    onClick={() => {
+                      void db.openInExplorer(entry.path).catch((error) => {
+                        showToast(`打开失败：${error instanceof Error ? error.message : String(error)}`, "error");
+                      });
+                    }}
+                  >
+                    打开
+                  </button>
+                  {onAddItems && (
+                    <button
+                      type="button"
+                      className="action-button h-7 min-h-7 shrink-0 px-2 text-[12px]"
+                      onClick={() => {
+                        void onAddItems([entry.path]).catch((error) => {
+                          showToast(`加入库失败：${error instanceof Error ? error.message : String(error)}`, "error");
+                        });
+                      }}
+                    >
+                      <Plus aria-hidden="true" size={13} strokeWidth={1.8} />
+                      加入库
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

@@ -11,7 +11,7 @@ describe("TagFilterBar 右键反选", () => {
   beforeEach(() => {
     useAppStore.setState({
       tags: [{ id: 1, name: "设计", color: "#e11d48" }],
-      selectedTagIds: [],
+      selectedTagIds: [1],
       excludedTagIds: [],
       selectedCabinetId: null,
       showFavorites: false,
@@ -20,9 +20,15 @@ describe("TagFilterBar 右键反选", () => {
     });
   });
 
+  it("没有已选或排除标签时不渲染全量芯片", () => {
+    useAppStore.setState({ selectedTagIds: [], excludedTagIds: [] });
+    render(<TagFilterBar />);
+    expect(screen.queryByRole("group", { name: "已选标签" })).not.toBeInTheDocument();
+  });
+
   it("右键标签进入反选态，再次右键取消", () => {
     render(<TagFilterBar />);
-    const chip = screen.getByTitle("设计（右键排除含此标签的对象）");
+    const chip = screen.getByTitle("设计（右键排除含此标签的项目）");
     fireEvent.contextMenu(chip);
     expect(useAppStore.getState().excludedTagIds).toEqual([1]);
     expect(useAppStore.getState().selectedTagIds).toEqual([]);
@@ -33,7 +39,7 @@ describe("TagFilterBar 右键反选", () => {
   });
 
   it("左键正选会撤销该标签的反选", () => {
-    useAppStore.setState({ excludedTagIds: [1] });
+    useAppStore.setState({ selectedTagIds: [], excludedTagIds: [1] });
     render(<TagFilterBar />);
     fireEvent.click(screen.getByLabelText("设计（已排除）"));
     expect(useAppStore.getState().selectedTagIds).toEqual([1]);

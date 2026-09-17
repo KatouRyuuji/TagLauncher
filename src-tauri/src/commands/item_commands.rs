@@ -36,6 +36,28 @@ pub fn remove_items(db: State<Database>, ids: Vec<i64>) -> Result<(), String> {
     item_service::remove_items(&conn, &ids)
 }
 
+/// 将源文件移到回收站后再出库。文件系统 IO 放工作线程，避免卡住 UI。
+#[tauri::command(async)]
+pub fn remove_items_and_files(
+    db: State<Database>,
+    ids: Vec<i64>,
+) -> Result<item_service::RemoveItemsAndFilesResult, String> {
+    let conn = db.get_conn();
+    item_service::remove_items_and_files(&conn, &ids)
+}
+
+/// 导入前区分文件与文件夹，供「加文件夹本身 / 展开夹内文件」对话框使用。
+#[tauri::command(async)]
+pub fn classify_import_paths(paths: Vec<String>) -> crate::services::import_paths::ImportPathClass {
+    crate::services::import_paths::classify_import_paths(paths)
+}
+
+/// 把文件夹递归展开为文件路径；已是文件的项原样保留。
+#[tauri::command(async)]
+pub fn expand_folder_import(paths: Vec<String>) -> crate::services::import_paths::ExpandFolderImportResult {
+    crate::services::import_paths::expand_folder_import(paths)
+}
+
 /// 批量设置多个对象的标签（整批一个事务，原子）
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]

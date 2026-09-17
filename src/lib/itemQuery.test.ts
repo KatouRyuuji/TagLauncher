@@ -8,6 +8,7 @@ import {
   formatTimestamp,
   isSortMode,
   isTypeFilter,
+  isViewMode,
   isTypingTarget,
   formatPathCopy,
   isImeKeyboardEvent,
@@ -123,6 +124,7 @@ test("selectionStep：网格按列跳转，列表按行", () => {
   assert.equal(selectionStep("grid", 4, "PageDown"), 16);
   assert.equal(selectionStep("list", 4, "PageUp"), -4);
   assert.equal(selectionStep("grid", 3, "Escape"), null);
+  assert.equal(selectionStep("icons", 5, "ArrowDown"), 5);
 });
 
 test("previewNavigationItems：可见则走可见列表，否则走全库", () => {
@@ -224,6 +226,8 @@ test("isSortMode / isTypeFilter 守卫", () => {
   assert.equal(isTypeFilter("script"), true);
   assert.equal(isTypeFilter("video"), true);
   assert.equal(isTypeFilter("bat"), false);
+  assert.equal(isViewMode("icons"), true);
+  assert.equal(isViewMode("tile"), false);
 });
 
 test("formatPathCopy：空路径忽略，多项换行", () => {

@@ -160,14 +160,14 @@ export function BatchSelectionToolbar({
         </ToolbarMenuButton>
 
         <ToolbarMenuButton
-          label="文件夹"
+          label="文件柜"
           icon={FolderPlus}
           disabled={busy}
           open={openMenu === "cabinet"}
           onClick={() => setOpenMenu(openMenu === "cabinet" ? null : "cabinet")}
         >
           {cabinets.length === 0 ? (
-            <MenuEmptyText>暂无文件夹</MenuEmptyText>
+            <MenuEmptyText>暂无文件柜</MenuEmptyText>
           ) : (
             cabinets.map((cabinet) => (
               <MenuOption key={cabinet.id} color={cabinet.color} label={`加入 ${cabinet.name}`} onClick={() => runAction(() => onAddToCabinet(cabinet.id))} />
@@ -180,7 +180,7 @@ export function BatchSelectionToolbar({
             onClick={() => runAction(onRemoveFromCabinet)}
             className="mt-1 flex w-full items-center justify-between rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:text-[var(--text-faint)] disabled:hover:bg-transparent"
           >
-            从当前文件夹移出
+            从当前文件柜移出
           </button>
         </ToolbarMenuButton>
 
@@ -190,7 +190,7 @@ export function BatchSelectionToolbar({
             onClick={onSelectAll}
             disabled={busy}
             className="action-button min-h-8 shrink-0 px-2.5 text-xs"
-            title="选中当前筛选结果的全部对象（含虚拟化未渲染的条目）"
+            title="选中当前筛选结果的全部项目（含虚拟化未渲染的条目）"
           >
             <CheckCheck aria-hidden="true" size={14} strokeWidth={1.8} />
             全选 {totalCount}
@@ -201,7 +201,7 @@ export function BatchSelectionToolbar({
           onClick={onToggleFavorite}
           disabled={busy}
           className="action-button min-h-8 shrink-0 px-2.5 text-xs"
-          title={`${favoriteLabel}选中对象（Ctrl+D）`}
+          title={`${favoriteLabel}选中项目（Ctrl+D）`}
         >
           <Star aria-hidden="true" size={14} strokeWidth={1.8} fill={favoriteLabel === "收藏" ? "none" : "currentColor"} className="text-[var(--color-favorite)]" />
           {favoriteLabel}

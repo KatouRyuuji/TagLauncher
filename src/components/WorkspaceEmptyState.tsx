@@ -44,7 +44,14 @@ export function WorkspaceEmptyState({
 }) {
   const searchQuery = useAppStore((state) => state.searchQuery);
   const setSearchQuery = useAppStore((state) => state.setSearchQuery);
-  const variant = resolveEmptyStateVariant(kind, searchQuery);
+  const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
+  const showFavorites = useAppStore((state) => state.showFavorites);
+  const showRecent = useAppStore((state) => state.showRecent);
+  const variant = resolveEmptyStateVariant(kind, searchQuery, {
+    cabinet: selectedCabinetId !== null,
+    favorites: showFavorites,
+    recent: showRecent,
+  });
   const copy = emptyStateCopy(variant, searchQuery);
   const EmptyIcon = variant === "library" ? LibraryBig : variant === "search" ? SearchX : FilterX;
 

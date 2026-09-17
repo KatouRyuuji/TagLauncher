@@ -460,6 +460,64 @@ pub fn remove_item(conn: &Connection, id: i64) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveItemsAndFilesResult {
+    pub removed_ids: Vec<i64>,
+    pub failed: Vec<RemoveFileFailure>,
+}
+
+#[derive(Serialize)]
+pub struct RemoveFileFailure {
+    pub id: i64,
+    pub path: String,
+    pub error: String,
+}
+
+/// 先把仍存在的源文件/文件夹移到回收站，成功（或源已不在）后再出库。
+/// 回收站失败的条目保留库记录，避免「盘上还在、库里没了」。
+pub fn remove_items_and_files(conn: &Connection, ids: &[i64]) -> Result<RemoveItemsAndFilesResult, String> {
+    crate::db::ensure_writes_allowed()?;
+    if ids.is_empty() {
+        return Ok(RemoveItemsAndFilesResult {
+            removed_ids: Vec::new(),
+            failed: Vec::new(),
+        });
+    }
+
+    let mut targets = Vec::new();
+    for chunk in ids.chunks(IN_CHUNK) {
+        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!("SELECT id, path FROM items WHERE id IN ({placeholders})");
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let params = chunk
+            .iter()
+            .map(|id| id as &dyn rusqlite::ToSql)
+            .collect::<Vec<_>>();
+        let rows = stmt
+            .query_map(params.as_slice(), |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            targets.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+
+    let mut removed_ids = Vec::new();
+    let mut failed = Vec::new();
+    for (id, path) in targets {
+        match crate::services::recycle_bin::move_to_recycle_bin(&path) {
+            Ok(()) => removed_ids.push(id),
+            Err(error) => failed.push(RemoveFileFailure { id, path, error }),
+        }
+    }
+
+    if !removed_ids.is_empty() {
+        remove_items(conn, &removed_ids)?;
+    }
+
+    Ok(RemoveItemsAndFilesResult { removed_ids, failed })
+}
+
 /// 更新项目缩略图
 pub fn update_item_icon(
     conn: &Connection,
@@ -1215,6 +1273,24 @@ mod tests {
                 .collect()
         };
         assert_eq!(remaining, vec![b.id]);
+    }
+
+    #[test]
+    fn remove_items_and_files_drops_already_missing_paths() {
+        let conn = setup();
+        let gone = add_item(&conn, r"D:\__tl_test_recycle_missing__\gone.exe").unwrap();
+        let kept = add_item(&conn, r"D:\__tl_test_recycle_missing__\kept.exe").unwrap();
+        let result = remove_items_and_files(&conn, &[gone.id]).expect("remove missing source");
+        assert_eq!(result.removed_ids, vec![gone.id]);
+        assert!(result.failed.is_empty());
+        let remaining: Vec<i64> = {
+            let mut stmt = conn.prepare("SELECT id FROM items ORDER BY id").unwrap();
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+        assert_eq!(remaining, vec![kept.id]);
     }
 
     #[test]

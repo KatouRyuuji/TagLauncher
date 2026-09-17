@@ -89,6 +89,42 @@ export async function removeItems(ids: number[]): Promise<void> {
   return invokeCmd("remove_items", { ids });
 }
 
+export interface RemoveFileFailure {
+  id: number;
+  path: string;
+  error: string;
+}
+
+export interface RemoveItemsAndFilesResult {
+  removedIds: number[];
+  failed: RemoveFileFailure[];
+}
+
+/** 将源文件移到回收站后再出库；回收站失败的条目会留在库里。 */
+export async function removeItemsAndFiles(ids: number[]): Promise<RemoveItemsAndFilesResult> {
+  return invokeCmd("remove_items_and_files", { ids });
+}
+
+export interface ImportPathClass {
+  files: string[];
+  folders: string[];
+}
+
+export interface ExpandFolderImportResult {
+  paths: string[];
+  truncated: boolean;
+}
+
+/** 导入前区分文件与文件夹。 */
+export async function classifyImportPaths(paths: string[]): Promise<ImportPathClass> {
+  return invokeCmd("classify_import_paths", { paths });
+}
+
+/** 把文件夹递归展开为文件路径；已是文件的项原样保留。 */
+export async function expandFolderImport(paths: string[]): Promise<ExpandFolderImportResult> {
+  return invokeCmd("expand_folder_import", { paths });
+}
+
 /** 批量设置多个对象的标签（后端整批一个事务，原子） */
 export async function setManyItemTags(
   changes: Array<{ itemId: number; tagIds: number[] }>,

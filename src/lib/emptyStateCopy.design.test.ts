@@ -13,10 +13,19 @@ test("筛选无命中：有搜索词按 search、无搜索词按 filter 区分",
   assert.equal(resolveEmptyStateVariant("filter", "   "), "filter");
 });
 
+test("文件柜 / 收藏 / 最近 使用专用空态，不被筛选文案冒充", () => {
+  assert.equal(resolveEmptyStateVariant("filter", "", { cabinet: true }), "cabinet");
+  assert.equal(resolveEmptyStateVariant("filter", "", { favorites: true }), "favorites");
+  assert.equal(resolveEmptyStateVariant("filter", "", { recent: true }), "recent");
+  assert.equal(resolveEmptyStateVariant("filter", "游戏", { cabinet: true }), "search");
+  assert.ok(emptyStateCopy("cabinet", "").title.includes("文件柜"));
+  assert.ok(emptyStateCopy("cabinet", "").description.includes("分组"));
+});
+
 test("library 空态：引导导入，不提供清筛选/清搜索按钮", () => {
   const copy = emptyStateCopy("library", "");
   assert.equal(copy.title, "暂无项目");
-  assert.ok(copy.description.includes("导入"));
+  assert.ok(copy.description.includes("加入库"));
   assert.equal(copy.showClearSearch, false);
   assert.equal(copy.showClearFilters, false);
 });

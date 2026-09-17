@@ -5,13 +5,14 @@
 // 用 Playwright 驱动真实 UI 交互，逐特性断言行为正确（check 计数，失败以
 // 退出码 1 结束），并在每个形态落截图。
 //
-// 覆盖：欢迎页 / 网格 / 列表 / 侧栏新建标签·文件柜编辑态 / 关键词（含高亮）·拼音·
-// 表达式搜索 / 搜索模式切换 / 类型筛选 / 筛选无结果空态 / 标签 DAG 筛选（父并入后代、
-// 多选交集）/ 收藏 / 最近使用 / 文件柜 / 排序 / 命令面板（打开态·命令过滤·对象搜索）/
-// 快速预览（图片·音频·视频·文件夹）/ 右键菜单（单选·多选·添加到文件柜子菜单）/ 标签编辑 /
-// 框选与批量工具条（含下拉菜单）/ 标签关系编辑 / 标签图谱 / 设置六区块（含主题下拉
-// 打开态）/ AI 打标（进行中 + 完成）/ 快捷键帮助 / F3 / 失效找回 / 批量移除确认 /
-// 空库引导 / 首屏骨架屏；主题形态：全部内置配色家族 × 亮/暗 + 霜靛亮/暗列表。
+// 覆盖：欢迎页 / 网格 / 列表 / 侧栏新建标签·文件柜编辑态 / 添加文件夹入库方式 /
+// 关键词（含高亮）·拼音·表达式搜索 / 搜索模式切换 / 类型筛选 / 筛选无结果空态 /
+// 标签 DAG 筛选（父并入后代、多选交集）/ 收藏 / 最近使用 / 文件柜 / 排序 /
+// 命令面板（打开态·命令过滤·对象搜索）/ 快速预览（图片·音频·视频·文件夹）/
+// 右键菜单（单选·多选·添加到文件柜子菜单）/ 标签编辑 / 框选与批量工具条（含下拉菜单）/
+// 标签关系编辑 / 标签图谱 / 设置六区块（含主题下拉打开态）/ AI 打标（进行中 + 完成）/
+// 快捷键帮助 / F3 / 失效项目复核 / 批量移除确认 / 空库引导 / 首屏骨架屏；
+// 主题形态：全部内置配色家族 × 亮/暗 + 霜靛亮/暗列表。
 //
 // 用法：
 //   npm run demo:shots            # 测试 + 截图到 宣传视频/e2e-review/（自动创建，覆盖旧图）
@@ -203,7 +204,7 @@ async function featureTour(page) {
   // 02 网格视图
   await shot(page, "workspace-grid-主界面-网格视图");
   await check("网格视图渲染 11 个对象", (await itemCount(page)) === 11);
-  await check("状态栏计数 11 项", (await statusText(page))?.includes("11 项"));
+  await check("状态栏计数 11 项目", (await statusText(page))?.includes("11 项目"));
   await check("失效对象徽标可见", page.locator("[data-selectable-item-id]").filter({ hasText: "影视收藏" }).getByText("失效", { exact: true }).isVisible());
 
   // 02b 首页侧栏官方主题色点 + 亮/暗分段（用完后回到霜靛亮，避免污染后续巡演）
@@ -231,6 +232,27 @@ async function featureTour(page) {
   await themeDock.getByRole("radio", { name: "亮色" }).click();
   await settle(500);
   await check("恢复霜靛亮色", (await page.locator("html").getAttribute("data-scheme")) === "light");
+
+  // 02c 添加文件夹：拖入目录后弹出入库方式（取消，避免污染后续巡演数据）
+  await page.evaluate(() => {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(
+      "text/uri-list",
+      ["file:///C:/Demo/新项目资料", "file:///C:/Demo/素材库", "file:///C:/Demo/brief.txt"].join("\n"),
+    );
+    const event = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+    const target = document.querySelector('[data-region="main"]');
+    if (!(target instanceof HTMLElement)) throw new Error("main region missing");
+    target.dispatchEvent(event);
+  });
+  await page.getByRole("dialog", { name: "添加文件夹" }).waitFor();
+  await settle(400);
+  await shot(page, "folder-import-添加文件夹-入库方式");
+  await check("添加文件夹弹窗打开", page.getByRole("dialog", { name: "添加文件夹" }).isVisible());
+  await check("入库方式含「只加入文件夹」", page.getByRole("radio", { name: /只加入文件夹/ }).isVisible());
+  await page.getByRole("dialog", { name: "添加文件夹" }).getByRole("button", { name: "取消" }).click();
+  await page.getByRole("dialog", { name: "添加文件夹" }).waitFor({ state: "detached" });
 
   // 03 列表视图（全幅表格 + 表头）
   await page.locator('button[title="列表视图"]').click();
@@ -573,10 +595,18 @@ async function featureTour(page) {
   await check("快捷键帮助含 F3 条目", page.getByText(/F3/).first().isVisible());
   await closeOverlays(page);
 
-  // 32 失效对象找回（状态栏徽标 → toast 反馈）
-  await page.getByText("个失效 · 尝试找回").click();
-  await settle(900);
+  // 32 失效项目复核（状态栏徽标 → 复核弹窗 → 找回失败 toast）
+  await page.getByText("个失效 · 待处理").click();
+  await page.getByRole("dialog", { name: "失效项目" }).waitFor();
+  await settle(400);
+  await shot(page, "missing-review-失效项目复核");
+  await check("失效复核弹窗打开", page.getByRole("dialog", { name: "失效项目" }).isVisible());
+  await page.getByRole("button", { name: "尝试找回全部失效项" }).click();
+  await page.getByText("未能自动找回失效项目").waitFor({ timeout: 10_000 });
+  await settle(400);
   await shot(page, "missing-relocate-失效对象找回反馈");
+  await closeOverlays(page);
+  await page.getByRole("dialog", { name: "失效项目" }).waitFor({ state: "detached" });
 
   // 33 空库引导：全选 → 批量移除（确认弹窗）→ 空库空态。
   //    demo 后端为页面内存态，随后 reload 即复位为初始演示数据集。
@@ -588,8 +618,8 @@ async function featureTour(page) {
   await page.keyboard.press("Delete");
   await settle(400);
   await shot(page, "remove-confirm-批量移除确认");
-  await check("批量移除确认弹窗打开", page.getByRole("dialog", { name: "从库中移除" }).isVisible());
-  await page.getByRole("dialog", { name: "从库中移除" }).getByRole("button", { name: "从库中移除" }).click();
+  await check("批量移除确认弹窗打开", page.getByRole("dialog", { name: "移除项目" }).isVisible());
+  await page.getByRole("dialog", { name: "移除项目" }).getByRole("button", { name: "仅出库", exact: true }).click();
   await settle(700);
   await shot(page, "empty-library-空库引导");
   await check("空库引导出现「暂无项目」", page.getByText("暂无项目").isVisible());

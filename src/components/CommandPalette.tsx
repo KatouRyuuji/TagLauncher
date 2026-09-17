@@ -8,6 +8,7 @@ import {
   Filter,
   FolderPlus,
   Grid3X3,
+  Images,
   Info,
   Keyboard,
   List,
@@ -18,6 +19,7 @@ import {
   Settings2,
   Star,
   Tags,
+  TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
@@ -36,10 +38,12 @@ import type { ItemWithTags } from "../types";
 const PALETTE_PRIMARY = new Set([
   "search",
   "grid",
+  "icons",
   "list",
   "favorites",
   "recent",
   "clear",
+  "missing-review",
   "add-files",
   "add-folders",
   "settings",
@@ -149,10 +153,12 @@ export function CommandPalette({
   const commands = useMemo<CommandDef[]>(() => [
     { id: "search", title: "聚焦搜索", hint: "/", keywords: "search 搜索 find", icon: Search, run: () => focusWorkspaceSearch() },
     { id: "grid", title: "网格视图", hint: "G", keywords: "grid 网格", icon: Grid3X3, run: () => setViewMode("grid") },
+    { id: "icons", title: "大图标视图", hint: "I", keywords: "icons 大图标 封面", icon: Images, run: () => setViewMode("icons") },
     { id: "list", title: "列表视图", hint: "L", keywords: "list 列表", icon: List, run: () => setViewMode("list") },
     { id: "favorites", title: showFavorites ? "退出收藏夹" : "打开收藏夹", keywords: "favorite 收藏 星标", icon: Star, run: () => setShowFavorites(!showFavorites) },
     { id: "recent", title: showRecent ? "退出最近使用" : "最近使用", keywords: "recent 最近 历史", icon: Clock3, run: () => setShowRecent(!showRecent) },
     { id: "clear", title: "清空筛选", keywords: "clear 重置 筛选", icon: RotateCcw, run: () => { clearWorkspaceFilters(); resetWorkspaceSearchInput(); } },
+    { id: "missing-review", title: "查看失效项目", keywords: "missing 失效 丢失 找回", icon: TriangleAlert, run: () => useAppStore.getState().setMissingReviewOpen(true) },
     ...SORT_OPTIONS.map((option) => ({
       id: `sort-${option.value}`,
       title: `排序：${option.label}`,
@@ -405,7 +411,7 @@ export function CommandPalette({
         </div>
         <div className="flex min-h-9 items-center justify-between border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 text-[13px] text-[var(--text-faint)]">
           <span className="flex items-center gap-2"><span className="status-led" aria-hidden="true" />命令索引就绪</span>
-          <span className="data-readout">{matchedCommands.length} 命令 · {matchedItems.length} 对象</span>
+          <span className="data-readout">{matchedCommands.length} 命令 · {matchedItems.length} 项目</span>
         </div>
       </div>
     </div>,

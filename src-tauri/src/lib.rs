@@ -224,8 +224,11 @@ pub fn run() {
             // 项目 CRUD
             add_item,
             add_items,
+            classify_import_paths,
+            expand_folder_import,
             remove_item,
             remove_items,
+            remove_items_and_files,
             set_many_item_tags,
             update_item_icon,
             get_items,

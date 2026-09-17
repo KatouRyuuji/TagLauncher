@@ -7,11 +7,14 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { gridOverscanRows, setWorkspaceGridLanes } from "../lib/workspaceChrome";
 import type { ContextSelectionInfo } from "./ItemCard";
+import { useAppStore } from "../stores/appStore";
 
 /** 网格行间距（12px），与骨架屏的 gap-3 保持一致。 */
 const GRID_GAP = 12;
 /** 卡片行初始估算高度（含 gap）；真实高度由 measureElement 动态校正，避免标签裁剪 */
 const GRID_ROW_EST = 200;
+const ICONS_ROW_EST = 228;
+const FALLBACK_ICON_COL_MIN = 168;
 
 /**
  * 行高测量：始终读取真实 DOM 高度（ResizeObserver 回调用 borderBoxSize 保留亚像素精度，
@@ -33,18 +36,21 @@ function measureGridRow(element: HTMLElement, entry: ResizeObserverEntry | undef
  * 注意：主题运行时切换该变量不会触发 lanes 重算（resize 才会），内置主题均为 256，可接受。
  */
 const FALLBACK_COL_MIN = 256;
-function gridColMin(): number {
-  if (typeof window === "undefined") return FALLBACK_COL_MIN;
-  const raw = getComputedStyle(document.documentElement).getPropertyValue("--grid-col-min").trim();
+function gridColMin(iconLayout: boolean): number {
+  if (typeof window === "undefined") return iconLayout ? FALLBACK_ICON_COL_MIN : FALLBACK_COL_MIN;
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(iconLayout ? "--grid-col-min-icons" : "--grid-col-min")
+    .trim();
   const value = parseFloat(raw);
-  return Number.isFinite(value) && value > 0 ? value : FALLBACK_COL_MIN;
+  const fallback = iconLayout ? FALLBACK_ICON_COL_MIN : FALLBACK_COL_MIN;
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 /** 首帧前的列数粗估，避免 lanes=1 闪烁（useLayoutEffect 会立即精确校正） */
-function estimateInitialLanes(): number {
-  if (typeof window === "undefined") return 4;
+function estimateInitialLanes(iconLayout: boolean): number {
+  if (typeof window === "undefined") return iconLayout ? 6 : 4;
   const approxContent = Math.max(320, window.innerWidth - 300);
-  return Math.max(1, Math.floor((approxContent + GRID_GAP) / (gridColMin() + GRID_GAP)));
+  return Math.max(1, Math.floor((approxContent + GRID_GAP) / (gridColMin(iconLayout) + GRID_GAP)));
 }
 
 type ItemCardViewProps = Omit<
@@ -63,11 +69,13 @@ const ItemGridCard = memo(function ItemGridCard({
   viewProps,
   selected,
   contextSelection,
+  variant,
 }: {
   item: ItemViewProps["items"][number];
   viewProps: ItemCardViewProps;
   selected: boolean;
   contextSelection: ContextSelectionInfo | null;
+  variant: "card" | "icon";
 }) {
   const {
     tags,
@@ -107,6 +115,7 @@ const ItemGridCard = memo(function ItemGridCard({
       onUpdateThumbnail={onUpdateThumbnail}
       selected={selected}
       contextSelection={contextSelection}
+      variant={variant}
     />
   );
 });
@@ -134,6 +143,9 @@ export function ItemGrid({
   onClearFilters,
   onAddItems,
 }: ItemViewProps) {
+  const viewMode = useAppStore((state) => state.viewMode);
+  const iconLayout = viewMode === "icons";
+  const rowEstimate = iconLayout ? ICONS_ROW_EST : GRID_ROW_EST;
   const viewProps = useMemo(() => ({
     tags,
     cabinets,
@@ -170,7 +182,7 @@ export function ItemGrid({
   const itemIds = useMemo(() => items.map((item) => item.id), [items]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [lanes, setLanes] = useState(estimateInitialLanes);
+  const [lanes, setLanes] = useState(() => estimateInitialLanes(iconLayout));
   const rowCount = Math.ceil(items.length / Math.max(1, lanes));
 
   // 记录每一行的虚拟化测量位置与高度；缺失行用 estimate 估算。
@@ -181,9 +193,9 @@ export function ItemGrid({
     if (!el) return;
     const style = getComputedStyle(el);
     const w = el.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
-    const next = Math.max(1, Math.floor((w + GRID_GAP) / (gridColMin() + GRID_GAP)));
+    const next = Math.max(1, Math.floor((w + GRID_GAP) / (gridColMin(iconLayout) + GRID_GAP)));
     setLanes((prev) => (prev === next ? prev : next));
-  }, []);
+  }, [iconLayout]);
 
   // 首帧同步精确测量列数（在浏览器绘制前），消除卡片"全宽闪烁"
   useLayoutEffect(() => {
@@ -207,7 +219,7 @@ export function ItemGrid({
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => GRID_ROW_EST,
+    estimateSize: () => rowEstimate,
     // 行高测量走自定义 measureGridRow：挂载与尺寸变化都读真实 DOM 高度，
     // 不信任 itemSizeCache 的残留值（见 measureGridRow 注释）。
     measureElement: measureGridRow,
@@ -216,7 +228,7 @@ export function ItemGrid({
     // 会让行 DOM 滞留旧内容的测量语义，行高与内容错位积累，表现为行间间隙/重叠。
     getItemKey: (index) => {
       const first = items[index * lanes];
-      return first ? `${first.id}@${lanes}` : index;
+      return first ? `${first.id}@${lanes}@${iconLayout ? "icons" : "grid"}` : index;
     },
     // 列数自适应 overscan：一行卡片越多预渲染越贵，行数相应减少
     overscan: gridOverscanRows(lanes),
@@ -234,7 +246,7 @@ export function ItemGrid({
   // lanes 变化后行数重排，旧行索引的度量对应到错误的行，清空等待重新测量，避免框选短暂错位
   useLayoutEffect(() => {
     rowMetricsRef.current.clear();
-  }, [lanes, items]);
+  }, [lanes, items, iconLayout]);
 
   // 行高重测无需 virtualizer.measure()：getItemKey 已按内容身份变化触发
   // measureElement 重测；同 key 行的纯高度变化（编辑标签等）由虚拟器内部
@@ -294,8 +306,8 @@ export function ItemGrid({
     const map = new Map<number, Rect>();
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
       const metric = rowMetricsRef.current.get(rowIndex);
-      const rowStart = metric?.start ?? rowIndex * GRID_ROW_EST;
-      const rowSize = metric?.size ?? GRID_ROW_EST;
+      const rowStart = metric?.start ?? rowIndex * rowEstimate;
+      const rowSize = metric?.size ?? rowEstimate;
 
       for (let colIndex = 0; colIndex < lanes; colIndex++) {
         const itemIndex = rowIndex * lanes + colIndex;
@@ -308,10 +320,10 @@ export function ItemGrid({
       }
     }
     return map;
-  }, [lanes, rowCount, items]);
+  }, [lanes, rowCount, items, rowEstimate]);
 
   if (loading) {
-    return <WorkspaceSkeleton view="grid" />;
+    return <WorkspaceSkeleton view={iconLayout ? "icons" : "grid"} />;
   }
 
   if (items.length === 0) {
@@ -332,7 +344,7 @@ export function ItemGrid({
       <div
         data-region="item-grid-inner"
         role="list"
-        aria-label="对象列表"
+        aria-label="项目列表"
         style={{ height: virtualizer.getTotalSize(), position: "relative" }}
       >
         {virtualizer.getVirtualItems().map((vRow) => {
@@ -366,6 +378,7 @@ export function ItemGrid({
                   viewProps={viewProps}
                   selected={selectedItemIdSet.has(item.id)}
                   contextSelection={selectedItemIdSet.has(item.id) ? contextSelectionInfo : null}
+                  variant={iconLayout ? "icon" : "card"}
                 />
               ))}
             </div>

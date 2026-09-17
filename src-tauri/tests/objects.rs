@@ -4,7 +4,7 @@
 
 mod common;
 
-use tag_launcher_lib::services::item_service;
+use tag_launcher_lib::services::{import_paths, item_service};
 
 /// add_items：批内单项失败（空路径）被隔离，不阻断整批其余项落库。
 #[test]
@@ -186,4 +186,42 @@ fn set_favorites_batch_and_idempotent() {
     assert_eq!(got[0].item.id, b.id, "仅 b 仍收藏排最前");
 
     item_service::set_favorites(&conn, &[], true).expect("empty is no-op");
+}
+
+/// 展开文件夹：收入嵌套文件，不把文件夹本身加入结果。
+#[test]
+fn expand_folder_import_collects_nested_files() {
+    let t = common::temp_db();
+    let folder = common::make_dir(&t.dir, "library");
+    let video = common::write_file(&t.dir, "library/movie.mp4", b"v");
+    let nested = common::write_file(&t.dir, "library/sub/cover.png", b"p");
+    let _junk = common::write_file(&t.dir, "library/desktop.ini", b"x");
+
+    let classified = import_paths::classify_import_paths(vec![folder.clone()]);
+    assert_eq!(classified.folders, vec![folder.clone()]);
+    assert!(classified.files.is_empty());
+
+    let expanded = import_paths::expand_folder_import(vec![folder]);
+    assert!(!expanded.truncated);
+    assert_eq!(expanded.paths.len(), 2, "{:?}", expanded.paths);
+    assert!(expanded.paths.iter().any(|path| path.ends_with("movie.mp4")), "missing {video} in {:?}", expanded.paths);
+    assert!(expanded.paths.iter().any(|path| path.ends_with("cover.png")), "missing {nested} in {:?}", expanded.paths);
+}
+
+/// 删除源文件：真实文件进回收站后出库。
+#[test]
+fn remove_items_and_files_recycles_real_file() {
+    let t = common::temp_db();
+    let path = common::write_file(&t.dir, "recycle-me.exe", b"bye");
+    let conn = t.db.get_conn();
+    let item = item_service::add_item(&conn, &path).unwrap();
+
+    let result = item_service::remove_items_and_files(&conn, &[item.id]).expect("recycle");
+    assert_eq!(result.removed_ids, vec![item.id]);
+    assert!(result.failed.is_empty());
+    assert!(!std::path::Path::new(&path).exists(), "源文件应离开原路径");
+    let remaining: i64 = conn
+        .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(remaining, 0);
 }

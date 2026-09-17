@@ -1,7 +1,9 @@
 pub mod cabinet_service;
 pub mod file_identity;
 pub mod icon_service;
+pub mod import_paths;
 pub mod item_service;
+pub mod recycle_bin;
 pub mod launch_service;
 pub mod object_preview_service;
 pub mod path_service;

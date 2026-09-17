@@ -13,6 +13,8 @@ const OVERLAY_FILES = [
   "src/components/MigrationDialog.tsx",
   "src/components/ModManagerPanel.tsx",
   "src/components/QuickPreview.tsx",
+  "src/components/AddFolderImportDialog.tsx",
+  "src/components/MissingItemsReviewDialog.tsx",
   "src/components/RemoveFromAppConfirmDialog.tsx",
   "src/components/SettingsPanel.tsx",
   "src/components/ShortcutsHelp.tsx",

@@ -24,7 +24,7 @@ export interface ExternalFileDropHandlers {
 }
 
 export interface UseExternalFileDropResult {
-  /** 是否正在外部文件拖拽悬停（用于显示"释放以添加文件"遮罩）。 */
+  /** 是否正在外部文件拖拽悬停（用于显示「释放以加入库」遮罩）。 */
   dragOver: boolean;
   /** 绑定到主内容区的 DOM 拖拽事件处理器。 */
   dragHandlers: ExternalFileDropHandlers;

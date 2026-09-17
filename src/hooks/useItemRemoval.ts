@@ -5,108 +5,132 @@
 // 需要确认时挂起待删集合并交由 RemoveFromAppConfirmDialog 渲染，确认后落库
 // 并把被删 id 从选中集清除。单个与批量统一走 removeItems 原子批量命令，
 // 不再单删/批量两条路径落到不同后端命令。
+// 「下次不再确认」只作用于仅出库；删除本地文件始终弹确认。
 // ============================================================================
 
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 
 const SKIP_REMOVE_ITEM_CONFIRM_KEY = "taglauncher.skip_remove_item_confirm";
 
 /** 请求批量移除当前选中集事件：ContextMenu 多选删除走此通道（拿不到本 hook 的回调）。 */
 export const BATCH_REMOVE_REQUEST_EVENT = "taglauncher-request-batch-remove";
 
+export type RemoveFromAppMode = "library" | "files";
+
+export interface RemoveConfirmItem {
+  name: string;
+  path: string;
+  type: string;
+}
+
+export interface RemoveItemsOptions {
+  deleteFiles?: boolean;
+}
+
 interface UseItemRemovalParams {
-  removeItems: (ids: number[]) => Promise<void>;
+  removeItems: (ids: number[], options?: RemoveItemsOptions) => Promise<void>;
   selectedItemIds: number[];
   setSelectedItemIds: Dispatch<SetStateAction<number[]>>;
+  items: Array<{ id: number; name: string; path: string; type: string }>;
+}
+
+export interface RemoveRequestOptions {
+  forceDialog?: boolean;
+  preferDeleteFiles?: boolean;
 }
 
 export interface RemoveConfirmDialogProps {
   open: boolean;
-  itemCount: number;
+  items: RemoveConfirmItem[];
   skipNextTime: boolean;
+  preferDeleteFiles: boolean;
   onSkipNextTimeChange: (v: boolean) => void;
-  onConfirm: () => Promise<void>;
+  onConfirm: (mode: RemoveFromAppMode) => Promise<void>;
   onCancel: () => void;
 }
 
 export interface UseItemRemovalResult {
   /** 请求移除单个对象（可能直接删除或弹确认）。 */
-  requestRemoveFromApp: (itemId: number) => Promise<void>;
+  requestRemoveFromApp: (itemId: number, options?: RemoveRequestOptions) => Promise<void>;
   /** 请求批量移除当前选中对象（可能直接删除或弹确认）。 */
-  requestBatchRemoveFromApp: () => Promise<void>;
+  requestBatchRemoveFromApp: (options?: RemoveRequestOptions) => Promise<void>;
   /** 直接展开给 RemoveFromAppConfirmDialog 的 props。 */
   removeDialog: RemoveConfirmDialogProps;
+}
+
+function readSkipConfirm(): boolean {
+  try {
+    return localStorage.getItem(SKIP_REMOVE_ITEM_CONFIRM_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 export function useItemRemoval({
   removeItems,
   selectedItemIds,
   setSelectedItemIds,
+  items,
 }: UseItemRemovalParams): UseItemRemovalResult {
   const [pendingRemoveItemId, setPendingRemoveItemId] = useState<number | null>(null);
   const [pendingBatchRemoveItemIds, setPendingBatchRemoveItemIds] = useState<number[] | null>(null);
   const [skipRemoveItemConfirm, setSkipRemoveItemConfirm] = useState(false);
+  const [preferDeleteFiles, setPreferDeleteFiles] = useState(false);
 
-  const requestRemoveFromApp = useCallback(
-    async (itemId: number) => {
-      let skipConfirm = false;
-      try {
-        skipConfirm = localStorage.getItem(SKIP_REMOVE_ITEM_CONFIRM_KEY) === "1";
-      } catch {
-        skipConfirm = false;
-      }
-
-      if (skipConfirm) {
-        await removeItems([itemId]);
-        setSelectedItemIds((current) => current.filter((id) => id !== itemId));
-        return;
-      }
-
-      setSkipRemoveItemConfirm(false);
-      setPendingRemoveItemId(itemId);
+  const commitRemove = useCallback(
+    async (itemIds: number[], deleteFiles: boolean) => {
+      await removeItems(itemIds, { deleteFiles });
+      setSelectedItemIds((current) => current.filter((id) => !itemIds.includes(id)));
     },
     [removeItems, setSelectedItemIds],
   );
 
-  const requestBatchRemoveFromApp = useCallback(async () => {
+  const requestRemoveFromApp = useCallback(
+    async (itemId: number, options?: RemoveRequestOptions) => {
+      const skipConfirm = !options?.forceDialog && !options?.preferDeleteFiles && readSkipConfirm();
+      if (skipConfirm) {
+        await commitRemove([itemId], false);
+        return;
+      }
+
+      setSkipRemoveItemConfirm(false);
+      setPreferDeleteFiles(options?.preferDeleteFiles === true);
+      setPendingRemoveItemId(itemId);
+    },
+    [commitRemove],
+  );
+
+  const requestBatchRemoveFromApp = useCallback(async (options?: RemoveRequestOptions) => {
     if (selectedItemIds.length === 0) return;
 
-    let skipConfirm = false;
-    try {
-      skipConfirm = localStorage.getItem(SKIP_REMOVE_ITEM_CONFIRM_KEY) === "1";
-    } catch {
-      skipConfirm = false;
-    }
-
+    const skipConfirm = !options?.forceDialog && !options?.preferDeleteFiles && readSkipConfirm();
     if (skipConfirm) {
-      await removeItems(selectedItemIds);
-      setSelectedItemIds([]);
+      await commitRemove(selectedItemIds, false);
       return;
     }
 
     setSkipRemoveItemConfirm(false);
+    setPreferDeleteFiles(options?.preferDeleteFiles === true);
     setPendingBatchRemoveItemIds(selectedItemIds);
-  }, [removeItems, selectedItemIds, setSelectedItemIds]);
+  }, [commitRemove, selectedItemIds]);
 
-  const handleConfirmRemoveFromApp = useCallback(async () => {
+  const handleConfirmRemoveFromApp = useCallback(async (mode: RemoveFromAppMode) => {
     const itemIds = pendingBatchRemoveItemIds ?? (pendingRemoveItemId === null ? [] : [pendingRemoveItemId]);
     if (itemIds.length === 0) return;
 
-    // 乐观关闭对话框；失败提示由 removeItems 内部 withErrorToast 统一弹出，
-    // 这里捕获 rejection 只是为了不产生未处理的 Promise 拒绝。
+    const deleteFiles = mode === "files";
     setPendingRemoveItemId(null);
     setPendingBatchRemoveItemIds(null);
     try {
-      await removeItems(itemIds);
+      await commitRemove(itemIds, deleteFiles);
     } catch {
-      // 移除失败：不写入"下次跳过"偏好、不清选中集，便于用户修正后重试
       setSkipRemoveItemConfirm(false);
+      setPreferDeleteFiles(false);
       return;
     }
 
-    // 移除成功后才持久化"本次不再确认"偏好，避免失败操作污染偏好
     try {
-      if (skipRemoveItemConfirm) {
+      if (skipRemoveItemConfirm && !deleteFiles) {
         localStorage.setItem(SKIP_REMOVE_ITEM_CONFIRM_KEY, "1");
       }
     } catch {
@@ -114,29 +138,46 @@ export function useItemRemoval({
     }
 
     setSkipRemoveItemConfirm(false);
-    setSelectedItemIds((current) => current.filter((itemId) => !itemIds.includes(itemId)));
-  }, [pendingBatchRemoveItemIds, pendingRemoveItemId, removeItems, skipRemoveItemConfirm, setSelectedItemIds]);
+    setPreferDeleteFiles(false);
+  }, [commitRemove, pendingBatchRemoveItemIds, pendingRemoveItemId, skipRemoveItemConfirm]);
 
   const handleCancelRemoveFromApp = useCallback(() => {
     setPendingRemoveItemId(null);
     setPendingBatchRemoveItemIds(null);
     setSkipRemoveItemConfirm(false);
+    setPreferDeleteFiles(false);
   }, []);
 
-  // 右键菜单命中多选集时的「删除」经由事件到达，与 Delete 键走同一确认流
   useEffect(() => {
-    const handler = () => { void requestBatchRemoveFromApp(); };
+    const handler = (event: Event) => {
+      const detail = event instanceof CustomEvent ? event.detail as { deleteFiles?: boolean } | undefined : undefined;
+      const deleteFiles = detail?.deleteFiles === true;
+      void requestBatchRemoveFromApp({
+        forceDialog: deleteFiles,
+        preferDeleteFiles: deleteFiles,
+      });
+    };
     window.addEventListener(BATCH_REMOVE_REQUEST_EVENT, handler);
     return () => window.removeEventListener(BATCH_REMOVE_REQUEST_EVENT, handler);
   }, [requestBatchRemoveFromApp]);
+
+  const pendingItems = useMemo(() => {
+    const ids = pendingBatchRemoveItemIds ?? (pendingRemoveItemId === null ? [] : [pendingRemoveItemId]);
+    const byId = new Map(items.map((item) => [item.id, item]));
+    return ids.flatMap((id) => {
+      const item = byId.get(id);
+      return item ? [{ name: item.name, path: item.path, type: item.type }] : [];
+    });
+  }, [items, pendingBatchRemoveItemIds, pendingRemoveItemId]);
 
   return {
     requestRemoveFromApp,
     requestBatchRemoveFromApp,
     removeDialog: {
       open: pendingRemoveItemId !== null || pendingBatchRemoveItemIds !== null,
-      itemCount: pendingBatchRemoveItemIds?.length ?? 1,
+      items: pendingItems,
       skipNextTime: skipRemoveItemConfirm,
+      preferDeleteFiles,
       onSkipNextTimeChange: setSkipRemoveItemConfirm,
       onConfirm: handleConfirmRemoveFromApp,
       onCancel: handleCancelRemoveFromApp,

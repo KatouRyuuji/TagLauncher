@@ -11,6 +11,7 @@ import { MigrationDialog } from "./components/MigrationDialog";
 import { InternalDragGhost, ItemDropActions } from "./components/InternalDragOverlays";
 import { BatchSelectionToolbar } from "./components/BatchSelectionToolbar";
 import { RemoveFromAppConfirmDialog } from "./components/RemoveFromAppConfirmDialog";
+import { AddFolderImportDialog } from "./components/AddFolderImportDialog";
 import { AiTaggingModal } from "./components/AiTaggingModal";
 import { StatusBar } from "./components/StatusBar";
 import { TagFilterBar } from "./components/TagFilterBar";
@@ -19,6 +20,7 @@ import { useTags } from "./hooks/useTags";
 import { useCabinets } from "./hooks/useCabinets";
 import { useTagRelations } from "./hooks/useTagRelations";
 import { useExternalFileDrop } from "./hooks/useExternalFileDrop";
+import { useFolderImport } from "./hooks/useFolderImport";
 import { useSidebarPanels } from "./hooks/useSidebarPanels";
 import { useItemTagActions } from "./hooks/useItemTagActions";
 import { useItemRemoval } from "./hooks/useItemRemoval";
@@ -134,8 +136,10 @@ function App() {
     }
   });
 
+  const { requestAddPaths, folderImportDialog } = useFolderImport(addItems);
+
   // 外部文件拖拽导入（原生 + DOM 双通道，dragOver 遮罩 + 落点去重）
-  const { dragOver, dragHandlers } = useExternalFileDrop(addItems);
+  const { dragOver, dragHandlers } = useExternalFileDrop(requestAddPaths);
 
   // Sidebar 位置的 Mod 面板
   const sidebarPanels = useSidebarPanels();
@@ -188,6 +192,7 @@ function App() {
     removeItems,
     selectedItemIds,
     setSelectedItemIds,
+    items: allItems,
   });
 
   // 启动去抖：同一对象 300ms 内只真正启动一次，避免双击重复拉起进程。
@@ -279,9 +284,9 @@ function App() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [mobileSidebarOpen]);
 
-  // 库内失效对象计数（文件丢失/跨盘移动）：状态栏徽标 + 手动找回入口
-  const missingCount = useMemo(
-    () => allItems.reduce((count, item) => count + (item.is_missing ? 1 : 0), 0),
+  // 库内失效对象（文件丢失/跨盘移动）：状态栏待处理列表 + 手动找回
+  const missingItems = useMemo(
+    () => allItems.filter((item) => item.is_missing),
     [allItems],
   );
 
@@ -344,7 +349,7 @@ function App() {
     onSelectItems: handleSelectItems,
     libraryEmpty: allItems.length === 0,
     onClearFilters: handleClearFilters,
-    onAddItems: addItems,
+    onAddItems: requestAddPaths,
   };
 
   return (
@@ -398,16 +403,16 @@ function App() {
         <h1 id="workspace-heading" className="sr-only">
           TagLauncher 启动工作台
         </h1>
-        <SearchBar onAddItems={addItems} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} hasLibraryItems={allItems.length > 0} />
+        <SearchBar onAddItems={requestAddPaths} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} hasLibraryItems={allItems.length > 0} />
         {allItems.length > 0 && <TagFilterBar />}
         {/* 加载失败且本地无任何缓存时渲染可重试的错误面板；有缓存时保留旧列表，
             失败已由 toast 提示，避免把可用数据替换成错误页。 */}
         {loadError && !loading && allItems.length === 0 ? (
           <WorkspaceLoadError message={loadError} onRetry={() => { void refresh(); }} />
-        ) : viewMode === "grid" ? (
-          <ItemGrid {...viewProps} />
-        ) : (
+        ) : viewMode === "list" ? (
           <ItemListView {...viewProps} />
+        ) : (
+          <ItemGrid {...viewProps} />
         )}
         <BatchSelectionToolbar
           selectedCount={isDraggingItem ? 0 : selectedItemIds.length}
@@ -437,8 +442,9 @@ function App() {
           visibleCount={items.length}
           selectedCount={selectedItemIds.length}
           libraryCount={allItems.length}
-          missingCount={missingCount}
+          missingItems={missingItems}
           onRelocateMissing={relocateMissing}
+          onRemoveMissing={removeItems}
         />
         <ItemDropActions
           visible={isDraggingItem}
@@ -451,8 +457,8 @@ function App() {
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
                 <Import aria-hidden="true" size={28} strokeWidth={1.8} />
               </div>
-              <p className="text-[var(--accent-primary)] text-base font-semibold">释放以添加文件</p>
-              <p className="mt-1 text-xs text-[var(--text-muted)]">支持文件、图片和文件夹批量导入</p>
+              <p className="text-[var(--accent-primary)] text-base font-semibold">释放以加入库（文件或文件夹）</p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">文件柜是分组，不会移动磁盘上的文件</p>
             </div>
           </div>
         )}
@@ -466,19 +472,26 @@ function App() {
         {commandPaletteOpen && <CommandPalette
           items={allItems}
           onLaunch={(id) => { void handleLaunchItem(id); }}
-          onAddItems={addItems}
+          onAddItems={requestAddPaths}
           onRefresh={refresh}
           onOpenSettings={() => setShowSettings(true)}
           onOpenAbout={handleOpenAbout}
         />}
       </Suspense>
       <Suspense fallback={null}>
-        {previewItemId !== null && <QuickPreview items={allItems} onLaunch={(id) => { void handleLaunchItem(id); }} />}
+        {previewItemId !== null && (
+          <QuickPreview
+            items={allItems}
+            onLaunch={(id) => { void handleLaunchItem(id); }}
+            onAddItems={requestAddPaths}
+          />
+        )}
       </Suspense>
       <Suspense fallback={null}>
         {shortcutsHelpOpen && <ShortcutsHelp />}
       </Suspense>
       <RemoveFromAppConfirmDialog {...removeDialog} />
+      <AddFolderImportDialog {...folderImportDialog} />
       <Suspense fallback={null}>
         {showSettings && <SettingsPanel open onClose={() => setShowSettings(false)} />}
       </Suspense>

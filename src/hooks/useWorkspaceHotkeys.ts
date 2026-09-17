@@ -304,6 +304,10 @@ export function useWorkspaceHotkeys({
         ctx.setViewMode("grid");
         return;
       }
+      if (!ctrl && (event.key === "i" || event.key === "I")) {
+        ctx.setViewMode("icons");
+        return;
+      }
       if (!ctrl && (event.key === "l" || event.key === "L")) {
         ctx.setViewMode("list");
         return;

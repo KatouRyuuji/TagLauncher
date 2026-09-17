@@ -306,7 +306,7 @@ export function ItemListView({
 
         {/* 虚拟化列表：position:relative 撑开滚动高度；行用 top 定位（非 transform，
             否则会令行内右键菜单等 position:fixed 元素错位），高度由 measureElement 动态测量。 */}
-        <div ref={rowContainerRef} role="list" aria-label="对象列表" style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+        <div ref={rowContainerRef} role="list" aria-label="项目列表" style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {virtualizer.getVirtualItems().map((vRow) => {
             const item = items[vRow.index]!;
             return (

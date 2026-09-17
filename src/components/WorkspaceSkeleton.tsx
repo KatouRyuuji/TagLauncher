@@ -12,15 +12,34 @@ import { ITEM_LIST_BASE_ROW_HEIGHT, ITEM_LIST_GRID_TEMPLATE } from "./ItemRow";
 const SKELETON_CARD_COUNT = 12;
 const SKELETON_ROW_COUNT = 9;
 
-export function WorkspaceSkeleton({ view }: { view: "grid" | "list" }) {
+export function WorkspaceSkeleton({ view }: { view: "grid" | "list" | "icons" }) {
   return (
     <div
-      className={view === "grid" ? "flex-1 overflow-hidden p-4" : "flex-1 overflow-hidden"}
+      className={view === "list" ? "flex-1 overflow-hidden" : "flex-1 overflow-hidden p-4"}
       role="status"
       aria-label="正在加载项目数据"
       data-region="workspace-skeleton"
     >
-      {view === "grid" ? <SkeletonGrid /> : <SkeletonList />}
+      {view === "list" ? <SkeletonList /> : view === "icons" ? <SkeletonIcons /> : <SkeletonGrid />}
+    </div>
+  );
+}
+
+function SkeletonIcons() {
+  return (
+    <div
+      className="grid gap-3"
+      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(var(--grid-col-min-icons), 1fr))" }}
+    >
+      {Array.from({ length: SKELETON_CARD_COUNT }, (_, index) => (
+        <div
+          key={index}
+          className="flex flex-col items-center rounded-[var(--radius-xl)] border border-[var(--line-hairline)] bg-[var(--surface-raised)] p-2.5 shadow-[var(--shadow-card)]"
+        >
+          <div className="skeleton-block aspect-square w-full rounded-[var(--radius-lg)]" />
+          <div className="skeleton-block mt-2 h-3 w-3/4" />
+        </div>
+      ))}
     </div>
   );
 }
