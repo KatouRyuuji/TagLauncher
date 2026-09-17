@@ -67,9 +67,16 @@ export function subscribeItemVisual(item: Item, listener: Listener): () => void 
   }
   const key = itemVisualKey(item);
   let entry = entries.get(key);
+  // TTL 只淘汰可丢的缓存。仍有订阅或在途请求时保留同一条目并重新拉取，
+  // 避免第二个组件挂载时把第一个组件的 listener 一起删掉。
   if (entry?.value !== undefined && entry.expiresAt <= Date.now()) {
-    entries.delete(key);
-    entry = undefined;
+    if (entry.running || entry.listeners.size > 0) {
+      entry.value = undefined;
+      entry.expiresAt = 0;
+    } else {
+      entries.delete(key);
+      entry = undefined;
+    }
   }
   if (!entry) {
     entry = { item, listeners: new Set(), running: false, expiresAt: 0 };

@@ -13,6 +13,7 @@ pub mod sync_commands;
 pub mod synonym_commands;
 pub mod tag_commands;
 pub mod update_commands;
+pub mod watch_commands;
 
 pub use ai_commands::*;
 pub use cabinet_commands::*;
@@ -29,3 +30,4 @@ pub use sync_commands::*;
 pub use synonym_commands::*;
 pub use tag_commands::*;
 pub use update_commands::*;
+pub use watch_commands::*;

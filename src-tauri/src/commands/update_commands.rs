@@ -131,12 +131,13 @@ fn current_is_older(current: &str, latest: &str) -> bool {
 
 /// 从 Release 资产列表中挑选匹配当前架构的 Windows 安装包。
 /// tauri NSIS 产物命名形如 `TagLauncher_1.4.0_x64-setup.exe` / `..._arm64-setup.exe`。
-/// 优先精确匹配架构后缀；不认识的架构或找不到时回退第一个 .exe 资产。
+/// 已知架构（x64 / arm64）只接受精确后缀；找不到时返回空，前端回退 Release 页。
+/// 无法识别的架构才回退第一个合法 .exe，避免 x64 用户拿到 arm64 包。
 fn pick_installer_asset(assets: &[serde_json::Value], arch: &str) -> (String, u64) {
-    let arch_token = match arch {
-        "x86_64" => "x64",
-        "aarch64" => "arm64",
-        other => other,
+    let (arch_token, known_arch) = match arch {
+        "x86_64" => ("x64", true),
+        "aarch64" => ("arm64", true),
+        other => (other, false),
     };
     let wanted_suffix = format!("_{}-setup.exe", arch_token);
 
@@ -152,7 +153,7 @@ fn pick_installer_asset(assets: &[serde_json::Value], arch: &str) -> (String, u6
         if lower.ends_with(&wanted_suffix) {
             return (url.to_string(), size);
         }
-        if lower.ends_with(".exe") && fallback.is_none() {
+        if !known_arch && lower.ends_with(".exe") && fallback.is_none() {
             fallback = Some((url, size));
         }
     }
@@ -242,6 +243,22 @@ mod tests {
             "https://github.com/KatouRyuuji/TagLauncher/releases/download/2.0.0/arm64.exe"
         );
         assert_eq!(size, 111);
+    }
+
+    #[test]
+    fn known_arch_without_matching_suffix_returns_empty() {
+        let json: serde_json::Value = serde_json::from_str(
+            r#"{
+                "assets": [
+                    {"name": "TagLauncher_2.0.0_arm64-setup.exe", "browser_download_url": "https://github.com/KatouRyuuji/TagLauncher/releases/download/2.0.0/arm64.exe", "size": 111}
+                ]
+            }"#,
+        )
+        .unwrap();
+        let assets = json["assets"].as_array().unwrap().as_slice();
+        let (url, size) = pick_installer_asset(assets, "x86_64");
+        assert_eq!(url, "");
+        assert_eq!(size, 0);
     }
 
     #[test]

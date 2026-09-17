@@ -1081,7 +1081,12 @@ fn scan_dir_tree(
     while let Some(dir) = stack.pop() {
         let read_dir = match std::fs::read_dir(&dir) {
             Ok(rd) => rd,
-            Err(_) => continue,
+            Err(_) => {
+                return Err(
+                    "扫描未能读完全部目录（权限不足、盘离线或枚举中断），本次未完成唯一性核验。请确认磁盘已连接后再试。"
+                        .to_string(),
+                )
+            }
         };
         for entry in read_dir.flatten() {
             if by_size.is_empty() { return Ok(()); }
@@ -1383,6 +1388,68 @@ mod tests {
         let unique = scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 1_000_000).unwrap();
         assert!(unique.is_empty(), "歧义命中不应自动回写");
 
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn unreadable_root_does_not_accept_a_single_candidate() {
+        let base = std::env::temp_dir().join(format!("tl_unreadable_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let target = base.join("candidate.bin");
+        std::fs::write(&target, b"unique-scan-bytes").unwrap();
+        let signature = file_identity::compute_signature(&target.to_string_lossy()).unwrap();
+        let rows = [MissingSignatureRow {
+            id: 1,
+            path: "D:/old.bin".into(),
+            size: signature.size,
+            head: signature.head_hash,
+            tail: signature.tail_hash,
+        }];
+        let file_as_root = target.to_string_lossy().into_owned();
+        let err = scan_signature_roots(&rows, &[file_as_root], 1_000).unwrap_err();
+        assert!(err.contains("未完成唯一性核验"), "{err}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn clone_disk_identity_keeps_independent_rows_and_tags() {
+        let base = std::env::temp_dir().join(format!("tl_clone_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let path_a = base.join("a.exe");
+        let path_b = base.join("b.exe");
+        std::fs::write(&path_a, b"clone-a-payload").unwrap();
+        std::fs::write(&path_b, b"clone-b-different").unwrap();
+        let conn = setup();
+        let item_a = add_item(&conn, &path_a.to_string_lossy()).unwrap();
+        let tag = tag_service::add_tag(&conn, "保留", "#5064d8").unwrap();
+        tag_service::set_item_tags(&conn, item_a.id, &[tag.id]).unwrap();
+        conn.execute(
+            "UPDATE items SET volume_serial = 7, file_id = '0000000000000063' WHERE id = ?1",
+            [item_a.id],
+        )
+        .unwrap();
+        let meta_b = AddFileMeta {
+            path: path_b.to_string_lossy().into_owned(),
+            name: "b.exe".into(),
+            item_type: "exe",
+            identity: Some(FileIdentity {
+                volume_serial: 7,
+                file_id: 0x63,
+            }),
+            sig: file_identity::compute_signature(&path_b.to_string_lossy()),
+        };
+        let (item_b, created) = add_one_with_meta(&conn, &meta_b).unwrap();
+        assert!(created, "克隆盘撞车应新建独立行");
+        assert_ne!(item_a.id, item_b.id);
+        let names: Vec<String> = get_item(&conn, item_a.id)
+            .unwrap()
+            .tags
+            .into_iter()
+            .map(|tag| tag.name)
+            .collect();
+        assert_eq!(names, ["保留"]);
         let _ = std::fs::remove_dir_all(&base);
     }
 

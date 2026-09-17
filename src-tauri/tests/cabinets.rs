@@ -41,6 +41,28 @@ fn cabinet_crud_roundtrip() {
     assert!(cabinet_service::get_cabinets(&conn).unwrap().is_empty());
 }
 
+#[test]
+fn cabinet_add_and_update_reject_empty_or_whitespace_name() {
+    let t = common::temp_db();
+    let conn = t.db.get_conn();
+    let cab = cabinet_service::add_cabinet(&conn, "Games", "#fff").unwrap();
+    for name in ["", "   ", "\t"] {
+        assert!(
+            cabinet_service::add_cabinet(&conn, name, "#fff")
+                .unwrap_err()
+                .contains("不能为空"),
+            "add {name:?}"
+        );
+        assert!(
+            cabinet_service::update_cabinet(&conn, cab.id, name, "#fff")
+                .unwrap_err()
+                .contains("不能为空"),
+            "update {name:?}"
+        );
+    }
+    assert_eq!(cabinet_service::get_cabinets(&conn).unwrap()[0].name, "Games");
+}
+
 /// 批量加入（幂等）与批量移除。
 #[test]
 fn batch_add_and_remove_cabinet_items() {

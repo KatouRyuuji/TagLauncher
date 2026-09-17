@@ -18,9 +18,7 @@ async function newPage(w, h) {
 async function toDarkFamily(page) {
   await page.locator('button[aria-label="设置"]').click();
   await page.waitForTimeout(400);
-  await page.locator('button[aria-label="当前主题"]').click();
-  await page.waitForTimeout(250);
-  await page.locator('[role="option"]', { hasText: "霜靛" }).first().click();
+  await page.locator('[data-theme-family-gallery] [role="radio"][aria-label="霜靛"]').click();
   await page.waitForTimeout(300);
   await page.locator('button[aria-label="关闭设置"]').click();
   await page.waitForTimeout(300);

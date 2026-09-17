@@ -10,6 +10,7 @@ import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { notifyCabinetsChanged } from "../lib/modApi";
 import { compareNames } from "../lib/itemQuery";
+import { persistPickedThemeColor } from "../lib/persistThemeColor";
 import { showToast } from "../lib/toast";
 import type { Cabinet } from "../types";
 
@@ -42,19 +43,25 @@ export function useCabinets() {
   /** 新建文件柜 */
   const addCabinet = useCallback(async (name: string, color: string) => {
     const cab = await db.addCabinet(name, color);
+    const snapped = await persistPickedThemeColor("cabinets", cab.id, cab.color);
+    const stored = snapped === cab.color ? cab : { ...cab, color: snapped };
+    if (snapped !== cab.color) {
+      await db.updateCabinet(cab.id, cab.name, snapped);
+    }
     // 局部更新：把后端返回的文件柜追加进 store 并按名称排序
-    const next = sortCabinets([...useAppStore.getState().cabinets, cab]);
+    const next = sortCabinets([...useAppStore.getState().cabinets, stored]);
     setCabinets(next);
     notifyCabinetsChanged(next);
-    return cab;
+    return stored;
   }, [setCabinets]);
 
   /** 更新文件柜名称和颜色 */
   const updateCabinet = useCallback(async (id: number, name: string, color: string) => {
-    await db.updateCabinet(id, name, color);
+    const snapped = await persistPickedThemeColor("cabinets", id, color);
+    await db.updateCabinet(id, name, snapped);
     // 局部更新：按 id 替换后重新排序（保留 created_at）
     const next = sortCabinets(
-      useAppStore.getState().cabinets.map((c) => (c.id === id ? { ...c, name, color } : c)),
+      useAppStore.getState().cabinets.map((c) => (c.id === id ? { ...c, name, color: snapped } : c)),
     );
     setCabinets(next);
     notifyCabinetsChanged(next);

@@ -10,6 +10,7 @@ import {
   FolderOpen,
   ImagePlus,
   ImageOff,
+  Radar,
   Play,
   Star,
   Tags,
@@ -75,6 +76,7 @@ export function ContextMenu({
   onRemoveItemFromCabinet,
   onUpdateThumbnail,
 }: ContextMenuProps) {
+  const [folderWatched, setFolderWatched] = useState(false);
   const [showCabinetSub, setShowCabinetSub] = useState(false);
   const [submenuToLeft, setSubmenuToLeft] = useState(false);
   const menuRef = useFocusTrap<HTMLDivElement>({ active: true });
@@ -93,6 +95,17 @@ export function ContextMenu({
     top: -9999,
     zIndex: "var(--z-context-submenu)",
   });
+
+  useEffect(() => {
+    if (item.type !== "folder") return;
+    let cancelled = false;
+    void db.getFolderWatchStatus().then((status) => {
+      if (!cancelled) setFolderWatched(status.watchedItemIds.includes(item.id));
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [item.id, item.type]);
 
   const updateMenuPosition = useCallback(() => {
     const menuEl = menuRef.current;
@@ -427,6 +440,29 @@ export function ContextMenu({
         />
         {onPreview && <MenuItem icon={Eye} label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
         <MenuItem icon={FolderOpen} label={revealMenuLabel(item.type)} onClick={() => void handleOpenFolder()} />
+        {item.type === "folder" && !item.is_missing && (
+          <MenuItem
+            icon={Radar}
+            label={folderWatched ? "停止监视此文件夹" : "监视此文件夹"}
+            checked={folderWatched}
+            onClick={async () => {
+              try {
+                const next = await db.setFolderWatch(item.id, !folderWatched);
+                setFolderWatched(next.watchedItemIds.includes(item.id));
+                showToast(
+                  next.watchedItemIds.includes(item.id)
+                    ? "已打开监视：此目录里新出现的文件会入库"
+                    : "已停止监视，已入库对象保留",
+                  "success",
+                );
+              } catch (error) {
+                showToast(`设置监视失败：${error instanceof Error ? error.message : String(error)}`, "error");
+              } finally {
+                onClose();
+              }
+            }}
+          />
+        )}
         {item.is_missing && (
           <MenuItem
             icon={TriangleAlert}
@@ -596,11 +632,13 @@ function MenuItem({
   label,
   onClick,
   accent,
+  checked,
 }: {
   icon: LucideIcon;
   label: string;
   onClick: () => void | Promise<void>;
   accent?: "danger" | "warning" | "favorite";
+  checked?: boolean;
 }) {
   const accentMap = {
     danger: {
@@ -623,6 +661,7 @@ function MenuItem({
     <button
       type="button"
       role="menuitem"
+      aria-checked={checked}
       // 菜单动作多为 async（启动/缩略图/文件柜操作），其底层链路（withErrorToast）
       // 已统一 toast 反馈；这里吞掉 rejection 避免未处理拒绝噪音（Promise.resolve 兼容同步返回）。
       onClick={() => void Promise.resolve(onClick()).catch(() => {})}
@@ -639,6 +678,7 @@ function MenuItem({
     >
       <Icon aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 opacity-80" />
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {checked ? <span className="text-[13px] text-[var(--text-muted)]" aria-hidden="true">✓</span> : null}
     </button>
   );
 }

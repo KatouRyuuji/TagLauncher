@@ -8,6 +8,7 @@ import {
   parsePalette,
   planRecolor,
   resolveSlot,
+  snapToPalette,
   type ColorSlotMap,
 } from "./tagColorSlots";
 
@@ -20,6 +21,11 @@ const frostCsv = getPresetTheme(frostFamily!.light)?.variables["tag-preset-color
 const monoCsv = getPresetTheme(monoFamily!.light)?.variables["tag-preset-colors"] ?? "";
 const frost = parsePalette(frostCsv);
 const mono = parsePalette(monoCsv);
+
+test("snapToPalette 只落在 8 位主题色上", () => {
+  const snapped = snapToPalette("#111111", frost);
+  assert.ok(frost.some((hex) => hexEquals(hex, snapped)), `应吸附到霜靛板，实际 ${snapped}`);
+});
 
 test("parsePalette 不足循环补齐、多余截断", () => {
   assert.deepEqual(parsePalette("#111111,#222222").length, 8);

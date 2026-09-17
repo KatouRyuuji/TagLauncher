@@ -101,6 +101,14 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_cabinet_items_item
             ON cabinet_items(item_id);
 
+        -- ========== 文件夹监视根（默认无行 = 不监视） ==========
+        CREATE TABLE IF NOT EXISTS watch_roots (
+            item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            recursive INTEGER NOT NULL DEFAULT 1,
+            last_scan_at DATETIME
+        );
+
         -- ========== 应用元数据表 ==========
         CREATE TABLE IF NOT EXISTS app_meta (
             key TEXT PRIMARY KEY,

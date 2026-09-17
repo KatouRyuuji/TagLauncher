@@ -63,6 +63,8 @@ interface DemoState {
   nextItemId: number;
   nextTagId: number;
   nextCabinetId: number;
+  folderWatchMaster: boolean;
+  watchedFolderIds: Set<number>;
 }
 
 function seedState(): DemoState {
@@ -130,6 +132,8 @@ function seedState(): DemoState {
     nextItemId: 1000,
     nextTagId: 1000,
     nextCabinetId: 100,
+    folderWatchMaster: true,
+    watchedFolderIds: new Set<number>(),
   };
 }
 
@@ -321,6 +325,30 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         else files.push(path);
       }
       return { files, folders };
+    }
+    case "get_folder_watch_status":
+      return {
+        masterEnabled: state.folderWatchMaster,
+        activeCount: state.folderWatchMaster ? state.watchedFolderIds.size : 0,
+        watchedItemIds: [...state.watchedFolderIds],
+      };
+    case "set_folder_watch_master":
+      state.folderWatchMaster = Boolean(args.enabled);
+      return {
+        masterEnabled: state.folderWatchMaster,
+        activeCount: state.folderWatchMaster ? state.watchedFolderIds.size : 0,
+        watchedItemIds: [...state.watchedFolderIds],
+      };
+    case "set_folder_watch": {
+      const item = state.items.find((entry) => entry.id === num(args.itemId));
+      if (!item || item.type !== "folder") throw new Error("只能监视文件夹对象");
+      if (args.enabled) state.watchedFolderIds.add(item.id);
+      else state.watchedFolderIds.delete(item.id);
+      return {
+        masterEnabled: state.folderWatchMaster,
+        activeCount: state.folderWatchMaster ? state.watchedFolderIds.size : 0,
+        watchedItemIds: [...state.watchedFolderIds],
+      };
     }
     case "expand_folder_import": {
       const paths = ((args.paths as string[]) ?? []).filter((path) => path.trim() && detectType(path) !== "folder");

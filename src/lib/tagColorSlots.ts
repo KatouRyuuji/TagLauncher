@@ -3,6 +3,9 @@ import { FALLBACK_TAG_PRESET_COLORS } from "./tagColors";
 /** 官方家族标签/文件柜色位数量，对应当前主题 `--tag-preset-colors`。 */
 export const TAG_COLOR_SLOT_COUNT = 8;
 
+/** 色位记忆设置键，与 useTagColorSlotSync / 手选色写回共用。 */
+export const COLOR_SLOT_SETTING_KEY = "taglauncher.color_slots";
+
 /** OKLCH chroma 低于此视为中性（素墨板、低饱和验收）。 */
 const NEUTRAL_CHROMA = 0.04;
 
@@ -21,6 +24,50 @@ export interface ColorSlotMap {
 export interface RecolorItem {
   id: number;
   color: string;
+}
+
+export function emptySlotMap(): ColorSlotMap {
+  return { tags: {}, cabinets: {} };
+}
+
+export function parseSlotMap(raw: string | null): ColorSlotMap {
+  if (!raw) return emptySlotMap();
+  try {
+    const parsed = JSON.parse(raw) as Partial<ColorSlotMap>;
+    return {
+      tags: parsed.tags && typeof parsed.tags === "object" ? parsed.tags : {},
+      cabinets: parsed.cabinets && typeof parsed.cabinets === "object" ? parsed.cabinets : {},
+      lastOfficialThemeId:
+        typeof parsed.lastOfficialThemeId === "string" ? parsed.lastOfficialThemeId : undefined,
+    };
+  } catch {
+    return emptySlotMap();
+  }
+}
+
+/** 手选或打开编辑器时立刻吸附到当前主题 8 色。 */
+export function snapToPalette(hex: string, palette: string[]): string {
+  const board = palette.length > 0 ? palette : FALLBACK_TAG_PRESET_COLORS;
+  return board[nearestSlot(board, hex)] ?? board[0] ?? FALLBACK_TAG_PRESET_COLORS[0];
+}
+
+export function recordPickedColor(
+  slotMap: ColorSlotMap,
+  kind: "tags" | "cabinets",
+  id: number,
+  hex: string,
+  palette: string[],
+): ColorSlotMap {
+  const snapped = snapToPalette(hex, palette);
+  const board = palette.length > 0 ? palette : FALLBACK_TAG_PRESET_COLORS;
+  const slot = nearestSlot(board, snapped);
+  return {
+    ...slotMap,
+    [kind]: {
+      ...slotMap[kind],
+      [String(id)]: { slot, hex: snapped },
+    },
+  };
 }
 
 /** 逗号分隔 → 恰好 8 个 hex；不足循环补齐，多余截断；空串回退 Tailwind 演示板。 */

@@ -58,6 +58,28 @@ fn tag_crud_roundtrip() {
     assert!(tag_service::get_tags(&conn).unwrap().is_empty());
 }
 
+#[test]
+fn tag_add_and_update_reject_empty_or_whitespace_name() {
+    let t = common::temp_db();
+    let conn = t.db.get_conn();
+    let tag = tag_service::add_tag(&conn, "工具", "#fff").unwrap();
+    for name in ["", "   ", "\t"] {
+        assert!(
+            tag_service::add_tag(&conn, name, "#fff")
+                .unwrap_err()
+                .contains("不能为空"),
+            "add {name:?}"
+        );
+        assert!(
+            tag_service::update_tag(&conn, tag.id, name, "#fff")
+                .unwrap_err()
+                .contains("不能为空"),
+            "update {name:?}"
+        );
+    }
+    assert_eq!(tag_service::get_tags(&conn).unwrap()[0].name, "工具");
+}
+
 /// set_item_tags 全量替换并保持给定顺序——通过公开读路径 get_item 的 tags 顺序验证。
 #[test]
 fn set_item_tags_preserves_order_via_public_read() {

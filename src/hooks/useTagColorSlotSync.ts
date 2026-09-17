@@ -2,7 +2,10 @@ import { useEffect, useRef } from "react";
 import { useThemeContext } from "../components/ThemeProvider";
 import { FALLBACK_TAG_PRESET_COLORS } from "../lib/tagColors";
 import {
+  COLOR_SLOT_SETTING_KEY,
+  emptySlotMap,
   parsePalette,
+  parseSlotMap,
   planRecolor,
   type ColorSlotMap,
 } from "../lib/tagColorSlots";
@@ -12,27 +15,6 @@ import { useAppStore } from "../stores/appStore";
 import { notifyCabinetsChanged, notifyTagsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
 import { TAGS_WRITTEN_EVENT } from "./useTags";
-
-const SLOT_SETTING_KEY = "taglauncher.color_slots";
-
-function emptySlotMap(): ColorSlotMap {
-  return { tags: {}, cabinets: {} };
-}
-
-function parseSlotMap(raw: string | null): ColorSlotMap {
-  if (!raw) return emptySlotMap();
-  try {
-    const parsed = JSON.parse(raw) as Partial<ColorSlotMap>;
-    return {
-      tags: parsed.tags && typeof parsed.tags === "object" ? parsed.tags : {},
-      cabinets: parsed.cabinets && typeof parsed.cabinets === "object" ? parsed.cabinets : {},
-      lastOfficialThemeId:
-        typeof parsed.lastOfficialThemeId === "string" ? parsed.lastOfficialThemeId : undefined,
-    };
-  } catch {
-    return emptySlotMap();
-  }
-}
 
 function paletteOfTheme(themeId: string | undefined | null): string[] | null {
   if (!themeId) return null;
@@ -74,7 +56,7 @@ export function useTagColorSlotSync() {
     const run = async () => {
       if (!bootstrappedRef.current) {
         try {
-          slotMapRef.current = parseSlotMap(await db.getSetting(SLOT_SETTING_KEY));
+          slotMapRef.current = parseSlotMap(await db.getSetting(COLOR_SLOT_SETTING_KEY));
         } catch {
           slotMapRef.current = emptySlotMap();
         }
@@ -120,7 +102,7 @@ export function useTagColorSlotSync() {
         window.dispatchEvent(new Event(TAGS_WRITTEN_EVENT));
       }
 
-      await db.setSetting(SLOT_SETTING_KEY, JSON.stringify(planned.nextSlotMap));
+      await db.setSetting(COLOR_SLOT_SETTING_KEY, JSON.stringify(planned.nextSlotMap));
       slotMapRef.current = planned.nextSlotMap;
       appliedThemeIdRef.current = themeId;
     };

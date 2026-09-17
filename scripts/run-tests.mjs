@@ -7,7 +7,7 @@
 //   ② esbuild 打包 + node 执行       src/**/*.design.test.ts 纯逻辑测试
 //   ③ vitest run                    src/**/*.spec.ts 交互/组件测试
 //   ④ cargo test --lib              后端单元测试（cd src-tauri）
-//   ⑤ cargo test                    后端集成测试（src-tauri/tests/ 不存在时自动跳过，不算失败）
+//   ⑤ cargo test --tests            后端集成测试（仅 tests/，避免与 --lib 重复计数）
 // 任一步骤（跳过的除外）失败则整体以退出码 1 结束；最后打印汇总表格。
 // ============================================================================
 
@@ -220,7 +220,15 @@ function stepCargoIntegration() {
     return;
   }
 
-  stepCargo("⑤ cargo test（集成）", ["test"]);
+  // cargo 1.96 的 `--tests` 仍会跑 lib/bin 单元测试，计数会和 ④ 重叠。
+  // 按 tests/*.rs 显式 --test，只跑集成目标。
+  const testNames = readdirSync(testsDir)
+    .filter((file) => file.endsWith(".rs"))
+    .map((file) => file.replace(/\.rs$/, ""));
+  stepCargo(
+    "⑤ cargo test --test …",
+    ["test", ...testNames.flatMap((name) => ["--test", name])],
+  );
 }
 
 // ── 执行 + 汇总 ───────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ mod v010_theme_id_uuid;
 mod v011_video_type;
 mod v012_fts_maintenance;
 mod v013_retire_theme_families;
+mod v014_watch_roots;
 
 use rusqlite::Connection;
 
@@ -177,6 +178,7 @@ fn all_migrations() -> Vec<Box<dyn Migration>> {
         Box::new(v011_video_type::V011VideoType),
         Box::new(v012_fts_maintenance::V012FtsMaintenance),
         Box::new(v013_retire_theme_families::V013RetireThemeFamilies),
+        Box::new(v014_watch_roots::V014WatchRoots),
     ]
 }
 
@@ -189,6 +191,15 @@ pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
     let migrations = all_migrations();
 
     let current_version = get_schema_version(conn);
+    let latest = latest_schema_version();
+    if current_version > latest {
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+            Some(format!(
+                "数据库 schema_version={current_version} 高于本程序支持的 {latest}，请升级 TagLauncher 后再打开此库"
+            )),
+        ));
+    }
     // 本轮新建的全部破坏性备份路径（清理旧备份时豁免，保留"升级前原始态"回滚点）。
     let mut backups_this_run: Vec<String> = Vec::new();
 
@@ -331,5 +342,21 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM item_tags", [], |r| r.get(0))
             .unwrap();
         assert_eq!(it, 1);
+    }
+
+    #[test]
+    fn future_schema_is_rejected() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            "CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO app_meta (key, value) VALUES ('schema_version', '99');",
+        )
+        .unwrap();
+        let err = run_pending(&conn).expect_err("future schema must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("schema_version=99") && msg.contains("请升级 TagLauncher"),
+            "unexpected error: {msg}"
+        );
     }
 }

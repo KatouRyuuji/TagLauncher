@@ -10,6 +10,7 @@ import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { notifyTagsChanged } from "../lib/modApi";
 import { compareNames } from "../lib/itemQuery";
+import { persistPickedThemeColor } from "../lib/persistThemeColor";
 import { showToast } from "../lib/toast";
 import type { Tag } from "../types";
 
@@ -54,19 +55,25 @@ export function useTags() {
   /** 新建标签，返回创建的 Tag 对象（含自增 ID） */
   const addTag = useCallback(async (name: string, color: string) => {
     const tag = await db.addTag(name, color);
+    const snapped = await persistPickedThemeColor("tags", tag.id, tag.color);
+    const stored = snapped === tag.color ? tag : { ...tag, color: snapped };
+    if (snapped !== tag.color) {
+      await db.updateTag(tag.id, tag.name, snapped);
+    }
     // 局部更新：把后端返回的 tag 追加进 store 并按名称排序
-    const next = sortTags([...useAppStore.getState().tags, tag]);
+    const next = sortTags([...useAppStore.getState().tags, stored]);
     setTags(next);
     notifyTagsChanged(next);
-    return tag;
+    return stored;
   }, [setTags]);
 
   /** 更新标签名称和颜色 */
   const updateTag = useCallback(async (id: number, name: string, color: string) => {
-    await db.updateTag(id, name, color);
+    const snapped = await persistPickedThemeColor("tags", id, color);
+    await db.updateTag(id, name, snapped);
     // 局部更新：按 id 替换后重新排序
     const next = sortTags(
-      useAppStore.getState().tags.map((t) => (t.id === id ? { ...t, name, color } : t)),
+      useAppStore.getState().tags.map((t) => (t.id === id ? { ...t, name, color: snapped } : t)),
     );
     setTags(next);
     notifyTagsChanged(next);

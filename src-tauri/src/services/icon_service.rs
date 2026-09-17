@@ -10,8 +10,6 @@ use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::sync::OnceLock;
 use tauri::AppHandle;
-#[cfg(target_os = "windows")]
-use tauri::Manager;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -36,10 +34,8 @@ fn auto_visual_path(app: &AppHandle, item: &Item) -> Option<String> {
     #[cfg(target_os = "windows")]
     {
         let cache_dir = AUTO_ICON_CACHE_DIR.get_or_init(|| {
-            app.path()
-                .app_cache_dir()
-                .or_else(|_| app.path().app_data_dir())
-                .unwrap_or_else(|_| std::env::temp_dir().join("taglauncher"))
+            crate::services::path_service::resolve_app_paths(app)
+                .save_dir
                 .join("item-icons")
         });
         std::fs::create_dir_all(cache_dir).ok()?;

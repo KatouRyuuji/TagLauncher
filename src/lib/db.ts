@@ -120,6 +120,27 @@ export async function classifyImportPaths(paths: string[]): Promise<ImportPathCl
   return invokeCmd("classify_import_paths", { paths });
 }
 
+export interface FolderWatchStatus {
+  masterEnabled: boolean;
+  activeCount: number;
+  watchedItemIds: number[];
+}
+
+/** 读取文件夹监视总闸、实际监视数、对象开关。 */
+export async function getFolderWatchStatus(): Promise<FolderWatchStatus> {
+  return invokeCmd("get_folder_watch_status");
+}
+
+/** 总闸：关掉后所有根停止补扫，对象勾选保留。 */
+export async function setFolderWatchMaster(enabled: boolean): Promise<FolderWatchStatus> {
+  return invokeCmd("set_folder_watch_master", { enabled });
+}
+
+/** 在文件夹对象上打开或关闭监视（默认关）。 */
+export async function setFolderWatch(itemId: number, enabled: boolean): Promise<FolderWatchStatus> {
+  return invokeCmd("set_folder_watch", { itemId, enabled });
+}
+
 /** 把文件夹递归展开为文件路径；已是文件的项原样保留。 */
 export async function expandFolderImport(paths: string[]): Promise<ExpandFolderImportResult> {
   return invokeCmd("expand_folder_import", { paths });

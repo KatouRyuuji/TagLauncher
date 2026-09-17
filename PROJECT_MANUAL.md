@@ -19,8 +19,8 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - 失效对象可感知恢复：库内存在失效对象（文件丢失/跨盘移动）时，底部状态栏显示警示徽标，点击即手动触发按内容签名的跨盘找回扫描（含扫描中状态与「未找到」反馈）；自动兜底找回仍在刷新链路后台执行。
 - 加载与通知体验：首屏按当前视图渲染与真实布局同构的骨架屏（`WorkspaceSkeleton`，reduced-motion 下静止）；Toast 悬停暂停自动关闭、错误/警告驻留更久（7s/5s）。
 - 视图虚拟化：网格与列表视图均经 `@tanstack/react-virtual` 虚拟化（measureElement 动态测高），仅渲染可见项，大库滚动流畅、内存可控。
-- 缩略图：支持手动设置/更换/清除；图片对象直接用图片，视频对象经系统缩略图服务提取首帧画面（`shell_thumbnail.rs`，IShellItemImageFactory + GDI+ 落盘 PNG；取不到时负缓存 10 分钟后重试），快捷方式（.lnk）先解析到目标再取图标（不含 Windows 箭头角标），其余非图片对象提取系统图标缓存为 PNG，再其余回退到类型图标。
-- 音视频：音频提供 `get_audio_preview`（时长/采样率/封面等元数据）；视频对象在快速预览中原生可播放（首帧 poster 取系统缩略图；解码失败则回退为首帧静态图）。
+- 缩略图：支持手动设置/更换/清除；图片对象直接用图片，视频对象经系统缩略图服务提取首帧画面（`shell_thumbnail.rs`，IShellItemImageFactory + GDI+ 落盘 PNG；取不到时负缓存 10 分钟后重试），快捷方式（.lnk）先解析到目标再取图标（不含 Windows 箭头角标），其余非图片对象提取系统图标缓存为 PNG（缓存在数据目录 `Save/item-icons/`，随 datapath 走），再其余回退到类型图标。
+- 音视频：音频提供 `get_audio_preview`（时长/采样率/封面等元数据）；视频对象在快速预览中走独立播放器皮（首帧 poster 取系统缩略图；解码失败仍保留播放器外观）。
 - AI 集成（CLI/TUI/MCP/AISkill）：随安装包附带 `tl` 命令行（externalBin sidecar），覆盖搜索/启动/添加/移除/标签/收藏/文件柜/统计全功能，全命令支持 `--json` 机器可读输出；`tl tui` 提供终端交互界面；`tl mcp` 以 stdio 暴露 MCP 工具面供 Claude Desktop 等 AI 客户端接入；`skills/tag-launcher/SKILL.md` 为 AI 使用本应用的行为准则。详见 §十七。
 - 主题系统：内置主题 + 自定义 JSON 主题 + Mod 主题，支持变量/分层 token/组件 token/资源/字体/变体/自定义 CSS，以及导入、导出、刷新；启动时等待主题就绪再显示主窗口，避免闪烁。
 - 自定义窗口栏：`decorations: false` 隐藏 Windows 原生标题栏，`TitleBar.tsx` 自绘窗口栏（`data-tauri-drag-region` 拖拽 + 双击最大化 + 最小化/最大化/关闭按钮），配色全部取主题 token 随主题联动；窗口权限见 `src-tauri/capabilities/default.json`。
@@ -125,10 +125,13 @@ tag-launcher/
 │   │   ├── AppErrorBoundary.tsx  # 顶层错误边界（崩溃时强制显示窗口 + 可复制错误详情）
 │   │   ├── Sidebar.tsx           # 左侧导航（标签/文件柜/最近使用）
 │   │   ├── SearchBar.tsx         # 搜索框 + 控制/筛选合并行（搜索范围/排序/视图/类型筛选/导入）
-│   │   ├── TagFilterBar.tsx      # 主视图顶部标签筛选条（单行横向滚动 chips）
+│   │   ├── WorkspaceScopeHeader.tsx # 主区范围标题（全部 / 收藏 / 柜 / 已筛）
+│   │   ├── TagFilterBar.tsx      # 主视图顶部标签筛选条（默认展开；芯片间写「且 / 且非」）
+│   │   ├── ThemeFamilyGallery.tsx # 设置里官方四族主选择器
 │   │   ├── SearchHighlightText.tsx # 搜索关键词高亮渲染
 │   │   ├── CommandPalette.tsx    # Ctrl+K 命令面板（同名对象以路径第二行区分）
-│   │   ├── QuickPreview.tsx      # 空格快速预览
+│   │   ├── QuickPreview.tsx      # 空格快速预览壳
+│   │   ├── preview/              # 预览四主体（图 / 声 / 影 / 夹）
 │   │   ├── StatusBar.tsx         # 底部状态栏
 │   │   ├── ShortcutsHelp.tsx     # 快捷键一览
 │   │   ├── ItemGrid.tsx          # 网格视图容器
@@ -278,7 +281,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ## 五、Tauri 命令清单
 
-后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，命令使用 `#[tauri::command]` 或 `#[tauri::command(async)]` 声明，按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
+后端命令已模块化拆分到 `src-tauri/src/commands/` 下的多个文件中，命令使用 `#[tauri::command]` 或 `#[tauri::command(async)]` 声明，按业务域分布在 `item_commands` / `cabinet_commands` / `tag_commands` / `recolor_commands` / `mod_commands` / `net_commands` / `ai_commands` / `data_commands` / `sync_commands` / `update_commands` / `settings_commands` / `synonym_commands` / `launch_commands` / `object_preview_commands` / `search_commands` 等模块。下表列出对象/标签/文件柜/搜索/同义词等核心命令（Mod、设置、AI、数据管理、缩略图预览等命令未全部展开）：
 
 | 命令名 | 参数 | 返回值 | 说明 |
 |--------|------|--------|------|
@@ -294,6 +297,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `update_tag` | id, name, color | () | 更新标签 |
 | `remove_tag` | id: i64 | () | 删除标签 |
 | `set_item_tags` | item_id, tag_ids | () | 设置项目的标签列表 |
+| `recolor_tags_and_cabinets` | tags, cabinets | () | 切官方家族时按色位批量写回 `tags.color` / `cabinets.color`（单事务） |
 | `search_items` | query, tag_ids | Vec\<ItemWithTags\> | 后端辅助搜索（FTS5 + LIKE 回退）；前端主搜索使用自研 search.ts，不经过此命令 |
 | `launch_item` | id: i64 | () | 启动项目（`ShellExecuteW` "open" 动词，不经 cmd.exe，防 shell 元字符注入） |
 | `open_in_explorer` | path: String | () | 在资源管理器中打开 |
@@ -306,6 +310,9 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `remove_item_from_cabinet` | cabinet_id, item_id | () | 从文件柜移除项目 |
 | `get_cabinet_items` | cabinet_id: i64, include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 获取文件柜项目；自动图标默认开启 |
 | `get_cabinet_item_counts` | - | Vec\<(i64, i64)\> | 各文件柜成员计数（单次 GROUP BY 查询，侧栏徽标用，不做对账与图标补齐） |
+| `get_folder_watch_status` | - | FolderWatchStatus | 总闸、实际监视数、已勾选对象 id |
+| `set_folder_watch_master` | enabled | FolderWatchStatus | 总闸；关则全部根停止补扫，对象勾选保留 |
+| `set_folder_watch` | item_id, enabled | FolderWatchStatus | 仅 `folder` 且未失效可开；打开后立刻补扫并开始有界轮询 |
 
 ---
 

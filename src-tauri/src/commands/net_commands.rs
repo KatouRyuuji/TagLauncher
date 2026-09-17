@@ -25,6 +25,22 @@ fn default_method() -> String {
     "GET".to_string()
 }
 
+/// RFC 7230：header 名必须是 token；值只接受可见 ASCII。非法时明确报错，
+/// 避免 ureq 静默丢掉非 ASCII 值，或把 CRLF 写进请求行。
+fn validate_http_header(name: &str, value: &str) -> Result<(), String> {
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|b| matches!(b, b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' | b'^' | b'_' | b'`' | b'|' | b'~' | b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z'))
+    {
+        return Err(format!("非法请求头名：{name}"));
+    }
+    if !value.bytes().all(|b| (0x20..=0x7e).contains(&b)) {
+        return Err("请求头值必须是可见 ASCII，不能包含中文或控制字符".to_string());
+    }
+    Ok(())
+}
+
 /// URL 协议校验：仅放行 http/https（file:// 等本地协议会绕过网络栈直接读盘）。
 /// 大小写敏感是故意的：非常规大小写按失败关闭处理（ureq 也只认小写 scheme）。
 /// 独立纯函数便于单元测试。
@@ -70,6 +86,7 @@ pub fn net_fetch(_db: State<Database>, req: NetFetchRequest) -> Result<NetFetchR
         .build();
     let mut request = agent.request(&method, url).timeout(timeout);
     for (k, v) in &req.headers {
+        validate_http_header(k, v)?;
         request = request.set(k, v);
     }
 
@@ -176,6 +193,15 @@ fn is_disallowed_v4(ip: &Ipv4Addr) -> bool {
 mod tests {
     use super::*;
     use std::net::Ipv6Addr;
+
+    #[test]
+    fn header_validation_rejects_crlf_and_non_ascii() {
+        assert!(validate_http_header("X-Token", "abc").is_ok());
+        assert!(validate_http_header("X-Token", "中文").is_err());
+        assert!(validate_http_header("X-Token", "a\r\nb").is_err());
+        assert!(validate_http_header("Bad Name", "x").is_err());
+        assert!(validate_http_header("", "x").is_err());
+    }
 
     #[test]
     fn rejects_non_http_protocols() {

@@ -72,7 +72,7 @@
 `card-backdrop-filter` `sidebar-backdrop-filter` `welcome-accent-gradient` `media-caption-gradient` `status-warning-bg` `status-success-bg` `scrollbar-thumb` `scrollbar-thumb-hover`
 
 **标签体系**
-`tag-preset-colors`（新建标签的候选色板，逗号分隔色值列表）`tag-color-alpha` `tag-selected-alpha` `tag-muted-alpha` `tag-selected-border-alpha`
+`tag-preset-colors`（官方八个色位，逗号分隔；**顺序即色位契约**。编辑器只展示这 8 色，手选立刻吸附到最近位并写入 `taglauncher.color_slots`。切换官方配色家族时，已有标签/文件柜的 `color` 按色位写入新板对应 hex；自定义 / Mod 主题不批量改库内颜色）`tag-color-alpha` `tag-selected-alpha` `tag-muted-alpha` `tag-selected-border-alpha`
 
 **布局尺寸**
 `sidebar-width` `grid-col-min`（网格卡片最小列宽）

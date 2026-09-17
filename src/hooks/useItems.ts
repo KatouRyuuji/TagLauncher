@@ -211,6 +211,23 @@ export function useItems() {
     loadAll();
   }, [loadAll]);
 
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) => listen("folder-watch-imported", () => {
+        if (!cancelled) void loadAll();
+      }))
+      .then((stop) => {
+        unlisten = stop;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [loadAll]);
+
   // 标签改名/删除后，对象卡片上的标签 pill 渲染自 item.tags：监听标签写事件
   // 全量刷新对象，避免卡片残留幽灵标签（旧名称/已删标签）。
   useEffect(() => {

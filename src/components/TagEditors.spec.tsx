@@ -33,13 +33,12 @@ describe("分类编辑器状态", () => {
     expect(screen.getByRole("radio", { name: "晴蓝" })).toHaveAttribute("aria-checked", "true");
   });
 
-  it("现有色不在预设里时多一颗当前点，点预设后收回", async () => {
+  it("现有色不在主题 8 色里时立刻吸附最近位，不出现当前点", () => {
     render(<TagEditor tag={{ id: 1, name: "工作", color: "#111111" }} onSave={vi.fn()} onClose={vi.fn()} />);
-    expect(screen.getByRole("radio", { name: "当前" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByText("墨黑")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("radio", { name: "蔷薇" }));
+    const group = screen.getByRole("radiogroup", { name: "分类颜色" });
+    expect(group.querySelectorAll('[role="radio"]')).toHaveLength(8);
     expect(screen.queryByRole("radio", { name: "当前" })).not.toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "蔷薇" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { checked: true })).toBeInTheDocument();
   });
 
   it("取消删除确认后返回原按钮，保留键盘焦点", async () => {

@@ -23,7 +23,8 @@ CI 与本地 `npm run test:all` 是同一套脚本（`scripts/run-tests.mjs`）�
 2. **本地全量验证**：
 
 ```bash
-npm run test:all    # 五步全绿
+npm run test:all           # 五步全绿
+npm run verify:candidate   # 同上并写 .tmp-test/evidence/<utc>/manifest.json
 npm run build       # 前端生产构建
 ```
 
@@ -54,7 +55,7 @@ git push origin main --tags
 6. **等待 Release 工作流完成**（约 15–25 分钟，双架构并行）；到 GitHub Releases 页检查草稿：
    - 确认四个产物都已上传：`TagLauncher_X.Y.Z_x64-setup.exe`、`TagLauncher_X.Y.Z_arm64-setup.exe`、`TagLauncher_X.Y.Z_x64-portable.zip`、`TagLauncher_X.Y.Z_arm64-portable.zip`；
    - 补写 Release 说明（用户可见，会显示在应用内「检查更新」的更新说明里）；
-   - 实机安装冒烟：安装 → 启动 → 导入对象 → 打标 → 搜索 → 检查更新；便携 zip 解压运行做同样冒烟。
+   - 产物核验：确认四个文件名与架构后缀正确即可。作者裁定不做、以后也不做安装 / 升级 / 卸载实机矩阵。
 7. **点击 Publish** 发布。已装用户会在启动后 24h 内收到应用内更新提示。
 
 ### 版本号语义
@@ -76,7 +77,7 @@ git push origin main --tags
 
 ### 4.1 结构与迁移
 
-- 单文件 SQLite（WAL 模式）：`Save/taglauncher.db`；schema 版本存 `app_meta.schema_version`（当前 v008）。
+- 单文件 SQLite（WAL 模式）：`Save/taglauncher.db`；schema 版本存 `app_meta.schema_version`（当前 **v014**，含 `watch_roots`）。高于本程序支持版本的库会拒绝打开，提示先升级应用。
 - 新增迁移：在 `src-tauri/src/db/migrations/` 加 `v00N_xxx.rs` 并在 `migrations/mod.rs` 注册；启动时自动逐版本执行，破坏性迁移前会自动落 `*.pre-vN.bak` 备份。
 - 迁移必须**非破坏 + 幂等**（`IF NOT EXISTS` / `ADD COLUMN` 风格）；破坏性重建须走「备份 → 重建 → 原子换版本号」模式（参考 v005）。
 - 导入/恢复对 schema 版本有保护：来源库版本高于当前应用支持版本时拒绝（提示用户先升级应用）。
@@ -113,7 +114,10 @@ git push origin main --tags
 ## 6. 测试体系
 
 ```bash
-npm run test:all     # 全量：tsc + 前端逻辑 + vitest + cargo --lib + cargo 集成
+npm run test:all          # 全量：tsc + 前端逻辑 + vitest + cargo --lib + cargo --tests
+npm run verify:candidate  # 复验入口：记录提交/工具版本/退出码，可选 --shots / --native
+npm run test:native       # 原生 WebView2 隔离冒烟（需 debug/release exe）
+npm run test:migrate      # 真实 exe × 沙箱迁移矩阵（不写用户目录）
 npm run test         # 仅前端（逻辑 + vitest）
 npm run test:unit    # 仅 vitest
 cd src-tauri; cargo test            # 仅后端

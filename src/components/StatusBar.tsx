@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowUpDown, Command, LoaderCircle, Search, TriangleAlert } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { useSearch } from "../hooks/useSearch";
+import * as db from "../lib/db";
 import { relocateRecoveredCopy } from "../lib/itemActionCopy";
 import { sortModeLabel, typeFilterLabel } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
@@ -35,7 +36,25 @@ export function StatusBar({
   const setReviewOpen = useAppStore((state) => state.setMissingReviewOpen);
   const [relocating, setRelocating] = useState(false);
   const [lastRelocateResult, setLastRelocateResult] = useState<number | null>(null);
+  const [watchCount, setWatchCount] = useState(0);
   const missingCount = missingItems.length;
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      void db.getFolderWatchStatus()
+        .then((status) => {
+          if (alive) setWatchCount(status.activeCount);
+        })
+        .catch(() => {});
+    };
+    load();
+    const timer = window.setInterval(load, 4000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     if (reviewOpen && missingCount === 0) {
@@ -116,6 +135,14 @@ export function StatusBar({
           >
             <LoaderCircle className="h-3 w-3 animate-spin" strokeWidth={2} aria-hidden="true" />
             搜索中…
+          </span>
+        )}
+        {watchCount > 0 && (
+          <span
+            className="inline-flex shrink-0 items-center text-[var(--text-muted)]"
+            title="已手动打开监视的文件夹正在收入新文件"
+          >
+            {`正在监视 ${watchCount} 个文件夹`}
           </span>
         )}
         {missingCount > 0 && (

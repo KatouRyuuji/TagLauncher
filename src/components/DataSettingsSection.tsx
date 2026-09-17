@@ -6,6 +6,7 @@ import type { DataDirectoryInfo } from "../lib/db";
 import { formatBytes } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
 import { useAppStore } from "../stores/appStore";
+import { SettingsToggle } from "./SettingsField";
 
 type BusyAction = "switch" | "reset" | "backup" | "export" | "import" | null;
 
@@ -20,6 +21,7 @@ export function DataSettingsSection() {
   // 提供"直接使用该目录数据"（migrate=false）入口——否则该场景是死路：
   // 后端报错文案引导的选择在前端不存在。
   const [pendingAdoptDir, setPendingAdoptDir] = useState<string | null>(null);
+  const [watchMaster, setWatchMaster] = useState(true);
 
   const refresh = () => {
     void db
@@ -29,6 +31,12 @@ export function DataSettingsSection() {
   };
 
   useEffect(refresh, []);
+
+  useEffect(() => {
+    void db.getFolderWatchStatus()
+      .then((status) => setWatchMaster(status.masterEnabled))
+      .catch(() => {});
+  }, []);
 
   const withBusy = async (action: BusyAction, fn: () => Promise<void>) => {
     setBusy(action);
@@ -163,6 +171,27 @@ export function DataSettingsSection() {
       )}
 
       <div className="mt-4 space-y-4">
+        <div>
+          <h4 className="text-xs font-semibold text-[var(--text-muted)]">文件夹监视</h4>
+          <div className="mt-2">
+            <SettingsToggle
+              checked={watchMaster}
+              title="允许文件夹监视"
+              description="总闸默认开。各文件夹仍要在右键菜单手动打开「监视此文件夹」后才会收入新文件；关掉总闸会暂停全部监视，勾选保留。"
+              onChange={(enabled) => {
+                void db.setFolderWatchMaster(enabled)
+                  .then((status) => {
+                    setWatchMaster(status.masterEnabled);
+                    showToast(status.masterEnabled ? "已允许文件夹监视" : "已暂停全部文件夹监视", "success");
+                  })
+                  .catch((error) => {
+                    showToast(`设置监视总闸失败：${error instanceof Error ? error.message : String(error)}`, "error");
+                  });
+              }}
+            />
+          </div>
+        </div>
+
         <div>
           <h4 className="text-xs font-semibold text-[var(--text-muted)]">安全</h4>
           <div className="mt-2 flex flex-wrap gap-2">

@@ -217,6 +217,11 @@ pub fn run() {
 
             app.manage(database);
             app.manage(registry);
+            app.manage(services::watch_runtime::FolderWatchHub::new());
+            let handle = app.handle().clone();
+            handle
+                .state::<services::watch_runtime::FolderWatchHub>()
+                .reload(&handle);
 
             Ok(())
         })
@@ -226,6 +231,9 @@ pub fn run() {
             add_items,
             classify_import_paths,
             expand_folder_import,
+            get_folder_watch_status,
+            set_folder_watch_master,
+            set_folder_watch,
             remove_item,
             remove_items,
             remove_items_and_files,

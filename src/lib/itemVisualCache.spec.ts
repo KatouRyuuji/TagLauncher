@@ -86,6 +86,25 @@ describe("可见图标请求", () => {
     await vi.waitFor(() => expect(listener).toHaveBeenCalledWith(null));
   });
 
+  it("TTL 过期时仍有订阅，第二个组件与第一个接到同一新结果", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const first = vi.fn();
+    const second = vi.fn();
+    try {
+      cache.subscribeItemVisual(item(1), first);
+      await finish(0, "D:/icon-old.png");
+      expect(first).toHaveBeenCalledWith("D:/icon-old.png");
+      clock.mockReturnValue(1_000 + 5 * 60_000 + 1);
+      cache.subscribeItemVisual(item(1), second);
+      expect(getVisual).toHaveBeenCalledTimes(2);
+      await finish(1, "D:/icon-new.png");
+      expect(first).toHaveBeenCalledWith("D:/icon-new.png");
+      expect(second).toHaveBeenCalledWith("D:/icon-new.png");
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("失败反馈类型图标，冷却结束后允许重试", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const clock = vi.spyOn(Date, "now").mockReturnValue(1000);

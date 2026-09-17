@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""TagLauncher 数据目录迁移/自愈 E2E 场景矩阵（真实 release exe × 沙箱）。
+"""TagLauncher 数据目录迁移/自愈 E2E 场景矩阵（真实 exe × 沙箱）。
 
-用途：发版前或改动数据目录/迁移/自愈逻辑后，验证真实二进制的落盘行为。
-覆盖场景：全新安装、旧版自动迁移、损坏自愈、留底不回退、重定向等。
-
-安全设计：通过子进程 LOCALAPPDATA 环境变量注入把应用的默认数据目录
-（path_service::default_save_dir 读 LOCALAPPDATA）重定向到沙箱内部，
-全程不触碰真实 %LOCALAPPDATA%\\TagLauncher。
+安全设计：子进程 LOCALAPPDATA / TEMP 注入到沙箱，不触碰真实
+%LOCALAPPDATA%\\TagLauncher。
 
 用法：
-    python scripts/e2e-data-migration.py [exe路径]   # 默认 src-tauri/target/release/tag-launcher.exe
-
-注意：启动真实 GUI 进程（会出现窗口闪现），每场景启动后停留数秒再终止。
-需要本机 Python 3.8+（标准库即可）。不是 CI 门禁，属发版前手动验证工具。
+    python scripts/e2e-data-migration.py [exe路径]
+    python scripts/e2e-data-migration.py --exe PATH --sandbox DIR --wait 7
 """
 
+from __future__ import annotations
+
+import argparse
 import json
 import os
 import shutil
@@ -25,20 +22,81 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-    ROOT, "src-tauri", "target", "release", "tag-launcher.exe"
-)
-SANDBOX = os.path.join(os.environ.get("TEMP", ROOT), "tl_e2e_matrix")
-# 伪造的用户数据根：exe 子进程的 LOCALAPPDATA 指向沙箱内
-FAKE_LOCAL = os.path.join(SANDBOX, "_localappdata")
+LATEST_SCHEMA = "14"
 
-results = []
+# v10 实库在跑完 v001–v010 后的最小完整表：含身份/签名列，type 尚无 video。
+# 残缺夹具（只有 id/name/path/type）会在 v011 重建 items 时因缺列失败。
+V10_SCHEMA = """
+PRAGMA journal_mode=WAL;
+CREATE TABLE IF NOT EXISTS items (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL,
+    type TEXT CHECK(type IN ('folder', 'image', 'audio', 'exe', 'bat', 'ps1')),
+    icon_path TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_used_at DATETIME,
+    is_favorite INTEGER DEFAULT 0,
+    volume_serial INTEGER,
+    file_id TEXT,
+    is_missing INTEGER NOT NULL DEFAULT 0,
+    sig_size INTEGER,
+    sig_head INTEGER,
+    sig_tail INTEGER
+);
+CREATE TABLE IF NOT EXISTS tags (
+    id INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    color TEXT DEFAULT '#3b82f6'
+);
+CREATE TABLE IF NOT EXISTS item_tags (
+    item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+    tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (item_id, tag_id)
+);
+CREATE TABLE IF NOT EXISTS cabinets (
+    id INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    color TEXT DEFAULT '#6366f1',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS cabinet_items (
+    cabinet_id INTEGER REFERENCES cabinets(id) ON DELETE CASCADE,
+    item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+    PRIMARY KEY (cabinet_id, item_id)
+);
+CREATE TABLE IF NOT EXISTS tag_relations (
+    parent_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    child_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (parent_id, child_id)
+);
+CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+"""
 
 
-def reset():
-    for i in range(20):
+def parse_args():
+    parser = argparse.ArgumentParser(description="TagLauncher 数据迁移沙箱矩阵")
+    parser.add_argument(
+        "exe",
+        nargs="?",
+        default=os.path.join(ROOT, "src-tauri", "target", "release", "tag-launcher.exe"),
+        help="被测 tag-launcher.exe",
+    )
+    parser.add_argument("--exe", dest="exe_opt", help="覆盖位置参数")
+    parser.add_argument(
+        "--sandbox",
+        default=os.path.join(os.environ.get("TEMP", ROOT), "tl_e2e_matrix"),
+    )
+    parser.add_argument("--wait", type=float, default=7, help="每场景 GUI 停留秒数")
+    parser.add_argument("--expected-schema", default=LATEST_SCHEMA)
+    return parser.parse_args()
+
+
+def reset(sandbox: str) -> None:
+    for _ in range(20):
         try:
-            shutil.rmtree(SANDBOX)
+            shutil.rmtree(sandbox)
             break
         except FileNotFoundError:
             break
@@ -46,29 +104,31 @@ def reset():
             time.sleep(0.5)
     else:
         raise RuntimeError("无法清理沙箱（前一场景进程未退干净）")
-    os.makedirs(SANDBOX, exist_ok=True)
+    os.makedirs(sandbox, exist_ok=True)
 
 
-def run_exe(cwd, wait=7):
-    """启动沙箱内 exe 副本（root_dir 由 current_exe 决定），注入伪 LOCALAPPDATA。"""
+def run_exe(cwd: str, fake_local: str, wait: float) -> None:
     exe = os.path.join(cwd, "tag-launcher.exe")
     env = dict(os.environ)
-    env["LOCALAPPDATA"] = FAKE_LOCAL
-    p = subprocess.Popen([exe], cwd=cwd, env=env)
+    env["LOCALAPPDATA"] = fake_local
+    env["TEMP"] = os.path.join(os.path.dirname(fake_local), "Temp")
+    env["TMP"] = env["TEMP"]
+    os.makedirs(env["TEMP"], exist_ok=True)
+    process = subprocess.Popen([exe], cwd=cwd, env=env)
     time.sleep(wait)
     try:
-        p.terminate()
+        process.terminate()
     except OSError:
         pass
     try:
-        p.wait(timeout=8)
+        process.wait(timeout=8)
     except subprocess.TimeoutExpired:
-        p.kill()
-        p.wait(timeout=5)
-    time.sleep(1)  # 句柄/OS 清理余量
+        process.kill()
+        process.wait(timeout=5)
+    time.sleep(1)
 
 
-def db_query(path, sql):
+def db_query(path: str, sql: str):
     if not os.path.exists(path):
         return None
     try:
@@ -76,150 +136,166 @@ def db_query(path, sql):
         rows = conn.execute(sql).fetchall()
         conn.close()
         return rows
-    except Exception as e:
-        return f"ERR:{e}"
+    except Exception as exc:
+        return f"ERR:{exc}"
 
 
-def seed_db(save_dir, items=("a.exe", "b.exe"), with_backups=False):
-    """造一个健康的旧版库（WAL 模式，模拟真实使用中的落盘形态）"""
+def seed_db(save_dir: str, items=("a.exe", "b.exe"), with_backups=False) -> None:
     os.makedirs(save_dir, exist_ok=True)
     dbp = os.path.join(save_dir, "taglauncher.db")
     conn = sqlite3.connect(dbp)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.executescript(V10_SCHEMA)
     conn.execute("INSERT OR REPLACE INTO app_meta VALUES ('schema_version', '10')")
-    conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT, path TEXT, type TEXT)")
-    conn.execute("CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY, name TEXT)")
     conn.execute("DELETE FROM items")
-    for n in items:
-        conn.execute("INSERT INTO items (name, path, type) VALUES (?, ?, 'exe')", (n, "D:\\" + n))
+    for name in items:
+        conn.execute(
+            "INSERT INTO items (name, path, type, is_missing) VALUES (?, ?, 'exe', 0)",
+            (name, "D:\\" + name),
+        )
     conn.commit()
-    conn.close()  # close 触发 checkpoint；WAL 旁文件随之合并
+    conn.close()
     if with_backups:
         bdir = os.path.join(save_dir, "Backups")
         os.makedirs(bdir, exist_ok=True)
         shutil.copy(dbp, os.path.join(bdir, "taglauncher_pre_import_20260101_000000_000.db"))
 
 
-def corrupt_junk(path):
-    with open(path, "wb") as f:
-        f.write(b"not a sqlite database at all" + b"\x00" * 4096)
+def corrupt_junk(path: str) -> None:
+    with open(path, "wb") as handle:
+        handle.write(b"not a sqlite database at all" + b"\x00" * 4096)
 
 
-def corrupt_mid_page(path):
-    """填零 app_meta 根页：sqlite_master 可读但 app_meta 查询必报错（中间页损坏形态）"""
+def corrupt_mid_page(path: str) -> None:
     conn = sqlite3.connect(path)
     root = conn.execute("SELECT rootpage FROM sqlite_master WHERE name='app_meta'").fetchone()[0]
-    ps = conn.execute("PRAGMA page_size").fetchone()[0]
+    page_size = conn.execute("PRAGMA page_size").fetchone()[0]
     conn.close()
-    with open(path, "r+b") as f:
-        f.seek((root - 1) * ps)
-        f.write(b"\x00" * ps)
+    with open(path, "r+b") as handle:
+        handle.seek((root - 1) * page_size)
+        handle.write(b"\x00" * page_size)
 
 
-def check(name, cond, detail=""):
+def check(results, name, cond, detail=""):
     results.append((name, bool(cond)))
     print(f"[{'PASS' if cond else 'FAIL'}] {name} {detail}")
 
 
-def local_db():
-    return os.path.join(FAKE_LOCAL, "TagLauncher", "Save", "taglauncher.db")
+def local_db(fake_local: str) -> str:
+    return os.path.join(fake_local, "TagLauncher", "Save", "taglauncher.db")
 
 
-def make_dir(tag):
-    d = os.path.join(SANDBOX, tag, "TagLauncher")
-    os.makedirs(d)
-    shutil.copy(EXE, os.path.join(d, "tag-launcher.exe"))
-    return d
+def make_dir(sandbox: str, exe_src: str, tag: str) -> str:
+    dest = os.path.join(sandbox, tag, "TagLauncher")
+    os.makedirs(dest)
+    shutil.copy(exe_src, os.path.join(dest, "tag-launcher.exe"))
+    return dest
 
 
-# ── 场景 A：全新安装（无历史数据）──
-reset()
-d = make_dir("A")
-run_exe(d)
-ver = db_query(local_db(), "SELECT value FROM app_meta WHERE key='schema_version'")
-check("A 全新安装建库", ver and ver[0][0] == "12", f"schema={ver}")
+def main() -> int:
+    args = parse_args()
+    exe = args.exe_opt or args.exe
+    if not os.path.exists(exe):
+        print(f"找不到二进制：{exe}", file=sys.stderr)
+        return 2
 
-# ── 场景 B：旧版 exe 旁 Save/（健康+备份）→ 自动迁移 ──
-reset()
-d = make_dir("B")
-seed_db(os.path.join(d, "Save"), items=("old1.exe", "old2.exe", "old3.exe"), with_backups=True)
-run_exe(d)
-names = db_query(local_db(), "SELECT name FROM items ORDER BY name")
-check("B 旧版数据迁移到 Local", names == [("old1.exe",), ("old2.exe",), ("old3.exe",)], f"items={names}")
-bdir = os.path.join(FAKE_LOCAL, "TagLauncher", "Save", "Backups")
-check("B 历史备份随迁移", os.path.isdir(bdir) and any("pre_import" in f for f in os.listdir(bdir)),
-      os.listdir(bdir) if os.path.isdir(bdir) else "无 Backups")
-check("B 原位置留底保留", os.path.exists(os.path.join(d, "Save", "taglauncher.db")))
+    sandbox = args.sandbox
+    fake_local = os.path.join(sandbox, "_localappdata")
+    results = []
 
-# ── 场景 C：Local 已有健康库 + exe 旁留底 → 不重复迁移 ──
-reset()
-d = make_dir("C")
-seed_db(os.path.join(d, "Save"), items=("old.exe",))
-seed_db(os.path.join(FAKE_LOCAL, "TagLauncher", "Save"), items=("new.exe",))
-run_exe(d)
-names = db_query(local_db(), "SELECT name FROM items")
-check("C Local 健康库不被覆盖", names == [("new.exe",)], f"items={names}")
+    def go(cwd: str) -> None:
+        run_exe(cwd, fake_local, args.wait)
 
-# ── 场景 D：Local 垃圾字节损坏 + Backups 有备份 → 自愈恢复 ──
-reset()
-d = make_dir("D")
-seed_db(os.path.join(FAKE_LOCAL, "TagLauncher", "Save"), items=("safe.exe",), with_backups=True)
-corrupt_junk(local_db())
-run_exe(d)
-names = db_query(local_db(), "SELECT name FROM items")
-leftover = [f for f in os.listdir(os.path.dirname(local_db())) if ".corrupt-" in f]
-check("D 损坏库自愈恢复", names == [("safe.exe",)], f"items={names}")
-check("D 损坏现场留存", len(leftover) > 0, leftover)
+    reset(sandbox)
+    dest = make_dir(sandbox, exe, "A")
+    go(dest)
+    ver = db_query(local_db(fake_local), "SELECT value FROM app_meta WHERE key='schema_version'")
+    check(results, "A 全新安装建库", ver and ver[0][0] == args.expected_schema, f"schema={ver}")
 
-# ── 场景 E：中间页损坏 + Backups 有备份 + exe 旁留底 → 自愈而非 legacy 覆盖 ──
-reset()
-d = make_dir("E")
-seed_db(os.path.join(d, "Save"), items=("stale.exe",))  # exe 旁陈旧留底
-seed_db(os.path.join(FAKE_LOCAL, "TagLauncher", "Save"), items=("recent.exe",), with_backups=True)
-corrupt_mid_page(local_db())
-run_exe(d)
-names = db_query(local_db(), "SELECT name FROM items")
-check("E 中间页损坏走自愈(非留底回退)", names == [("recent.exe",)], f"items={names}")
+    reset(sandbox)
+    dest = make_dir(sandbox, exe, "B")
+    seed_db(os.path.join(dest, "Save"), items=("old1.exe", "old2.exe", "old3.exe"), with_backups=True)
+    go(dest)
+    names = db_query(local_db(fake_local), "SELECT name FROM items ORDER BY name")
+    check(results, "B 旧版数据迁移到 Local", names == [("old1.exe",), ("old2.exe",), ("old3.exe",)], f"items={names}")
+    bdir = os.path.join(fake_local, "TagLauncher", "Save", "Backups")
+    check(
+        results,
+        "B 历史备份随迁移",
+        os.path.isdir(bdir) and any("pre_import" in name for name in os.listdir(bdir)),
+        os.listdir(bdir) if os.path.isdir(bdir) else "无 Backups",
+    )
+    check(results, "B 原位置留底保留", os.path.exists(os.path.join(dest, "Save", "taglauncher.db")))
+    migrated = db_query(local_db(fake_local), "SELECT value FROM app_meta WHERE key='schema_version'")
+    check(results, "B 迁移后 schema", migrated and migrated[0][0] == args.expected_schema, f"schema={migrated}")
 
-# ── 场景 F：Local 损坏 + 无备份 + exe 旁健康留底 → 不被覆盖 ──
-reset()
-d = make_dir("F")
-seed_db(os.path.join(d, "Save"), items=("stale.exe",))
-seed_db(os.path.join(FAKE_LOCAL, "TagLauncher", "Save"), items=("recent.exe",))  # 无 Backups
-corrupt_mid_page(local_db())
-run_exe(d)
-names = db_query(local_db(), "SELECT name FROM items")
-check("F 无备份时不被留底回退覆盖", names != [("stale.exe",)], f"items={names}")
+    reset(sandbox)
+    dest = make_dir(sandbox, exe, "C")
+    seed_db(os.path.join(dest, "Save"), items=("old.exe",))
+    seed_db(os.path.join(fake_local, "TagLauncher", "Save"), items=("new.exe",))
+    go(dest)
+    names = db_query(local_db(fake_local), "SELECT name FROM items")
+    check(results, "C Local 健康库不被覆盖", names == [("new.exe",)], f"items={names}")
 
-# ── 场景 G：Local 残骸（无 schema_version）+ exe 旁健康旧库 → legacy 覆盖残骸 ──
-reset()
-d = make_dir("G")
-seed_db(os.path.join(d, "Save"), items=("old.exe",))
-os.makedirs(os.path.dirname(local_db()))
-sqlite3.connect(local_db()).execute(
-    "CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-).connection.close()
-run_exe(d)
-names = db_query(local_db(), "SELECT name FROM items")
-check("G 残骸被健康旧库覆盖", names == [("old.exe",)], f"items={names}")
+    reset(sandbox)
+    dest = make_dir(sandbox, exe, "D")
+    seed_db(os.path.join(fake_local, "TagLauncher", "Save"), items=("safe.exe",), with_backups=True)
+    corrupt_junk(local_db(fake_local))
+    go(dest)
+    names = db_query(local_db(fake_local), "SELECT name FROM items")
+    leftover = [name for name in os.listdir(os.path.dirname(local_db(fake_local))) if ".corrupt-" in name]
+    check(results, "D 损坏库自愈恢复", names == [("safe.exe",)], f"items={names}")
+    check(results, "D 损坏现场留存", len(leftover) > 0, leftover)
 
-# ── 场景 H：datapath.json 重定向 → 用重定向，不迁移 ──
-reset()
-d = make_dir("H")
-custom = os.path.join(SANDBOX, "H", "CustomData")
-seed_db(custom, items=("custom.exe",))
-with open(os.path.join(d, "datapath.json"), "w", encoding="utf-8") as f:
-    json.dump({"save_dir": custom}, f)
-run_exe(d)
-check("H 重定向生效", db_query(os.path.join(custom, "taglauncher.db"), "SELECT name FROM items") == [("custom.exe",)])
-check("H 未创建 Local 库", not os.path.exists(local_db()))
+    reset(sandbox)
+    dest = make_dir(sandbox, exe, "E")
+    seed_db(os.path.join(dest, "Save"), items=("stale.exe",))
+    seed_db(os.path.join(fake_local, "TagLauncher", "Save"), items=("recent.exe",), with_backups=True)
+    corrupt_mid_page(local_db(fake_local))
+    go(dest)
+    names = db_query(local_db(fake_local), "SELECT name FROM items")
+    check(results, "E 中间页损坏走自愈(非留底回退)", names == [("recent.exe",)], f"items={names}")
 
-# ── 汇总 ──
-print()
-fails = [r for r in results if not r[1]]
-print(f"==== {len(results) - len(fails)}/{len(results)} 场景通过 ====")
-if fails:
+    reset(sandbox)
+    dest = make_dir(sandbox, exe, "F")
+    seed_db(os.path.join(dest, "Save"), items=("stale.exe",))
+    seed_db(os.path.join(fake_local, "TagLauncher", "Save"), items=("recent.exe",))
+    corrupt_mid_page(local_db(fake_local))
+    go(dest)
+    names = db_query(local_db(fake_local), "SELECT name FROM items")
+    check(results, "F 无备份时不被留底回退覆盖", names != [("stale.exe",)], f"items={names}")
+
+    reset(sandbox)
+    dest = make_dir(sandbox, exe, "G")
+    seed_db(os.path.join(dest, "Save"), items=("old.exe",))
+    os.makedirs(os.path.dirname(local_db(fake_local)))
+    sqlite3.connect(local_db(fake_local)).execute(
+        "CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    ).connection.close()
+    go(dest)
+    names = db_query(local_db(fake_local), "SELECT name FROM items")
+    check(results, "G 残骸被健康旧库覆盖", names == [("old.exe",)], f"items={names}")
+
+    reset(sandbox)
+    dest = make_dir(sandbox, exe, "H")
+    custom = os.path.join(sandbox, "H", "CustomData")
+    seed_db(custom, items=("custom.exe",))
+    with open(os.path.join(dest, "datapath.json"), "w", encoding="utf-8") as handle:
+        json.dump({"save_dir": custom}, handle)
+    go(dest)
+    check(
+        results,
+        "H 重定向生效",
+        db_query(os.path.join(custom, "taglauncher.db"), "SELECT name FROM items") == [("custom.exe",)],
+    )
+    check(results, "H 未创建 Local 库", not os.path.exists(local_db(fake_local)))
+
+    print()
+    fails = [row for row in results if not row[1]]
+    print(f"==== {len(results) - len(fails)}/{len(results)} 场景通过 ====")
     for name, _ in fails:
         print(f"  失败: {name}")
-sys.exit(1 if fails else 0)
+    return 1 if fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

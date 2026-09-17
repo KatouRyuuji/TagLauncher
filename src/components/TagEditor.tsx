@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getThemeTagPresetColors, nameColorByHue } from "../lib/tagColors";
+import { snapToPalette } from "../lib/tagColorSlots";
 import type { Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -23,7 +24,9 @@ function sameHex(a: string, b: string): boolean {
 export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: TagEditorProps) {
   const [presetColors] = useState(getThemeTagPresetColors);
   const [name, setName] = useState(tag?.name || "");
-  const [color, setColor] = useState(tag?.color || presetColors[5] || presetColors[0]);
+  const [color, setColor] = useState(() =>
+    snapToPalette(tag?.color || presetColors[5] || presetColors[0], presetColors),
+  );
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const deleteRef = useRef<HTMLButtonElement>(null);
@@ -160,8 +163,7 @@ function ColorDotField({
   value: string;
   onChange: (color: string) => void;
 }) {
-  const hasCurrent = !colors.some((preset) => sameHex(preset, value));
-  const options = hasCurrent ? [...colors, value] : colors;
+  const options = colors;
 
   return (
     <div className="mt-5">
@@ -170,11 +172,10 @@ function ColorDotField({
         <div role="radiogroup" aria-label="分类颜色" className="flex flex-wrap items-center gap-2">
           {options.map((preset, index) => {
             const selected = sameHex(value, preset);
-            const isCurrentExtra = hasCurrent && index === options.length - 1;
-            const label = isCurrentExtra ? "当前" : nameColorByHue(preset);
+            const label = nameColorByHue(preset);
             return (
               <button
-                key={isCurrentExtra ? `current:${preset}` : preset}
+                key={preset}
                 type="button"
                 role="radio"
                 aria-label={label}
