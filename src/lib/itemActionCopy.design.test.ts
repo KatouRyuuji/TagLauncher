@@ -1,11 +1,16 @@
 import { assert, test, run } from "./__testutil";
 import {
   cardOpenLabel,
+  deleteFilesDialogTitle,
   deleteFilesLabel,
+  folderTypeBadge,
   libraryRemoveLabel,
   openMenuLabel,
   parentDirectoryPath,
   pathBasename,
+  relocateNoneCopy,
+  relocateRecoveredCopy,
+  removeFromLibraryDialogTitle,
   revealFailedToast,
   revealMenuLabel,
 } from "./itemActionCopy";
@@ -29,6 +34,19 @@ test("仅出库与删本地按数量变复数", () => {
   assert.equal(libraryRemoveLabel(3), "仅出库 3 项");
   assert.equal(deleteFilesLabel(1), "删除本地文件");
   assert.equal(deleteFilesLabel(2), "删除 2 个本地文件");
+});
+
+test("确认框标题：默认移出资料库，删盘入口才写删除本地文件", () => {
+  assert.equal(removeFromLibraryDialogTitle(1), "移出资料库");
+  assert.equal(removeFromLibraryDialogTitle(3), "移出资料库 3 项");
+  assert.equal(deleteFilesDialogTitle(1), "删除本地文件");
+  assert.equal(deleteFilesDialogTitle(4), "删除本地文件 4 项");
+  assert.equal(folderTypeBadge, "文件夹");
+});
+
+test("失效找回结果写在行上", () => {
+  assert.ok(relocateNoneCopy().includes("没有找回任何项目"));
+  assert.equal(relocateRecoveredCopy(2), "已找回 2 项");
 });
 
 test("上一级路径与夹名", () => {

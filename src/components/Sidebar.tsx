@@ -78,6 +78,8 @@ export function Sidebar({
   const setSelectedCabinetId = useAppStore((state) => state.setSelectedCabinetId);
   const sidebarTab = useAppStore((state) => state.sidebarTab);
   const setSidebarTab = useAppStore((state) => state.setSidebarTab);
+  const sidebarHintDismissed = useAppStore((state) => state.sidebarHintDismissed);
+  const setSidebarHintDismissed = useAppStore((state) => state.setSidebarHintDismissed);
   const showFavorites = useAppStore((state) => state.showFavorites);
   const setShowFavorites = useAppStore((state) => state.setShowFavorites);
   const showRecent = useAppStore((state) => state.showRecent);
@@ -292,7 +294,7 @@ export function Sidebar({
               </SectionHeader>
 
               <div className="mt-1 space-y-0.5">
-                {(allItems.length === 0 ? [] : [...tags].sort((a, b) => (itemCountByTag.get(b.id) ?? 0) - (itemCountByTag.get(a.id) ?? 0))).map((tag) => {
+                {[...tags].sort((a, b) => (itemCountByTag.get(b.id) ?? 0) - (itemCountByTag.get(a.id) ?? 0)).map((tag) => {
                   const active = selectedTagIds.includes(tag.id);
                   const excluded = excludedTagIds.includes(tag.id);
                   const activeTagStyle = active
@@ -348,11 +350,6 @@ export function Sidebar({
               {tags.length === 0 && (
                 <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[13px] leading-5 text-[var(--text-muted)]">
                   暂无标签
-                </div>
-              )}
-              {tags.length > 0 && allItems.length === 0 && (
-                <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[13px] leading-5 text-[var(--text-muted)]">
-                  导入项目后，标签会出现在这里
                 </div>
               )}
 
@@ -451,17 +448,30 @@ export function Sidebar({
 
       <SidebarThemeSwitcher />
 
-      <div
-        data-region="sidebar-hint"
-        className="flex min-h-10 shrink-0 items-start gap-2 px-3 pb-2.5 pt-0 text-[13px] leading-4 text-[var(--text-faint)]"
-      >
-        <Info className="mt-px h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" strokeWidth={1.8} aria-hidden="true" />
-        <span>
-          {activeDragKind === "item"
-            ? "释放到收藏夹或文件柜完成归档（不会移动磁盘文件）"
-            : "拖标签到项目打标，拖项目到文件柜。文件柜是分组，不是磁盘文件夹。"}
-        </span>
-      </div>
+      {(!sidebarHintDismissed || activeDragKind === "item") && (
+        <div
+          data-region="sidebar-hint"
+          className="flex min-h-10 shrink-0 items-start gap-2 px-3 pb-2.5 pt-0 text-[13px] leading-4 text-[var(--text-faint)]"
+        >
+          <Info className="mt-px h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" strokeWidth={1.8} aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            {activeDragKind === "item"
+              ? "释放到收藏夹或文件柜完成归档（不会移动磁盘文件）"
+              : "拖标签到项目打标，拖项目到文件柜。文件柜是分组，不是磁盘文件夹。"}
+          </span>
+          {activeDragKind !== "item" && (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="关闭提示"
+              title="关闭提示"
+              onClick={() => setSidebarHintDismissed(true)}
+            >
+              <X aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.8} />
+            </button>
+          )}
+        </div>
+      )}
 
       {(showAddTag || editingTag) && (
         <TagEditor

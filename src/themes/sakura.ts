@@ -70,7 +70,7 @@ export const sakuraTheme: ThemeDefinition = {
     "color-warning": "#ee9708",
     "color-success": "#0e9f6e",
     "color-favorite": "#ee9708",
-    "overlay-bg": "color-mix(in srgb, #29313d 34%, transparent)",
+    "overlay-bg": "color-mix(in srgb, #29313d 42%, transparent)",
     "scrollbar-thumb": "#9ca7b7",
     "scrollbar-thumb-hover": "#47536b",
 

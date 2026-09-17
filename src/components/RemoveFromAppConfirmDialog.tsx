@@ -2,6 +2,11 @@ import { Check, Trash2 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import type { RemoveConfirmItem, RemoveFromAppMode } from "../hooks/useItemRemoval";
+import {
+  deleteFilesDialogTitle,
+  folderTypeBadge,
+  removeFromLibraryDialogTitle,
+} from "../lib/itemActionCopy";
 import { truncatePathMiddle } from "../lib/itemUtils";
 
 /** 从库移除确认：可选仅出库，或连本地文件一起移到回收站。 */
@@ -28,7 +33,9 @@ export function RemoveFromAppConfirmDialog({
   if (!open) return null;
 
   const itemCount = items.length;
-  const countLabel = itemCount > 1 ? ` ${itemCount} 项` : "";
+  const dialogTitle = preferDeleteFiles
+    ? deleteFilesDialogTitle(itemCount)
+    : removeFromLibraryDialogTitle(itemCount);
   const folderCount = items.filter((item) => item.type === "folder").length;
   const previewItems = items.slice(0, 3);
 
@@ -49,7 +56,7 @@ export function RemoveFromAppConfirmDialog({
           className="modal-surface pointer-events-auto w-[480px] max-w-[92vw] p-6"
           role="dialog"
           aria-modal="true"
-          aria-label="移除项目"
+          aria-label={dialogTitle}
         >
           <div className="flex items-start gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-danger-bg)] text-[var(--color-danger-ink)]">
@@ -57,7 +64,7 @@ export function RemoveFromAppConfirmDialog({
             </div>
             <div className="min-w-0 flex-1">
               <h2 className="text-base font-semibold text-[var(--text-primary)]">
-                移除{countLabel}
+                {dialogTitle}
               </h2>
               <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
                 仅出库不会动磁盘上的文件。删除本地文件会把磁盘上的文件或整个文件夹移到回收站，并从库里拿掉。
@@ -74,7 +81,12 @@ export function RemoveFromAppConfirmDialog({
             <ul className="mt-4 space-y-1.5 rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-3 py-2">
               {previewItems.map((item) => (
                 <li key={`${item.path}-${item.name}`} className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[var(--text-primary)]">{item.name}</p>
+                  <p className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-sm font-medium text-[var(--text-primary)]">{item.name}</span>
+                    {item.type === "folder" && (
+                      <span className="shrink-0 text-[12px] text-[var(--text-muted)]">{folderTypeBadge}</span>
+                    )}
+                  </p>
                   <p className="truncate text-[12px] text-[var(--text-faint)]" title={item.path}>
                     {truncatePathMiddle(item.path, 56)}
                   </p>
@@ -100,22 +112,38 @@ export function RemoveFromAppConfirmDialog({
             下次仅出库时不再询问
           </button>
 
-          <div className="mt-6 flex flex-wrap justify-end gap-2">
-            <button type="button" autoFocus={!preferDeleteFiles} onClick={onCancel} className="action-button">
+          <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+            {!preferDeleteFiles && (
+              <button
+                type="button"
+                onClick={() => void onConfirm("files")}
+                className="action-button action-button-danger mr-auto"
+              >
+                <Trash2 aria-hidden="true" size={15} strokeWidth={1.8} />
+                删除本地文件
+              </button>
+            )}
+            <button type="button" autoFocus={preferDeleteFiles} onClick={onCancel} className="action-button">
               取消
-            </button>
-            <button type="button" onClick={() => void onConfirm("library")} className="action-button">
-              仅出库
             </button>
             <button
               type="button"
-              autoFocus={preferDeleteFiles}
-              onClick={() => void onConfirm("files")}
-              className="action-button action-button-danger"
+              autoFocus={!preferDeleteFiles}
+              onClick={() => void onConfirm("library")}
+              className={preferDeleteFiles ? "action-button" : "action-button action-button-primary"}
             >
-              <Trash2 aria-hidden="true" size={15} strokeWidth={1.8} />
-              删除本地文件
+              仅出库
             </button>
+            {preferDeleteFiles && (
+              <button
+                type="button"
+                onClick={() => void onConfirm("files")}
+                className="action-button action-button-danger"
+              >
+                <Trash2 aria-hidden="true" size={15} strokeWidth={1.8} />
+                删除本地文件
+              </button>
+            )}
           </div>
         </div>
       </div>

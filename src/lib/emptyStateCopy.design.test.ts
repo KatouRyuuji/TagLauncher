@@ -30,6 +30,25 @@ test("library 空态：引导导入，不提供清筛选/清搜索按钮", () =>
   assert.equal(copy.showClearFilters, false);
 });
 
+test("library 空态：按仍在的标签/文件柜如实补一句", () => {
+  const both = emptyStateCopy("library", "", { hasTags: true, hasCabinets: true });
+  assert.equal(both.title, "暂无项目");
+  assert.ok(both.description.includes("标签和文件柜还在"));
+  const tagsOnly = emptyStateCopy("library", "", { hasTags: true });
+  assert.ok(tagsOnly.description.includes("标签还在"));
+  assert.ok(!tagsOnly.description.includes("文件柜还在"));
+  const cabinetsOnly = emptyStateCopy("library", "", { hasCabinets: true });
+  assert.ok(cabinetsOnly.description.includes("文件柜还在"));
+  assert.ok(!cabinetsOnly.description.includes("标签还在"));
+});
+
+test("library 空态：没有标签和文件柜时不提它们还在", () => {
+  const copy = emptyStateCopy("library", "");
+  assert.ok(!copy.description.includes("还在，可以继续用"));
+  const emptyContext = emptyStateCopy("library", "", { hasTags: false, hasCabinets: false });
+  assert.ok(!emptyContext.description.includes("还在，可以继续用"));
+});
+
 test("search 空态：标题含搜索词，提供清空搜索与清空筛选两个动作", () => {
   const copy = emptyStateCopy("search", "忍者神龟");
   assert.ok(copy.title.includes("忍者神龟"));

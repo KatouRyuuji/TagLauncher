@@ -162,36 +162,57 @@ export function DataSettingsSection() {
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" onClick={() => void handleSwitchDir()} disabled={busy !== null} className="action-button px-4 text-xs disabled:opacity-50">
-          {busy === "switch" ? "切换中…" : "切换目录"}
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleReset()}
-          disabled={busy !== null || !info?.isCustom}
-          className="action-button px-4 text-xs disabled:opacity-50"
-        >
-          恢复默认
-        </button>
-        <div className="mx-1 h-6 w-px self-center bg-[var(--border-subtle)]" />
-        <button type="button" onClick={() => void handleBackup()} disabled={busy !== null} className="action-button px-4 text-xs disabled:opacity-50">
-          {busy === "backup" ? "备份中…" : "一键备份"}
-        </button>
-        <button type="button" onClick={() => void handleExport()} disabled={busy !== null} className="action-button px-4 text-xs disabled:opacity-50">
-          导出数据
-        </button>
-        <button type="button" onClick={() => void handleImport()} disabled={busy !== null} className="action-button px-4 text-xs disabled:opacity-50">
-          导入数据
-        </button>
-        <button type="button" onClick={openBackupsDir} disabled={busy !== null} className="action-button px-4 text-xs disabled:opacity-50">
-          打开备份目录
-        </button>
-      </div>
+      <div className="mt-4 space-y-4">
+        <div>
+          <h4 className="text-xs font-semibold text-[var(--text-muted)]">安全</h4>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" onClick={() => void handleBackup()} disabled={busy !== null} className="action-button action-button-primary px-4 text-xs disabled:opacity-50">
+              {busy === "backup" ? "备份中…" : "一键备份"}
+            </button>
+            <button type="button" onClick={() => void handleExport()} disabled={busy !== null} className="action-button px-4 text-xs disabled:opacity-50">
+              导出数据
+            </button>
+            <button type="button" onClick={openBackupsDir} disabled={busy !== null} className="action-button px-4 text-xs disabled:opacity-50">
+              打开备份目录
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-[var(--text-faint)]">
+            备份和导出不会改当前库；备份文件在备份目录里。
+          </p>
+        </div>
 
-      <p className="mt-3 text-xs text-[var(--text-faint)]">
-        切换目录会把当前数据复制到新位置；导入会覆盖当前数据（导入前自动备份）。两者完成后需重启应用生效。
-      </p>
+        <div>
+          <h4 className="text-xs font-semibold text-[var(--text-muted)]">位置</h4>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" onClick={() => void handleSwitchDir()} disabled={busy !== null} className="action-button px-4 text-xs disabled:opacity-50">
+              {busy === "switch" ? "切换中…" : "切换目录"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleReset()}
+              disabled={busy !== null || !info?.isCustom}
+              className="action-button px-4 text-xs disabled:opacity-50"
+            >
+              恢复默认
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-[var(--text-faint)]">
+            切换目录会把当前数据复制到新位置，完成后重启生效。
+          </p>
+        </div>
+
+        <div>
+          <h4 className="text-xs font-semibold text-[var(--text-muted)]">危险</h4>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" onClick={() => void handleImport()} disabled={busy !== null} className="action-button action-button-danger px-4 text-xs disabled:opacity-50">
+              导入数据
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-[var(--text-faint)]">
+            导入会覆盖当前数据（导入前自动备份），完成后重启生效。
+          </p>
+        </div>
+      </div>
     </section>
   );
 }

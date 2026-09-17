@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, LoaderCircle, Trash2, TriangleAlert } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { relocateNoneCopy, relocateRecoveredCopy } from "../lib/itemActionCopy";
 import { compareNames } from "../lib/itemQuery";
 import { truncatePathMiddle } from "../lib/itemUtils";
 import type { ItemWithTags } from "../types";
@@ -12,6 +13,7 @@ export function MissingItemsReviewDialog({
   open,
   items,
   relocating,
+  lastRelocateResult,
   onClose,
   onRelocate,
   onRemove,
@@ -19,6 +21,7 @@ export function MissingItemsReviewDialog({
   open: boolean;
   items: ItemWithTags[];
   relocating: boolean;
+  lastRelocateResult: number | null;
   onClose: () => void;
   onRelocate: () => Promise<void>;
   onRemove: (ids: number[]) => Promise<void>;
@@ -89,6 +92,18 @@ export function MissingItemsReviewDialog({
               description="这些项目的文件当前找不到。U 盘拔出也会出现在这里。找回会扫描全部失效项，不只限勾选。移除只作用于已勾选，且不会再删一次本地已经不在的文件。"
               onClose={onClose}
             />
+            {lastRelocateResult !== null && (
+              <p
+                role="status"
+                className={
+                  lastRelocateResult === 0
+                    ? "mt-3 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-warning)_28%,transparent)] bg-[var(--status-warning-bg)] px-3 py-2 text-sm text-[var(--color-warning-ink)]"
+                    : "mt-3 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-success)_28%,transparent)] bg-[var(--status-success-bg)] px-3 py-2 text-sm text-[var(--color-success-ink)]"
+                }
+              >
+                {lastRelocateResult === 0 ? relocateNoneCopy() : relocateRecoveredCopy(lastRelocateResult)}
+              </p>
+            )}
           </div>
 
           <div className="flex items-center justify-between gap-3 border-y border-[var(--line-hairline)] px-5 py-2.5">
@@ -144,14 +159,12 @@ export function MissingItemsReviewDialog({
             </button>
             <button
               type="button"
-              className="action-button"
+              className="action-button action-button-primary"
               disabled={relocating || ordered.length === 0}
               onClick={() => void onRelocate()}
             >
-              {relocating ? (
+              {relocating && (
                 <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <TriangleAlert className="h-3.5 w-3.5" aria-hidden="true" />
               )}
               {relocating ? "正在扫描…" : "尝试找回全部失效项"}
             </button>

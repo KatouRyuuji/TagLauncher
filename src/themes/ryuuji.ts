@@ -228,7 +228,7 @@ function buildVariables(def: RyuujiThemeDef, p: RyuujiPalette): Record<string, s
     // 键盘焦点环：A = primary（暗色换 primary-ink 提亮）；B 仪器焦点 = signal 通道色
     "color-focus-ring": isA ? (light ? p.primary : p.primary_ink) : p.signal,
 
-    "overlay-bg": light ? `color-mix(in srgb, ${p.text} 34%, transparent)` : "rgba(0, 0, 0, 0.56)",
+    "overlay-bg": light ? `color-mix(in srgb, ${p.text} 42%, transparent)` : "rgba(0, 0, 0, 0.64)",
     "scrollbar-thumb": p.border_strong,
     "scrollbar-thumb-hover": p.text_2,
 

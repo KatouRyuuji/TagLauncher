@@ -91,6 +91,43 @@ describe("StatusBar 失效对象找回", () => {
       showRecent: false,
       selectedTagIds: [],
       selectedCabinetId: null,
+      missingReviewOpen: false,
+    });
+  });
+
+  it("找回 0 项时在对话框内显示失败文案", async () => {
+    render(
+      <StatusBar
+        visibleCount={3}
+        selectedCount={0}
+        libraryCount={10}
+        missingItems={missingItems}
+        onRelocateMissing={async () => 0}
+        onRemoveMissing={async () => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /失效项目/ }));
+    fireEvent.click(screen.getByRole("button", { name: /尝试找回全部失效项/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/这次没有找回任何项目/)).toBeInTheDocument();
+    });
+  });
+
+  it("找回成功时在对话框内显示已找回 N 项", async () => {
+    render(
+      <StatusBar
+        visibleCount={3}
+        selectedCount={0}
+        libraryCount={10}
+        missingItems={missingItems}
+        onRelocateMissing={async () => 2}
+        onRemoveMissing={async () => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /失效项目/ }));
+    fireEvent.click(screen.getByRole("button", { name: /尝试找回全部失效项/ }));
+    await waitFor(() => {
+      expect(screen.getByText("已找回 2 项")).toBeInTheDocument();
     });
   });
 

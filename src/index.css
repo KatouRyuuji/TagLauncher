@@ -150,7 +150,8 @@
     --color-warning: #d97706;
     --color-success: #16a34a;
     --color-favorite: #eab308;
-    --overlay-bg: rgba(15, 23, 42, 0.38);
+    --overlay-bg: rgba(15, 23, 42, 0.46);
+    --overlay-blur: 8px;
     --scrollbar-thumb: rgba(100, 116, 139, 0.36);
     --scrollbar-thumb-hover: rgba(71, 85, 105, 0.5);
 

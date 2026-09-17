@@ -55,6 +55,27 @@ export type SidebarTab = "tags" | "cabinets";
 export type { SortMode, TypeFilter, ViewMode };
 
 const PREFS_KEY = "taglauncher.workspace_prefs";
+const SIDEBAR_HINT_DISMISSED_KEY = "taglauncher.sidebar_hint_dismissed";
+
+function loadSidebarHintDismissed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_HINT_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistSidebarHintDismissed(dismissed: boolean): void {
+  try {
+    if (dismissed) {
+      localStorage.setItem(SIDEBAR_HINT_DISMISSED_KEY, "1");
+    } else {
+      localStorage.removeItem(SIDEBAR_HINT_DISMISSED_KEY);
+    }
+  } catch {
+    // 隐私模式或配额不足时忽略
+  }
+}
 
 interface WorkspacePrefs {
   viewMode?: ViewMode;
@@ -128,6 +149,8 @@ interface AppState {
   typeFilter: TypeFilter;
   /** 主界面「筛选」条是否展开（类型/搜索范围）；有生效筛选时 SearchBar 仍会显示该条 */
   workspaceFiltersOpen: boolean;
+  /** 侧栏拖拽教程已关闭（持久化）；拖拽进行中的释放提示仍会显示 */
+  sidebarHintDismissed: boolean;
   tagGraphOpen: boolean;
   commandPaletteOpen: boolean;
   shortcutsHelpOpen: boolean;
@@ -160,6 +183,7 @@ interface AppState {
   setSortMode: (mode: SortMode) => void;
   setTypeFilter: (filter: TypeFilter) => void;
   setWorkspaceFiltersOpen: (open: boolean) => void;
+  setSidebarHintDismissed: (dismissed: boolean) => void;
   setTagGraphOpen: (open: boolean) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setShortcutsHelpOpen: (open: boolean) => void;
@@ -198,6 +222,7 @@ export const useAppStore = create<AppState>((set, get) => {
   sortMode: initialPrefs.sortMode ?? "smart",
   typeFilter: initialPrefs.typeFilter ?? "all",
   workspaceFiltersOpen: false,
+  sidebarHintDismissed: loadSidebarHintDismissed(),
   tagGraphOpen: false,
   commandPaletteOpen: false,
   shortcutsHelpOpen: false,
@@ -309,6 +334,11 @@ export const useAppStore = create<AppState>((set, get) => {
     persistNow();
   },
   setWorkspaceFiltersOpen: (open) => set((state) => state.workspaceFiltersOpen === open ? state : { workspaceFiltersOpen: open }),
+  setSidebarHintDismissed: (dismissed) => {
+    if (get().sidebarHintDismissed === dismissed) return;
+    set({ sidebarHintDismissed: dismissed });
+    persistSidebarHintDismissed(dismissed);
+  },
   setTagGraphOpen: (open) => set((state) => state.tagGraphOpen === open ? state : { tagGraphOpen: open }),
   setCommandPaletteOpen: (open) => set((state) => state.commandPaletteOpen === open ? state : { commandPaletteOpen: open }),
   setShortcutsHelpOpen: (open) => set((state) => state.shortcutsHelpOpen === open ? state : { shortcutsHelpOpen: open }),

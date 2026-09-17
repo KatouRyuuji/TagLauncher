@@ -618,11 +618,14 @@ async function featureTour(page) {
   await page.keyboard.press("Delete");
   await settle(400);
   await shot(page, "remove-confirm-批量移除确认");
-  await check("批量移除确认弹窗打开", page.getByRole("dialog", { name: "移除项目" }).isVisible());
-  await page.getByRole("dialog", { name: "移除项目" }).getByRole("button", { name: "仅出库", exact: true }).click();
+  const removeDialog = page.getByRole("dialog", { name: /^移出资料库/ });
+  await check("批量移除确认弹窗打开", removeDialog.isVisible());
+  await check("仅出库是唯一实心主按钮", removeDialog.locator("button.action-button-primary").allTextContents().then((t) => t.length === 1 && t[0].includes("仅出库")));
+  await removeDialog.getByRole("button", { name: "仅出库", exact: true }).click();
   await settle(700);
   await shot(page, "empty-library-空库引导");
   await check("空库引导出现「暂无项目」", page.getByText("暂无项目").isVisible());
+  await check("空库侧栏仍列出已有标签", page.locator('[data-region="sidebar"]').getByText("开发", { exact: true }).count().then((n) => n > 0));
 
   // 34 首屏骨架屏：主题加载门控会消耗 mock IPC 延迟的前段，用 ?demo-latency=4000
   //    留出约 2s 的骨架屏窗口；随后回到默认延迟重新进入，演示数据随之复位

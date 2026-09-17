@@ -32,6 +32,29 @@ export function deleteFilesLabel(count: number): string {
   return count > 1 ? `删除 ${count} 个本地文件` : "删除本地文件";
 }
 
+/** 默认入口（右键「从库中移除」）的确认框标题：移出资料库 ≠ 删盘。 */
+export function removeFromLibraryDialogTitle(count: number): string {
+  return count > 1 ? `移出资料库 ${count} 项` : "移出资料库";
+}
+
+/** 从菜单「删除本地文件」进来时的确认框标题。 */
+export function deleteFilesDialogTitle(count: number): string {
+  return count > 1 ? `删除本地文件 ${count} 项` : "删除本地文件";
+}
+
+/** 确认框预览列表里标出文件夹，避免和文件扫成一类。 */
+export const folderTypeBadge = "文件夹";
+
+/** 失效找回：这次一张都没找回。 */
+export function relocateNoneCopy(): string {
+  return "这次没有找回任何项目。请确认磁盘已连接；文件回来后会自动重新关联。";
+}
+
+/** 失效找回：已找回 N 项。 */
+export function relocateRecoveredCopy(recovered: number): string {
+  return `已找回 ${recovered} 项`;
+}
+
 export function parentDirectoryPath(path: string): string | null {
   const normalized = path.replace(/[/\\]+$/, "");
   const slash = Math.max(normalized.lastIndexOf("\\"), normalized.lastIndexOf("/"));

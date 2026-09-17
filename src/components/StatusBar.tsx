@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowUpDown, Command, LoaderCircle, Search, TriangleAlert } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { useSearch } from "../hooks/useSearch";
+import { relocateRecoveredCopy } from "../lib/itemActionCopy";
 import { sortModeLabel, typeFilterLabel } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
 import type { ItemWithTags } from "../types";
@@ -33,6 +34,7 @@ export function StatusBar({
   const reviewOpen = useAppStore((state) => state.missingReviewOpen);
   const setReviewOpen = useAppStore((state) => state.setMissingReviewOpen);
   const [relocating, setRelocating] = useState(false);
+  const [lastRelocateResult, setLastRelocateResult] = useState<number | null>(null);
   const missingCount = missingItems.length;
 
   useEffect(() => {
@@ -41,13 +43,25 @@ export function StatusBar({
     }
   }, [missingCount, reviewOpen, setReviewOpen]);
 
+  useEffect(() => {
+    if (!reviewOpen) {
+      setLastRelocateResult(null);
+    }
+  }, [reviewOpen]);
+
   const handleRelocate = async () => {
     if (relocating) return;
+    setLastRelocateResult(null);
     setRelocating(true);
     try {
       const recovered = await onRelocateMissing();
+      setLastRelocateResult(recovered);
       if (recovered === 0) {
-        showToast("未能自动找回失效项目：请确认磁盘已连接；文件恢复后会自动重新关联", "error");
+        // 主反馈已写在对话框行上；toast 降为 info，避免把「盘没插上」读成系统错误。
+        showToast("未能自动找回失效项目：请确认磁盘已连接；文件恢复后会自动重新关联", "info");
+      } else if (recovered > 0) {
+        // 全部找回时对话框会因 missingCount===0 自动关闭，success toast 兜住结果。
+        showToast(relocateRecoveredCopy(recovered), "success");
       }
     } catch (err) {
       showToast(`找回失效项目失败：${err instanceof Error ? err.message : String(err)}`, "error");
@@ -139,6 +153,7 @@ export function StatusBar({
       open={reviewOpen}
       items={missingItems}
       relocating={relocating}
+      lastRelocateResult={lastRelocateResult}
       onClose={() => setReviewOpen(false)}
       onRelocate={handleRelocate}
       onRemove={onRemoveMissing}
