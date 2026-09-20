@@ -5,7 +5,8 @@
 // 用 Playwright 驱动真实 UI 交互，逐特性断言行为正确（check 计数，失败以
 // 退出码 1 结束），并在每个形态落截图。
 //
-// 覆盖：欢迎页 / 网格 / 列表 / 侧栏新建标签·文件柜编辑态 / 添加文件夹入库方式 /
+// 覆盖：欢迎页 / 网格 / 列表 / 大图标 / 卡片与大图标尺寸调节（状态栏缩放控件）/
+// 侧栏新建标签·文件柜编辑态 / 添加文件夹入库方式 /
 // 关键词（含高亮）·拼音·表达式搜索 / 搜索模式切换 / 类型筛选 / 筛选无结果空态 /
 // 标签 DAG 筛选（父并入后代、多选交集）/ 收藏 / 最近使用 / 文件柜 / 排序 /
 // 命令面板（打开态·命令过滤·对象搜索）/ 快速预览（图片·音频·视频·文件夹）/
@@ -155,7 +156,8 @@ async function isDarkMode(page) {
 
 async function setMode(page, wantDark) {
   if ((await isDarkMode(page)) !== wantDark) {
-    await page.locator(`button[aria-label="${wantDark ? "切换到暗色模式" : "切换到亮色模式"}"]`).click();
+    // 明暗唯一入口：侧栏主题 Dock 的浅色/深色分段（标题栏快捷开关已移除）
+    await page.locator(`#sidebar-theme-mode-${wantDark ? "dark" : "light"}`).click();
     await page.waitForFunction((mode) => document.documentElement.dataset.scheme === mode, wantDark ? "dark" : "light");
     await settle(500);
   }
@@ -268,6 +270,48 @@ async function featureTour(page) {
     (await page.locator('[data-region="main"] [data-selectable-item-id] h3').first().textContent())?.includes("工作文档"));
   await page.locator('[data-region="item-list"] button:has-text("名称")').click();
   await settle(400);
+  await page.locator('button[title="网格视图"]').click();
+  await settle();
+
+  // 03e 卡片尺寸调节（状态栏缩放控件：滑杆拉满 → 列宽变量与列数变化 → 复位 100%）
+  const cardZoom = page.getByRole("group", { name: "卡片尺寸" });
+  await check("状态栏卡片尺寸控件可见", cardZoom.isVisible());
+  const cardSlider = cardZoom.getByRole("slider", { name: "卡片尺寸" });
+  await cardSlider.fill("150");
+  await settle(500);
+  await check("卡片 150%：--grid-col-min 写为 384px",
+    await page.evaluate(() => document.documentElement.style.getPropertyValue("--grid-col-min") === "384px"));
+  await shot(page, "card-zoom-卡片尺寸-150");
+  await cardSlider.fill("75");
+  await settle(500);
+  await check("卡片 75%：--grid-col-min 写为 192px",
+    await page.evaluate(() => document.documentElement.style.getPropertyValue("--grid-col-min") === "192px"));
+  await check("卡片 75%：缩略图写为 39px",
+    await page.evaluate(() => document.documentElement.style.getPropertyValue("--card-thumb-size") === "39px"));
+  await shot(page, "card-zoom-卡片尺寸-75");
+  await cardZoom.getByRole("button", { name: "重置卡片尺寸为 100%" }).click();
+  await settle(500);
+  await check("复位 100%：内联列宽移除（交还主题）",
+    await page.evaluate(() => document.documentElement.style.getPropertyValue("--grid-col-min") === ""));
+
+  // 03f 大图标视图 + 图标尺寸调节
+  await page.locator('button[title="大图标视图"]').click();
+  await settle();
+  await shot(page, "workspace-icons-主界面-大图标视图");
+  await check("大图标视图渲染 11 个对象", (await itemCount(page)) === 11);
+  const iconZoom = page.getByRole("group", { name: "大图标尺寸" });
+  await check("状态栏切换为大图标尺寸控件", iconZoom.isVisible());
+  await iconZoom.getByRole("slider", { name: "大图标尺寸" }).fill("175");
+  await settle(500);
+  await check("大图标 175%：--grid-col-min-icons 写为 294px",
+    await page.evaluate(() => document.documentElement.style.getPropertyValue("--grid-col-min-icons") === "294px"));
+  await shot(page, "icons-zoom-大图标尺寸-175");
+  await iconZoom.getByRole("button", { name: "缩小大图标尺寸" }).click();
+  await settle(400);
+  await check("缩小一步为 170%", await page.evaluate(() =>
+    document.documentElement.style.getPropertyValue("--grid-col-min-icons") === "286px"));
+  await iconZoom.getByRole("button", { name: "重置大图标尺寸为 100%" }).click();
+  await settle(500);
   await page.locator('button[title="网格视图"]').click();
   await settle();
 
@@ -581,7 +625,7 @@ async function featureTour(page) {
   await settle(400);
   await shot(page, "ai-tagging-AI批量打标");
   await check("AI 打标完成", page.getByText("打标完成").isVisible());
-  await page.getByRole("dialog", { name: "AI 打标进度" }).getByRole("button", { name: "关闭" }).click();
+  await page.getByRole("dialog", { name: "AI 打标进度" }).getByRole("button", { name: "关闭", exact: true }).click();
   await settle();
 
   await goToSettingsSection(page, "数据管理");
@@ -608,7 +652,7 @@ async function featureTour(page) {
   await shot(page, "missing-review-失效项目复核");
   await check("失效复核弹窗打开", page.getByRole("dialog", { name: "失效项目" }).isVisible());
   await page.getByRole("button", { name: "尝试找回全部失效项" }).click();
-  await page.getByText("未能自动找回失效项目").waitFor({ timeout: 10_000 });
+  await page.getByText("这次没有找回任何项目").waitFor({ timeout: 10_000 });
   await settle(400);
   await shot(page, "missing-relocate-失效对象找回反馈");
   await closeOverlays(page);
@@ -624,10 +668,10 @@ async function featureTour(page) {
   await page.keyboard.press("Delete");
   await settle(400);
   await shot(page, "remove-confirm-批量移除确认");
-  const removeDialog = page.getByRole("dialog", { name: /^移出资料库/ });
+  const removeDialog = page.getByRole("dialog", { name: /^移出库/ });
   await check("批量移除确认弹窗打开", removeDialog.isVisible());
-  await check("仅出库是唯一实心主按钮", removeDialog.locator("button.action-button-primary").allTextContents().then((t) => t.length === 1 && t[0].includes("仅出库")));
-  await removeDialog.getByRole("button", { name: "仅出库", exact: true }).click();
+  await check("从库中移除是唯一实心主按钮", removeDialog.locator("button.action-button-primary").allTextContents().then((t) => t.length === 1 && t[0].includes("从库中移除")));
+  await removeDialog.getByRole("button", { name: "从库中移除", exact: true }).click();
   await settle(700);
   await shot(page, "empty-library-空库引导");
   await check("空库引导出现「暂无项目」", page.getByText("暂无项目").isVisible());
@@ -671,10 +715,10 @@ async function themeTour(page) {
     await setMode(page, false);
     await shot(page, `theme-${slug}-亮-grid-主界面`);
     if (themeLabel.includes("素墨")) {
-      // 房间验收：素墨下库里的标签色必须已写成墨阶，而不是渲染层滤镜——读侧栏色点的实际背景色判饱和度
-      // color-mix 的计算值可能是 `rgb(...)` 也可能是 `color(srgb r g b)`，两种都解析
-      const allLowChroma = (els) =>
-        els.length > 0 && els.every((el) => {
+      // 房间验收：素墨 UI 去色，但标签色是用户数据的识别维度，必须保留彩色
+      // （评审裁定：去色只作用 UI 装饰色）。读侧栏色点的实际背景色判饱和度。
+      const hasChroma = (els) =>
+        els.length > 0 && els.some((el) => {
           const bg = getComputedStyle(el).backgroundColor;
           let rgb = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(bg)?.slice(1, 4).map(Number);
           if (!rgb) {
@@ -682,10 +726,24 @@ async function themeTour(page) {
             if (m) rgb = m.slice(1, 4).map((v) => Math.round(Number(v) * 255));
           }
           if (!rgb) return false;
-          return Math.max(...rgb) - Math.min(...rgb) <= 12;
+          return Math.max(...rgb) - Math.min(...rgb) > 24;
         });
-      await check("素墨主题下卡片标签胶囊也是墨阶（对象副本已随库刷新）", page.locator('[data-region="main"] .tag-pill').evaluateAll(allLowChroma));
-      await check("素墨主题下侧栏标签色点全部为墨阶（低饱和）", page.locator('[data-region="sidebar-nav"] [data-tag-color-dot]').evaluateAll(allLowChroma));
+      await check("素墨主题下侧栏标签色点保留彩色（用户数据不去色）", page.locator('[data-region="sidebar-nav"] [data-tag-color-dot]').evaluateAll(hasChroma));
+      // 卡片胶囊本体只混 9% 底色，色度应读描边（22% 标签色）；
+      // color-mix 的计算值可能是 rgba(...) 也可能是 color(srgb r g b / a)
+      const borderHasChroma = (els) =>
+        els.length > 0 && els.some((el) => {
+          const raw = getComputedStyle(el).borderColor;
+          let rgb = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(raw)?.slice(1, 4).map(Number);
+          if (!rgb) {
+            const m = /color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/.exec(raw);
+            if (m) rgb = m.slice(1, 4).map((v) => Math.round(Number(v) * 255));
+          }
+          return Boolean(rgb) && Math.max(...rgb) - Math.min(...rgb) > 24;
+        });
+      await check("素墨主题下卡片标签胶囊保留彩色", page.locator('[data-region="main"] .tag-pill').evaluateAll(borderHasChroma));
+      // 素墨 UI 语义：失效徽章仍是可辨的警示样式（描边 + ⚠ 图标，非普通胶囊）
+      await check("素墨主题下失效徽章可辨", page.locator('[data-region="main"] [data-selectable-item-id]').filter({ hasText: "影视收藏" }).getByText("失效", { exact: true }).isVisible());
     }
     await setMode(page, true);
     await shot(page, `theme-${slug}-暗-grid-主界面`);

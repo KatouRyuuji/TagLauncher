@@ -7,13 +7,15 @@ interface AiTaggingModalProps {
   progress: AiTagProgress;
   onCancel: () => void;
   onClose: () => void;
+  /** 完成态「查看结果」：关闭弹窗并在主网格选中刚打标的对象（信任但需验证） */
+  onViewResults?: (ids: number[]) => void;
 }
 
 /**
  * AI 批量打标进度弹窗。silent 模式（新对象自动打标）不渲染。
  * 开始瞬间用读取句代替全零收据；进行中露出 currentName；结束后写结果总结。
  */
-export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalProps) {
+export function AiTaggingModal({ progress, onCancel, onClose, onViewResults }: AiTaggingModalProps) {
   const visible = (progress.running || progress.done > 0) && !progress.silent;
   const finished = !progress.running && progress.done > 0;
   const starting = progress.running && progress.done === 0;
@@ -48,21 +50,33 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
           aria-label="AI 打标进度"
         >
           <div className="px-6 pt-6">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-                <Sparkles aria-hidden="true" size={22} strokeWidth={1.8} />
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+                  <Sparkles aria-hidden="true" size={22} strokeWidth={1.8} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                    {progress.running ? "正在自动打标…" : progress.canceled ? "已取消打标" : "打标完成"}
+                  </h2>
+                </div>
               </div>
-              <div>
-                <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                  {progress.running ? "正在自动打标…" : progress.canceled ? "已取消打标" : "打标完成"}
-                </h2>
-              </div>
+              {/* 关闭语言与其他弹层一致：右上 X（进行中=取消，完成=关闭） */}
+              <button
+                type="button"
+                className="icon-button shrink-0"
+                title={progress.running ? "取消打标" : "关闭打标进度"}
+                aria-label={progress.running ? "取消打标" : "关闭打标进度"}
+                onClick={progress.running ? onCancel : onClose}
+              >
+                <X aria-hidden="true" size={17} strokeWidth={1.8} />
+              </button>
             </div>
           </div>
 
           <div className="px-6 py-5">
             <div
-              className="h-2 w-full overflow-hidden rounded-[var(--radius-sm)] bg-[var(--bg-hover)]"
+              className="h-2.5 w-full overflow-hidden rounded-[var(--radius-sm)] bg-[var(--bg-hover)]"
               role="progressbar"
               aria-valuenow={percent}
               aria-valuemin={0}
@@ -70,12 +84,13 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
               aria-label="打标进度"
             >
               <div
-                className="h-full origin-left bg-[var(--accent-primary)] transition-transform"
+                className="h-full origin-left bg-[var(--accent-primary)] transition-transform duration-300"
                 style={{ transform: `scaleX(${percent / 100})` }}
               />
             </div>
             <div className="mt-2 flex items-center justify-between text-sm text-[var(--text-muted)]">
-              <span>{progress.done} / {progress.total}</span>
+              {/* 起步瞬间 done 还是 0，但「正在读取第 1 个」已在进行：计数与之一致显示 1 */}
+              <span>{starting ? 1 : progress.done} / {progress.total}</span>
               <span>{percent}%</span>
             </div>
 
@@ -113,12 +128,6 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
               </div>
             )}
 
-            {finished && (
-              <p className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">
-                已为 {progress.succeeded} 个对象添加标签，{progress.skipped} 个无建议，{progress.failed} 个失败
-              </p>
-            )}
-
             {finished && progress.errors.length > 0 && (
               <div className="mt-3 max-h-28 overflow-y-auto rounded-[var(--radius-md)] bg-[var(--color-danger-bg)] px-3 py-2 text-xs text-[var(--color-danger-ink)]">
                 {progress.errors.slice(0, 8).map((e, i) => (
@@ -138,10 +147,22 @@ export function AiTaggingModal({ progress, onCancel, onClose }: AiTaggingModalPr
                 取消
               </button>
             ) : (
-              <button type="button" onClick={onClose} className="action-button action-button-primary">
-                <Check aria-hidden="true" size={15} strokeWidth={1.9} />
-                关闭
-              </button>
+              <>
+                {onViewResults && progress.taggedIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onViewResults(progress.taggedIds)}
+                    className="action-button"
+                    title="在主网格中选中刚打标的对象，核对标签"
+                  >
+                    查看结果（{progress.taggedIds.length}）
+                  </button>
+                )}
+                <button type="button" onClick={onClose} className="action-button action-button-primary">
+                  <Check aria-hidden="true" size={15} strokeWidth={1.9} />
+                  关闭
+                </button>
+              </>
             )}
           </div>
         </section>

@@ -179,9 +179,13 @@ export function ModManagerPanel() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-base font-semibold text-[var(--text-primary)]">{mod.name}</span>
                   <TypeBadge type={mod.type} />
-                  {mod.enabled && (
+                  {mod.enabled ? (
                     <span className="rounded-[var(--radius-full)] bg-[var(--status-success-bg)] px-2 py-1 text-[13px] font-semibold text-[var(--color-success-ink)]">
                       已启用
+                    </span>
+                  ) : (
+                    <span className="rounded-[var(--radius-full)] bg-[var(--bg-hover)] px-2 py-1 text-[13px] font-semibold text-[var(--text-muted)]">
+                      已禁用
                     </span>
                   )}
                   {mod.is_compatible === false && (
@@ -248,9 +252,17 @@ export function ModManagerPanel() {
               </div>
             </div>
 
-            {permissions.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {permissions.map((permission) => {
+            {/* 权限行恒在：无权限也明示，卡片高度对齐、职责一眼可辨 */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {permissions.length === 0 ? (
+                <span
+                  className="tag-pill px-2.5 py-1 text-[13px]"
+                  style={{ "--tag-color": "var(--text-faint)" } as CSSProperties}
+                >
+                  无特殊权限
+                </span>
+              ) : (
+                permissions.map((permission) => {
                   const meta = PERMISSION_META[permission] ?? { label: permission, color: "var(--text-muted)" };
                   return (
                     <span
@@ -261,9 +273,9 @@ export function ModManagerPanel() {
                       {meta.label}
                     </span>
                   );
-                })}
-              </div>
-            )}
+                })
+              )}
+            </div>
           </div>
         );
       })}

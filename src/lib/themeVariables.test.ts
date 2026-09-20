@@ -121,7 +121,38 @@ function normalizeCssValue(value: string): string {
   return value.replace(/\s+/g, " ").replace(/0px/g, "0").trim();
 }
 
-test("关键语义色与 RyuujiDesign palettes.css 逐值一致（八套含素墨）", () => {
+// 效果优先：RyuujiDesign 是参考而非硬绑定。以下键经设计评审刻意调离源值，
+// 每条附调优理由；新增调优须连同理由一起登记，否则默认与 palettes.css 逐值一致。
+const TUNED: Record<string, Partial<Record<keyof typeof SEMANTIC_TO_SYS, string>>> = {
+  // 素墨亮：去色只作用 UI 装饰色——警告/危险/成功语义色保留彩色（与樱花亮同值），
+  // 「失效待处理」信号在素墨下不隐身（第二轮评审必须修 #1）
+  "mono-light": {
+    "color-success": "#1faa64",
+    "color-success-ink": "#167645",
+    "color-warning": "#e8a006",
+    "color-warning-ink": "#895f04",
+    "color-danger": "#c0392b",
+    "color-danger-ink": "#bb382a",
+  },
+  // 素墨暗：语义色与霜靛暗同值（暗底警示同样醒目）
+  "mono-dark": {
+    "color-success": "#52c878",
+    "color-success-ink": "#52c878",
+    "color-warning": "#d4a838",
+    "color-warning-ink": "#d4a838",
+    "color-danger": "#cd4747",
+    "color-danger-ink": "#da7c7c",
+  },
+  // 藤色暗：accent 向暖紫（梅紫方向）推 ~12°，与霜靛暗的冷靛拉开色相距离，
+  // 暗色下两族快速切换不再「换了个寂寞」（第三轮评审主题横向对比）
+  "a3-dark": {
+    "accent-primary": "#a855d1",
+    "accent-primary-ink": "#e2c9f6",
+    "accent-signal": "#a855d1",
+  },
+};
+
+test("关键语义色与 RyuujiDesign palettes.css 逐值一致（显式调优清单除外）", () => {
   const root = ryuujiRoot();
   if (!root) {
     const locked = new Set(THEME_FAMILIES.map((family) => family.id === "mono-b" ? "mono" : family.id));
@@ -156,6 +187,14 @@ test("关键语义色与 RyuujiDesign palettes.css 逐值一致（八套含素�
       }
       for (const [appKey, sysKey] of Object.entries(SEMANTIC_TO_SYS)) {
         if (appKey === "bg-base" && paperDerived) continue;
+        const tuned = TUNED[`${paletteId}-${mode}`]?.[appKey as keyof typeof SEMANTIC_TO_SYS];
+        if (tuned !== undefined) {
+          // 调优键与源值脱钩，只断言等于登记的调优值（漂移即登记缺失/笔误）
+          if (theme!.variables[appKey] !== tuned) {
+            mismatches.push(`${family.name}/${mode} ${appKey}: ${theme!.variables[appKey]} ≠ 调优登记值 ${tuned}`);
+          }
+          continue;
+        }
         if (theme!.variables[appKey] !== sys[sysKey]) {
           mismatches.push(`${family.name}/${mode} ${appKey}: ${theme!.variables[appKey]} ≠ --sys-${sysKey} ${sys[sysKey]}`);
         }

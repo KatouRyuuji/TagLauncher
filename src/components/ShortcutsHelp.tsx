@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  Check,
   Eye,
+  Info,
   Keyboard,
   MousePointer2,
   Navigation,
@@ -43,10 +43,10 @@ const GROUPS: { title: string; icon: LucideIcon; note?: string; items: ShortcutI
       { keys: "Ctrl+A", action: "全选当前结果" },
       { keys: "单击 / Ctrl / Shift+单击", action: "选择 / 加选 / 范围" },
       { keys: "拖拽框选 / Alt+拖拽", action: "框选 / 减选框内项" },
-      { keys: "右键已选标签 / 侧栏 Alt+单击", action: "排除 / 取消排除该标签" },
+      { keys: "右键已选标签 / 侧栏 Alt+单击", action: "排除 / 取消排除标签" },
       { keys: "Shift + 方向键", action: "范围选择" },
       { keys: "Shift+F10 / 菜单键", action: "打开选中项菜单" },
-      { keys: "Delete", action: "仅出库（可改删本地文件）" },
+      { keys: "Delete", action: "从库中移除（可改删本地文件）" },
       { keys: "Ctrl+C", action: "复制选中路径（多项换行）" },
       { keys: "Ctrl+D", action: "收藏 / 取消收藏" },
       { keys: "G / I / L", action: "网格 / 大图标 / 列表" },
@@ -163,26 +163,27 @@ export function ShortcutsHelp() {
             <p className="py-8 text-center text-sm text-[var(--text-muted)]">没有匹配的快捷键</p>
           ) : (
             <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-              {visibleGroups.map((group, groupIndex) => {
+              {visibleGroups.map((group) => {
                 const Icon = group.icon;
                 return (
-                  <section key={group.title} className={groupIndex === visibleGroups.length - 1 ? "sm:col-span-2" : undefined}>
+                  <section key={group.title}>
                     <div className="flex items-center gap-1.5 border-b border-[var(--line-hairline)] pb-1">
                       <Icon aria-hidden="true" size={14} strokeWidth={1.8} className="text-[var(--accent-primary)]" />
                       <h3 className="instrument-label text-[var(--text-secondary)]">{group.title}</h3>
                       <span className="data-readout ml-auto text-[12px] text-[var(--text-faint)]">
-                        {String(group.items.length).padStart(2, "0")}
+                        {group.items.length} 条
                       </span>
                     </div>
-                    <ul className={groupIndex === visibleGroups.length - 1 ? "grid sm:grid-cols-2 sm:gap-x-6" : undefined}>
+                    <ul>
                       {group.items.map((item) => {
                         const chips = Array.isArray(item.keys) ? item.keys : [item.keys];
                         return (
                           <li
                             key={item.action}
-                            className="flex min-h-7 items-center justify-between gap-3 border-b border-[var(--line-hairline)] py-1 text-sm leading-4 last:border-b-0"
+                            className="flex min-h-7 items-start justify-between gap-3 border-b border-[var(--line-hairline)] py-1 text-sm leading-4 last:border-b-0"
                           >
                             <span className="min-w-0 text-[var(--text-secondary)]">{item.action}</span>
+                            {/* 多行条目芯片顶对齐：不与折行后的第二行文字相碰 */}
                             <span className="flex max-w-[58%] shrink-0 flex-wrap justify-end gap-1">
                               {chips.map((chip) => (
                                 <kbd key={chip} className="kbd whitespace-normal py-0.5 text-right leading-4">
@@ -195,7 +196,10 @@ export function ShortcutsHelp() {
                       })}
                     </ul>
                     {group.note && (
-                      <p className="mt-1.5 text-xs leading-4 text-[var(--text-faint)]">{group.note}</p>
+                      <p className="mt-1.5 flex items-start gap-1 text-[12px] leading-4 text-[var(--text-faint)]">
+                        <Info aria-hidden="true" size={12} strokeWidth={1.8} className="mt-0.5 shrink-0" />
+                        {group.note}
+                      </p>
                     )}
                   </section>
                 );
@@ -204,14 +208,11 @@ export function ShortcutsHelp() {
           )}
         </div>
 
-        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-2.5 sm:px-5">
+        <footer className="flex shrink-0 items-center gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-2.5 sm:px-5">
+          {/* 关闭出口 = 右上 X + Esc，底栏不再重复按钮 */}
           <span className="text-xs text-[var(--text-faint)]">
             按 <kbd className="kbd mx-1">Esc</kbd> 关闭
           </span>
-          <button type="button" onClick={() => setOpen(false)} className="action-button action-button-primary">
-            <Check aria-hidden="true" size={16} strokeWidth={1.9} />
-            关闭
-          </button>
         </footer>
       </div>
     </div>,

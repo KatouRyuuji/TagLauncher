@@ -284,7 +284,8 @@ export function ItemListView({
   return (
     <SelectionCanvas
       dataRegion="item-list"
-      className="flex-1 overflow-y-auto"
+      // scrollbar-gutter 恒留滚动槽：列表可滚动与否一眼可辨，避免末项被裁的错觉
+      className="flex-1 overflow-y-auto [scrollbar-gutter:stable]"
       itemIds={itemIds}
       selectedItemIds={selectedItemIds}
       onSelectItems={onSelectItems}
@@ -294,7 +295,7 @@ export function ItemListView({
       {/* 全幅表格（对标资源管理器详细信息视图）：表头吸附、整行分隔线，无外层卡片 */}
       <div>
         <div
-          className="sticky top-0 z-10 grid h-9 items-center gap-3 border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4"
+          className="sticky top-0 z-10 grid h-9 items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4"
           style={{ gridTemplateColumns: ITEM_LIST_GRID_TEMPLATE }}
         >
           <span aria-hidden="true" />

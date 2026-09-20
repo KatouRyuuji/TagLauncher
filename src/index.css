@@ -69,6 +69,10 @@
     --sidebar-width: 232px;
     --grid-col-min: 256px;
     --grid-col-min-icons: 168px;
+    /* 卡片缩略图边长；用户尺寸缩放时由 cardSizeVars 内联覆盖 */
+    --card-thumb-size: 52px;
+    /* 卡片内标签文字缩放（小尺寸档同步收小，避免密度被标签行吃掉） */
+    --card-text-scale: 1;
     --titlebar-height: 40px;
 
     /* 层级约定：100 以下保留给组件内局部层级，全局浮层从 100 起编排 */
@@ -417,6 +421,32 @@
     box-shadow: 0 0 0 4px var(--accent-primary-bg);
   }
 
+  /* 状态栏尺寸滑杆：settings-range 的紧凑变体 */
+  .zoom-range {
+    appearance: none;
+    width: 88px;
+    height: 16px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .zoom-range::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: var(--radius-full);
+    background: linear-gradient(to right, var(--accent-primary) var(--range-progress), var(--border-default) var(--range-progress));
+  }
+  .zoom-range::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4.5px;
+    border: 2px solid var(--accent-primary);
+    border-radius: 50%;
+    background: var(--bg-surface);
+  }
+  .zoom-range:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px var(--accent-primary-bg);
+  }
+
   .surface-card {
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-xl);
@@ -450,11 +480,11 @@
     background: color-mix(in srgb, var(--bg-hover) 70%, var(--bg-input));
   }
 
+  /* 激活态实心反白：与未激活拉开一档对比，选中/激活不再只是浅灰描边 */
   .control-chip-active {
-    border-color: color-mix(in srgb, var(--accent-primary) 65%, var(--border-default));
-    background: var(--accent-primary-bg);
-    color: var(--accent-primary-ink);
-    box-shadow: inset 0 -2px 0 var(--accent-primary);
+    border-color: var(--accent-primary);
+    background: var(--accent-primary);
+    color: var(--text-invert);
   }
 
   .kbd {
@@ -520,6 +550,13 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  /* disabled 与品牌色彻底脱钩：去饱和为灰底灰字，不与可用态只差明度 */
+  .action-button-primary:disabled {
+    border-color: var(--border-default);
+    background: var(--bg-hover);
+    color: var(--text-faint);
+  }
+
   /* 标签保留用户色相；字用正文色。暗色靠更高 alpha / 本段实底与底分开。 */
   .tag-pill {
     --tag-color: var(--accent-primary);
@@ -531,6 +568,24 @@
     color: var(--text-primary);
     font-weight: var(--font-weight-medium);
     transition: background-color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast);
+  }
+
+  /* 卡片视图的标签胶囊随卡片尺寸缩放（12px 基准与 DraggableTagList 一致） */
+  .item-card-render-scope .tag-pill {
+    font-size: calc(12px * var(--card-text-scale, 1));
+  }
+
+  /* 小尺寸档：标签行收单行 + 右缘渐隐，溢出不再换行撑高卡片 */
+  :root[data-card-small="1"] .item-card-render-scope [data-tag-drag="true"]:has(> .tag-pill) {
+    flex-wrap: nowrap;
+    overflow: hidden;
+    mask-image: linear-gradient(to right, #000 82%, transparent);
+    -webkit-mask-image: linear-gradient(to right, #000 82%, transparent);
+  }
+
+  /* 最小档（≤75%）：路径行隐藏，小卡片不再名称/路径双重截断 */
+  :root[data-card-tiny="1"] .item-card-render-scope .item-card-path {
+    display: none;
   }
 
   .tag-pill:hover {
@@ -605,8 +660,11 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    min-height: 280px;
-    margin: 16px;
+    /* 框收缩到内容一圈（margin auto 安全居中：内容超高时退回顶对齐可滚动） */
+    width: calc(100% - 32px);
+    max-width: 680px;
+    margin: auto;
+    padding: 48px 56px;
     border: 1px dashed var(--border-default);
     border-radius: var(--radius-xl);
     background: var(--bg-surface);
@@ -614,15 +672,13 @@
     text-align: center;
   }
 
-  /* 少结果（1–3 项）居中紧凑组：避免一两张卡贴左上像货架被搬空 */
+  /* 少结果（1–3 项）与满网格同一锚点：恒左对齐、同 padding/gap，卡片不随结果数漂移 */
   .item-grid-few {
     display: flex;
     flex-wrap: wrap;
-    justify-content: center;
-    gap: 1rem;
-    max-width: 1080px;
-    margin-inline: auto;
-    padding: 2rem 1.5rem;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 1rem;
   }
   .item-grid-few-card {
     width: min(320px, 100%);
@@ -821,13 +877,34 @@
   /* 快速预览四种主体（W3-E）：只加类，不改令牌 */
   .preview-image-stage {
     display: flex;
+    position: relative;
     align-items: center;
     justify-content: center;
     width: 100%;
     min-height: 180px;
     max-height: 52vh;
     overflow: hidden;
-    background: color-mix(in srgb, var(--text-primary) 88%, #000);
+    /* 中性深灰而非纯黑，与纸感底色协调；暗色主题另按底色加深 */
+    background: color-mix(in srgb, var(--text-primary) 62%, var(--bg-base));
+  }
+
+  :root[data-scheme="dark"] .preview-image-stage {
+    background: color-mix(in srgb, #000 45%, var(--bg-base));
+  }
+
+  /* 未铺满区域的填充：同图模糊延展，代替生硬的两侧灰条 */
+  .preview-image-backdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: blur(28px) brightness(0.55);
+    transform: scale(1.15);
+  }
+
+  .preview-image-stage img:not(.preview-image-backdrop) {
+    position: relative;
   }
 
   .preview-image-stage img {
@@ -841,7 +918,11 @@
     width: 100%;
     aspect-ratio: 16 / 9;
     overflow: hidden;
-    background: color-mix(in srgb, var(--text-primary) 88%, #000);
+    background: color-mix(in srgb, var(--text-primary) 62%, var(--bg-base));
+  }
+
+  :root[data-scheme="dark"] .preview-video-stage {
+    background: color-mix(in srgb, #000 45%, var(--bg-base));
   }
 
   .preview-video-fail {
@@ -849,24 +930,6 @@
     inset: 0;
     display: flex;
     flex-direction: column;
-  }
-
-  .preview-video-fail-poster {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    opacity: 0.48;
-  }
-
-  .preview-video-fail-center {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex: 1;
-    align-items: center;
-    justify-content: center;
   }
 
   .preview-video-chrome {
@@ -952,13 +1015,16 @@
   .preview-audio-transport {
     display: flex;
     align-items: center;
-    gap: 10px;
+    /* 播放钮与进度条滑块不粘连 */
+    gap: 12px;
   }
 
   .preview-range {
     appearance: none;
     width: 100%;
-    height: 28px;
+    /* 高度放到 44px 再用负 margin 收回：点击热区上下各扩 8px，布局仍按 28px 占位 */
+    height: 44px;
+    margin: -8px 0;
     background: transparent;
     cursor: pointer;
   }
@@ -974,24 +1040,35 @@
     background: linear-gradient(
       to right,
       var(--accent-primary) var(--range-progress),
-      color-mix(in srgb, var(--text-faint) 42%, transparent) var(--range-progress)
+      color-mix(in srgb, var(--text-faint) 58%, transparent) var(--range-progress)
     );
   }
 
   .preview-range::-webkit-slider-thumb {
     appearance: none;
-    width: 12px;
-    height: 12px;
-    margin-top: -4px;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
     border: 2px solid var(--accent-primary);
     border-radius: 50%;
     background: var(--bg-surface);
+    transition: transform 150ms ease;
+  }
+
+  /* 可交互暗示：hover 轨道加粗、手柄放大加影（disabled 时不给假信号） */
+  .preview-range:not(:disabled):hover::-webkit-slider-runnable-track {
+    height: 5px;
+  }
+
+  .preview-range:not(:disabled):hover::-webkit-slider-thumb {
+    transform: scale(1.3);
+    box-shadow: var(--shadow-card);
   }
 
   .preview-range::-moz-range-track {
     height: 4px;
     border-radius: var(--radius-full);
-    background: color-mix(in srgb, var(--text-faint) 42%, transparent);
+    background: color-mix(in srgb, var(--text-faint) 58%, transparent);
   }
 
   .preview-range::-moz-range-progress {
@@ -1001,11 +1078,25 @@
   }
 
   .preview-range::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border: 2px solid var(--accent-primary);
     border-radius: 50%;
     background: var(--bg-surface);
+    transition: transform 150ms ease;
+  }
+
+  .preview-range:not(:disabled):hover::-moz-range-track {
+    height: 5px;
+  }
+
+  .preview-range:not(:disabled):hover::-moz-range-progress {
+    height: 5px;
+  }
+
+  .preview-range:not(:disabled):hover::-moz-range-thumb {
+    transform: scale(1.3);
+    box-shadow: var(--shadow-card);
   }
 
   .preview-timecode {
@@ -1035,7 +1126,7 @@
   .preview-folder-body {
     display: flex;
     flex-direction: column;
-    min-height: 36vh;
+    /* 高度随内容（外层 modal max-h 收口），条目少时不再留半截空洞 */
     flex: 1;
     min-width: 0;
   }

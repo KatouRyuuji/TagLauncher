@@ -17,6 +17,12 @@ import {
   type TypeFilter,
   type ViewMode,
 } from "../lib/itemQuery";
+import {
+  applyCardSizeVars,
+  clampSizeScale,
+  CARD_SIZE_SCALE_RANGE,
+  ICON_SIZE_SCALE_RANGE,
+} from "../lib/cardSizeVars";
 import { SEARCH_RESET_EVENT } from "../lib/workspaceChrome";
 
 function sameTags(a: Tag[], b: Tag[]): boolean {
@@ -77,12 +83,35 @@ function persistSidebarHintDismissed(dismissed: boolean): void {
   }
 }
 
+/** 侧栏拖拽教程展示次数上限：达到后自动收起，把侧栏底部还给内容 */
+const SIDEBAR_HINT_SEEN_KEY = "taglauncher.sidebar_hint_seen";
+const SIDEBAR_HINT_AUTO_DISMISS_AFTER = 6;
+
+function countSidebarHintSeenAndAutoDismiss(): void {
+  try {
+    if (localStorage.getItem(SIDEBAR_HINT_DISMISSED_KEY) === "1") return;
+    const seen = Number(localStorage.getItem(SIDEBAR_HINT_SEEN_KEY) ?? "0") + 1;
+    localStorage.setItem(SIDEBAR_HINT_SEEN_KEY, String(seen));
+    if (seen >= SIDEBAR_HINT_AUTO_DISMISS_AFTER) persistSidebarHintDismissed(true);
+  } catch {
+    // 隐私模式或配额不足时忽略
+  }
+}
+
 interface WorkspacePrefs {
   viewMode?: ViewMode;
   searchMode?: SearchMode;
   sortMode?: SortMode;
   typeFilter?: TypeFilter;
   workspaceFiltersOpen?: boolean;
+  cardSizeScale?: number;
+  iconSizeScale?: number;
+}
+
+/** 读取持久化的缩放值：非法值丢弃（回退默认 1），合法值夹取到允许范围 */
+function loadSizeScale(raw: unknown, range: { min: number; max: number }): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
+  return clampSizeScale(raw, range);
 }
 
 function loadWorkspacePrefs(): WorkspacePrefs {
@@ -100,6 +129,8 @@ function loadWorkspacePrefs(): WorkspacePrefs {
       workspaceFiltersOpen: typeof parsed.workspaceFiltersOpen === "boolean"
         ? parsed.workspaceFiltersOpen
         : undefined,
+      cardSizeScale: loadSizeScale(parsed.cardSizeScale, CARD_SIZE_SCALE_RANGE),
+      iconSizeScale: loadSizeScale(parsed.iconSizeScale, ICON_SIZE_SCALE_RANGE),
     };
   } catch {
     return {};
@@ -115,6 +146,12 @@ function persistWorkspacePrefs(prefs: Required<WorkspacePrefs>): void {
 }
 
 const initialPrefs = loadWorkspacePrefs();
+
+// 启动即应用持久化的尺寸缩放，避免首帧按默认尺寸渲染后再跳变
+applyCardSizeVars(initialPrefs.cardSizeScale ?? 1, initialPrefs.iconSizeScale ?? 1);
+
+// 侧栏拖拽教程计次：超过上限自动收起（须在读初始状态前执行）
+countSidebarHintSeenAndAutoDismiss();
 
 /** 阻断式重启遮罩状态（数据目录切换 / 导入 / 云端恢复成功后激活） */
 export interface RestartOverlayState {
@@ -151,6 +188,10 @@ interface AppState {
   viewMode: ViewMode;
   sortMode: SortMode;
   typeFilter: TypeFilter;
+  /** 卡片视图尺寸缩放（1 = 默认 256px 列宽） */
+  cardSizeScale: number;
+  /** 大图标视图尺寸缩放（1 = 默认 168px 列宽） */
+  iconSizeScale: number;
   /** 主界面「筛选」条是否展开（类型/搜索范围）；有生效筛选时 SearchBar 仍会显示该条 */
   workspaceFiltersOpen: boolean;
   /** 侧栏拖拽教程已关闭（持久化）；拖拽进行中的释放提示仍会显示 */
@@ -186,6 +227,8 @@ interface AppState {
   setViewMode: (mode: ViewMode) => void;
   setSortMode: (mode: SortMode) => void;
   setTypeFilter: (filter: TypeFilter) => void;
+  setCardSizeScale: (scale: number) => void;
+  setIconSizeScale: (scale: number) => void;
   setWorkspaceFiltersOpen: (open: boolean) => void;
   setSidebarHintDismissed: (dismissed: boolean) => void;
   setTagGraphOpen: (open: boolean) => void;
@@ -207,6 +250,8 @@ export const useAppStore = create<AppState>((set, get) => {
       sortMode: state.sortMode,
       typeFilter: state.typeFilter,
       workspaceFiltersOpen: state.workspaceFiltersOpen,
+      cardSizeScale: state.cardSizeScale,
+      iconSizeScale: state.iconSizeScale,
     });
   };
 
@@ -226,6 +271,8 @@ export const useAppStore = create<AppState>((set, get) => {
   viewMode: initialPrefs.viewMode ?? "grid",
   sortMode: initialPrefs.sortMode ?? "smart",
   typeFilter: initialPrefs.typeFilter ?? "all",
+  cardSizeScale: initialPrefs.cardSizeScale ?? 1,
+  iconSizeScale: initialPrefs.iconSizeScale ?? 1,
   workspaceFiltersOpen: initialPrefs.workspaceFiltersOpen ?? true,
   sidebarHintDismissed: loadSidebarHintDismissed(),
   tagGraphOpen: false,
@@ -336,6 +383,21 @@ export const useAppStore = create<AppState>((set, get) => {
   setTypeFilter: (filter) => {
     if (get().typeFilter === filter) return;
     set({ typeFilter: filter });
+    persistNow();
+  },
+  setCardSizeScale: (scale) => {
+    const next = clampSizeScale(scale, CARD_SIZE_SCALE_RANGE);
+    if (get().cardSizeScale === next) return;
+    set({ cardSizeScale: next });
+    // 同步写 CSS 变量：ItemGrid 的列数重算 effect 运行于本次渲染之后，读取的已是新值
+    applyCardSizeVars(next, get().iconSizeScale);
+    persistNow();
+  },
+  setIconSizeScale: (scale) => {
+    const next = clampSizeScale(scale, ICON_SIZE_SCALE_RANGE);
+    if (get().iconSizeScale === next) return;
+    set({ iconSizeScale: next });
+    applyCardSizeVars(get().cardSizeScale, next);
     persistNow();
   },
   setWorkspaceFiltersOpen: (open) => {

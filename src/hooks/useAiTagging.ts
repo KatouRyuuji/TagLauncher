@@ -27,6 +27,8 @@ export interface AiTagProgress {
   currentName: string | null;
   errors: Array<{ name: string; error: string }>;
   canceled: boolean;
+  /** 成功打标的对象 id：完成态「查看结果」据此在主网格选中刚打标的对象 */
+  taggedIds: number[];
 }
 
 export interface AiTaggingPrimitives {
@@ -61,6 +63,7 @@ const INITIAL: AiTagProgress = {
   currentName: null,
   errors: [],
   canceled: false,
+  taggedIds: [],
 };
 
 function errorMessage(e: unknown): string {
@@ -154,6 +157,7 @@ export function useAiTagging() {
               done: s.done + 1,
               succeeded: s.succeeded + 1,
               lastNames: names,
+              taggedIds: [...s.taggedIds, item.id],
             }));
           } catch (e) {
             const failure = { name: item.name, error: errorMessage(e) };

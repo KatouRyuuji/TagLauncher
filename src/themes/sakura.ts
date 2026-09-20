@@ -25,7 +25,9 @@ export const sakuraTheme: ThemeDefinition = {
     "color-success-ink": "#0b7854",
     "color-warning-ink": "#945e05",
     "color-info-ink": "#07738b",
-    "tag-preset-colors": "#5064d8,#8f5fc5,#578129,#12828a,#d63865,#242424,#ee9708,#0e9f6e",
+    // 8 色位与工厂 TAGS 表同语义序（主色/跨族A/跨族B/中性/琥珀/绿/橙/蓝），
+    // 保证霜靛亮↔暗、亮↔其他家族切换时标签色相稳定、只随亮暗换明度
+    "tag-preset-colors": "#5064d8,#8f5fc5,#d63865,#242424,#e89e06,#1faa62,#ea580c,#1f8ad8",
 
     "grid-col-min": "256px",
 
@@ -58,7 +60,7 @@ export const sakuraTheme: ThemeDefinition = {
     "accent-signal": "#5064d8",
     "row-selected-bg": "#5064d8",
     "row-selected-fg": "#ffffff",
-    "row-selected-sub-fg": "color-mix(in srgb, #ffffff 72%, transparent)",
+    "row-selected-sub-fg": "color-mix(in srgb, #ffffff 90%, transparent)",
     "row-selected-shadow": "inset 0 1px 0 rgb(255 255 255 / 0.22)",
     "row-selected-weight": "500",
     "color-focus-ring": "#5064d8",

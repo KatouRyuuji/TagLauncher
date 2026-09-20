@@ -71,7 +71,8 @@ export function SelectMenu({ value, onChange, ariaLabel, options, groups, classN
     setMenuPos({
       top: flip ? Math.max(gutter, rect.top - maxHeight - 4) : rect.bottom + 4,
       left: Math.min(rect.left, window.innerWidth - Math.max(rect.width, 160) - gutter),
-      minWidth: rect.width,
+      // 最小宽度盖住最长选项（如「最近使用」+ 勾选图标），不随短触发器挤成一行
+      minWidth: Math.max(rect.width, 144),
       maxHeight,
     });
   };

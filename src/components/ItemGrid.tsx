@@ -145,8 +145,12 @@ export function ItemGrid({
 }: ItemViewProps) {
   const viewMode = useAppStore((state) => state.viewMode);
   const iconLayout = viewMode === "icons";
+  // 尺寸缩放（cardSizeVars 已在 store action 中同步写入 CSS 变量，这里读到的是新值）
+  const cardSizeScale = useAppStore((state) => state.cardSizeScale);
+  const iconSizeScale = useAppStore((state) => state.iconSizeScale);
+  const sizeScale = iconLayout ? iconSizeScale : cardSizeScale;
   const rowEstimate = iconLayout ? ICONS_ROW_EST : GRID_ROW_EST;
-  /** 少结果旁路：1–3 张卡居中一组；icons 仍走虚拟化主路径 */
+  /** 少结果旁路：1–3 张卡顶左一组（与满网格同锚点）；icons 仍走虚拟化主路径 */
   const fewResults = Boolean(!libraryEmpty && items.length > 0 && items.length <= 3 && !iconLayout);
   const viewProps = useMemo(() => ({
     tags,
@@ -203,6 +207,11 @@ export function ItemGrid({
   useLayoutEffect(() => {
     computeLanes();
   }, [computeLanes]);
+
+  // 尺寸缩放改变 --grid-col-min(-icons) 后重算列数（变量变化不触发容器 ResizeObserver）
+  useEffect(() => {
+    computeLanes();
+  }, [computeLanes, sizeScale]);
 
   // 容器宽度变化时动态更新列数
   useEffect(() => {

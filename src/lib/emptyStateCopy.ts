@@ -83,7 +83,7 @@ export function emptyStateCopy(
     case "search":
       return {
         title: `没有找到“${truncateQueryForDisplay(searchQuery)}”`,
-        description: "试试换个关键词、切换搜索范围（全部 / 名称 / 标签），或清空搜索。",
+        description: "试试换个关键词、切换搜索范围（全部 / 名称 / 标签），或清空搜索。也可以用表达式组合标签：如「开发&&自动化」同时满足、「游戏!!卡牌」排除。",
         showClearSearch: true,
         showClearFilters: true,
       };

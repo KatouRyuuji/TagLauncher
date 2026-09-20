@@ -3,9 +3,13 @@ import { createPortal } from "react-dom";
 import type { ItemWithTags, Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { isImeKeyboardEvent } from "../lib/itemQuery";
+import { isImeKeyboardEvent, compareNames } from "../lib/itemQuery";
+import { tagFilterPlaceholder } from "../lib/itemActionCopy";
 import { showToast } from "../lib/toast";
 import { DialogHeader } from "./DialogHeader";
+
+// 标签数超过阈值才显示过滤框（与 BatchSelectionToolbar 的 TAG_MENU_FILTER_THRESHOLD 对齐）
+const TAG_FILTER_THRESHOLD = 8;
 
 interface ItemTagsEditorProps {
   item: ItemWithTags;
@@ -22,6 +26,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newTagName, setNewTagName] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   // 跟踪本次会话中通过 quick-create 真正新建的标签 id（复用同名已有标签不计入）：
   // 进入编辑器时快照已有 id，之后 diff 出的新 id 即为新建。
   const knownTagIdsRef = useRef<Set<number>>(new Set(tags.map((t) => t.id)));
@@ -92,6 +97,42 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
     }
   };
 
+  // 标签矩阵：先按过滤词收窄，再按拼音排序（全应用统一的 zh-CN Collator），已选整体置顶
+  const tagQuery = tagFilter.trim().toLowerCase();
+  const matchedTags = tagQuery ? tags.filter((tag) => tag.name.toLowerCase().includes(tagQuery)) : tags;
+  const orderedTags = [...matchedTags].sort((a, b) => compareNames(a.name, b.name));
+  const selectedTags = orderedTags.filter((tag) => selectedIds.includes(tag.id));
+  const unselectedTags = orderedTags.filter((tag) => !selectedIds.includes(tag.id));
+  const showTagFilter = tags.length > TAG_FILTER_THRESHOLD;
+
+  const renderTagButton = (tag: Tag) => {
+    const selected = selectedIds.includes(tag.id);
+    return (
+      <button
+        key={tag.id}
+        type="button"
+        onClick={() => toggleTag(tag.id)}
+        disabled={saving || creating}
+        aria-pressed={selected}
+        className="tag-pill gap-2 px-3 py-2 text-xs"
+        style={{
+          "--tag-color": tag.color,
+          // 已选 = 标签色 15% 底 + 同色描边，扫视即可分辨
+          ...(selected
+            ? {
+                backgroundColor: `color-mix(in srgb, ${tag.color} 15%, var(--bg-surface))`,
+                borderColor: `color-mix(in srgb, ${tag.color} 55%, transparent)`,
+              }
+            : {}),
+        } as CSSProperties}
+      >
+        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
+        <span>{tag.name}</span>
+        {selected && <span className="text-[13px]">✓</span>}
+      </button>
+    );
+  };
+
   return createPortal(
     <div
       data-workspace-overlay=""
@@ -111,6 +152,19 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
 
         <div className="dialog-body">
         <section aria-label="已有标签">
+          {/* 过滤框模式同批量工具条 TagOwnershipMenu；不挂 autoFocus：会话内新建标签使数量
+              跨过阈值时输入框才挂载，自动聚焦会打断正在输入的新建流程 */}
+          {showTagFilter && (
+            <input
+              type="search"
+              aria-label={tagFilterPlaceholder}
+              placeholder={tagFilterPlaceholder}
+              disabled={saving || creating}
+              value={tagFilter}
+              onChange={(event) => setTagFilter(event.target.value)}
+              className="mb-2 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
+            />
+          )}
           <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-muted)]">
             <span>已选 {selectedIds.length} 个标签</span>
             <span>点击即可切换状态</span>
@@ -118,26 +172,15 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
 
           {tags.length === 0 ? (
             <p className="py-6 text-center text-sm text-[var(--text-muted)]">当前还没有可用标签</p>
+          ) : orderedTags.length === 0 ? (
+            <p className="py-6 text-center text-sm text-[var(--text-muted)]">无匹配标签</p>
           ) : (
             <div className="flex max-h-56 flex-wrap gap-2 overflow-y-auto pr-1">
-              {tags.map((tag) => {
-                const selected = selectedIds.includes(tag.id);
-                return (
-                  <button
-                    key={tag.id}
-                    type="button"
-                    onClick={() => toggleTag(tag.id)}
-                    disabled={saving || creating}
-                    aria-pressed={selected}
-                    className="tag-pill gap-2 px-3 py-2 text-xs"
-                    style={{ "--tag-color": tag.color } as CSSProperties}
-                  >
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                    <span>{tag.name}</span>
-                    {selected && <span className="text-[13px]">✓</span>}
-                  </button>
-                );
-              })}
+              {selectedTags.map(renderTagButton)}
+              {selectedTags.length > 0 && unselectedTags.length > 0 && (
+                <div className="h-px w-full bg-[var(--border-subtle)]" aria-hidden="true" />
+              )}
+              {unselectedTags.map(renderTagButton)}
             </div>
           )}
         </section>
@@ -159,7 +202,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
                 void handleAddNewTag();
               }}
               placeholder="输入新标签名"
-              className="input-frame min-w-0 flex-1 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none"
+              className="input-frame min-h-10 min-w-0 flex-1 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] focus:outline-none"
             />
 
             <button

@@ -48,16 +48,16 @@ test("卡片主按钮：脚本说启动，文件夹说打开", () => {
   assert.equal(cardOpenLabel("image"), "打开");
 });
 
-test("仅出库与删本地按数量变复数", () => {
-  assert.equal(libraryRemoveLabel(1), "仅出库");
-  assert.equal(libraryRemoveLabel(3), "仅出库 3 项");
+test("从库中移除与删本地按数量变复数", () => {
+  assert.equal(libraryRemoveLabel(1), "从库中移除");
+  assert.equal(libraryRemoveLabel(3), "从库中移除 3 项");
   assert.equal(deleteFilesLabel(1), "删除本地文件");
   assert.equal(deleteFilesLabel(2), "删除 2 个本地文件");
 });
 
-test("确认框标题：默认移出资料库，删盘入口才写删除本地文件", () => {
-  assert.equal(removeFromLibraryDialogTitle(1), "移出资料库");
-  assert.equal(removeFromLibraryDialogTitle(3), "移出资料库 3 项");
+test("确认框标题：默认移出库，删盘入口才写删除本地文件", () => {
+  assert.equal(removeFromLibraryDialogTitle(1), "移出库");
+  assert.equal(removeFromLibraryDialogTitle(3), "移出库 3 项");
   assert.equal(deleteFilesDialogTitle(1), "删除本地文件");
   assert.equal(deleteFilesDialogTitle(4), "删除本地文件 4 项");
   assert.equal(folderTypeBadge, "文件夹");

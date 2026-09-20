@@ -11,7 +11,7 @@ import {
   findClosestNumberDataAttribute,
 } from "../lib/internalPointerDrag";
 import { cardOpenLabel } from "../lib/itemActionCopy";
-import { getFileSuffix, getTypeLabel } from "../lib/itemUtils";
+import { getFileSuffix, getTypeLabel, splitPathTail, formatRelativeTime } from "../lib/itemUtils";
 import { showToast } from "../lib/toast";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
@@ -224,8 +224,16 @@ function ItemCardComponent({
     onRequestRemoveFromApp,
   );
   const fileSuffix = getFileSuffix(item);
+  const { dir: pathDir, tail: pathTail } = splitPathTail(item.path);
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
   const searchQuery = useAppStore((state) => state.searchQuery);
+  // 大图标 ≥150% 档：大卡片要换更多信息——补路径与标签行（第三轮评审 P0）
+  const iconSizeScale = useAppStore((state) => state.iconSizeScale);
+  // 卡片 ≥150% 档补「上次使用」相对时间；「最近使用」视图任何档位都带时间维度
+  const cardSizeScale = useAppStore((state) => state.cardSizeScale);
+  const showRecent = useAppStore((state) => state.showRecent);
+  const lastUsedText = formatRelativeTime(item.last_used_at);
+  const showLastUsed = (cardSizeScale >= 1.45 || showRecent) && lastUsedText !== "";
 
   // Mod ItemCard 插槽
   const modSlots = useModItemSlots();
@@ -247,7 +255,7 @@ function ItemCardComponent({
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
             : selected
-            ? "border-[var(--accent-primary)] bg-[color-mix(in_srgb,var(--accent-primary)_12%,var(--bg-surface))]"
+            ? "border-[var(--accent-primary)] bg-[color-mix(in_srgb,var(--accent-primary)_12%,var(--bg-surface))] ring-1 ring-inset ring-[var(--accent-primary)]"
             : "border-[var(--line-hairline)] hover:border-[var(--border-default)] hover:bg-[var(--bg-card-hover)]"
         }`}
         style={{ backdropFilter: "var(--card-backdrop-filter)" }}
@@ -280,14 +288,14 @@ function ItemCardComponent({
               </span>
               {item.is_missing && (
                 <span
-                  className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[12px] font-semibold text-[var(--color-warning-ink)]"
+                  className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[12px] font-semibold text-[var(--color-warning-ink)]"
                   title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
                 >
                   <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
                   失效
                 </span>
               )}
-              <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5">
+              <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--bg-card)_86%,transparent)] p-0.5 shadow-[var(--shadow-sm)] backdrop-blur-sm">
                 {selected && (
                   <span
                     className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary)] text-[var(--text-invert)]"
@@ -300,7 +308,8 @@ function ItemCardComponent({
                 )}
                 <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
               </div>
-              <div className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5">
+              {/* 衬底与按钮同现同隐：按钮未浮出时不留空白银盒 */}
+              <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--bg-card)_86%,transparent)] p-0.5 opacity-0 shadow-[var(--shadow-sm)] backdrop-blur-sm transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                 <ItemOpenButton item={item} onLaunch={onLaunch} compact />
                 <ItemDragHandle
                   onPointerDown={handleItemHandlePointerDown}
@@ -314,11 +323,27 @@ function ItemCardComponent({
             >
               <SearchHighlightText text={item.name} query={searchQuery} />
             </h3>
+            {iconSizeScale >= 1.5 && (
+              <>
+                <p
+                  className={`mt-0.5 flex w-full min-w-0 justify-center text-[12px] leading-4 ${
+                    item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"
+                  }`}
+                  title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
+                >
+                  <span className="min-w-0 truncate">{pathDir}</span>
+                  <span dir="rtl" className="max-w-[60%] shrink-0 truncate text-left" style={{ unicodeBidi: "plaintext" }}>{pathTail}</span>
+                </p>
+                <div className="mt-1.5 w-full" onClick={(event) => event.stopPropagation()}>
+                  <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} />
+                </div>
+              </>
+            )}
           </>
         ) : (
           <>
         <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-[26px]">
+          <div className="flex h-[var(--card-thumb-size)] w-[var(--card-thumb-size)] shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-[26px]">
             <ItemVisualIcon
               item={item}
               emojiClass="leading-none"
@@ -334,7 +359,7 @@ function ItemCardComponent({
               </h3>
               {item.is_missing && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning-ink)]"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning-ink)]"
                   title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
                 >
                   <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
@@ -343,13 +368,20 @@ function ItemCardComponent({
               )}
             </div>
             <p
-              className={`mt-0.5 truncate text-[13px] leading-4 ${
+              className={`item-card-path mt-0.5 flex min-w-0 text-[13px] leading-4 ${
                 item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"
               }`}
               title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
             >
-              {item.path}
+              {/* 目录段先行截断，末段名保底可见；末段自身超长时从头部省略，扩展名始终完整 */}
+              <span className="min-w-0 truncate">{pathDir}</span>
+              <span dir="rtl" className="max-w-[60%] shrink-0 truncate text-left" style={{ unicodeBidi: "plaintext" }}>{pathTail}</span>
             </p>
+            {showLastUsed && (
+              <p className="mt-0.5 truncate text-[12px] leading-4 text-[var(--text-faint)]">
+                上次使用 {lastUsedText}
+              </p>
+            )}
             <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[13px] leading-4 text-[var(--text-faint)]">
               <span className="instrument-label truncate" title={getTypeLabel(item.type)}>
                 {getTypeLabel(item.type)}
@@ -387,7 +419,7 @@ function ItemCardComponent({
           <div className="min-w-0 flex-1">
             <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} />
           </div>
-          <div className="flex shrink-0 items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-1">
             {/* Mod 插槽：actions */}
             {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="flex items-center gap-1" />}
             <ItemOpenButton item={item} onLaunch={onLaunch} />

@@ -3,6 +3,7 @@ import { getPresetTheme, THEME_FAMILIES } from "../themes";
 import { nameColorByHue } from "./tagColors";
 import {
   hexEquals,
+  hexToOklab,
   nearestSlot,
   oklchChroma,
   parsePalette,
@@ -62,7 +63,8 @@ test("霜靛板 → 素墨板 → 霜靛板 每个色位回到原 hex", () => {
   }
 });
 
-test("素墨板上不残留饱和色（写回后 chroma < 0.04）", () => {
+// 评审裁定（2026-09）：素墨 UI 去色，但标签色是用户数据的识别维度，写回后保留彩色
+test("素墨板上标签色保留彩色（用户数据不随 UI 去色）", () => {
   const tags = frost.map((color, index) => ({ id: index + 1, color }));
   const planned = planRecolor({
     tags,
@@ -75,11 +77,41 @@ test("素墨板上不残留饱和色（写回后 chroma < 0.04）", () => {
     const update = planned.updates.tags.find((item) => item.id === tag.id);
     return update?.color ?? tag.color;
   });
-  for (const color of written) {
-    assert.ok(oklchChroma(color) < 0.04, `${color} 在素墨板应是中性色`);
-  }
-  for (const color of Object.values(planned.nextSlotMap.tags).map((record) => record.hex)) {
-    assert.ok(oklchChroma(color) < 0.04, `记忆 hex ${color} 也应是中性色`);
+  // 首位是素墨主题色（中性），其余保留彩色
+  assert.ok(oklchChroma(written[0] ?? "#ffffff") < 0.04, `首位 ${written[0]} 应是素墨主题中性色`);
+  const chromaCount = written.filter((color) => oklchChroma(color) >= 0.04).length;
+  assert.ok(chromaCount >= 4, `素墨板应保留彩色标签色，实际彩色仅 ${chromaCount} 个`);
+});
+
+// 第三轮评审根因修复：同族亮暗两板必须同槽同色相——曾因子樱亮板沿旧八族序，
+// 默认家族每次切亮暗标签色相互换（绿↔粉、青↔白）
+test("全部官方家族：亮板 ↔ 暗板 同槽色相一致（切亮暗只换明度不换色相）", () => {
+  for (const family of THEME_FAMILIES) {
+    const light = parsePalette(getPresetTheme(family.light)?.variables["tag-preset-colors"] ?? "");
+    const dark = parsePalette(getPresetTheme(family.dark)?.variables["tag-preset-colors"] ?? "");
+    for (let i = 0; i < light.length; i++) {
+      const lightHex = light[i] ?? "";
+      const darkHex = dark[i] ?? "";
+      const lightLab = hexToOklab(lightHex);
+      const darkLab = hexToOklab(darkHex);
+      assert.ok(lightLab && darkLab, `${family.name} 色位 ${i} hex 非法`);
+      const lightChroma = oklchChroma(lightHex);
+      const darkChroma = oklchChroma(darkHex);
+      if (lightChroma < 0.04 || darkChroma < 0.04) {
+        assert.ok(
+          lightChroma < 0.04 && darkChroma < 0.04,
+          `${family.name} 色位 ${i} 中性性不一致：${lightHex} vs ${darkHex}`,
+        );
+        continue;
+      }
+      const lightHue = (Math.atan2(lightLab!.b, lightLab!.a) * 180) / Math.PI;
+      const darkHue = (Math.atan2(darkLab!.b, darkLab!.a) * 180) / Math.PI;
+      const diff = Math.abs(((lightHue - darkHue + 540) % 360) - 180);
+      assert.ok(
+        diff <= 30,
+        `${family.name} 色位 ${i} 亮暗色相相差 ${diff.toFixed(1)}°：${lightHex} vs ${darkHex}`,
+      );
+    }
   }
 });
 

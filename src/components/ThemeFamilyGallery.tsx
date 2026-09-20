@@ -80,7 +80,7 @@ export function ThemeFamilyGallery({
   return (
     <section className="min-w-0 flex-1">
       <h4 className="text-sm font-medium text-[var(--text-primary)]">官方配色</h4>
-      <p className="mt-1 text-xs text-[var(--text-secondary)]">点选即换房间。缩略用该族当前亮暗的真实纸色。</p>
+      <p className="mt-1 text-xs text-[var(--text-secondary)]">点选立即应用。缩略用该族当前亮暗的真实纸色。</p>
       <div
         role="radiogroup"
         aria-label="官方配色"
@@ -109,7 +109,7 @@ export function ThemeFamilyGallery({
             >
               <span
                 aria-hidden="true"
-                className="flex h-[4.75rem] overflow-hidden border p-1.5"
+                className="flex h-24 overflow-hidden border p-1"
                 style={{
                   background: colors["bg-base"],
                   borderColor: colors["border-default"],
@@ -124,8 +124,8 @@ export function ThemeFamilyGallery({
                   }}
                 >
                   <span className="h-1 w-4" style={{ background: colors["accent-primary"] }} />
-                  <span className="h-1 w-5 opacity-40" style={{ background: colors["text-secondary"] }} />
-                  <span className="h-1 w-3.5 opacity-40" style={{ background: colors["text-secondary"] }} />
+                  <span className="h-1 w-5 opacity-60" style={{ background: colors["text-secondary"] }} />
+                  <span className="h-1 w-3.5 opacity-60" style={{ background: colors["text-secondary"] }} />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-1">
                   <span className="flex min-h-0 flex-1 gap-1">
@@ -145,7 +145,7 @@ export function ThemeFamilyGallery({
                     {presets.map((hex, pillIndex) => (
                       <span
                         key={`${hex}-${pillIndex}`}
-                        className="h-2 min-w-0 flex-1 rounded-full"
+                        className="h-3 min-w-0 flex-1 rounded-full"
                         style={{
                           background: hex,
                           boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${hex} 35%, transparent)`,
@@ -156,7 +156,20 @@ export function ThemeFamilyGallery({
                 </span>
               </span>
               <span className="mt-2 flex items-center justify-between gap-1 px-0.5 text-xs font-medium">
-                <span className="truncate">{family.name}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate">{family.name}</span>
+                  {/* 族名旁主色速览：前三位预设色点 + 主按钮色 HEX，免逐卡对照 */}
+                  <span aria-hidden="true" className="flex shrink-0 items-center gap-1">
+                    {presets.map((hex, dotIndex) => (
+                      <span key={`${hex}-dot-${dotIndex}`} className="h-2 w-2 rounded-full" style={{ background: hex }} />
+                    ))}
+                  </span>
+                  {colors["accent-primary"] && (
+                    <span className="data-readout shrink-0 text-[10px] font-normal text-[var(--text-faint)]">
+                      {colors["accent-primary"]}
+                    </span>
+                  )}
+                </span>
                 {selected && <Check size={14} strokeWidth={2} aria-hidden="true" />}
               </span>
             </button>

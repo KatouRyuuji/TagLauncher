@@ -12,8 +12,6 @@ export type ColorMode = "light" | "dark" | "system";
 export type ResolvedColorMode = "light" | "dark";
 
 export const COLOR_MODE_KEY = "taglauncher.color-mode";
-/** 模式切换后派发，useTheme 监听以按最新模式重解析当前主题 */
-export const COLOR_MODE_CHANGED_EVENT = "taglauncher:color-mode-changed";
 
 export function getColorMode(): ColorMode {
   try {

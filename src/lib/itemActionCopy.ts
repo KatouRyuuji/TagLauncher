@@ -26,7 +26,7 @@ export function cardOpenLabel(itemType: string): string {
 }
 
 export function libraryRemoveLabel(count: number): string {
-  return count > 1 ? `仅出库 ${count} 项` : "仅出库";
+  return count > 1 ? `从库中移除 ${count} 项` : "从库中移除";
 }
 
 export function deleteFilesLabel(count: number): string {
@@ -47,9 +47,9 @@ export const tagAlreadyOwnedTitle = "已全部拥有";
 /** 标签数超过阈值时，菜单内过滤框的占位。 */
 export const tagFilterPlaceholder = "过滤标签";
 
-/** 默认入口（右键「从库中移除」）的确认框标题：移出资料库 ≠ 删盘。 */
+/** 默认入口（右键「从库中移除」）的确认框标题：移出库 ≠ 删盘。 */
 export function removeFromLibraryDialogTitle(count: number): string {
-  return count > 1 ? `移出资料库 ${count} 项` : "移出资料库";
+  return count > 1 ? `移出库 ${count} 项` : "移出库";
 }
 
 /** 从菜单「删除本地文件」进来时的确认框标题。 */

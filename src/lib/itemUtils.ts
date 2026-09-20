@@ -69,3 +69,33 @@ export function getFileSuffix(item: ItemWithTags): string {
   if (dot <= 0 || dot === name.length - 1) return "无后缀";
   return name.slice(dot).toLowerCase();
 }
+
+/**
+ * 路径两段拆分（目录段 / 末段名）：卡片与列表的路径展示中，目录段先行截断、
+ * 末段名保底可见——用户靠「叫什么名」定位对象，中段目录信息量最低。
+ */
+export function splitPathTail(path: string): { dir: string; tail: string } {
+  const trimmed = path.trim();
+  const match = /^(.*[\\/])([^\\/]*)$/.exec(trimmed);
+  if (!match) return { dir: "", tail: trimmed };
+  return { dir: match[1], tail: match[2] };
+}
+
+/**
+ * 相对时间（「上次使用」维度）：今天/昨天/N 天前/N 周前/N 个月前/N 年前。
+ * 卡片大尺寸档与「最近使用」视图的时间维度展示。无值或非法日期返回空串。
+ */
+export function formatRelativeTime(iso?: string): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "";
+  const diffMs = Date.now() - then;
+  if (diffMs < 0) return "今天";
+  const days = Math.floor(diffMs / 86_400_000);
+  if (days <= 0) return "今天";
+  if (days === 1) return "昨天";
+  if (days < 7) return `${days} 天前`;
+  if (days < 30) return `${Math.floor(days / 7)} 周前`;
+  if (days < 365) return `${Math.floor(days / 30)} 个月前`;
+  return `${Math.floor(days / 365)} 年前`;
+}

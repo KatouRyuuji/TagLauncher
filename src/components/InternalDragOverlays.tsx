@@ -92,7 +92,7 @@ export function ItemDropActions({
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12m-8 4v6m4-6v6M9 7l1-2h4l1 2m-8 0 1 13h8l1-13" />
             </svg>
           </div>
-          <p className="text-sm font-semibold">仅出库</p>
+          <p className="text-sm font-semibold">从库中移除</p>
           <p className="mt-1 text-xs text-[var(--text-muted)]">不删除磁盘上的文件</p>
         </div>
       </div>

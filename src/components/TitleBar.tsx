@@ -13,12 +13,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Copy, Menu, Minus, Moon, Square, Sun, X } from "lucide-react";
+import { Copy, Menu, Minus, Square, X } from "lucide-react";
 // 32x32 小图标（与 src-tauri/icons/32x32.png 同源）：完整 icon.png 有 1.5MB，
 // 作为窗口栏图标会无谓膨胀前端包体
 import appIcon from "../assets/icon-32.png";
-import { useThemeContextOptional } from "./ThemeProvider";
-import { findFamilyByThemeId } from "../themes";
 
 export function TitleBar({
   sidebarOpen = false,
@@ -28,12 +26,6 @@ export function TitleBar({
   onToggleSidebar?: () => void;
 }) {
   const [maximized, setMaximized] = useState(false);
-  // 亮/暗快捷开关：仅内置配色家族随模式换肤（自定义/Mod 主题自带配色）；
-  // 脱离 Provider（单元测试）时开关隐藏
-  const themeContext = useThemeContextOptional();
-  const effectiveMode = themeContext?.effectiveMode ?? "light";
-  const modeToggleEnabled =
-    themeContext !== null && findFamilyByThemeId(themeContext.currentTheme.id) !== undefined;
 
   // 同步最大化状态：初始查询一次 + 监听窗口尺寸变化（拖拽边缘、Win+方向键、
   // 双击标题栏等所有途径都会触发 onResized，无需逐一拦截）。
@@ -107,28 +99,6 @@ export function TitleBar({
       </div>
 
       <div className="flex h-full shrink-0 items-stretch">
-        {themeContext && (
-          <button
-            type="button"
-            onClick={() => themeContext.changeColorMode(effectiveMode === "dark" ? "light" : "dark")}
-            disabled={!modeToggleEnabled}
-            className="titlebar-control"
-            title={
-              modeToggleEnabled
-                ? effectiveMode === "dark"
-                  ? "切换到亮色模式"
-                  : "切换到暗色模式"
-                : "当前主题自带配色，亮/暗切换仅对内置主题生效"
-            }
-            aria-label={effectiveMode === "dark" ? "切换到亮色模式" : "切换到暗色模式"}
-          >
-            {effectiveMode === "dark" ? (
-              <Sun className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            ) : (
-              <Moon className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            )}
-          </button>
-        )}
         <button
           type="button"
           onClick={handleMinimize}

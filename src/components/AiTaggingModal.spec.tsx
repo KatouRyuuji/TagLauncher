@@ -54,7 +54,7 @@ describe("AI 打标进度口音", () => {
     expect(screen.getByText("已打标")).toBeInTheDocument();
   });
 
-  it("完成态保留打标完成与关闭，并写结果总结", () => {
+  it("完成态保留打标完成与关闭，三格统计呈现结果", () => {
     render(
       <AiTaggingModal
         progress={progress({
@@ -70,7 +70,11 @@ describe("AI 打标进度口音", () => {
       />,
     );
     expect(screen.getByText("打标完成")).toBeInTheDocument();
-    expect(screen.getByText("已为 5 个对象添加标签，2 个无建议，1 个失败")).toBeInTheDocument();
+    // 结果由三格统计呈现（已打标/无建议/失败），不再附重复总结句
+    expect(screen.getByText("已打标")).toBeInTheDocument();
+    expect(screen.getByText("无建议")).toBeInTheDocument();
+    expect(screen.getAllByText("失败").length).toBeGreaterThan(0);
+    expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "关闭" })).toBeInTheDocument();
   });
 });

@@ -22,7 +22,8 @@ async function toDarkFamily(page) {
   await page.waitForTimeout(300);
   await page.locator('button[aria-label="关闭设置"]').click();
   await page.waitForTimeout(300);
-  await page.locator('button[aria-label="切换到暗色模式"]').click();
+  // 明暗唯一入口：侧栏主题 Dock 的深色分段（标题栏快捷开关已移除）
+  await page.locator("#sidebar-theme-mode-dark").click();
   await page.waitForTimeout(400);
 }
 

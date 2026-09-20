@@ -200,7 +200,7 @@ function ColorDotField({
                     ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[nextIndex]
                     ?.focus();
                 }}
-                className={`h-6 w-6 rounded-full ${
+                className={`h-6 w-6 rounded-full transition-transform hover:scale-110 focus-visible:scale-110 ${
                   selected ? "ring-2 ring-offset-2 ring-offset-[var(--bg-surface)]" : ""
                 }`}
                 style={{
@@ -211,7 +211,7 @@ function ColorDotField({
             );
           })}
         </div>
-        <span className="text-xs text-[var(--text-secondary)]">{nameColorByHue(value)}</span>
+        <span className="text-xs text-[var(--text-secondary)]">已选：{nameColorByHue(value)}</span>
       </div>
     </div>
   );

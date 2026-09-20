@@ -58,7 +58,7 @@ describe("BatchSelectionToolbar 覆盖层让位", () => {
 });
 
 describe("BatchSelectionToolbar 加入标签已有态", () => {
-  it("将加到 N 个对象；全有显示勾；部分显示 k/N", async () => {
+  it("将加到 N 个对象；全有显示勾；部分显示已标 k/N", async () => {
     const user = userEvent.setup();
     const selectedItems = Array.from({ length: 11 }, (_, index) => ({
       tags: index < 3 ? [{ id: 1 }, { id: 2 }] : [{ id: 1 }],
@@ -81,8 +81,8 @@ describe("BatchSelectionToolbar 加入标签已有态", () => {
     expect(owned.querySelector("svg")).not.toBeNull();
 
     const partial = screen.getByRole("menuitem", { name: /开发/ });
-    expect(partial.textContent).toContain("3/11");
-    expect(screen.getByText("3/11")).toBeInTheDocument();
+    expect(partial.textContent).toContain("已标 3/11");
+    expect(screen.getByText("已标 3/11")).toBeInTheDocument();
   });
 });
 

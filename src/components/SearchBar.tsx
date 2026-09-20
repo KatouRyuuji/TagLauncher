@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpDown,
-  Command,
   FilePlus2,
   Filter,
   FolderPlus,
@@ -182,15 +181,18 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => setCommandPaletteOpen(true)}
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-faint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-            title="命令面板"
-            aria-label="打开命令面板"
-          >
-            <Command className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
-          </button>
+          {/* 输入态让位给模式徽章与清空 ×，空框时才显示命令面板入口 */}
+          {!inputValue && (
+            <button
+              type="button"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="kbd inline-flex h-6 shrink-0 items-center hover:border-[var(--border-default)] hover:text-[var(--text-secondary)]"
+              title="命令面板（Ctrl+K）"
+              aria-label="打开命令面板（Ctrl+K）"
+            >
+              Ctrl+K
+            </button>
+          )}
         </div>
 
         <div role="group" aria-label="显示方式" className="segmented-control h-8 shrink-0">
@@ -287,12 +289,21 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             <button
               type="button"
               onClick={() => setWorkspaceFiltersOpen(!showFilterRow)}
-              className={`icon-button h-8 w-8 ${showFilterRow ? "text-[var(--accent-primary)]" : ""}`}
+              className={`icon-button relative h-8 w-8 ${showFilterRow ? "text-[var(--accent-primary)]" : ""}`}
               title="筛选"
               aria-label="筛选"
               aria-pressed={showFilterRow}
             >
               <Filter className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+              {/* 激活筛选计数外显：行收起时也能看出有筛选在作用 */}
+              {(typeFilter !== "all" || searchMode !== "all") && (
+                <span
+                  className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--accent-primary)] px-0.5 text-[10px] font-semibold leading-none text-[var(--text-invert)]"
+                  aria-label={`${(typeFilter !== "all" ? 1 : 0) + (searchMode !== "all" ? 1 : 0)} 个筛选激活`}
+                >
+                  {(typeFilter !== "all" ? 1 : 0) + (searchMode !== "all" ? 1 : 0)}
+                </span>
+              )}
             </button>
           )}
           <button
@@ -334,6 +345,8 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
         data-region="filterbar"
         className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 py-1.5"
       >
+        {/* 组标签区分「搜」与「筛」：两组 pill 样式相同，职责不同，没标签难以分辨 */}
+        <span className="instrument-label shrink-0 text-[var(--text-faint)]">范围</span>
         <div role="group" aria-label="搜索范围" className="segmented-control h-8 shrink-0">
           {MODES.map((mode) => (
             <button
@@ -371,6 +384,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
         <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
 
         <div className="flex min-w-0 flex-1 basis-[360px] flex-wrap items-center gap-2">
+          <span className="instrument-label shrink-0 text-[var(--text-faint)]">类型</span>
           <div role="group" aria-label="文件类型筛选" className="segmented-control min-h-8 max-w-full flex-wrap">
             {TYPE_FILTERS.map((filter) => (
               <button

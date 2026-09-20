@@ -177,7 +177,7 @@ export function DataSettingsSection() {
             <SettingsToggle
               checked={watchMaster}
               title="允许文件夹监视"
-              description="总闸默认开。各文件夹仍要在右键菜单手动打开「监视此文件夹」后才会收入新文件；关掉总闸会暂停全部监视，勾选保留。"
+              description="总闸默认开。各文件夹需在右键菜单打开「监视此文件夹」才收入新文件；关总闸暂停全部监视，勾选保留。"
               onChange={(enabled) => {
                 void db.setFolderWatchMaster(enabled)
                   .then((status) => {
@@ -193,7 +193,7 @@ export function DataSettingsSection() {
         </div>
 
         <div>
-          <h4 className="text-xs font-semibold text-[var(--text-muted)]">安全</h4>
+          <h4 className="text-xs font-semibold text-[var(--text-muted)]">备份与导出</h4>
           <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" onClick={() => void handleBackup()} disabled={busy !== null} className="action-button action-button-primary px-4 text-xs disabled:opacity-50">
               {busy === "backup" ? "备份中…" : "一键备份"}

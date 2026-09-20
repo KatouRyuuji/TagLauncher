@@ -209,9 +209,25 @@ export function SyncSettingsSection() {
                 autoComplete="off"
                 className={inputClass}
               />
-              <button type="button" onClick={() => setShowPassword((v) => !v)} className="action-button min-h-[44px] shrink-0 px-3 text-xs">
+              {/* 输入框为空时无可显示的明文（占位文案不是密码），禁用「显示」 */}
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                disabled={config.password === ""}
+                className="action-button min-h-[44px] shrink-0 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+              >
                 {showPassword ? "隐藏" : "显示"}
               </button>
+              {hasStoredPassword && (
+                <button
+                  type="button"
+                  onClick={() => void handleClearPassword()}
+                  disabled={!loaded || busy !== null}
+                  className="min-h-[44px] shrink-0 rounded-[var(--radius-md)] px-3 text-xs text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  清除密码
+                </button>
+              )}
             </div>
           </SettingsField>
         </div>
@@ -239,11 +255,6 @@ export function SyncSettingsSection() {
         <button type="button" onClick={() => void handleTest()} disabled={!loaded || busy !== null || !configured} className="action-button px-4 text-xs disabled:opacity-50">
           {busy === "test" ? "测试中…" : "测试连接"}
         </button>
-        {hasStoredPassword && (
-          <button type="button" onClick={() => void handleClearPassword()} disabled={!loaded || busy !== null} className="action-button px-4 text-xs disabled:opacity-50">
-            清除密码
-          </button>
-        )}
         <div className="mx-1 h-6 w-px bg-[var(--border-subtle)]" />
         <button type="button" onClick={() => void handleBackupNow()} disabled={!loaded || busy !== null || !configured} className="action-button px-4 text-xs disabled:opacity-50">
           {busy === "backup" ? "备份中…" : "立即备份到云端"}

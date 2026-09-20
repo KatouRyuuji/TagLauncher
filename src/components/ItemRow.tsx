@@ -10,7 +10,7 @@ import {
   beginInternalPointerDrag,
   findClosestNumberDataAttribute,
 } from "../lib/internalPointerDrag";
-import { getFileSuffix, getTypeLabel } from "../lib/itemUtils";
+import { getFileSuffix, getTypeLabel, splitPathTail, formatRelativeTime } from "../lib/itemUtils";
 import { showToast } from "../lib/toast";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
@@ -61,6 +61,9 @@ function ItemRowComponent({
     currentCabinetId === null ? null : cabinets.find((cabinet) => cabinet.id === currentCabinetId)?.name ?? null;
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
   const searchQuery = useAppStore((state) => state.searchQuery);
+  // 「最近使用」视图补时间维度：否则「最近」只靠标题一句话支撑
+  const showRecent = useAppStore((state) => state.showRecent);
+  const lastUsedText = showRecent ? formatRelativeTime(item.last_used_at) : "";
 
   const handleItemHandlePointerDown = (event: React.PointerEvent<HTMLSpanElement>) => {
     beginInternalPointerDrag({
@@ -159,9 +162,8 @@ function ItemRowComponent({
             onPointerDown={handleItemHandlePointerDown}
             className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           />
-          <span className="inline-flex h-7 w-7 items-center justify-center">
-            <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
-          </span>
+          {/* 星标跨视图统一常驻右侧（列表在行尾、卡片在右上）：不再 hover 才现，
+              非收藏态由 FavoriteStar 组件内半隐处理 */}
           {modSlots.header.length > 0 && <div ref={headerSlotRef} className="flex min-w-0 items-center" />}
         </div>
 
@@ -180,7 +182,7 @@ function ItemRowComponent({
               </span>
               {item.is_missing && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-1 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning-ink)]"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning-ink)]"
                   title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
                 >
                   <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
@@ -189,11 +191,18 @@ function ItemRowComponent({
               )}
             </h3>
             <p
-              className={`mt-0.5 truncate text-[13px] leading-4 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
+              className={`mt-0.5 flex min-w-0 text-[13px] leading-4 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
               title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
             >
-              {item.path}
+              {/* 目录段先行截断，末段名保底可见；末段自身超长时从头部省略，扩展名始终完整 */}
+              <span className="min-w-0 truncate">{splitPathTail(item.path).dir}</span>
+              <span dir="rtl" className="max-w-[60%] shrink-0 truncate text-left" style={{ unicodeBidi: "plaintext" }}>{splitPathTail(item.path).tail}</span>
             </p>
+            {lastUsedText !== "" && (
+              <p className="mt-0.5 truncate text-[12px] leading-4 text-[var(--text-faint)]">
+                上次使用 {lastUsedText}
+              </p>
+            )}
           </div>
         </div>
 
@@ -203,9 +212,14 @@ function ItemRowComponent({
 
         <div className="text-right">
           {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="mb-0.5 flex justify-end" />}
-          <p className="truncate text-[13px] font-semibold text-[var(--text-secondary)]" title={getTypeLabel(item.type)}>
-            {getTypeLabel(item.type)}
-          </p>
+          <div className="flex items-center justify-end gap-1.5">
+            <p className="truncate text-[13px] font-semibold text-[var(--text-secondary)]" title={getTypeLabel(item.type)}>
+              {getTypeLabel(item.type)}
+            </p>
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center [&_button]:bg-transparent">
+              <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
+            </span>
+          </div>
           {getFileSuffix(item) !== "无后缀" && (
             <p className="data-readout mt-0.5 truncate text-[13px] text-[var(--text-faint)]" title={getFileSuffix(item)}>
               {getFileSuffix(item)}

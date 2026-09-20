@@ -26,6 +26,8 @@ describe("appStore", () => {
       viewMode: "grid",
       sortMode: "smart",
       typeFilter: "all",
+      cardSizeScale: 1,
+      iconSizeScale: 1,
       workspaceFiltersOpen: true,
       tagGraphOpen: false,
       commandPaletteOpen: false,
@@ -215,6 +217,43 @@ describe("appStore", () => {
   it("setViewMode 支持大图标", () => {
     useAppStore.getState().setViewMode("icons");
     expect(useAppStore.getState().viewMode).toBe("icons");
+  });
+
+  it("setCardSizeScale 夹取范围、写 CSS 变量并持久化", () => {
+    useAppStore.getState().setCardSizeScale(1.25);
+    expect(useAppStore.getState().cardSizeScale).toBe(1.25);
+    expect(document.documentElement.style.getPropertyValue("--grid-col-min")).toBe("320px");
+    expect(document.documentElement.style.getPropertyValue("--card-thumb-size")).toBe("65px");
+    const stored = JSON.parse(localStorage.getItem("taglauncher.workspace_prefs") ?? "{}") as {
+      cardSizeScale?: number;
+    };
+    expect(stored.cardSizeScale).toBe(1.25);
+
+    // 超界夹取到上限
+    useAppStore.getState().setCardSizeScale(99);
+    expect(useAppStore.getState().cardSizeScale).toBe(1.5);
+
+    // 回到默认值移除内联覆盖，交还主题样式表注册的变量
+    useAppStore.getState().setCardSizeScale(1);
+    expect(useAppStore.getState().cardSizeScale).toBe(1);
+    expect(document.documentElement.style.getPropertyValue("--grid-col-min")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--card-thumb-size")).toBe("");
+  });
+
+  it("setIconSizeScale 夹取范围、写大图标列宽变量并持久化", () => {
+    useAppStore.getState().setIconSizeScale(1.5);
+    expect(useAppStore.getState().iconSizeScale).toBe(1.5);
+    expect(document.documentElement.style.getPropertyValue("--grid-col-min-icons")).toBe("252px");
+    const stored = JSON.parse(localStorage.getItem("taglauncher.workspace_prefs") ?? "{}") as {
+      iconSizeScale?: number;
+    };
+    expect(stored.iconSizeScale).toBe(1.5);
+
+    useAppStore.getState().setIconSizeScale(0.1);
+    expect(useAppStore.getState().iconSizeScale).toBe(0.7);
+
+    useAppStore.getState().setIconSizeScale(1);
+    expect(document.documentElement.style.getPropertyValue("--grid-col-min-icons")).toBe("");
   });
 
   it("无偏好时 workspaceFiltersOpen 默认为展开", () => {

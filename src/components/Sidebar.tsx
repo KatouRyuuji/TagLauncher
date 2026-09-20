@@ -38,6 +38,8 @@ import type { PanelDescriptor } from "../types/panel";
 
 interface SidebarProps {
   mobileOpen?: boolean;
+  /** 主工作区加载中：标签/文件柜列表渲染骨架行，不提前定论「暂无」 */
+  loading?: boolean;
   tags: Tag[];
   cabinets: Cabinet[];
   onAddTag: (name: string, color: string) => Promise<unknown>;
@@ -53,8 +55,12 @@ interface SidebarProps {
   modPanels?: PanelDescriptor[];
 }
 
+/** 标签区加载骨架条的宽度循环（错落宽度模拟真实标签行长度不一） */
+const SIDEBAR_SKELETON_WIDTHS = ["w-[92%]", "w-[64%]", "w-[80%]", "w-[52%]"] as const;
+
 export function Sidebar({
   mobileOpen = false,
+  loading = false,
   tags,
   cabinets,
   onAddTag,
@@ -130,6 +136,24 @@ export function Sidebar({
       ),
     [tags, tagRelations, itemCountByTag],
   );
+
+  // 标签迷你过滤（标签多时不靠滚动找）；命中行保留原缩进以不丢层级语境
+  const [tagQuery, setTagQuery] = useState("");
+  const filteredTagRows = useMemo(() => {
+    const q = tagQuery.trim().toLowerCase();
+    if (!q) return tagRows;
+    return tagRows.filter(({ tag }) => tag.name.toLowerCase().includes(q));
+  }, [tagRows, tagQuery]);
+
+  // 已选标签滚出可视区时自动定位：侧栏既是选择器也是状态显示器
+  const tagScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const first = selectedTagIds[0];
+    if (first == null) return;
+    tagScrollRef.current
+      ?.querySelector(`[data-tag-row-id="${first}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selectedTagIds]);
 
   const [itemCountByCabinet, setItemCountByCabinet] = useState<Map<number, number>>(() => new Map());
 
@@ -207,11 +231,21 @@ export function Sidebar({
       style={{ width: "var(--sidebar-width)", backdropFilter: "var(--sidebar-backdrop-filter)" }}
     >
       <header className="shrink-0 border-b border-[var(--line-hairline)] px-3 pb-3 pt-3">
-        {/* 库概览计数（品牌标识在窗口栏，侧栏顶部直接给数据） */}
+        {/* 库概览计数（品牌标识在窗口栏，侧栏顶部直接给数据）；加载期用骨架条，不闪「库是空的」 */}
         <div className="grid grid-cols-3 divide-x divide-[var(--line-hairline)] border-y border-[var(--line-hairline)]">
-          <CountReadout value={allItems.length} label="项目" />
-          <CountReadout value={tags.length} label="标签" />
-          <CountReadout value={cabinets.length} label="文件柜" />
+          {loading ? (
+            <>
+              <div className="flex flex-col items-center gap-1 py-1.5"><span className="skeleton-block h-4 w-8 rounded" /><span className="skeleton-block h-2.5 w-6 rounded" /></div>
+              <div className="flex flex-col items-center gap-1 py-1.5"><span className="skeleton-block h-4 w-8 rounded" /><span className="skeleton-block h-2.5 w-6 rounded" /></div>
+              <div className="flex flex-col items-center gap-1 py-1.5"><span className="skeleton-block h-4 w-8 rounded" /><span className="skeleton-block h-2.5 w-6 rounded" /></div>
+            </>
+          ) : (
+            <>
+              <CountReadout value={allItems.length} label="项目" />
+              <CountReadout value={tags.length} label="标签" />
+              <CountReadout value={cabinets.length} label="文件柜" />
+            </>
+          )}
         </div>
       </header>
 
@@ -285,11 +319,11 @@ export function Sidebar({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+      <div ref={tagScrollRef} className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {visibleSection === "tags" && (
           <div className="space-y-5">
             <section aria-labelledby="sidebar-tags-label">
-              <SectionHeader id="sidebar-tags-label" label="标签" count={tags.length}>
+              <SectionHeader id="sidebar-tags-label" label="标签" count={loading ? undefined : tags.length}>
                 <SidebarIconButton label="管理标签父子关系" onClick={() => setShowRelationsEditor(true)}>
                   <GitFork className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
                 </SidebarIconButton>
@@ -305,8 +339,27 @@ export function Sidebar({
                 </SidebarIconButton>
               </SectionHeader>
 
+              {loading ? (
+                <div className="mt-1 space-y-0.5" aria-busy="true" aria-label="标签加载中">
+                  {/* 四种宽度循环：等宽骨架条排一列像进度条，错落才像标签行 */}
+                  {[0, 1, 2, 3, 4].map((row) => (
+                    <div key={row} className={`skeleton-block h-8 rounded-[var(--radius-sm)] ${SIDEBAR_SKELETON_WIDTHS[row % SIDEBAR_SKELETON_WIDTHS.length]}`} />
+                  ))}
+                </div>
+              ) : (
+              <>
+              {tags.length >= 10 && (
+                <input
+                  type="search"
+                  value={tagQuery}
+                  onChange={(event) => setTagQuery(event.target.value)}
+                  placeholder="过滤标签…"
+                  aria-label="过滤标签"
+                  className="input-frame mb-1 h-7 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[12px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)]"
+                />
+              )}
               <div className="mt-1 space-y-0.5">
-                {tagRows.map(({ tag, depth, hasChildren }) => {
+                {filteredTagRows.map(({ tag, depth, hasChildren }) => {
                   const active = selectedTagIds.includes(tag.id);
                   const excluded = excludedTagIds.includes(tag.id);
                   const showDescendantHint = hasChildren && !active && !excluded;
@@ -321,6 +374,7 @@ export function Sidebar({
                     <button
                       key={tag.id}
                       type="button"
+                      data-tag-row-id={tag.id}
                       aria-pressed={active}
                       aria-label={excluded ? `${tag.name}（已排除）` : undefined}
                       style={activeTagStyle}
@@ -348,7 +402,7 @@ export function Sidebar({
                     >
                       <span
                         data-tag-color-dot=""
-                        className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-[color-mix(in_srgb,var(--border-strong)_42%,transparent)]"
+                        className="h-3 w-3 shrink-0 rounded-full ring-1 ring-[color-mix(in_srgb,var(--border-strong)_42%,transparent)]"
                         style={{
                           backgroundColor: excluded ? "var(--text-faint)" : tag.color,
                         }}
@@ -369,6 +423,8 @@ export function Sidebar({
                 <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[13px] leading-5 text-[var(--text-muted)]">
                   暂无标签
                 </div>
+              )}
+              </>
               )}
 
               <AddRowButton label="新建标签" onClick={() => setShowAddTag(true)} />
@@ -617,7 +673,7 @@ function SidebarIconButton({
 
 function NavCount({ value }: { value: number }) {
   return (
-    <span className="data-readout inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-recessed)] px-1 text-[13px] text-[var(--text-faint)]">
+    <span className={`data-readout inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-recessed)] px-1 text-[13px] text-[var(--text-faint)] ${value === 0 ? "opacity-40" : ""}`}>
       {value}
     </span>
   );

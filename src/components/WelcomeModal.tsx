@@ -110,23 +110,24 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
             <div className="min-w-0">
               <h2 id="welcome-modal-title" className="truncate text-lg font-semibold text-[var(--text-primary)]">
                 欢迎使用 TagLauncher
+                {appVersion && (
+                  <span className="data-readout ml-2 align-middle text-[13px] font-normal text-[var(--text-faint)]">
+                    v{appVersion}
+                  </span>
+                )}
               </h2>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {appVersion && (
-              <span className="data-readout hidden rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--surface-recessed)] px-2 py-1 text-[13px] text-[var(--text-muted)] sm:inline">
-                v{appVersion}
-              </span>
-            )}
+            {/* 关闭只做弱呈现：纯图标无底无边，视觉重量让位给底部主按钮 */}
             <button
               type="button"
               onClick={() => onClose(hideNextTime)}
-              className="icon-button"
+              className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-faint)] transition-colors hover:text-[var(--text-primary)]"
               title="关闭欢迎页"
               aria-label="关闭欢迎页"
             >
-              <X aria-hidden="true" size={17} strokeWidth={1.8} />
+              <X aria-hidden="true" size={16} strokeWidth={1.8} />
             </button>
           </div>
         </header>
@@ -135,7 +136,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
           <div className="border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-4 py-3 sm:px-6">
             <p className="font-body text-sm font-medium text-[var(--text-primary)]">{GREETING}</p>
             <p className="mt-1 font-body text-xs leading-5 text-[var(--text-muted)]">
-              三步开始：导入、打标签、搜索打开。
+              不再翻文件夹：给文件打上标签，按标签一秒找到并打开。
             </p>
           </div>
 
@@ -144,7 +145,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
               三步上手
             </h3>
             <ol className="mt-3 grid gap-2 sm:grid-cols-3">
-              {STEPS.map((step, index) => {
+              {STEPS.map((step) => {
                 const Icon = step.icon;
                 return (
                   <li
@@ -156,7 +157,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-[var(--text-primary)]">
-                        {index + 1}. {step.title}
+                        {step.title}
                       </p>
                       <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">{step.description}</p>
                     </div>
@@ -173,7 +174,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
             <img
               src={qrCodeImage}
               alt="赞赏码"
-              className="h-28 w-28 shrink-0 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-white object-contain p-1.5"
+              className="h-32 w-32 shrink-0 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-white object-contain p-1.5"
               draggable={false}
             />
             <div className="min-w-0">

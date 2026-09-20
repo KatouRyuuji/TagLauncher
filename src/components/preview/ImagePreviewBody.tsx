@@ -33,17 +33,21 @@ export function ImagePreviewBody({
             <p>无法预览图片</p>
           </div>
         ) : (
-          <img
-            src={src}
-            alt={item.name}
-            decoding="async"
-            onError={() => setFailed(true)}
-            onLoad={(event) => {
-              const { naturalWidth, naturalHeight } = event.currentTarget;
-              const label = formatPixelSize(naturalWidth, naturalHeight);
-              setPixelSize(label || null);
-            }}
-          />
+          <>
+            {/* 同图模糊延展填充两侧，主图 contain 叠在上层 */}
+            <img src={src} alt="" aria-hidden="true" className="preview-image-backdrop" />
+            <img
+              src={src}
+              alt={item.name}
+              decoding="async"
+              onError={() => setFailed(true)}
+              onLoad={(event) => {
+                const { naturalWidth, naturalHeight } = event.currentTarget;
+                const label = formatPixelSize(naturalWidth, naturalHeight);
+                setPixelSize(label || null);
+              }}
+            />
+          </>
         )}
       </div>
       <div className="preview-body-pad space-y-2">

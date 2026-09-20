@@ -9,6 +9,25 @@ const THEME_FONT_CSS_ID = "__theme-font-css";
 const dynamicThemeVariableKeys = new Set<string>();
 
 /**
+ * theme-switching 过渡类的存活时长：须覆盖 --transition-normal（240ms）。
+ * 双 rAF（16-34ms）即移除会按 CSS 规范取消刚启动的过渡（整体硬跳），
+ * 因此改为计时器在过渡跑完后移除；连续切换时重置计时。
+ */
+const THEME_SWITCHING_MS = 320;
+let themeSwitchingTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * applyCardSizeVars 写入的用户缩放覆盖（--grid-col-min 等）：
+ * applyTheme 的删-写循环会把它们重置回主题值，需快照后在写入后恢复。
+ */
+const USER_SIZE_OVERRIDE_KEYS = [
+  "grid-col-min",
+  "card-thumb-size",
+  "card-text-scale",
+  "grid-col-min-icons",
+];
+
+/**
  * 造型语言接入（RyuujiDesign A 纸面 / B 仪表）：
  * 造型由主题自身声明（theme.lang），写入 data-shape / data-scheme，
  * index.css 据此渲染装饰签名（A 的浮层顶唇；B 的丝印字距、切角、倒角高光
@@ -241,6 +260,12 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
 
   // 2. 清理契约内变量并写入默认值 + 当前主题值，避免切换不完整主题时继承上一个主题的残留值。
   //    非内置主题的变量值与 asset 值需消毒（可能夹带 url(http://远程信标)）。
+  //    用户卡片缩放覆盖（applyCardSizeVars 写入）先快照，写入后恢复，避免切主题后网格回弹。
+  const sizeOverrides = new Map<string, string>();
+  for (const key of USER_SIZE_OVERRIDE_KEYS) {
+    const value = root.style.getPropertyValue(`--${key}`);
+    if (value) sizeOverrides.set(key, value);
+  }
   const sanitizeVar = theme.isPreset
     ? (v: string) => v
     : sanitizeThemeVariableValue;
@@ -269,18 +294,22 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
     root.style.setProperty(`--${variableKey}`, cssUrl(sanitizeAsset(value), themeRoot));
     dynamicThemeVariableKeys.add(variableKey);
   }
+  for (const [key, value] of sizeOverrides) {
+    root.style.setProperty(`--${key}`, value);
+  }
 
   applyThemeFonts(theme, themeRoot);
 
   // 2.5 造型语言（A 纸面 / B 仪表）：写入 data-shape/data-scheme 供 CSS 装饰签名
   applyShapeLang(root, theme);
 
-  // 3. 移除过渡 class（需等本帧绘制完成后再移除，否则过渡不触发）
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      root.classList.remove("theme-switching");
-    });
-  });
+  // 3. 移除过渡 class：等过渡时长跑完后再移除（提前移除会取消进行中的过渡）；
+  //    连续切换时重置计时，避免前一次的计时器提前摘掉本次的过渡
+  if (themeSwitchingTimer !== undefined) clearTimeout(themeSwitchingTimer);
+  themeSwitchingTimer = setTimeout(() => {
+    root.classList.remove("theme-switching");
+    themeSwitchingTimer = undefined;
+  }, THEME_SWITCHING_MS);
 
   // 4. 注入主题自定义 CSS（用于变量无法覆盖的深度定制：布局、图标、选择器级样式）
   //    变体的 css 追加在主题 css 之后，使其能覆盖基础样式

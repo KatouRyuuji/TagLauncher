@@ -127,12 +127,10 @@ export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps)
         <footer className="flex min-h-[56px] flex-wrap items-center justify-between gap-2 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-2.5 sm:px-5">
           <p className="flex items-center gap-2 text-[13px] text-[var(--text-faint)]"><span className="status-led" aria-hidden="true" />本地预览</p>
           <div className="flex items-center gap-2">
-            {!isFolder && (
-              <button type="button" className="action-button" onClick={() => void copyText(item.path, "已复制路径")}>
-                <Copy aria-hidden="true" size={15} strokeWidth={1.8} />
-                复制路径
-              </button>
-            )}
+            <button type="button" className="action-button" onClick={() => void copyText(item.path, "已复制路径")}>
+              <Copy aria-hidden="true" size={15} strokeWidth={1.8} />
+              复制路径
+            </button>
             <button
               type="button"
               className="action-button action-button-primary"

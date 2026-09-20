@@ -449,7 +449,7 @@ export function SelectionCanvas({
         <div
           className={selectionBox.mode === "subtract"
             ? "pointer-events-none absolute rounded-[var(--radius-sm)] border border-dashed border-[var(--border-strong)] bg-[color-mix(in_srgb,var(--text-faint)_10%,transparent)]"
-            : "pointer-events-none absolute rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent-primary)_72%,transparent)] bg-[var(--accent-primary-bg-light)] shadow-[var(--shadow-glow)]"}
+            : "pointer-events-none absolute rounded-[var(--radius-sm)] border-[1.5px] border-[color-mix(in_srgb,var(--accent-primary)_60%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)] shadow-[var(--shadow-glow)]"}
           style={{
             left: selectionBox.left,
             top: selectionBox.top,

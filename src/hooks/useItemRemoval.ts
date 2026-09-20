@@ -5,7 +5,7 @@
 // 需要确认时挂起待删集合并交由 RemoveFromAppConfirmDialog 渲染，确认后落库
 // 并把被删 id 从选中集清除。单个与批量统一走 removeItems 原子批量命令，
 // 不再单删/批量两条路径落到不同后端命令。
-// 「下次不再确认」只作用于仅出库；删除本地文件始终弹确认。
+// 「下次不再确认」只作用于从库中移除；删除本地文件始终弹确认。
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";

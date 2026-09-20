@@ -5,7 +5,8 @@
 //   共享原语：字号阶梯 12/13/14/16/18、空间 4px 原子阶梯、时长 180/240/400、
 //     字重 400/500/600/700、侧栏宽 232
 //   A 纸面：圆角 6/10/14/18/22/28、缓动 cubic-bezier(0.2,0.72,0.2,1)、
-//           双层软影、发丝边 color-mix(text 13%/24%)、
+//           双层软影、发丝边按亮暗分叉（亮=text 13%/24% 派生；暗=border-default
+//           向 text 提亮派生，与 hairline 同色温）、
 //           签名浮层影 lift = 0 2px 4px -2px + 0 12px 28px -14px、纸面顶唇、
 //           输入静息纸槽影
 //   B 仪表：圆角 0/2/4/4、硬影 0 1px 0 0、急停缓动 cubic-bezier(0.16,1,0.3,1)、
@@ -56,7 +57,7 @@ const SHARED_TOKENS: Record<string, string> = {
   "radius-full": "999px",
 };
 
-/** 语言分叉：圆角档、发丝边（A 专有）、缓动、正文字体（B 回 UI 无衬线） */
+/** 语言分叉：圆角档、缓动、正文字体（B 回 UI 无衬线） */
 const LANG_TOKENS: Record<ShapeLang, Record<string, string>> = {
   a: {
     "font-family-body": FONT_READING,
@@ -66,8 +67,6 @@ const LANG_TOKENS: Record<ShapeLang, Record<string, string>> = {
     "radius-xl": "18px",
     "radius-2xl": "22px",
     "radius-3xl": "28px",
-    "border-subtle": "color-mix(in srgb, var(--text-primary) 13%, transparent)",
-    "border-medium": "color-mix(in srgb, var(--text-primary) 24%, transparent)",
     // 输入静息纸槽影（paper-well；B 机械面无槽影）
     "shadow-well": "inset 0 1px 1px rgb(26 31 36 / 0.04)",
     // 输入焦点环：tokens.css --sys-shadow-focus（控件本体）；容器外环 4px/12% 见 index.css .field
@@ -90,6 +89,26 @@ const LANG_TOKENS: Record<ShapeLang, Record<string, string>> = {
     "transition-normal": `240ms ${EASE_B}`,
     "transition-slow": `400ms ${EASE_B}`,
   },
+};
+
+/**
+ * 发丝边按亮暗分叉（A 专有）：
+ * 亮色沿用 text 透明度派生（深字压出的中性灰线）；
+ * 暗色改从 border-default 向 text 提亮派生——与 hairline/border-default 同家族
+ * 色温，避免「染色实色线」与「白调亮度线」同屏打架（第三轮评审：深色边框线不和谐）。
+ */
+const HAIRLINE_TOKENS: Record<ShapeLang, Record<ShapeScheme, Record<string, string>>> = {
+  a: {
+    light: {
+      "border-subtle": "color-mix(in srgb, var(--text-primary) 13%, transparent)",
+      "border-medium": "color-mix(in srgb, var(--text-primary) 24%, transparent)",
+    },
+    dark: {
+      "border-subtle": "color-mix(in srgb, var(--border-default) 88%, var(--text-primary) 12%)",
+      "border-medium": "color-mix(in srgb, var(--border-default) 76%, var(--text-primary) 24%)",
+    },
+  },
+  b: { light: {}, dark: {} },
 };
 
 /**
@@ -119,12 +138,13 @@ const SHADOW_TOKENS: Record<ShapeLang, Record<ShapeScheme, Record<string, string
       "shadow-md": "0 2px 4px rgb(0 0 0 / 0.34), 0 12px 32px rgb(0 0 0 / 0.28)",
       "shadow-lg": "0 2px 6px rgb(0 0 0 / 0.38), 0 16px 40px rgb(0 0 0 / 0.32)",
       "shadow-lift": "0 2px 4px -2px rgb(0 0 0 / 0.25), 0 12px 28px -14px rgb(0 0 0 / 0.35)",
+      // 暗色顶唇降到 4%：与描边合并读作一层受光边，不再是描边+顶唇+投影三层亮线
       "shadow-overlay":
-        "0 2px 4px -2px rgb(0 0 0 / 0.25), 0 12px 28px -14px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.08)",
+        "0 2px 4px -2px rgb(0 0 0 / 0.25), 0 12px 28px -14px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.04)",
       "shadow-dropdown":
-        "0 2px 6px rgb(0 0 0 / 0.38), 0 16px 40px rgb(0 0 0 / 0.32), inset 0 1px 0 rgb(255 255 255 / 0.08)",
+        "0 2px 6px rgb(0 0 0 / 0.38), 0 16px 40px rgb(0 0 0 / 0.32), inset 0 1px 0 rgb(255 255 255 / 0.04)",
       "shadow-card":
-        "0 2px 4px -2px rgb(0 0 0 / 0.25), 0 12px 28px -14px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.08)",
+        "0 2px 4px -2px rgb(0 0 0 / 0.25), 0 12px 28px -14px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.04)",
       "shadow-glow": "none",
     },
   },
@@ -152,9 +172,9 @@ const SHADOW_TOKENS: Record<ShapeLang, Record<ShapeScheme, Record<string, string
   },
 };
 
-/** 指定语言 × 亮暗的完整结构令牌集（共享原语 + 语言分叉 + 阴影配方）。 */
+/** 指定语言 × 亮暗的完整结构令牌集（共享原语 + 语言分叉 + 发丝边 + 阴影配方）。 */
 export function shapeLangTokens(lang: ShapeLang, scheme: ShapeScheme): Record<string, string> {
-  return { ...SHARED_TOKENS, ...LANG_TOKENS[lang], ...SHADOW_TOKENS[lang][scheme] };
+  return { ...SHARED_TOKENS, ...LANG_TOKENS[lang], ...HAIRLINE_TOKENS[lang][scheme], ...SHADOW_TOKENS[lang][scheme] };
 }
 
 /** 从主题 css 推断亮暗（内置/示例主题均显式声明 color-scheme）。 */

@@ -2,7 +2,6 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { open as dialogOpen, save } from "@tauri-apps/plugin-dialog";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import {
-  Check,
   Cloud,
   Database,
   Download,
@@ -251,14 +250,16 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 {activeSection === "theme"
                   ? "主题即时生效。"
                   : activeSection === "ai"
-                    ? "连接配置需点「保存配置」。"
-                    : activeSection === "sync"
-                      ? "连接配置请在本区块保存。"
-                      : activeSection === "update"
-                        ? "检查更新不会自动安装。"
-                        : activeSection === "mods"
-                          ? "扩展启用后即时加载。"
-                          : "本页操作立即生效。"}
+                    ? "改后点「保存配置」。"
+                    : activeSection === "data"
+                      ? "备份与导出立即生效；切换目录与导入需重启。"
+                      : activeSection === "sync"
+                        ? "连接配置请在本区块保存。"
+                        : activeSection === "update"
+                          ? "下载后手动安装，数据不受影响。"
+                          : activeSection === "mods"
+                            ? "扩展启用后即时加载。"
+                            : "本页操作立即生效。"}
               </div>
             </nav>
 
@@ -274,8 +275,8 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                       当前使用 <span className="font-semibold text-[var(--text-primary)]">{currentTheme.name}</span>
                     </p>
                     {themeDirectoryInfo?.themes_dir && (
-                      <p className="data-readout mt-1 truncate text-[13px] text-[var(--text-faint)]" title={themeDirectoryInfo.themes_dir}>
-                        自定义主题目录
+                      <p className="data-readout mt-1 truncate text-[13px] text-[var(--text-faint)]" title={`自定义主题目录：${themeDirectoryInfo.themes_dir}`}>
+                        主题目录 {themeDirectoryInfo.themes_dir}
                       </p>
                     )}
                   </div>
@@ -367,14 +368,11 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             </div>
           </div>
 
-          <footer className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 sm:px-5">
+          <footer className="flex min-h-[56px] shrink-0 items-center gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 sm:px-5">
+            {/* 关闭出口 = 右上 X + Esc，底栏不再重复按钮 */}
             <span className="hidden items-center gap-2 text-xs text-[var(--text-faint)] sm:flex">
               按 Esc 返回工作台
             </span>
-            <button type="button" onClick={onClose} className="action-button action-button-primary ml-auto">
-              <Check aria-hidden="true" size={16} strokeWidth={1.9} />
-              关闭
-            </button>
           </footer>
         </aside>
       </div>

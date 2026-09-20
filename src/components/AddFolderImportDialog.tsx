@@ -43,23 +43,25 @@ export function AddFolderImportDialog({
   folderNames: string[];
   fileCount: number;
   defaultMode: FolderImportMode;
-  onConfirm: (mode: FolderImportMode) => Promise<void>;
+  onConfirm: (mode: FolderImportMode, remember: boolean) => Promise<void>;
   onCancel: () => void;
 }) {
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open });
   useEscapeKey(onCancel, open);
   const [mode, setMode] = useState<FolderImportMode>(defaultMode);
+  const [remember, setRemember] = useState(true);
 
   useEffect(() => {
-    if (open) setMode(defaultMode);
+    if (open) {
+      setMode(defaultMode);
+      setRemember(true);
+    }
   }, [open, defaultMode]);
 
   if (!open) return null;
 
   const previewNames = folderNames.map(pathBasename).filter((name) => name.length > 0);
   const shownNames = previewNames.slice(0, 4);
-  const featured = MODE_OPTIONS.find((option) => option.value === defaultMode) ?? MODE_OPTIONS[0];
-  const alternatives = MODE_OPTIONS.filter((option) => option.value !== featured.value);
 
   return (
     <>
@@ -84,8 +86,12 @@ export function AddFolderImportDialog({
           <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
             选中了 {folderNames.length} 个文件夹
             {fileCount > 0 ? `，另外还有 ${fileCount} 个文件` : ""}。
-            文件柜是分组，不会替代这里的选择。
           </p>
+          {fileCount > 0 && (
+            <p className="mt-1 text-[13px] leading-5 text-[var(--text-muted)]">
+              附带的 {fileCount} 个文件不受添加方式影响，将直接入库。
+            </p>
+          )}
           {shownNames.length > 0 && (
             <p className="mt-2 text-[13px] leading-5 text-[var(--text-muted)]">
               {shownNames.join("、")}
@@ -94,28 +100,27 @@ export function AddFolderImportDialog({
           )}
 
           <div className="mt-4 flex flex-col gap-2" role="radiogroup" aria-label="添加方式">
-            <ModeCard
-              active={mode === featured.value}
-              icon={featured.icon}
-              title={featured.title}
-              description={featured.description}
-              onSelect={() => setMode(featured.value)}
-            />
-            <div className="flex gap-2">
-              {alternatives.map((option) => (
-                <ModeCompactRow
-                  key={option.value}
-                  active={mode === option.value}
-                  icon={option.icon}
-                  title={option.title}
-                  onSelect={() => setMode(option.value)}
-                />
-              ))}
-            </div>
+            {/* 三个互斥项同构同规格：默认项仅体现在选中态，不做视觉特权 */}
+            {MODE_OPTIONS.map((option) => (
+              <ModeCard
+                key={option.value}
+                active={mode === option.value}
+                icon={option.icon}
+                title={option.title}
+                description={option.description}
+                onSelect={() => setMode(option.value)}
+              />
+            ))}
           </div>
-          <p className="mt-3 text-[12px] leading-5 text-[var(--text-faint)]">
-            下次添加文件夹时默认选中此项。
-          </p>
+          <label className="mt-3 flex cursor-pointer items-center gap-2 text-[12px] leading-5 text-[var(--text-faint)]">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(event) => setRemember(event.target.checked)}
+              className="h-3.5 w-3.5 accent-[var(--accent-primary)]"
+            />
+            记住我的选择，下次添加文件夹时默认用它
+          </label>
 
           <div className="mt-5 flex justify-end gap-2">
             <button type="button" autoFocus onClick={onCancel} className="action-button">
@@ -123,7 +128,7 @@ export function AddFolderImportDialog({
             </button>
             <button
               type="button"
-              onClick={() => void onConfirm(mode)}
+              onClick={() => void onConfirm(mode, remember)}
               className="action-button action-button-primary"
             >
               添加
@@ -168,38 +173,6 @@ function ModeCard({
         <span className="block text-sm font-semibold text-[var(--text-primary)]">{title}</span>
         <span className="mt-1 block text-[13px] leading-5 text-[var(--text-muted)]">{description}</span>
       </span>
-    </button>
-  );
-}
-
-function ModeCompactRow({
-  active,
-  icon: Icon,
-  title,
-  onSelect,
-}: {
-  active: boolean;
-  icon: typeof Folder;
-  title: string;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-label={title}
-      aria-checked={active}
-      onClick={onSelect}
-      className={`flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-lg)] border px-3 py-2 text-left ${
-        active
-          ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
-          : "border-[var(--border-subtle)] bg-[var(--bg-input)] hover:border-[var(--border-default)]"
-      }`}
-    >
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-        <Icon size={14} strokeWidth={1.8} aria-hidden="true" />
-      </span>
-      <span className="text-sm font-semibold text-[var(--text-primary)]">{title}</span>
     </button>
   );
 }

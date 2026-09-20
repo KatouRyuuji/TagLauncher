@@ -187,35 +187,44 @@ export function AiSettingsSection() {
               autoComplete="off"
               className={inputClass}
             />
-            <button type="button" onClick={() => setShowKey((v) => !v)} className="action-button min-h-[44px] shrink-0 px-3 text-xs">
+            {/* 占位态下无可显示的明文（占位文案不是密钥），禁用「显示」 */}
+            <button
+              type="button"
+              onClick={() => setShowKey((v) => !v)}
+              disabled={config.apiKey === ""}
+              className="action-button min-h-[44px] shrink-0 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+            >
               {showKey ? "隐藏" : "显示"}
             </button>
           </div>
         </SettingsField>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <SettingsField label="模型">
-            <input
-              type="text"
-              value={config.model}
-              onChange={(e) => update("model", e.target.value)}
-              placeholder="claude-haiku-4-5-20251001"
-              spellCheck={false}
-              className={inputClass}
-            />
-          </SettingsField>
-          <SettingsField label={`每个对象最多标签数（${config.maxTags}）`}>
-            <input
-              type="range"
-              min={1}
-              max={20}
-              value={config.maxTags}
-              onChange={(e) => update("maxTags", Number(e.target.value))}
-              className="settings-range"
-              style={{ "--range-progress": `${((config.maxTags - 1) / 19) * 100}%` } as CSSProperties}
-            />
-          </SettingsField>
-        </div>
+        <SettingsField label="模型">
+          <input
+            type="text"
+            value={config.model}
+            onChange={(e) => update("model", e.target.value)}
+            placeholder="claude-haiku-4-5-20251001"
+            spellCheck={false}
+            className={inputClass}
+          />
+        </SettingsField>
+        <SettingsField label={`每个对象最多标签数 —— ${config.maxTags}`}>
+          {/* 当前值放标签行：贴滑杆右端的读数会随手柄位移脱节 */}
+          <input
+            type="range"
+            min={1}
+            max={20}
+            value={config.maxTags}
+            onChange={(e) => update("maxTags", Number(e.target.value))}
+            className="settings-range block max-w-md"
+            style={{ "--range-progress": `${((config.maxTags - 1) / 19) * 100}%` } as CSSProperties}
+          />
+          <div className="mt-0.5 flex max-w-md items-center justify-between text-[11px] text-[var(--text-faint)]" aria-hidden="true">
+            <span>1</span>
+            <span>20</span>
+          </div>
+        </SettingsField>
 
         <SettingsField label="补充打标偏好（可选）">
           <input
@@ -243,6 +252,7 @@ export function AiSettingsSection() {
         />
       </fieldset>
 
+      {/* 配置操作与运行打标同一行：运行入口是配好 API 的下一步，必须在首屏可见 */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => void handleSave()} disabled={!loaded || busy !== null} className="action-button action-button-primary px-4 text-xs disabled:opacity-50">
           {busy === "save" ? "保存中…" : "保存配置"}
@@ -255,9 +265,8 @@ export function AiSettingsSection() {
             清除密钥
           </button>
         )}
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--line-hairline)] pt-3">
-        <p className="mr-auto text-xs text-[var(--text-faint)]">运行打标</p>
+        <span className="mx-1 hidden h-5 w-px bg-[var(--line-hairline)] sm:inline" aria-hidden="true" />
+        <span className="text-xs text-[var(--text-faint)]">运行打标</span>
         <button
           type="button"
           onClick={() => void requestTagAll("untagged")}

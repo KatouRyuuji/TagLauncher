@@ -45,7 +45,8 @@ test("欢迎页与命令面板眉题为中文，快捷键完整显示", () => {
   assert.ok(welcome.includes("欢迎使用 TagLauncher"), "欢迎页眉题应为中文");
   assert.ok(!welcome.includes("Capabilities"), "欢迎页不应残留英文 Capabilities");
   assert.ok(palette.includes("命令 / 项目"), "命令面板分组应为中文");
-  assert.ok(palette.includes("Ctrl+K"), "命令面板须完整显示 Ctrl+K");
+  // 键盘提示收在底栏状态行；输入行的 Ctrl+K 徽章已移除（面板已打开，提示冗余）
+  assert.ok(palette.includes("↑↓ 选择 · Enter 执行 · Esc 关闭"), "命令面板底栏应显示键盘提示");
   assert.ok(!palette.includes(">Ctrl K<"), "不得使用缺加号的 Ctrl K");
 });
 

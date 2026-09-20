@@ -50,7 +50,7 @@ export function FolderPreviewBody({
       ) : (
         <ul className="preview-folder-list">
           {entries.map((entry) => (
-            <li key={entry.path} className="group flex min-h-9 items-center gap-2 px-4 py-2">
+            <li key={entry.path} className="group flex min-h-9 items-center gap-2 px-4 py-1.5">
               {entry.is_dir ? (
                 <Folder aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--color-warning-ink)]" />
               ) : (
@@ -86,6 +86,10 @@ export function FolderPreviewBody({
               </div>
             </li>
           ))}
+          {/* 列表末尾汇总总数，滚动到底可确认没有遗漏 */}
+          <li className="px-4 py-1.5 text-[12px] text-[var(--text-faint)]">
+            共 {entryTotal} 项{entryTotal > 48 ? " · 还有更多" : ""}
+          </li>
         </ul>
       )}
     </div>

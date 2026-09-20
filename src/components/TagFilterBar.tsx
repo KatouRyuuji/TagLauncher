@@ -112,7 +112,7 @@ export function TagFilterBar() {
                         ? `color-mix(in srgb, ${tag.color} 65%, var(--border-default))`
                         : `color-mix(in srgb, ${tag.color} 24%, var(--border-subtle))`,
                       backgroundColor: active
-                        ? `color-mix(in srgb, ${tag.color} 20%, var(--bg-card))`
+                        ? `color-mix(in srgb, ${tag.color} 12%, var(--bg-card))`
                         : `color-mix(in srgb, ${tag.color} 7%, transparent)`,
                       color: active ? "var(--text-primary)" : "var(--text-secondary)",
                       boxShadow: active ? `inset 0 -2px 0 ${tag.color}` : "none",

@@ -13,7 +13,7 @@ export function WorkspaceLoadError({
   onRetry: () => void;
 }) {
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex flex-1 overflow-auto">
       <section className="empty-state-panel" role="alert" aria-labelledby="workspace-load-error-title">
         <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--color-danger)_24%,var(--border-subtle))] bg-[var(--color-danger-bg)] text-[var(--color-danger-ink)] shadow-[var(--shadow-sm)]">
           <CircleAlert className="h-8 w-8" strokeWidth={1.6} aria-hidden="true" />
@@ -47,6 +47,9 @@ export function WorkspaceEmptyState({
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const showFavorites = useAppStore((state) => state.showFavorites);
   const showRecent = useAppStore((state) => state.showRecent);
+  const typeFilter = useAppStore((state) => state.typeFilter);
+  const selectedTagIds = useAppStore((state) => state.selectedTagIds);
+  const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const tags = useAppStore((state) => state.tags);
   const cabinets = useAppStore((state) => state.cabinets);
   const variant = resolveEmptyStateVariant(kind, searchQuery, {
@@ -80,12 +83,24 @@ export function WorkspaceEmptyState({
 
   // 空库引导给出导入 CTA；筛选/搜索无结果态保持纯文字引导，不加导入按钮
   const showAddCta = variant === "library" && onAddItems;
-  const showActions = showAddCta || copy.showClearSearch || (copy.showClearFilters && onClearFilters);
+  // 「清空所有筛选」只在确有筛选激活时出现（clearWorkspaceFilters 清的正是这些维度）：
+  // 仅剩搜索词时由旁边的「清空搜索」承载，两个同效按钮并存只会让用户猜差异
+  const hasActiveFilters =
+    typeFilter !== "all" ||
+    selectedTagIds.length > 0 ||
+    excludedTagIds.length > 0 ||
+    selectedCabinetId !== null ||
+    showFavorites ||
+    showRecent;
+  const showClearFilters = copy.showClearFilters && Boolean(onClearFilters) && hasActiveFilters;
+  const showActions = showAddCta || copy.showClearSearch || showClearFilters;
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex flex-1 overflow-auto">
+      {/* 卡片上移至视口上 1/3 区域：顶边距固定、底边距 auto 吃掉剩余空间（左右 auto 居中沿用
+          .empty-state-panel）；面板超高时整体进入滚动流，顶边距只是前导空白，内容不丢可达性 */}
       <section
-        className="empty-state-panel"
+        className="empty-state-panel mt-[12vh] mb-auto"
         data-empty-variant={variant}
         role="status"
         aria-labelledby="workspace-empty-title"
@@ -120,7 +135,7 @@ export function WorkspaceEmptyState({
                   清空搜索
                 </button>
               )}
-              {copy.showClearFilters && onClearFilters && (
+              {showClearFilters && (
                 <button type="button" className="action-button" onClick={onClearFilters}>
                   <FilterX className="h-4 w-4" aria-hidden="true" />
                   清空所有筛选

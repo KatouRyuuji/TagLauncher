@@ -147,12 +147,13 @@ export function BatchSelectionToolbar({
             )}
           </span>
           {busy ? "处理中…" : "已选中"}
-          {!busy && (
-            <span className="hidden xl:inline text-[12px] font-normal text-[var(--text-faint)]">
-              {libraryRemoveNotDeleteHint}
-            </span>
-          )}
         </div>
+
+        {/* 安全出口贴左侧计数；危险动作统一收最右，物理隔开朗误点路径 */}
+        <button type="button" onClick={onClearSelection} disabled={busy} className="action-button min-h-8 shrink-0 px-2.5 text-xs">
+          <X aria-hidden="true" size={14} strokeWidth={1.8} />
+          取消选择
+        </button>
 
         <ToolbarMenuButton
           label="加入标签"
@@ -249,14 +250,11 @@ export function BatchSelectionToolbar({
           type="button"
           onClick={() => runAction(onRemoveFromApp)}
           disabled={busy}
+          title={libraryRemoveNotDeleteHint}
           className="action-button action-button-danger min-h-8 shrink-0 px-2.5 text-xs"
         >
           <Trash2 aria-hidden="true" size={14} strokeWidth={1.8} />
           从库中移除
-        </button>
-        <button type="button" onClick={onClearSelection} disabled={busy} className="action-button min-h-8 shrink-0 px-2.5 text-xs">
-          <X aria-hidden="true" size={14} strokeWidth={1.8} />
-          取消选择
         </button>
       </div>
     </div>
@@ -363,9 +361,16 @@ function TagOwnershipMenu({
   onPick: (tagId: number) => void;
 }) {
   const [filter, setFilter] = useState("");
+  const [onlyPartial, setOnlyPartial] = useState(false);
   const showFilter = tags.length > TAG_MENU_FILTER_THRESHOLD;
   const query = filter.trim().toLowerCase();
-  const visible = query ? tags.filter((tag) => tag.name.toLowerCase().includes(query)) : tags;
+  const visible = (query ? tags.filter((tag) => tag.name.toLowerCase().includes(query)) : tags)
+    // 「只看未标全」：只留还有选中对象没打上该标签的行
+    .filter((tag) => {
+      if (!onlyPartial) return true;
+      const ownership = summarizeTagOwnership(selectedItems, tag.id);
+      return ownership.have < ownership.total;
+    });
 
   return (
     <>
@@ -375,14 +380,25 @@ function TagOwnershipMenu({
         </div>
       )}
       {showFilter && (
-        <input
-          type="search"
-          autoFocus
-          placeholder={tagFilterPlaceholder}
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-          className="mb-1 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
-        />
+        <div className="mb-1 flex items-center gap-2">
+          <input
+            type="search"
+            autoFocus
+            placeholder={tagFilterPlaceholder}
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
+          />
+          <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-[var(--text-muted)]">
+            <input
+              type="checkbox"
+              checked={onlyPartial}
+              onChange={(event) => setOnlyPartial(event.target.checked)}
+              className="h-3 w-3 accent-[var(--accent-primary)]"
+            />
+            只看未标全
+          </label>
+        </div>
       )}
       {visible.length === 0 ? (
         <MenuEmptyText>{tags.length === 0 ? emptyText : "无匹配标签"}</MenuEmptyText>
@@ -423,12 +439,14 @@ function MenuOption({
       onClick={onClick}
       className="flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
     >
-      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      {/* 已全部标满：色点上叠白色勾；部分标满：右侧给迷你徽章计数 */}
+      <span className="flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: color }}>
+        {allOwned && <Check aria-hidden="true" size={8} strokeWidth={3} className="text-[var(--text-invert)]" />}
+      </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {allOwned && <Check aria-hidden="true" size={14} strokeWidth={2.2} className="shrink-0 text-[var(--accent-primary)]" />}
       {someOwned && (
-        <span className="data-readout shrink-0 text-[11px] tabular-nums text-[var(--text-faint)]">
-          {ownership.have}/{ownership.total}
+        <span className="data-readout shrink-0 rounded-full bg-[var(--accent-primary-bg-light)] px-1.5 text-[11px] tabular-nums text-[var(--accent-primary-ink)]">
+          已标 {ownership.have}/{ownership.total}
         </span>
       )}
     </button>

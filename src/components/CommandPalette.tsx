@@ -20,6 +20,7 @@ import {
   Star,
   Tags,
   TriangleAlert,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
@@ -353,13 +354,22 @@ export function CommandPalette({
             aria-label="搜索命令或项目"
             className="min-w-0 flex-1 bg-transparent text-[15px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none"
           />
-          <kbd className="kbd hidden sm:inline-flex">Ctrl+K</kbd>
+          <button
+            type="button"
+            className="icon-button shrink-0"
+            title="关闭命令面板"
+            aria-label="关闭命令面板"
+            onClick={() => setOpen(false)}
+          >
+            <X aria-hidden="true" size={16} strokeWidth={1.8} />
+          </button>
         </div>
         <div className="flex items-center justify-between border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-4 py-2">
           <span className="instrument-label">命令 / 项目</span>
-          <span className="data-readout text-[13px] text-[var(--text-faint)]">{rows.length.toString().padStart(2, "0")}</span>
+          {/* 计数不补零：个位数补零会被读成两个数字的拼接 bug */}
+          <span className="data-readout text-[13px] text-[var(--text-faint)]">{rows.length}</span>
         </div>
-        <div ref={listRef} className="max-h-[min(56vh,460px)] overflow-y-auto p-2">
+        <div ref={listRef} className="max-h-[min(56vh,460px)] min-h-[200px] overflow-y-auto p-2">
           {rows.length === 0 && (
             <p className="px-3 py-6 text-center text-sm text-[var(--text-muted)]">没有匹配的命令或项目</p>
           )}
@@ -410,7 +420,10 @@ export function CommandPalette({
           })}
         </div>
         <div className="flex min-h-9 items-center justify-between border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 text-[13px] text-[var(--text-faint)]">
-          <span className="flex items-center gap-2"><span className="status-led" aria-hidden="true" />命令索引就绪</span>
+          <span className="flex items-center gap-2">
+            <span className="flex items-center gap-2"><span className="status-led" aria-hidden="true" />命令索引就绪</span>
+            <span className="hidden sm:inline">↑↓ 选择 · Enter 执行 · Esc 关闭</span>
+          </span>
           <span className="data-readout">{matchedCommands.length} 命令 · {matchedItems.length} 项目</span>
         </div>
       </div>

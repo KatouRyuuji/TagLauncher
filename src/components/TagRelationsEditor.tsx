@@ -58,6 +58,12 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
         (t) => t.id !== focused.id && !parentSet.has(t.id) && !focusedDescendants.has(t.id),
       )
     : [];
+  // 候选超出一屏时给过滤框，不再靠肉眼扫描 pill 墙
+  const [candidateFilter, setCandidateFilter] = useState("");
+  const candidateQuery = candidateFilter.trim().toLowerCase();
+  const visibleCandidates = candidateQuery
+    ? candidates.filter((t) => t.name.toLowerCase().includes(candidateQuery))
+    : candidates;
 
   // 当前标签关联的对象（直接打了该标签的对象）
   const focusedItems = useMemo(
@@ -114,7 +120,8 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
           <div className="mt-2 grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
             <div>
               <div className="text-label">选择标签</div>
-              <div className="mt-2 flex max-h-[280px] flex-wrap content-start gap-2 overflow-y-auto">
+              {/* 纵向列表与右侧胶囊阵列拉开形态：当前编辑对象 = 左侧 accent 竖条 + 浅底 */}
+              <div className="mt-2 flex max-h-[280px] flex-col gap-0.5 overflow-y-auto">
                 {tags.map((tag) => {
                   const active = tag.id === focusedId;
                   return (
@@ -122,20 +129,14 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                       key={tag.id}
                       type="button"
                       onClick={() => { setFocusedId(tag.id); setError(null); }}
-                      className="flex items-center gap-2 rounded-[var(--radius-full)] border px-3 py-1.5 text-sm"
-                      style={{
-                        borderColor: active
-                          ? tag.color
-                          : "var(--border-subtle)",
-                        backgroundColor: active
-                          ? `color-mix(in srgb, ${tag.color} 16%, var(--bg-card))`
-                          : "color-mix(in srgb, var(--bg-card) 82%, transparent)",
-                        color: active ? `color-mix(in srgb, var(--text-primary) 72%, ${tag.color})` : "var(--text-secondary)",
-                        fontWeight: active ? 600 : 500,
-                      }}
+                      className={`flex items-center gap-2 rounded-[var(--radius-sm)] border-l-2 px-2.5 py-1.5 text-left text-sm ${
+                        active
+                          ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] font-medium text-[var(--text-primary)]"
+                          : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                      }`}
                     >
                       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
-                      <span className="max-w-[140px] truncate">{tag.name}</span>
+                      <span className="min-w-0 flex-1 truncate">{tag.name}</span>
                     </button>
                   );
                 })}
@@ -189,11 +190,23 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                 {/* 添加父标签 */}
                 <div className="mt-4">
                   <div className="text-label">添加父标签</div>
+                  {candidates.length > 8 && (
+                    <input
+                      type="search"
+                      value={candidateFilter}
+                      onChange={(event) => setCandidateFilter(event.target.value)}
+                      placeholder="过滤父标签"
+                      aria-label="过滤父标签"
+                      className="input-frame mt-2 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
+                    />
+                  )}
                   <div className="mt-2 flex max-h-[120px] flex-wrap gap-2 overflow-y-auto">
-                    {candidates.length === 0 ? (
-                      <span className="text-xs text-[var(--text-faint)]">没有可添加的父标签</span>
+                    {visibleCandidates.length === 0 ? (
+                      <span className="text-xs text-[var(--text-faint)]">
+                        {candidates.length === 0 ? "没有可添加的父标签" : "无匹配标签"}
+                      </span>
                     ) : (
-                      candidates.map((c) => (
+                      visibleCandidates.map((c) => (
                         <button
                           key={c.id}
                           type="button"

@@ -8,9 +8,19 @@
 
 import { ITEM_LIST_BASE_ROW_HEIGHT, ITEM_LIST_GRID_TEMPLATE } from "./ItemRow";
 
-/** 骨架占位数量：略多于一屏的常见容量，底部被裁切以暗示"还有更多" */
-const SKELETON_CARD_COUNT = 12;
-const SKELETON_ROW_COUNT = 9;
+/**
+ * 骨架占位数量：按视口高度估算一屏行数（多算一行让底部被裁切，暗示"还有更多"），
+ * 网格/大图标再乘估算列数。骨架是首屏瞬态，只算一次、不跟随 resize。
+ */
+function estimateCardCount(rowHeight: number, minColWidth: number): number {
+  const rows = Math.max(2, Math.ceil(window.innerHeight / rowHeight) + 1);
+  const cols = Math.max(2, Math.floor(window.innerWidth / minColWidth));
+  return Math.min(48, rows * cols);
+}
+
+function estimateRowCount(): number {
+  return Math.min(30, Math.ceil(window.innerHeight / ITEM_LIST_BASE_ROW_HEIGHT) + 1);
+}
 
 export function WorkspaceSkeleton({ view }: { view: "grid" | "list" | "icons" }) {
   return (
@@ -26,12 +36,14 @@ export function WorkspaceSkeleton({ view }: { view: "grid" | "list" | "icons" })
 }
 
 function SkeletonIcons() {
+  // 行高约 200px（方形封面 + 名称行），列宽对齐 --grid-col-min-icons 的默认档
+  const count = estimateCardCount(200, 168);
   return (
     <div
       className="grid gap-3"
       style={{ gridTemplateColumns: "repeat(auto-fill, minmax(var(--grid-col-min-icons), 1fr))" }}
     >
-      {Array.from({ length: SKELETON_CARD_COUNT }, (_, index) => (
+      {Array.from({ length: count }, (_, index) => (
         <div
           key={index}
           className="flex flex-col items-center rounded-[var(--radius-xl)] border border-[var(--line-hairline)] bg-[var(--surface-raised)] p-2.5 shadow-[var(--shadow-card)]"
@@ -45,12 +57,14 @@ function SkeletonIcons() {
 }
 
 function SkeletonGrid() {
+  // 行高约 150px（图标 + 两行文本 + 标签行），列宽对齐 --grid-col-min 的默认档
+  const count = estimateCardCount(150, 256);
   return (
     <div
       className="grid gap-3"
       style={{ gridTemplateColumns: "repeat(auto-fill, minmax(var(--grid-col-min), 1fr))" }}
     >
-      {Array.from({ length: SKELETON_CARD_COUNT }, (_, index) => (
+      {Array.from({ length: count }, (_, index) => (
         <div
           key={index}
           className="flex flex-col rounded-[var(--radius-xl)] border border-[var(--line-hairline)] bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-card)]"
@@ -74,6 +88,7 @@ function SkeletonGrid() {
 }
 
 function SkeletonList() {
+  const count = estimateRowCount();
   return (
     <div>
       <div
@@ -85,7 +100,7 @@ function SkeletonList() {
         <div className="skeleton-block h-2.5 w-12" />
         <div className="skeleton-block ml-auto h-2.5 w-10" />
       </div>
-      {Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => (
+      {Array.from({ length: count }, (_, index) => (
         <div
           key={index}
           className="grid items-center gap-3 border-b border-[var(--line-hairline)] px-4 py-2 last:border-b-0"

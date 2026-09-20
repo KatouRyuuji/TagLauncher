@@ -222,7 +222,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
           <div
             ref={canvasRef}
             data-region="tag-graph-canvas"
-            className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[var(--bg-base)] px-5 py-6 sm:px-8 sm:py-8"
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[var(--bg-base)] px-5 py-6 sm:px-8 sm:py-8"
             onClick={handleCanvasBackgroundClick}
           >
             {emptyState === "no-tags" ? (
@@ -247,7 +247,8 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                 </div>
               </div>
             ) : (
-              <div ref={contentRef} className="relative w-full min-w-0 pr-10 pb-6">
+              // my-auto 安全垂直居中：内容不足一屏时居中展示，超一屏时自动退回顶对齐
+              <div ref={contentRef} className="relative my-auto w-full min-w-0 pr-10 pb-6">
                 {selectedNodeId == null && emptyState !== "no-relations" && (
                   <p className="mb-4 text-sm text-[var(--text-faint)]">点选一个标签查看它的父子连线。</p>
                 )}
@@ -282,12 +283,14 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                     const y1 = p.bottom;
                     const x2 = c.cx;
                     const y2 = c.top;
-                    const midY = (y1 + y2) / 2;
+                    // 水平扫掠收在子节点正上方的空档走廊（y2-14），不再以 (y1+y2)/2
+                    // 为中点横穿——后者在层内换行时会穿过同层兄弟节点的文字区
+                    const channelY = y2 - 14;
                     const active = true;
                     return (
                       <path
                         key={`${rel.parentId}-${rel.childId}`}
-                        d={`M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`}
+                        d={`M ${x1} ${y1} C ${x1} ${channelY} ${x2} ${channelY} ${x2} ${y2}`}
                         fill="none"
                         stroke={active ? "var(--accent-primary)" : "var(--border-strong)"}
                         strokeWidth={active ? 2 : 1.5}
@@ -297,11 +300,15 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                   })}
                 </svg>
 
-                {/* 分层节点 */}
-                <div className="relative flex w-full min-w-0 flex-col gap-16">
+                {/* 分层节点：每层一条泳道（淡色带 + 层标签垂直居中），
+                    层数=泳道数=标签数，换行的节点也明确归属本层 */}
+                <div className="relative flex w-full min-w-0 flex-col gap-6">
                   {layers.map(({ level, tags: layerTags }) => (
-                    <div key={level} className="flex w-full items-start gap-6">
-                      <div className="data-readout flex h-12 w-14 shrink-0 items-center justify-end text-right text-[12px] font-medium text-[var(--text-secondary)]">
+                    <div
+                      key={level}
+                      className="flex w-full items-stretch gap-4 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--bg-surface)_60%,transparent)] px-2 py-3"
+                    >
+                      <div className="data-readout flex w-14 shrink-0 items-center justify-end border-r border-[var(--line-hairline)] pr-3 text-right text-[12px] font-medium text-[var(--text-secondary)]">
                         第 {level + 1} 层
                       </div>
                       <div className="flex min-w-0 flex-1 flex-wrap gap-6">
@@ -370,8 +377,9 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                     title="收起"
                     aria-label="收起标签详情"
                   >
+                    {/* 收起箭头（向右收拢）：与弹窗右上角的关闭 X 拉开语义距离 */}
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
                     </svg>
                   </button>
                 </div>

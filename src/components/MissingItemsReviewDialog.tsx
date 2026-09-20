@@ -89,8 +89,13 @@ export function MissingItemsReviewDialog({
           <div className="px-5 pt-5">
             <DialogHeader
               title="失效项目"
-              description="这些项目的文件当前找不到。U 盘拔出也会出现在这里。找回会扫描全部失效项，不只限勾选。移除只作用于已勾选，且不会再删一次本地已经不在的文件。"
+              description="这些项目的文件当前找不到（U 盘拔出也会出现在这里）。找回会扫描全部失效项；移除只作用于已勾选，不会再删一次本地已经不在的文件。"
               onClose={onClose}
+              icon={
+                <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-warning)_28%,transparent)] bg-[var(--status-warning-bg)] text-[var(--color-warning-ink)]">
+                  <TriangleAlert size={18} strokeWidth={1.8} aria-hidden="true" />
+                </span>
+              }
             />
             {lastRelocateResult !== null && (
               <p
@@ -113,15 +118,17 @@ export function MissingItemsReviewDialog({
               aria-pressed={allChecked}
               className="inline-flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             >
-              <CheckBox checked={allChecked} />
-              {allChecked ? "取消全选" : "全选"}
+              {/* 框体表达状态（含半选），文案恒为动作名「全选」，不与勾选态打架 */}
+              <CheckBox checked={allChecked} indeterminate={someChecked && !allChecked} />
+              全选
             </button>
             <span className="data-readout text-[13px] text-[var(--text-faint)]">
               已选 {selectedIds.length} / {ordered.length}
             </span>
           </div>
 
-          <ul className="min-h-0 flex-1 overflow-y-auto px-2 py-2" aria-label="失效项目列表">
+          {/* 高度随内容自适应：条目少时对话框收缩，不留列表区死白；多到 46vh 才内滚动 */}
+          <ul className="min-h-0 max-h-[46vh] overflow-y-auto px-2 py-2" aria-label="失效项目列表">
             {ordered.map((item) => {
               const checked = selectedSet.has(item.id);
               return (
@@ -153,7 +160,17 @@ export function MissingItemsReviewDialog({
             })}
           </ul>
 
+          {/* 危险居左弱化、安全居右：与批量移除确认同一套肌肉记忆 */}
           <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--line-hairline)] px-5 py-4">
+            <button
+              type="button"
+              className="action-button action-button-danger mr-auto"
+              disabled={!someChecked || removing}
+              onClick={() => void handleRemove()}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              从库中移除已勾选
+            </button>
             <button type="button" className="action-button" onClick={onClose}>
               关闭
             </button>
@@ -166,16 +183,7 @@ export function MissingItemsReviewDialog({
               {relocating && (
                 <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
               )}
-              {relocating ? "正在扫描…" : "尝试找回全部失效项"}
-            </button>
-            <button
-              type="button"
-              className="action-button action-button-danger"
-              disabled={!someChecked || removing}
-              onClick={() => void handleRemove()}
-            >
-              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              从库中移除已勾选
+              {relocating ? "正在扫描…" : lastRelocateResult === 0 ? "重新扫描全部失效项" : "尝试找回全部失效项"}
             </button>
           </div>
         </div>
@@ -184,10 +192,13 @@ export function MissingItemsReviewDialog({
   );
 }
 
-function CheckBox({ checked }: { checked: boolean }) {
+function CheckBox({ checked, indeterminate = false }: { checked: boolean; indeterminate?: boolean }) {
   return (
     <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border-default)] bg-[var(--bg-input)]">
       {checked && <Check aria-hidden="true" size={12} strokeWidth={2} className="text-[var(--accent-primary)]" />}
+      {!checked && indeterminate && (
+        <span aria-hidden="true" className="h-0.5 w-2 rounded-full bg-[var(--accent-primary)]" />
+      )}
     </span>
   );
 }

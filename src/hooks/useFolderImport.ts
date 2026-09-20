@@ -15,7 +15,7 @@ export interface FolderImportDialogProps {
   folderNames: string[];
   fileCount: number;
   defaultMode: FolderImportMode;
-  onConfirm: (mode: FolderImportMode) => Promise<void>;
+  onConfirm: (mode: FolderImportMode, remember: boolean) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -67,13 +67,13 @@ export function useFolderImport(addItems: (paths: string[]) => Promise<void>) {
     setPendingPaths(null);
   }, []);
 
-  const handleConfirm = useCallback(async (mode: FolderImportMode) => {
+  const handleConfirm = useCallback(async (mode: FolderImportMode, remember: boolean) => {
     const paths = pendingPaths;
     const folders = folderNames;
     setPendingPaths(null);
     if (!paths || paths.length === 0) return;
 
-    persistMode(mode);
+    if (remember) persistMode(mode);
     try {
       if (mode === "folder") {
         await addItems(paths);

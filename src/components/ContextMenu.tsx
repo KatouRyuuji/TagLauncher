@@ -77,11 +77,16 @@ export function ContextMenu({
   onUpdateThumbnail,
 }: ContextMenuProps) {
   const [folderWatched, setFolderWatched] = useState(false);
-  const [showCabinetSub, setShowCabinetSub] = useState(false);
+  // 二级菜单同时只开一个：文件柜 / 缩略图共用同一套定位、悬停延时与键盘机制
+  const [openSubmenu, setOpenSubmenu] = useState<"cabinet" | "thumbnail" | null>(null);
+  const showCabinetSub = openSubmenu === "cabinet";
+  const showThumbnailSub = openSubmenu === "thumbnail";
   const [submenuToLeft, setSubmenuToLeft] = useState(false);
   const menuRef = useFocusTrap<HTMLDivElement>({ active: true });
   const cabinetTriggerRef = useRef<HTMLButtonElement>(null);
+  const thumbnailTriggerRef = useRef<HTMLButtonElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
+  const thumbnailSubmenuRef = useRef<HTMLDivElement>(null);
   const submenuHideTimerRef = useRef<number | null>(null);
   const [style, setStyle] = useState<React.CSSProperties>({
     position: "fixed",
@@ -142,42 +147,41 @@ export function ContextMenu({
     }
   }, []);
 
-  const openCabinetSubmenu = useCallback(() => {
+  const openSubmenuNow = useCallback((kind: "cabinet" | "thumbnail") => {
     clearSubmenuHideTimer();
-    setShowCabinetSub(true);
+    setOpenSubmenu(kind);
   }, [clearSubmenuHideTimer]);
 
   // 悬停展开时：把 roving focus 从「打开」等项挪到父项，去掉错位焦点环。
   // 焦点已在子菜单内则不动（键盘 ArrowRight 已把焦点交给首项）。
-  const focusCabinetTriggerFromMainMenu = useCallback(() => {
-    const trigger = cabinetTriggerRef.current;
-    const submenu = submenuRef.current;
-    const active = document.activeElement;
+  const focusTriggerFromMainMenu = useCallback((trigger: HTMLButtonElement | null, submenu: HTMLDivElement | null) => {
     if (!trigger) return;
+    const active = document.activeElement;
     if (active instanceof Node && submenu?.contains(active)) return;
     if (active === trigger || (active instanceof Node && trigger.contains(active))) return;
     trigger.focus({ preventScroll: true });
   }, []);
 
-  const scheduleCloseCabinetSubmenu = useCallback(() => {
+  const scheduleCloseSubmenu = useCallback(() => {
     clearSubmenuHideTimer();
     submenuHideTimerRef.current = window.setTimeout(() => {
-      setShowCabinetSub(false);
+      setOpenSubmenu(null);
     }, 120);
   }, [clearSubmenuHideTimer]);
 
-  const updateSubmenuPosition = useCallback(() => {
-    const triggerEl = cabinetTriggerRef.current;
+  const updateSubmenuPosition = useCallback((kind: "cabinet" | "thumbnail") => {
+    const triggerEl = kind === "cabinet" ? cabinetTriggerRef.current : thumbnailTriggerRef.current;
     if (!triggerEl) return;
 
     const viewportGap = 8;
     // 与父项顶部对齐，横向重叠 3px，避免子菜单像掉在网格里的便利贴。
     const overlap = 3;
     const fallbackWidth = 220;
-    const fallbackHeight = Math.min(320, cabinets.length * 40 + 20);
+    const fallbackHeight = kind === "cabinet" ? Math.min(320, cabinets.length * 40 + 20) : 100;
     const rect = triggerEl.getBoundingClientRect();
-    const panelWidth = submenuRef.current?.offsetWidth ?? fallbackWidth;
-    const panelHeight = submenuRef.current?.offsetHeight ?? fallbackHeight;
+    const panelEl = kind === "cabinet" ? submenuRef.current : thumbnailSubmenuRef.current;
+    const panelWidth = panelEl?.offsetWidth ?? fallbackWidth;
+    const panelHeight = panelEl?.offsetHeight ?? fallbackHeight;
 
     const placeLeft =
       rect.right - overlap + panelWidth > window.innerWidth - viewportGap &&
@@ -210,7 +214,7 @@ export function ContextMenu({
     });
     const id = window.requestAnimationFrame(updateMenuPosition);
     return () => window.cancelAnimationFrame(id);
-  }, [position.x, position.y, updateMenuPosition, showCabinetSub, cabinets.length]);
+  }, [position.x, position.y, updateMenuPosition, openSubmenu, cabinets.length]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -221,12 +225,12 @@ export function ContextMenu({
   }, [updateMenuPosition]);
 
   useEffect(() => {
-    if (!showCabinetSub) return;
+    if (!openSubmenu) return;
 
     const handleViewportChange = () => {
-      updateSubmenuPosition();
+      updateSubmenuPosition(openSubmenu);
     };
-    const frameId = window.requestAnimationFrame(updateSubmenuPosition);
+    const frameId = window.requestAnimationFrame(handleViewportChange);
     window.addEventListener("resize", handleViewportChange);
     window.addEventListener("scroll", handleViewportChange, true);
 
@@ -235,21 +239,22 @@ export function ContextMenu({
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("scroll", handleViewportChange, true);
     };
-  }, [showCabinetSub, updateSubmenuPosition]);
+  }, [openSubmenu, updateSubmenuPosition]);
 
   useEffect(() => () => clearSubmenuHideTimer(), [clearSubmenuHideTimer]);
 
-  const showCabinetSubRef = useRef(showCabinetSub);
+  const openSubmenuRef = useRef(openSubmenu);
   // 写 ref 属于副作用，放 effect 内同步（渲染期写入在并发渲染被丢弃时会残留脏数据）
   useEffect(() => {
-    showCabinetSubRef.current = showCabinetSub;
-  }, [showCabinetSub]);
+    openSubmenuRef.current = openSubmenu;
+  }, [openSubmenu]);
   const focusSubmenuOnOpenRef = useRef(false);
 
   const handleEscape = useCallback(() => {
-    if (showCabinetSubRef.current) {
-      setShowCabinetSub(false);
-      cabinetTriggerRef.current?.focus();
+    const openKind = openSubmenuRef.current;
+    if (openKind) {
+      setOpenSubmenu(null);
+      (openKind === "cabinet" ? cabinetTriggerRef : thumbnailTriggerRef).current?.focus();
       return;
     }
     onClose();
@@ -262,10 +267,11 @@ export function ContextMenu({
   useBottomScrollFade(submenuRef, [showCabinetSub, cabinets.length]);
 
   useEffect(() => {
-    if (!showCabinetSub || !focusSubmenuOnOpenRef.current) return;
+    if (!openSubmenu || !focusSubmenuOnOpenRef.current) return;
     focusSubmenuOnOpenRef.current = false;
-    submenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-  }, [showCabinetSub]);
+    const panel = openSubmenu === "cabinet" ? submenuRef.current : thumbnailSubmenuRef.current;
+    panel?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [openSubmenu]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -274,25 +280,28 @@ export function ContextMenu({
       const menu = menuRef.current;
       if (!menu) return;
 
-      const submenu = submenuRef.current;
+      const openKind = openSubmenuRef.current;
+      const submenu = openKind === "cabinet" ? submenuRef.current : openKind === "thumbnail" ? thumbnailSubmenuRef.current : null;
       const active = event.target instanceof HTMLElement ? event.target : null;
       const inSubmenu = Boolean(submenu && active && submenu.contains(active));
       const container = inSubmenu && submenu ? submenu : menu;
 
-      if (event.key === "ArrowRight" && !inSubmenu && cabinetTriggerRef.current) {
-        const trigger = cabinetTriggerRef.current;
-        if (active === trigger || (active !== null && trigger.contains(active))) {
+      if (event.key === "ArrowRight" && !inSubmenu) {
+        const triggerEntry = (["cabinet", "thumbnail"] as const)
+          .map((kind) => ({ kind, el: kind === "cabinet" ? cabinetTriggerRef.current : thumbnailTriggerRef.current }))
+          .find(({ el }) => el !== null && (active === el || (active !== null && el.contains(active))));
+        if (triggerEntry) {
           event.preventDefault();
           focusSubmenuOnOpenRef.current = true;
-          openCabinetSubmenu();
+          openSubmenuNow(triggerEntry.kind);
           return;
         }
       }
 
-      if (event.key === "ArrowLeft" && inSubmenu) {
+      if (event.key === "ArrowLeft" && inSubmenu && openKind) {
         event.preventDefault();
-        setShowCabinetSub(false);
-        cabinetTriggerRef.current?.focus();
+        setOpenSubmenu(null);
+        (openKind === "cabinet" ? cabinetTriggerRef : thumbnailTriggerRef).current?.focus();
         return;
       }
 
@@ -306,7 +315,7 @@ export function ContextMenu({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [openCabinetSubmenu]);
+  }, [openSubmenuNow]);
 
   const handleOpenFolder = async () => {
     try {
@@ -438,7 +447,8 @@ export function ContextMenu({
           label={openMenuLabel(item.type, multi ? multi.ids.length : 1)}
           onClick={() => { onLaunch(); onClose(); }}
         />
-        {onPreview && <MenuItem icon={Eye} label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
+        {/* 快速预览只服务单个对象：多选语义下隐藏，避免误以为可批量预览 */}
+        {onPreview && !multi && <MenuItem icon={Eye} label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
         <MenuItem icon={FolderOpen} label={revealMenuLabel(item.type)} onClick={() => void handleOpenFolder()} />
         {item.type === "folder" && !item.is_missing && (
           <MenuItem
@@ -496,8 +506,37 @@ export function ContextMenu({
           accent={(multi ? !multi.favoriteTarget : item.is_favorite) ? "favorite" : undefined}
         />
         <MenuItem icon={Tags} label="管理标签" onClick={() => { onEditTags(); onClose(); }} />
-        <MenuItem icon={ImagePlus} label={item.icon_path ? "更换缩略图" : "设置缩略图"} onClick={() => void handleChangeThumbnail()} />
-        {item.icon_path && <MenuItem icon={ImageOff} label="清除缩略图" onClick={() => void handleClearThumbnail()} />}
+        {/* 缩略图收进二级菜单：与文件柜共用同一套展开/定位/键盘机制 */}
+        <div
+          onMouseEnter={() => {
+            openSubmenuNow("thumbnail");
+            focusTriggerFromMainMenu(thumbnailTriggerRef.current, thumbnailSubmenuRef.current);
+          }}
+          onMouseLeave={scheduleCloseSubmenu}
+        >
+          <button
+            ref={thumbnailTriggerRef}
+            type="button"
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={showThumbnailSub}
+            onClick={(event) => {
+              // 鼠标靠 hover 已展开子菜单，点击保持展开即可；
+              // 键盘 Enter/Space（event.detail === 0）打开子菜单并把焦点移入首项。
+              if (event.detail === 0) focusSubmenuOnOpenRef.current = true;
+              openSubmenuNow("thumbnail");
+            }}
+            className={`flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm ${
+              showThumbnailSub
+                ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            <ImagePlus aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
+            <span className="min-w-0 flex-1">缩略图</span>
+            <ChevronRight aria-hidden="true" size={15} strokeWidth={1.8} className={`shrink-0 text-[var(--text-faint)] transition-transform ${submenuToLeft ? "rotate-180" : ""}`} />
+          </button>
+        </div>
 
         {(cabinets.length > 0 || currentCabinetId !== null) && (
           <>
@@ -509,10 +548,10 @@ export function ContextMenu({
         {cabinets.length > 0 && (
           <div
             onMouseEnter={() => {
-              openCabinetSubmenu();
-              focusCabinetTriggerFromMainMenu();
+              openSubmenuNow("cabinet");
+              focusTriggerFromMainMenu(cabinetTriggerRef.current, submenuRef.current);
             }}
-            onMouseLeave={scheduleCloseCabinetSubmenu}
+            onMouseLeave={scheduleCloseSubmenu}
           >
             <button
               ref={cabinetTriggerRef}
@@ -524,7 +563,7 @@ export function ContextMenu({
                 // 鼠标靠 hover 已展开子菜单，点击保持展开即可；
                 // 键盘 Enter/Space（event.detail === 0）打开子菜单并把焦点移入首项。
                 if (event.detail === 0) focusSubmenuOnOpenRef.current = true;
-                openCabinetSubmenu();
+                openSubmenuNow("cabinet");
               }}
               className={`flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm ${
                 showCabinetSub
@@ -572,8 +611,8 @@ export function ContextMenu({
           ref={submenuRef}
           role="menu"
           style={{ ...submenuStyle, boxShadow: "var(--shadow-dropdown)" }}
-          onMouseEnter={openCabinetSubmenu}
-          onMouseLeave={scheduleCloseCabinetSubmenu}
+          onMouseEnter={() => openSubmenuNow("cabinet")}
+          onMouseLeave={scheduleCloseSubmenu}
           className="modal-surface w-[220px] max-h-[60vh] max-w-[72vw] overflow-y-auto p-1.5"
         >
           {cabinets.map((cabinet) => (
@@ -595,6 +634,20 @@ export function ContextMenu({
               <span className="truncate">{cabinet.name}</span>
             </button>
           ))}
+        </div>
+      )}
+
+      {showThumbnailSub && (
+        <div
+          ref={thumbnailSubmenuRef}
+          role="menu"
+          style={{ ...submenuStyle, boxShadow: "var(--shadow-dropdown)" }}
+          onMouseEnter={() => openSubmenuNow("thumbnail")}
+          onMouseLeave={scheduleCloseSubmenu}
+          className="modal-surface w-[200px] max-h-[60vh] max-w-[72vw] overflow-y-auto p-1.5"
+        >
+          <MenuItem icon={ImagePlus} label={item.icon_path ? "更换缩略图" : "设置缩略图"} onClick={() => void handleChangeThumbnail()} />
+          {item.icon_path && <MenuItem icon={ImageOff} label="清除缩略图" onClick={() => void handleClearThumbnail()} />}
         </div>
       )}
     </>,

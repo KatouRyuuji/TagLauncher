@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Check, Trash2 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -9,7 +10,7 @@ import {
 } from "../lib/itemActionCopy";
 import { truncatePathMiddle } from "../lib/itemUtils";
 
-/** 从库移除确认：可选仅出库，或连本地文件一起移到回收站。 */
+/** 从库移除确认：可选仅从库中移除，或连本地文件一起移到回收站。 */
 export function RemoveFromAppConfirmDialog({
   open,
   items,
@@ -29,6 +30,13 @@ export function RemoveFromAppConfirmDialog({
 }) {
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open });
   useEscapeKey(onCancel, open);
+  const primaryRef = useRef<HTMLButtonElement>(null);
+
+  // 危险确认弹窗的初始焦点落在安全主按钮（焦点陷阱默认抓第一个可聚焦元素，
+  // 会把焦点放到「不再询问」复选框上，误按空格勾掉下次确认）
+  useEffect(() => {
+    if (open && !preferDeleteFiles) primaryRef.current?.focus();
+  }, [open, preferDeleteFiles]);
 
   if (!open) return null;
 
@@ -67,7 +75,7 @@ export function RemoveFromAppConfirmDialog({
                 {dialogTitle}
               </h2>
               <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
-                仅出库不会动磁盘上的文件。删除本地文件会把磁盘上的文件或整个文件夹移到回收站，并从库里拿掉。
+                从库中移除不会动磁盘上的文件。删除本地文件会把磁盘上的文件或整个文件夹移到回收站，并从库里拿掉。
               </p>
               {folderCount > 0 && (
                 <p className="mt-2 text-sm leading-6 text-[var(--color-danger-ink)]">
@@ -109,7 +117,7 @@ export function RemoveFromAppConfirmDialog({
                 <Check aria-hidden="true" size={12} strokeWidth={2} className="text-[var(--accent-primary)]" />
               )}
             </span>
-            下次仅出库时不再询问
+            从库中移除时不再询问
           </button>
 
           <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
@@ -128,11 +136,12 @@ export function RemoveFromAppConfirmDialog({
             </button>
             <button
               type="button"
+              ref={primaryRef}
               autoFocus={!preferDeleteFiles}
               onClick={() => void onConfirm("library")}
               className={preferDeleteFiles ? "action-button" : "action-button action-button-primary"}
             >
-              仅出库
+              从库中移除
             </button>
             {preferDeleteFiles && (
               <button

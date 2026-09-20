@@ -33,12 +33,13 @@ export function SettingsToggle({ checked, onChange, title, description, disabled
   return (
     <button type="button" role="switch" aria-checked={checked} aria-labelledby={`${id}-title`}
       aria-describedby={`${id}-description`} disabled={disabled} onClick={() => onChange(!checked)}
-      className="settings-toggle flex w-full items-center justify-between gap-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] px-3 py-3 text-left disabled:opacity-50">
+      className="settings-toggle flex w-full items-start justify-between gap-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] px-3 py-3 text-left disabled:opacity-50">
       <span className="min-w-0">
         <span id={`${id}-title`} className="block text-sm font-medium text-[var(--text-primary)]">{title}</span>
         <span id={`${id}-description`} className="mt-1 block text-xs leading-5 text-[var(--text-secondary)]">{description}</span>
       </span>
-      <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
+      {/* 开关对齐首行标题：多行说明时不再悬在文字中段 */}
+      <span className="switch-track mt-0.5" aria-hidden="true"><span className="switch-thumb" /></span>
     </button>
   );
 }

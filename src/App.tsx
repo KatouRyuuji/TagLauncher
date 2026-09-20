@@ -382,6 +382,7 @@ function App() {
       )}
       <Sidebar
         mobileOpen={mobileSidebarOpen}
+        loading={loading}
         tags={tags}
         cabinets={cabinets}
         onAddTag={addTag}
@@ -502,7 +503,15 @@ function App() {
       <Suspense fallback={null}>
         {showSettings && <SettingsPanel open onClose={() => setShowSettings(false)} />}
       </Suspense>
-      <AiTaggingModal progress={aiTagState} onCancel={aiTagCancel} onClose={aiTagReset} />
+      <AiTaggingModal
+        progress={aiTagState}
+        onCancel={aiTagCancel}
+        onClose={aiTagReset}
+        onViewResults={(ids) => {
+          handleSelectItems(ids);
+          aiTagReset();
+        }}
+      />
       <Suspense fallback={null}>
         {tagGraphOpen && <TagGraphView allItems={allItems} />}
       </Suspense>

@@ -2,6 +2,8 @@ import type { CSSProperties } from "react";
 import { X } from "lucide-react";
 import type { ItemWithTags } from "../types";
 import { useInternalDragStore } from "../stores/internalDragStore";
+import { useAppStore } from "../stores/appStore";
+import { SearchHighlightText } from "./SearchHighlightText";
 import {
   beginInternalPointerDrag,
   findClosestNumberDataAttribute,
@@ -28,6 +30,8 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
   const removeZoneActive = useInternalDragStore((state) =>
     state.hoverTarget?.kind === "reorder-remove" && state.hoverTarget.itemId === item.id,
   );
+  // 命中高亮落在真正匹配的字段上：标签命中时高亮标签名，解释「为什么命中」
+  const searchQuery = useAppStore((state) => state.searchQuery);
 
   const handleTagPointerDown = (
     event: React.PointerEvent<HTMLElement>,
@@ -134,7 +138,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
           } ${highlightIdx === idx ? "ring-1 ring-[var(--accent-primary)]" : ""}`}
           style={{ "--tag-color": tag.color } as CSSProperties}
         >
-          {tag.name}
+          <SearchHighlightText text={tag.name} query={searchQuery} />
           <button
             type="button"
             aria-label={`移除标签「${tag.name}」`}
