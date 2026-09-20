@@ -672,6 +672,12 @@
     text-align: center;
   }
 
+  /* 容器 Tab 停点（roving focus）：活动项未挂载时网格/列表容器获焦的外圈 */
+  .selection-canvas-focusable:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: -2px;
+  }
+
   /* 少结果（1–3 项）与满网格同一锚点：恒左对齐、同 padding/gap，卡片不随结果数漂移 */
   .item-grid-few {
     display: flex;

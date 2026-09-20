@@ -218,10 +218,21 @@ pub fn run() {
             app.manage(database);
             app.manage(registry);
             app.manage(services::watch_runtime::FolderWatchHub::new());
+            app.manage(services::reconcile_runtime::ReconcileScheduler::new());
             let handle = app.handle().clone();
             handle
                 .state::<services::watch_runtime::FolderWatchHub>()
                 .reload(&handle);
+
+            // 对账解耦：启动后 2s 首跑（避开首屏），之后 60s 周期节流
+            {
+                let first = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    services::reconcile_runtime::request_reconcile(&first, true);
+                });
+                services::reconcile_runtime::spawn_periodic(&app.handle());
+            }
 
             Ok(())
         })
@@ -240,6 +251,7 @@ pub fn run() {
             set_many_item_tags,
             update_item_icon,
             get_items,
+            reconcile_items,
             get_item,
             get_item_visual,
             get_items_by_ids,

@@ -141,6 +141,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
           <SearchHighlightText text={tag.name} query={searchQuery} />
           <button
             type="button"
+            tabIndex={-1}
             aria-label={`移除标签「${tag.name}」`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(e) => {

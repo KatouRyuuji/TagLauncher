@@ -14,7 +14,7 @@ import { findFamilyByThemeId, getPresetTheme } from "../themes";
 import { useAppStore } from "../stores/appStore";
 import { notifyCabinetsChanged, notifyTagsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
-import { TAGS_WRITTEN_EVENT } from "./useTags";
+import { ITEM_TAG_COLORS_PATCH_EVENT } from "./useItems";
 
 function paletteOfTheme(themeId: string | undefined | null): string[] | null {
   if (!themeId) return null;
@@ -40,7 +40,8 @@ function resolvePreviousPalette(
 /**
  * 官方家族切换 / 首次进入时按色位写回标签/文件柜颜色。
  * store 里 tags 与 cabinets 都空时不规划、不 persist，等数据到齐再补跑。
- * 局部替换 store 的 color，并派发 TAGS_WRITTEN_EVENT 让对象卡片 pill 跟着换色。
+ * 局部替换 store 的 color，并经 ITEM_TAG_COLORS_PATCH_EVENT 让对象卡片 pill
+ * 就地换色（不触发全量重取）。
  */
 export function useTagColorSlotSync() {
   const { currentTheme } = useThemeContext();
@@ -99,7 +100,10 @@ export function useTagColorSlotSync() {
         useAppStore.getState().setCabinets(nextCabinets);
         notifyTagsChanged(nextTags);
         notifyCabinetsChanged(nextCabinets);
-        window.dispatchEvent(new Event(TAGS_WRITTEN_EVENT));
+        // 就地改色：对象内嵌 pill 色经补丁事件更新，不再触发全量重取级联
+        window.dispatchEvent(new CustomEvent(ITEM_TAG_COLORS_PATCH_EVENT, {
+          detail: { tagColors: Object.fromEntries(tagColor) },
+        }));
       }
 
       await db.setSetting(COLOR_SLOT_SETTING_KEY, JSON.stringify(planned.nextSlotMap));

@@ -12,6 +12,8 @@ export function ItemDragHandle({
       onClick={(e) => e.stopPropagation()}
       // 双击手柄不应冒泡到卡片触发启动
       onDoubleClick={(e) => e.stopPropagation()}
+      // 卡片/行是单一 Tab 停点（roving focus）：抓手退出 Tab 序
+      tabIndex={-1}
       className={`inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border border-transparent text-[var(--text-faint)] hover:border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)] cursor-grab active:cursor-grabbing ${className}`}
       title="拖拽到文件柜"
       aria-label="拖拽到文件柜"

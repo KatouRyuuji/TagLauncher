@@ -48,12 +48,16 @@ export interface ItemViewProps {
   /** 回收标签编辑器取消时未落库的新建空标签（避免点取消却已写入 DB 的残留） */
   onRecycleNewTags?: (tagIds: number[]) => Promise<void>;
   onToggleFavorite: (id: number) => Promise<void>;
+  /** 批量收藏/取消（拖拽整组与批量工具条共用） */
+  onSetFavorites?: (ids: number[], favorite: boolean) => Promise<void>;
   onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onAddItemsToCabinet: (cabinetId: number, itemIds: number[]) => Promise<void>;
   onRemoveItemFromCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onRemoveItemsFromCabinet: (cabinetId: number, itemIds: number[]) => Promise<void>;
   onClearCurrentFilter: (itemId: number) => Promise<void>;
   onRequestRemoveFromApp: (itemId: number, options?: { forceDialog?: boolean; preferDeleteFiles?: boolean }) => Promise<void>;
+  /** 批量移除当前选中集（整组拖到移除区时调用；dragged ids 即选中集） */
+  onRequestBatchRemoveFromApp?: () => Promise<void>;
   onUpdateThumbnail: (itemId: number, iconPath: string | null) => Promise<void>;
   selectedItemIds: number[];
   onSelectItems: (itemIds: number[]) => void;
@@ -62,4 +66,6 @@ export interface ItemViewProps {
   onClearFilters?: () => void;
   /** 空库引导的「添加文件/文件夹」入口，与顶栏添加按钮共用同一导入流程 */
   onAddItems?: (paths: string[]) => Promise<void>;
+  /** 空白右键背景菜单的「刷新」入口（显式对账 + 图标重取） */
+  onRefreshWorkspace?: () => Promise<void>;
 }

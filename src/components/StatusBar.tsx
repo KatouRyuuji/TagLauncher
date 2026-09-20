@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { LoaderCircle, TriangleAlert, ZoomIn, ZoomOut } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { useSearch } from "../hooks/useSearch";
@@ -119,6 +119,11 @@ export function StatusBar({
   const sizeLabel = iconsLayout ? "大图标尺寸" : "卡片尺寸";
   const sizePct = Math.round(sizeScale * 100);
   const sizeProgress = ((sizeScale - sizeRange.min) / (sizeRange.max - sizeRange.min)) * 100;
+  const scaleRafRef = useRef<number | null>(null);
+  const pendingScaleRef = useRef(sizeScale);
+  useEffect(() => () => {
+    if (scaleRafRef.current !== null) cancelAnimationFrame(scaleRafRef.current);
+  }, []);
 
   const parts = [`${visibleCount} 项目`, scope];
   // 选中计数由悬浮批量工具条承载（BatchSelectionToolbar「n 已选中」），状态栏不重复
@@ -194,7 +199,22 @@ export function StatusBar({
               max={sizeRange.max * 100}
               step={CARD_SIZE_SCALE_STEP * 100}
               value={sizePct}
-              onChange={(event) => setSizeScale(Number(event.target.value) / 100)}
+              onChange={(event) => {
+                // rAF 节流：拖动期每帧至多一次 store 写（且不序列化），松手才持久化
+                pendingScaleRef.current = Number(event.target.value) / 100;
+                if (scaleRafRef.current !== null) return;
+                scaleRafRef.current = requestAnimationFrame(() => {
+                  scaleRafRef.current = null;
+                  setSizeScale(pendingScaleRef.current, { persist: false });
+                });
+              }}
+              onPointerUp={() => {
+                if (scaleRafRef.current !== null) {
+                  cancelAnimationFrame(scaleRafRef.current);
+                  scaleRafRef.current = null;
+                }
+                setSizeScale(pendingScaleRef.current);
+              }}
               aria-label={sizeLabel}
               aria-valuetext={`${sizePct}%`}
               style={{ "--range-progress": `${sizeProgress}%` } as CSSProperties}

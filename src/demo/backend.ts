@@ -460,6 +460,10 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       for (const patch of cabinetPatches) requireCabinet(num(patch.id)).color = str(patch.color);
       return null;
     }
+    case "reconcile_items": {
+      // demo 无真实文件系统，对账恒无写入（与真实后端的「无写入不发事件」对齐）
+      return { changed: false, marked_missing: 0, relocated: 0, cleared: 0, elapsed_ms: 0 };
+    }
     case "remove_tag": {
       const id = num(args.id);
       state.tags = state.tags.filter((tag) => tag.id !== id);

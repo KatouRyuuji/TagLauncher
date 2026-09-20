@@ -66,6 +66,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
   const showFilterRow = hasLibraryItems && (workspaceFiltersOpen || filtersForcedOpen);
   const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
   const composingRef = useRef(false);
+  const lastCompositionValueRef = useRef<string | null>(null);
 
   useEffect(() => {
     const update = () => setModButtons(getToolbarButtons());
@@ -125,9 +126,17 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               setInputValue(value);
               handleSearch(value);
               notifySearchInput(value);
+              // 部分 IME 在 compositionend 后还会补一个同值 input 事件：
+              // 防抖已吸收重复搜索，这里挡的是 mod 监听器的双份通知
+              lastCompositionValueRef.current = value;
             }}
             onChange={(event) => {
               const value = event.target.value;
+              if (lastCompositionValueRef.current === value) {
+                lastCompositionValueRef.current = null;
+                return;
+              }
+              lastCompositionValueRef.current = null;
               setInputValue(value);
               if (composingRef.current) return;
               handleSearch(value);

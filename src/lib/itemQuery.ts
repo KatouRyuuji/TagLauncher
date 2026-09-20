@@ -5,7 +5,7 @@
 // 组件中抽离，保证虚拟化列表只拿到已经排好的结果，避免每张卡片重算。
 // ============================================================================
 
-import { pinyin } from "pinyin-pro";
+import { pinyinSync as pinyin } from "./pinyinProvider";
 import type { ItemWithTags } from "../types";
 
 /** 工作台排序：智能（收藏→最近使用→名称）/ 名称 / 最近使用 / 添加时间 / 类型 */
@@ -98,16 +98,28 @@ export function applyTypeFilter<T extends Pick<ItemWithTags, "type">>(items: T[]
   return items.filter((item) => itemMatchesType(item, filter));
 }
 
+export interface SortKeyOverrides {
+  /** id → 冻结的 last_used_at（会话内冻结排序键）：命中即用冻结值，未命中用活值。
+   *  启动对象只刷新 last_used_at 不重排视图（Explorer 语义）；
+   *  快照在 loadAll / 排序变更 / 视图域切换时重拍。 */
+  readonly lastUsedAt?: ReadonlyMap<number, string | null | undefined>;
+}
+
+type SortableItem = Pick<ItemWithTags, "id" | "name" | "type" | "is_favorite" | "last_used_at" | "created_at">;
+
 export function compareItems(
-  a: Pick<ItemWithTags, "name" | "type" | "is_favorite" | "last_used_at" | "created_at">,
-  b: Pick<ItemWithTags, "name" | "type" | "is_favorite" | "last_used_at" | "created_at">,
+  a: SortableItem,
+  b: SortableItem,
   mode: SortMode,
+  overrides?: SortKeyOverrides,
 ): number {
+  const usedAt = (item: SortableItem) =>
+    overrides?.lastUsedAt?.has(item.id) ? overrides.lastUsedAt.get(item.id) : item.last_used_at;
   switch (mode) {
     case "name":
       return compareNames(a.name, b.name);
     case "recent": {
-      const used = compareTimestamps(b.last_used_at ?? "", a.last_used_at ?? "");
+      const used = compareTimestamps(usedAt(b) ?? "", usedAt(a) ?? "");
       return used || compareNames(a.name, b.name);
     }
     case "added": {
@@ -121,25 +133,26 @@ export function compareItems(
     case "smart":
     default: {
       if (a.is_favorite !== b.is_favorite) return a.is_favorite ? -1 : 1;
-      const used = compareTimestamps(b.last_used_at ?? "", a.last_used_at ?? "");
+      const used = compareTimestamps(usedAt(b) ?? "", usedAt(a) ?? "");
       return used || compareNames(a.name, b.name);
     }
   }
 }
 
-export function sortItemsByMode<T extends Pick<ItemWithTags, "name" | "type" | "is_favorite" | "last_used_at" | "created_at">>(
+export function sortItemsByMode<T extends SortableItem>(
   items: T[],
   mode: SortMode,
+  overrides?: SortKeyOverrides,
 ): T[] {
-  return [...items].sort((a, b) => compareItems(a, b, mode));
+  return [...items].sort((a, b) => compareItems(a, b, mode, overrides));
 }
 
 /** 在搜索结果之上叠加类型筛选与排序（最近使用由 source 层互斥筛选，避免重复过滤）。 */
 export function applyWorkspaceQuery<T extends ItemWithTags>(
   items: T[],
-  opts: { typeFilter: TypeFilter; sortMode: SortMode },
+  opts: { typeFilter: TypeFilter; sortMode: SortMode; sortKeyOverrides?: SortKeyOverrides },
 ): T[] {
-  return sortItemsByMode(applyTypeFilter(items, opts.typeFilter), opts.sortMode);
+  return sortItemsByMode(applyTypeFilter(items, opts.typeFilter), opts.sortMode, opts.sortKeyOverrides);
 }
 
 export function formatBytes(n: number | null | undefined): string {
@@ -243,13 +256,15 @@ export function applyPointerSelection(
   return { ids: [clickedId], anchorId: clickedId };
 }
 
-/** 框选模式：正选（默认，命中集替换选中集）/ 减选（Alt，从既有选中集扣除命中项）。 */
-export type MarqueeMode = "add" | "subtract";
+/** 框选模式：正选（默认，命中集替换选中集）/ 减选（Alt，扣除命中项）/ 切换（Ctrl，命中项与既有选中做对称差）。 */
+export type MarqueeMode = "add" | "subtract" | "toggle";
 
 /**
  * 框选结算：
  * - add：框选结果 = 命中集（对齐资源管理器普通框选的替换语义）；
- * - subtract（Alt+框选）：从框选前的选中集中扣除命中项，保持原有顺序。
+ * - subtract（Alt+框选）：从框选前的选中集中扣除命中项，保持原有顺序；
+ * - toggle（Ctrl+框选）：命中项与框选前选中集做对称差（未选中的补选、已选中的取消），
+ *   对齐资源管理器 Ctrl+框选语义；新补选项追加在末尾。
  */
 export function applyMarqueeSelection(
   mode: MarqueeMode,
@@ -258,6 +273,11 @@ export function applyMarqueeSelection(
 ): number[] {
   if (mode === "subtract") {
     return prevSelected.filter((id) => !hit.has(id));
+  }
+  if (mode === "toggle") {
+    const kept = prevSelected.filter((id) => !hit.has(id));
+    const added = Array.from(hit).filter((id) => !prevSelected.includes(id));
+    return [...kept, ...added];
   }
   return Array.from(hit);
 }

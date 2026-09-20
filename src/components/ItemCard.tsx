@@ -6,13 +6,9 @@ import { FavoriteStar } from "./FavoriteStar";
 import { ItemDragHandle } from "./ItemDragHandle";
 import { ItemTagsEditor } from "./ItemTagsEditor";
 import { ItemVisualIcon } from "./ItemVisualIcon";
-import {
-  beginInternalPointerDrag,
-  findClosestNumberDataAttribute,
-} from "../lib/internalPointerDrag";
+import { useItemDragStart } from "./useItemDragStart";
 import { cardOpenLabel } from "../lib/itemActionCopy";
 import { getFileSuffix, getTypeLabel, splitPathTail, formatRelativeTime } from "../lib/itemUtils";
-import { showToast } from "../lib/toast";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
@@ -48,87 +44,17 @@ export interface ItemCardProps {
   onRequestRemoveFromApp: (itemId: number, options?: { forceDialog?: boolean; preferDeleteFiles?: boolean }) => Promise<void>;
   onUpdateThumbnail: (itemId: number, iconPath: string | null) => Promise<void>;
   selected: boolean;
+  /** 活动项（roving focus）：仅活动项在 Tab 序中（tabIndex=0），其余卡片 -1 */
+  active?: boolean;
   /** 右击项属于当前多选集时非 null；ContextMenu 据此把部分动作扩展到整个选中集 */
   contextSelection?: ContextSelectionInfo | null;
   /** 大图标模式：封面为主，名称在下，不显示路径 */
   variant?: "card" | "icon";
-}
-
-function useItemDrag(
-  item: ItemWithTags,
-  currentCabinetId: number | null,
-  onToggleFavorite: () => void,
-  onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>,
-  onClearCurrentFilter: (itemId: number) => Promise<void>,
-  onRequestRemoveFromApp: (itemId: number) => Promise<void>,
-) {
-  return (event: React.PointerEvent<HTMLSpanElement>) => {
-    beginInternalPointerDrag({
-      event,
-      payload: {
-        kind: "item",
-        itemId: item.id,
-        label: item.name,
-      },
-      findHoverTarget: (pointerEvent) => {
-        const favoriteTarget = findClosestNumberDataAttribute(
-          pointerEvent.clientX,
-          pointerEvent.clientY,
-          "[data-drop-item-favorite]",
-          "dropItemFavorite",
-        );
-        if (favoriteTarget === 1) return { kind: "item-favorites" };
-
-        const cabinetId = findClosestNumberDataAttribute(
-          pointerEvent.clientX,
-          pointerEvent.clientY,
-          "[data-drop-item-cabinet-id]",
-          "dropItemCabinetId",
-        );
-        if (cabinetId !== null) return { kind: "item-cabinet", cabinetId };
-
-        const clearCurrentFilter = findClosestNumberDataAttribute(
-          pointerEvent.clientX,
-          pointerEvent.clientY,
-          "[data-drop-item-clear-current-filter]",
-          "dropItemClearCurrentFilter",
-        );
-        if (clearCurrentFilter === 1) return { kind: "item-clear-current-filter" };
-
-        const removeFromApp = findClosestNumberDataAttribute(
-          pointerEvent.clientX,
-          pointerEvent.clientY,
-          "[data-drop-item-remove-from-app]",
-          "dropItemRemoveFromApp",
-        );
-        return removeFromApp === 1 ? { kind: "item-remove-from-app" } : null;
-      },
-      onDrop: async (target) => {
-        if (target?.kind === "item-favorites") {
-          // 已收藏时拖到收藏区不再静默无效
-          if (!item.is_favorite) await onToggleFavorite();
-          else showToast(`「${item.name}」已在收藏中`, "info");
-          return;
-        }
-        if (target?.kind === "item-cabinet") {
-          // 前端可确定的重复（拖到当前所在柜）直接提示，不发请求
-          if (target.cabinetId === currentCabinetId) {
-            showToast(`「${item.name}」已在此文件柜中`, "info");
-            return;
-          }
-          await onAddItemToCabinet(target.cabinetId, item.id);
-          return;
-        }
-        if (target?.kind === "item-clear-current-filter") {
-          await onClearCurrentFilter(item.id);
-          return;
-        }
-        if (target?.kind === "item-remove-from-app") {
-          await onRequestRemoveFromApp(item.id);
-        }
-      },
-    });
-  };
+  /** 拖拽起手 payload：拖动已选中项时 = 整个选中集（Explorer 语义），缺省 [item.id] */
+  dragItemIds?: number[];
+  onAddItemsToCabinet?: (cabinetId: number, itemIds: number[]) => Promise<void>;
+  onSetFavorites?: (ids: number[], favorite: boolean) => Promise<void>;
+  onRequestBatchRemoveFromApp?: () => Promise<void>;
 }
 
 /** 将 Mod 插槽的 HTMLElement 挂载到 ref 指向的容器（卡片/行共用） */
@@ -164,6 +90,8 @@ function ItemOpenButton({
   return (
     <button
       type="button"
+      // 卡片/行是单一 Tab 停点（roving focus）：启动按钮退出 Tab 序，键盘用 Enter 启动
+      tabIndex={-1}
       onClick={(event) => {
         event.stopPropagation();
         onLaunch();
@@ -201,8 +129,13 @@ function ItemCardComponent({
   onRequestRemoveFromApp,
   onUpdateThumbnail,
   selected,
+  active = false,
   contextSelection,
   variant = "card",
+  dragItemIds,
+  onAddItemsToCabinet,
+  onSetFavorites,
+  onRequestBatchRemoveFromApp,
 }: ItemCardProps) {
   const iconLayout = variant === "icon";
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -215,14 +148,27 @@ function ItemCardComponent({
   const currentCabinetName =
     currentCabinetId === null ? null : cabinets.find((cabinet) => cabinet.id === currentCabinetId)?.name ?? null;
 
-  const handleItemHandlePointerDown = useItemDrag(
+  const handleItemHandlePointerDown = useItemDragStart({
     item,
+    cabinets,
     currentCabinetId,
+    dragItemIds,
     onToggleFavorite,
+    onSetFavorites,
     onAddItemToCabinet,
+    onAddItemsToCabinet,
     onClearCurrentFilter,
     onRequestRemoveFromApp,
-  );
+    onRequestBatchRemoveFromApp,
+  });
+  // 卡片本体拖拽（Explorer：从图标本体拖），与抓手同一起手；
+  // 交互子元素（按钮/链接/输入/标签 pill/抓手）不触发，由它们各自的手势负责
+  const handleCardBodyPointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.closest("button,a,input,select,textarea,kbd,[role='button'],[data-tag-drag],[data-item-drag]")) return;
+    handleItemHandlePointerDown(event);
+  };
   const fileSuffix = getFileSuffix(item);
   const { dir: pathDir, tail: pathTail } = splitPathTail(item.path);
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
@@ -259,19 +205,13 @@ function ItemCardComponent({
             : "border-[var(--line-hairline)] hover:border-[var(--border-default)] hover:bg-[var(--bg-card-hover)]"
         }`}
         style={{ backdropFilter: "var(--card-backdrop-filter)" }}
+        onPointerDown={handleCardBodyPointerDown}
         onDoubleClick={onLaunch}
         onContextMenu={(event) => {
           event.preventDefault();
           setMenuPos({ x: event.clientX, y: event.clientY });
         }}
-        onKeyDown={(event) => {
-          // 仅当事件源自卡片本身时响应 Enter；stopPropagation 避免与 window 热键重复启动。
-          if (event.key !== "Enter" || event.target !== event.currentTarget) return;
-          event.preventDefault();
-          event.stopPropagation();
-          onLaunch();
-        }}
-        tabIndex={0}
+        tabIndex={active ? 0 : -1}
       >
         {iconLayout ? (
           <>

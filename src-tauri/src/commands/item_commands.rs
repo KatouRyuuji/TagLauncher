@@ -89,35 +89,48 @@ pub fn update_item_icon(
     item_service::update_item_icon(&conn, item_id, icon_path)
 }
 
-// 首次加载会串行抽取图标（PowerShell/文件 IO）+ 对账重 IO，是 UI 卡顿大头；用 (async) 放到
-// 工作线程执行，不冻结主线程。函数体全同步（无 await），DB 锁只在各短临界区内持有并随即释放，
-// 无跨 await 持锁。
+// 首次加载会串行抽取图标（PowerShell/文件 IO），用 (async) 放到工作线程执行，不冻结主线程。
+// 函数体全同步（无 await），DB 锁只在各短临界区内持有并随即释放，无跨 await 持锁。
+// 对账已解耦到 reconcile_runtime（启动首跑 + 60s 节流 + 手动触发），本命令纯读库，
+// 不再为每次读取付出全量 exists() 扫盘成本。
 #[tauri::command(async)]
 pub fn get_items(app: AppHandle, db: State<Database>, include_visuals: Option<bool>) -> Result<Vec<ItemWithTags>, String> {
-    // 刷新即对账（检测移动/重命名并更新位置、找不到的标记失效），采用三段式把重 IO 移出锁：
-    //   ① 锁内取快照 → ② 释放锁做 exists()/FFI/签名等重 IO 生成写入计划 → ③ 锁内批量回写 + 查询。
-    // 随后再次释放锁补图标（PowerShell/文件 IO）。锁只在 ①③ 两段短临界区持有，
-    // 逐对象的重 IO 全在锁外完成，不再阻塞其它命令。对账失败不阻断列表加载。
-    let snapshot = {
-        let conn = db.get_conn();
-        item_service::read_reconcile_snapshot(&conn).unwrap_or_else(|error| {
-            eprintln!("[get_items] 读取对账快照失败: {error}");
-            Vec::new()
-        })
-    };
-    let writes = item_service::plan_reconcile(snapshot);
     let mut items = {
         let conn = db.get_conn();
-        // 对账失败不阻断列表加载（可用性优先，返回未对账数据），但必须留日志便于排查
-        if let Err(e) = item_service::apply_reconcile(&conn, &writes) {
-            eprintln!("[get_items] apply_reconcile 失败（本次返回未对账数据）: {}", e);
-        }
         item_service::get_items(&conn)?
     };
     if include_visuals.unwrap_or(true) {
         item_service::fill_visuals(&app, &mut items);
     }
     Ok(items)
+}
+
+/// 手动/测试触发的对账。wait=true 同步跑完返回摘要（perf 脚本测 reconcile_ms）；
+/// wait=false（默认）经 reconcile_runtime 调度（60s 节流、in_flight 防重入），
+/// 有写入时另行 emit items-reconciled。
+#[tauri::command(async)]
+pub fn reconcile_items(
+    app: AppHandle,
+    force: Option<bool>,
+    wait: Option<bool>,
+) -> Result<crate::services::reconcile_runtime::ReconcileSummary, String> {
+    use crate::services::reconcile_runtime as runtime;
+    if wait.unwrap_or(false) {
+        let summary = runtime::run_sweep(&app)?;
+        if summary.changed {
+            use tauri::Emitter;
+            let _ = app.emit("items-reconciled", summary.clone());
+        }
+        return Ok(summary);
+    }
+    let started = runtime::request_reconcile(&app, force.unwrap_or(false));
+    Ok(crate::services::reconcile_runtime::ReconcileSummary {
+        changed: started,
+        marked_missing: 0,
+        relocated: 0,
+        cleared: 0,
+        elapsed_ms: 0,
+    })
 }
 
 #[derive(serde::Serialize)]

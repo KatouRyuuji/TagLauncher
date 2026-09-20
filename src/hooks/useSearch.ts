@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
+import { ensurePinyin } from "../lib/pinyinProvider";
 
 export function useSearch() {
   const searchQuery = useAppStore((state) => state.searchQuery);
@@ -34,7 +35,9 @@ export function useSearch() {
     }
     setSearchInputValue(value);
     debounceRef.current = setTimeout(() => {
-      setSearchQuery(value);
+      // pinyin-pro 懒加载：防抖窗口天然覆盖首次拉取分片的时间，
+      // 之后的打分/高亮同步路径才能直接取到模块
+      void ensurePinyin().then(() => setSearchQuery(value));
     }, 150);
   }, [setSearchQuery, setSearchInputValue]);
 

@@ -1,4 +1,4 @@
-import { pinyin } from "pinyin-pro";
+import { pinyinSync as pinyin } from "./pinyinProvider";
 import type { ItemWithTags } from "../types";
 import type { SearchMode } from "../stores/appStore";
 import { expandQuery } from "./synonyms";

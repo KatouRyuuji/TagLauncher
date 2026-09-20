@@ -82,7 +82,8 @@ pub fn get_cabinet_item_counts(db: State<Database>) -> Result<Vec<(i64, i64)>, S
     cabinet_service::get_cabinet_item_counts(&conn)
 }
 
-// 与 get_items 对等：同样会串行抽图标 + 对账重 IO，用 (async) 放到工作线程避免冻结 UI；
+// 与 get_items 对等：列表读取已纯读化，对账统一走 reconcile_runtime（启动首跑 +
+// 60s 节流 + 手动触发），不再随每次读取全量扫盘。
 // 函数体全同步（无 await），DB 锁只在各短临界区内持有并随即释放，无跨 await 持锁。
 #[tauri::command(async)]
 pub fn get_cabinet_items(
@@ -91,24 +92,8 @@ pub fn get_cabinet_items(
     cabinet_id: i64,
     include_visuals: Option<bool>,
 ) -> Result<Vec<ItemWithTags>, String> {
-    // 与 get_items 完全对等的列表刷新热路径，同样用三段式把对账重 IO 移出全局 DB 锁：
-    //   ① 锁内取快照 → ② 释放锁做 exists()/FFI/签名等重 IO 生成写入计划 → ③ 锁内批量回写 + 查询。
-    // 随后再次释放锁补图标（PowerShell/文件 IO）。锁只在 ①③ 两段短临界区持有，
-    // 逐对象的重 IO 全在锁外完成。对账失败不阻断列表加载。
-    let snapshot = {
-        let conn = db.get_conn();
-        item_service::read_cabinet_reconcile_snapshot(&conn, cabinet_id).unwrap_or_else(|error| {
-            eprintln!("[get_cabinet_items] 读取对账快照失败: {error}");
-            Vec::new()
-        })
-    };
-    let writes = item_service::plan_reconcile(snapshot);
     let mut items = {
         let conn = db.get_conn();
-        // 对账失败不阻断列表加载（可用性优先，返回未对账数据），但必须留日志便于排查
-        if let Err(e) = item_service::apply_reconcile(&conn, &writes) {
-            eprintln!("[get_cabinet_items] apply_reconcile 失败（本次返回未对账数据）: {}", e);
-        }
         cabinet_service::get_cabinet_items(&conn, cabinet_id)?
     };
     if include_visuals.unwrap_or(true) {

@@ -216,9 +216,12 @@ function App() {
     [launchItem],
   );
 
+  // 手动刷新（刷新按钮/命令面板「刷新」）：显式触发对账 + 图标重取；
+  // 内部级联仍走 refresh() 无参形态（纯读 + 图标失效）
+  const handleManualRefresh = useCallback(() => refresh({ reconcile: true }), [refresh]);
+
   const handleSelectItems = useCallback((itemIds: number[]) => {
-    setSelectedItemIds(itemIds);
-  }, []);
+    setSelectedItemIds(itemIds);  }, []);
 
   // 复选集合的批量动作 + 可移除标签并集。
   const {
@@ -341,18 +344,21 @@ function App() {
     onAddNewTagToItem: addNewTagToItem,
     onRecycleNewTags: recycleNewTags,
     onToggleFavorite: toggleFavorite,
+    onSetFavorites: setFavorites,
     onAddItemToCabinet: addItemToCabinet,
     onAddItemsToCabinet: addItemsToCabinet,
     onRemoveItemFromCabinet: removeItemFromCabinet,
     onRemoveItemsFromCabinet: removeItemsFromCabinet,
     onClearCurrentFilter: clearCurrentFilter,
     onRequestRemoveFromApp: requestRemoveFromApp,
+    onRequestBatchRemoveFromApp: requestBatchRemoveFromApp,
     onUpdateThumbnail: updateItemIcon,
     selectedItemIds,
     onSelectItems: handleSelectItems,
     libraryEmpty: allItems.length === 0,
     onClearFilters: handleClearFilters,
     onAddItems: requestAddPaths,
+    onRefreshWorkspace: handleManualRefresh,
   };
 
   return (
@@ -408,7 +414,7 @@ function App() {
         <h1 id="workspace-heading" className="sr-only">
           TagLauncher 启动工作台
         </h1>
-        <SearchBar onAddItems={requestAddPaths} onRefresh={refresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} hasLibraryItems={allItems.length > 0} />
+        <SearchBar onAddItems={requestAddPaths} onRefresh={handleManualRefresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} hasLibraryItems={allItems.length > 0} />
         {allItems.length > 0 && <TagFilterBar />}
         {allItems.length > 0 && <WorkspaceScopeHeader visibleCount={items.length} />}
         {/* 加载失败且本地无任何缓存时渲染可重试的错误面板；有缓存时保留旧列表，
@@ -481,7 +487,7 @@ function App() {
           items={allItems}
           onLaunch={(id) => { void handleLaunchItem(id); }}
           onAddItems={requestAddPaths}
-          onRefresh={refresh}
+          onRefresh={handleManualRefresh}
           onOpenSettings={() => setShowSettings(true)}
           onOpenAbout={handleOpenAbout}
         />}

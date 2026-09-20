@@ -64,9 +64,9 @@ fn auto_visual_path(app: &AppHandle, item: &Item) -> Option<String> {
             return Some(cached_path.to_string_lossy().to_string());
         }
 
-        // 失败结果冷却 30 秒后重试；文件大小或修改时间变化时采用新的缓存键。
+        // 失败结果冷却 10 分钟后重试（与视频缩略图同档）；文件大小或修改时间变化时采用新的缓存键。
         let none_marker = cache_dir.join(format!("{}{}.none", cache_key, cache_suffix));
-        if none_marker_is_fresh(&none_marker, std::time::Duration::from_secs(30)) {
+        if none_marker_is_fresh(&none_marker, std::time::Duration::from_secs(600)) {
             return None;
         }
 

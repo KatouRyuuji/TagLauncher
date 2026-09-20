@@ -42,6 +42,20 @@ export async function getItems(includeVisuals = true): Promise<ItemWithTags[]> {
   return invokeCmd("get_items", { includeVisuals });
 }
 
+export interface ReconcileSummary {
+  changed: boolean;
+  marked_missing: number;
+  relocated: number;
+  cleared: number;
+  elapsed_ms: number;
+}
+
+/** 触发对账（失效检测/移动重命名重定位）。wait=true 同步跑完返回摘要；
+ *  默认经 reconcile_runtime 调度（60s 节流、防重入），有写入时另发 items-reconciled。 */
+export function reconcileItems(opts?: { force?: boolean; wait?: boolean }): Promise<ReconcileSummary> {
+  return invokeCmd("reconcile_items", { force: opts?.force, wait: opts?.wait });
+}
+
 export interface ItemVisual {
   path: string;
   icon_path: string | null;

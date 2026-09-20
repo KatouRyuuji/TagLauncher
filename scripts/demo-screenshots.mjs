@@ -113,6 +113,11 @@ async function clearSearch(page) {
 async function closeOverlays(page) {
   await page.keyboard.press("Escape");
   await settle(250);
+  // 命令面板 Esc 是两级（先清词再关闭）：仍在打开态时补一次
+  if (await page.getByRole("dialog", { name: "命令面板" }).isVisible().catch(() => false)) {
+    await page.keyboard.press("Escape");
+    await settle(200);
+  }
 }
 
 async function openSettings(page) {
@@ -255,6 +260,18 @@ async function featureTour(page) {
   await check("入库方式含「只加入文件夹」", page.getByRole("radio", { name: /只加入文件夹/ }).isVisible());
   await page.getByRole("dialog", { name: "添加文件夹" }).getByRole("button", { name: "取消" }).click();
   await page.getByRole("dialog", { name: "添加文件夹" }).waitFor({ state: "detached" });
+
+  // 02i typeahead（裸打字母跳匹配项）+ Ctrl+G/I/L 切视图
+  await page.keyboard.type("git");
+  await settle(400);
+  await check("typeahead 选中 Git 批量更新", page.locator('[data-selectable-item-id][data-selected="true"]').first().evaluate((el) => el.textContent?.includes("Git 批量更新") ?? false));
+  await page.keyboard.press("Control+l");
+  await settle(300);
+  await check("Ctrl+L 切到列表视图", await page.locator('button[title="列表视图"][aria-pressed="true"]').count().then((c) => c > 0));
+  await page.keyboard.press("Control+g");
+  await settle(300);
+  await check("Ctrl+G 切回网格视图", await page.locator('button[title="网格视图"][aria-pressed="true"]').count().then((c) => c > 0));
+  await page.keyboard.press("Escape");
 
   // 03 列表视图（全幅表格 + 表头）
   await page.locator('button[title="列表视图"]').click();

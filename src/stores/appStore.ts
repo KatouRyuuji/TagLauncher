@@ -227,8 +227,8 @@ interface AppState {
   setViewMode: (mode: ViewMode) => void;
   setSortMode: (mode: SortMode) => void;
   setTypeFilter: (filter: TypeFilter) => void;
-  setCardSizeScale: (scale: number) => void;
-  setIconSizeScale: (scale: number) => void;
+  setCardSizeScale: (scale: number, options?: { persist?: boolean }) => void;
+  setIconSizeScale: (scale: number, options?: { persist?: boolean }) => void;
   setWorkspaceFiltersOpen: (open: boolean) => void;
   setSidebarHintDismissed: (dismissed: boolean) => void;
   setTagGraphOpen: (open: boolean) => void;
@@ -385,20 +385,21 @@ export const useAppStore = create<AppState>((set, get) => {
     set({ typeFilter: filter });
     persistNow();
   },
-  setCardSizeScale: (scale) => {
+  setCardSizeScale: (scale, options) => {
     const next = clampSizeScale(scale, CARD_SIZE_SCALE_RANGE);
     if (get().cardSizeScale === next) return;
     set({ cardSizeScale: next });
     // 同步写 CSS 变量：ItemGrid 的列数重算 effect 运行于本次渲染之后，读取的已是新值
     applyCardSizeVars(next, get().iconSizeScale);
-    persistNow();
+    // 滑杆拖动期 rAF 节流调用传 persist:false，松手才序列化（拖一次只写一次盘）
+    if (options?.persist !== false) persistNow();
   },
-  setIconSizeScale: (scale) => {
+  setIconSizeScale: (scale, options) => {
     const next = clampSizeScale(scale, ICON_SIZE_SCALE_RANGE);
     if (get().iconSizeScale === next) return;
     set({ iconSizeScale: next });
     applyCardSizeVars(get().cardSizeScale, next);
-    persistNow();
+    if (options?.persist !== false) persistNow();
   },
   setWorkspaceFiltersOpen: (open) => {
     if (get().workspaceFiltersOpen === open) return;

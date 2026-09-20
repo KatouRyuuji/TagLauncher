@@ -13,7 +13,8 @@ export type InternalDragHoverTarget =
 
 export type InternalDragPayload =
   | { kind: "tag"; tagId: number; label: string; color: string }
-  | { kind: "item"; itemId: number; label: string }
+  // itemIds：整组拖时为整个选中集（缺省语义 = [itemId]）
+  | { kind: "item"; itemId: number; label: string; itemIds?: number[] }
   | {
       kind: "reorder-tag";
       itemId: number;

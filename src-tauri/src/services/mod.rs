@@ -14,4 +14,5 @@ pub mod shell_thumbnail;
 pub mod synonym_service;
 pub mod tag_service;
 pub mod watch_runtime;
+pub mod reconcile_runtime;
 pub mod watch_service;

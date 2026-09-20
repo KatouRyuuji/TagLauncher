@@ -28,6 +28,7 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
 import { filterCommandsByQuery, isImeKeyboardEvent, SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter, applyTypeFilter } from "../lib/itemQuery";
 import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
+import { ensurePinyin } from "../lib/pinyinProvider";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { getCabinetItems } from "../lib/db";
 import { onCabinetItemsChanged } from "../lib/modApi";
@@ -206,14 +207,16 @@ export function CommandPalette({
   }, [commands, filterQuery]);
   // 对象候选搜索固定用「全部」模式（名称+标签均可命中），不跟随工作台的「仅标签」类模式，
   // 否则切到「仅标签」后在面板里输对象名命中不了对象。
+  // ≥2 字符才建索引并起搜：单字符（尤其单 CJK 字）扫全库既贵又不出有效候选
+  const itemSearchQuery = filterQuery.trim().length >= 2 ? filterQuery.trim() : "";
   const searchIndex = useMemo(
-    () => (open ? buildSearchIndex(scopedItems, "all") : { entries: [], mode: "all" as const }),
-    [open, scopedItems],
+    () => (open && itemSearchQuery ? buildSearchIndex(scopedItems, "all") : { entries: [], mode: "all" as const }),
+    [open, scopedItems, itemSearchQuery],
   );
   const matchedItems = useMemo(() => {
-    if (!filterQuery.trim()) return [];
-    return searchWithIndex(searchIndex, filterQuery).slice(0, 8);
-  }, [searchIndex, filterQuery]);
+    if (!itemSearchQuery) return [];
+    return searchWithIndex(searchIndex, itemSearchQuery).slice(0, 8);
+  }, [searchIndex, itemSearchQuery]);
 
   type Row = { kind: "command"; command: CommandDef } | { kind: "item"; item: ItemWithTags };
   const rows = useMemo<Row[]>(() => {
@@ -249,7 +252,8 @@ export function CommandPalette({
       return;
     }
     debounceRef.current = setTimeout(() => {
-      setFilterQuery(value);
+      // pinyin-pro 懒加载：与工作台搜索同一门控（防抖窗口覆盖分片拉取）
+      void ensurePinyin().then(() => setFilterQuery(value));
     }, 150);
   };
 
@@ -265,7 +269,16 @@ export function CommandPalette({
     }
   }, [open, active, rows]);
 
-  useEscapeKey(() => setOpen(false), open);
+  // Esc 两级：有查询词先清空（再按才关面板），无词直接关
+  useEscapeKey(() => {
+    if (query) {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      setQuery("");
+      setFilterQuery("");
+      return;
+    }
+    setOpen(false);
+  }, open);
 
   if (!open) return null;
 

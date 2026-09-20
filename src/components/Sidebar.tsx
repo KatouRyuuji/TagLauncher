@@ -22,6 +22,7 @@ import { SidebarThemeSwitcher } from "./SidebarThemeSwitcher";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
 import { flattenTagTree } from "../lib/tagTree";
 import { onCabinetItemsChanged } from "../lib/modApi";
+import { useImeComposition } from "../hooks/useImeComposition";
 import * as db from "../lib/db";
 import {
   beginInternalPointerDrag,
@@ -137,13 +138,17 @@ export function Sidebar({
     [tags, tagRelations, itemCountByTag],
   );
 
-  // 标签迷你过滤（标签多时不靠滚动找）；命中行保留原缩进以不丢层级语境
+  // 标签迷你过滤（标签多时不靠滚动找）；命中行保留原缩进以不丢层级语境。
+  // 显示文本（tagQuery）与应用查询（appliedTagQuery）分离：IME 组合中只更新文本，
+  // 组合结束才过滤，列表不随中间拼音串抖动
   const [tagQuery, setTagQuery] = useState("");
+  const [appliedTagQuery, setAppliedTagQuery] = useState("");
+  const tagFilterIme = useImeComposition<string>(setAppliedTagQuery);
   const filteredTagRows = useMemo(() => {
-    const q = tagQuery.trim().toLowerCase();
+    const q = appliedTagQuery.trim().toLowerCase();
     if (!q) return tagRows;
     return tagRows.filter(({ tag }) => tag.name.toLowerCase().includes(q));
-  }, [tagRows, tagQuery]);
+  }, [tagRows, appliedTagQuery]);
 
   // 已选标签滚出可视区时自动定位：侧栏既是选择器也是状态显示器
   const tagScrollRef = useRef<HTMLDivElement>(null);
@@ -352,7 +357,9 @@ export function Sidebar({
                 <input
                   type="search"
                   value={tagQuery}
-                  onChange={(event) => setTagQuery(event.target.value)}
+                  onChange={(event) => { setTagQuery(event.target.value); tagFilterIme.onChange(event.target.value); }}
+                  onCompositionStart={tagFilterIme.onCompositionStart}
+                  onCompositionEnd={tagFilterIme.onCompositionEnd}
                   placeholder="过滤标签…"
                   aria-label="过滤标签"
                   className="input-frame mb-1 h-7 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[12px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)]"

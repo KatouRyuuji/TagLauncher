@@ -22,7 +22,11 @@ export function InternalDragGhost() {
           />
         )}
         <span className="max-w-[220px] truncate">
-          {activeInternalDrag.kind === "item" ? `拖动项目：${activeInternalDrag.label}` : activeInternalDrag.label}
+          {activeInternalDrag.kind === "item"
+            ? (activeInternalDrag.itemIds?.length ?? 0) > 1
+              ? `拖动 ${activeInternalDrag.itemIds!.length} 个项目`
+              : `拖动项目：${activeInternalDrag.label}`
+            : activeInternalDrag.label}
         </span>
       </div>
     </div>

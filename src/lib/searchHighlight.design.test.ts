@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ensurePinyin } from "./pinyinProvider";
 import { splitHighlightSegments } from "./searchHighlight";
+
+// pinyin-pro 经 pinyinProvider 懒加载：模块就绪后再注册与执行用例
+await ensurePinyin();
 
 test("splitHighlightSegments：空查询不高亮", () => {
   assert.deepEqual(splitHighlightSegments("忍者神龟", ""), [{ text: "忍者神龟", highlighted: false }]);

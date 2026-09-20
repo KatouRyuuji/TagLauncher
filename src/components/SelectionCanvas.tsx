@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { CheckSquare, FilePlus2, FolderPlus, RefreshCw, XSquare } from "lucide-react";
 import { applyContextSelection, applyMarqueeSelection, applyPointerSelection, type MarqueeMode } from "../lib/itemQuery";
 import { getWorkspaceSelectionAnchor, setWorkspaceSelectionAnchor } from "../lib/workspaceChrome";
 import { shouldSuppressInternalDragClick } from "../stores/internalDragStore";
+import { useEscapeKey } from "../hooks/useEscapeKey";
+import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
+import { MenuItem } from "./ContextMenu";
 
 interface SelectionCanvasProps {
   itemIds: number[];
@@ -18,6 +23,12 @@ interface SelectionCanvasProps {
    * 否则回退到 querySelectorAll 仅命中当前 DOM 中的项。
    */
   getItemRects?: () => Map<number, Rect>;
+  /** 空白右键背景菜单的「添加文件/文件夹」入口（与顶栏添加按钮同一导入流程） */
+  onAddItems?: (paths: string[]) => Promise<void>;
+  /** 空白右键背景菜单的「刷新」入口（显式对账 + 图标重取） */
+  onRefreshWorkspace?: () => Promise<void>;
+  /** 容器 Tab 停点（roving focus）：活动项未挂载时 0，活动项可见时 -1 */
+  containerTabIndex?: number;
 }
 
 export interface Rect {
@@ -120,7 +131,13 @@ export function SelectionCanvas({
   dataRegion,
   scrollElementRef,
   getItemRects,
+  onAddItems,
+  onRefreshWorkspace,
+  containerTabIndex,
 }: SelectionCanvasProps) {
+  // 空白右键背景菜单（Explorer：添加/全选/清空选择/刷新）
+  const [backgroundMenu, setBackgroundMenu] = useState<{ x: number; y: number } | null>(null);
+  useEscapeKey(() => setBackgroundMenu(null), backgroundMenu !== null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     pointerId: number;
@@ -215,9 +232,9 @@ export function SelectionCanvas({
       drag.selected.add(id);
     }
     const next = applyMarqueeSelection(drag.mode, drag.prevSelected, drag.selected);
-    const unchanged = drag.mode === "subtract"
-      ? sameNumberArray(selectedItemIdsRef.current, next)
-      : sameIdSet(selectedItemIdsRef.current, drag.selected);
+    const unchanged = drag.mode === "add"
+      ? sameIdSet(selectedItemIdsRef.current, drag.selected)
+      : sameNumberArray(selectedItemIdsRef.current, next);
     if (!unchanged) {
       selectedItemIdsRef.current = next;
       onSelectItemsRef.current(next);
@@ -301,7 +318,7 @@ export function SelectionCanvas({
       lastX: event.clientX,
       lastY: event.clientY,
       active: false,
-      mode: event.altKey ? "subtract" : "add",
+      mode: event.altKey ? "subtract" : event.ctrlKey || event.metaKey ? "toggle" : "add",
       selected: new Set<number>(),
       prevSelected: selectedItemIdsRef.current,
     };
@@ -313,7 +330,9 @@ export function SelectionCanvas({
     const container = containerRef.current;
     if (!drag || drag.pointerId !== event.pointerId || !container) return;
 
-    const moved = Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY);
+    // 激活阈值与内部拖拽（internalPointerDrag）统一为欧氏 6px：
+    // 曼哈顿口径下斜向 4+4px 会激活框选却不激活拖拽，两套阈值语义打架
+    const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
     if (!drag.active && moved < 6) return;
     drag.active = true;
     drag.lastX = event.clientX;
@@ -381,7 +400,8 @@ export function SelectionCanvas({
     if (event.button !== 0) return;
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
-    if (target.closest("button,a,input,select,textarea,[role='button'],[data-item-drag],[data-tag-drag]")) return;
+    // 标签 pill 不排除：单击 pill 与单击卡片其它位置一致也选中卡片（拖拽由 250ms 抑制窗兜底）
+    if (target.closest("button,a,input,select,textarea,[role='button'],[data-item-drag]")) return;
     const node = target.closest("[data-selectable-item-id]");
     if (!(node instanceof HTMLElement) || !event.currentTarget.contains(node)) return;
     const clickedId = Number(node.dataset.selectableItemId);
@@ -408,7 +428,12 @@ export function SelectionCanvas({
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     const node = target.closest("[data-selectable-item-id]");
-    if (!(node instanceof HTMLElement) || !event.currentTarget.contains(node)) return;
+    if (!(node instanceof HTMLElement) || !event.currentTarget.contains(node)) {
+      // 空白右键：背景菜单（Explorer 惯例：添加/全选/清空选择/刷新），不再是死手势
+      event.preventDefault();
+      setBackgroundMenu({ x: event.clientX, y: event.clientY });
+      return;
+    }
     const targetId = Number(node.dataset.selectableItemId);
     if (!Number.isFinite(targetId)) return;
 
@@ -436,7 +461,8 @@ export function SelectionCanvas({
         if (scrollElementRef) (scrollElementRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
       }}
       data-region={dataRegion}
-      className={`relative ${className ?? ""}`}
+      className={`relative ${containerTabIndex === 0 ? "selection-canvas-focusable " : ""}${className ?? ""}`}
+      tabIndex={containerTabIndex}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -459,6 +485,123 @@ export function SelectionCanvas({
           }}
         />
       )}
+      {backgroundMenu && (
+        <BackgroundContextMenu
+          x={backgroundMenu.x}
+          y={backgroundMenu.y}
+          hasSelection={selectedItemIdsRef.current.length > 0}
+          hasItems={itemIdsRef.current.length > 0}
+          onClose={() => setBackgroundMenu(null)}
+          onAddItems={onAddItems}
+          onRefreshWorkspace={onRefreshWorkspace}
+          onSelectAll={() => onSelectItemsRef.current([...itemIdsRef.current])}
+          onClearSelection={() => onSelectItemsRef.current([])}
+        />
+      )}
     </div>
+  );
+}
+
+/** 空白右键背景菜单（对齐资源管理器）：添加文件 / 添加文件夹 / 全选 / 清空选择 / 刷新 */
+function BackgroundContextMenu({
+  x,
+  y,
+  hasSelection,
+  hasItems,
+  onClose,
+  onAddItems,
+  onRefreshWorkspace,
+  onSelectAll,
+  onClearSelection,
+}: {
+  x: number;
+  y: number;
+  hasSelection: boolean;
+  hasItems: boolean;
+  onClose: () => void;
+  onAddItems?: (paths: string[]) => Promise<void>;
+  onRefreshWorkspace?: () => Promise<void>;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+}) {
+  return createPortal(
+    <>
+      <div
+        data-context-menu=""
+        data-workspace-overlay=""
+        className="fixed inset-0"
+        style={{ zIndex: "var(--z-context-overlay)" }}
+        onClick={onClose}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onClose();
+        }}
+      />
+      <div
+        data-context-menu=""
+        role="menu"
+        className="modal-surface fixed w-[200px] overflow-y-auto p-1.5"
+        style={{
+          zIndex: "var(--z-context-menu)",
+          left: Math.min(x, Math.max(8, window.innerWidth - 216)),
+          top: Math.min(y, Math.max(8, window.innerHeight - 220)),
+          boxShadow: "var(--shadow-dropdown)",
+        }}
+      >
+        {onAddItems && (
+          <>
+            <MenuItem
+              icon={FilePlus2}
+              label="添加文件"
+              onClick={async () => {
+                onClose();
+                const paths = await pickFilesToAdd();
+                if (paths) await onAddItems(paths);
+              }}
+            />
+            <MenuItem
+              icon={FolderPlus}
+              label="添加文件夹"
+              onClick={async () => {
+                onClose();
+                const paths = await pickFoldersToAdd();
+                if (paths) await onAddItems(paths);
+              }}
+            />
+          </>
+        )}
+        {hasItems && (
+          <MenuItem
+            icon={CheckSquare}
+            label="全选"
+            onClick={() => {
+              onSelectAll();
+              onClose();
+            }}
+          />
+        )}
+        {hasSelection && (
+          <MenuItem
+            icon={XSquare}
+            label="清空选择"
+            onClick={() => {
+              onClearSelection();
+              onClose();
+            }}
+          />
+        )}
+        {onRefreshWorkspace && (
+          <MenuItem
+            icon={RefreshCw}
+            label="刷新"
+            onClick={() => {
+              void onRefreshWorkspace();
+              onClose();
+            }}
+          />
+        )}
+      </div>
+    </>,
+    document.body,
   );
 }

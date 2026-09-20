@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useImeComposition } from "../hooks/useImeComposition";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useAppStore } from "../stores/appStore";
 
@@ -49,7 +50,8 @@ const GROUPS: { title: string; icon: LucideIcon; note?: string; items: ShortcutI
       { keys: "Delete", action: "从库中移除（可改删本地文件）" },
       { keys: "Ctrl+C", action: "复制选中路径（多项换行）" },
       { keys: "Ctrl+D", action: "收藏 / 取消收藏" },
-      { keys: "G / I / L", action: "网格 / 大图标 / 列表" },
+      { keys: "Ctrl+G / I / L", action: "网格 / 大图标 / 列表" },
+      { keys: "裸打字母或汉字", action: "跳到名称匹配项（typeahead）" },
     ],
   },
   {
@@ -85,6 +87,9 @@ export function ShortcutsHelp() {
   const open = useAppStore((state) => state.shortcutsHelpOpen);
   const setOpen = useAppStore((state) => state.setShortcutsHelpOpen);
   const [query, setQuery] = useState("");
+  // IME 组合中只更新文本，组合结束才过滤（appliedQuery）
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const queryIme = useImeComposition<string>(setAppliedQuery);
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open });
 
   useEffect(() => {
@@ -95,6 +100,7 @@ export function ShortcutsHelp() {
   useEscapeKey(() => {
     if (query) {
       setQuery("");
+      setAppliedQuery("");
       return;
     }
     setOpen(false);
@@ -103,7 +109,7 @@ export function ShortcutsHelp() {
   if (!open) return null;
 
   const visibleGroups = GROUPS
-    .map((group) => ({ ...group, items: group.items.filter((item) => itemMatches(item, query)) }))
+    .map((group) => ({ ...group, items: group.items.filter((item) => itemMatches(item, appliedQuery)) }))
     .filter((group) => group.items.length > 0);
 
   return createPortal(
@@ -141,7 +147,9 @@ export function ShortcutsHelp() {
               type="search"
               autoFocus
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => { setQuery(event.target.value); queryIme.onChange(event.target.value); }}
+              onCompositionStart={queryIme.onCompositionStart}
+              onCompositionEnd={queryIme.onCompositionEnd}
               placeholder="搜快捷键或动作"
               aria-label="搜索快捷键"
               className="min-w-0 flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none"

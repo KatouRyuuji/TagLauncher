@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useImeComposition } from "../hooks/useImeComposition";
 import { stepMenuIndex } from "../lib/itemQuery";
 import {
   batchAddTagTargetCopy,
@@ -361,9 +362,17 @@ function TagOwnershipMenu({
   onPick: (tagId: number) => void;
 }) {
   const [filter, setFilter] = useState("");
+  // IME 组合中只更新文本，组合结束才过滤（appliedFilter）
+  const [appliedFilter, setAppliedFilter] = useState("");
+  const filterIme = useImeComposition<string>(setAppliedFilter);
+  // Esc 先清过滤词（再按才经工具条 handler 关菜单）：仅有过滤词时抢栈顶
+  useEscapeKey(() => {
+    setFilter("");
+    setAppliedFilter("");
+  }, filter !== "");
   const [onlyPartial, setOnlyPartial] = useState(false);
   const showFilter = tags.length > TAG_MENU_FILTER_THRESHOLD;
-  const query = filter.trim().toLowerCase();
+  const query = appliedFilter.trim().toLowerCase();
   const visible = (query ? tags.filter((tag) => tag.name.toLowerCase().includes(query)) : tags)
     // 「只看未标全」：只留还有选中对象没打上该标签的行
     .filter((tag) => {
@@ -386,7 +395,9 @@ function TagOwnershipMenu({
             autoFocus
             placeholder={tagFilterPlaceholder}
             value={filter}
-            onChange={(event) => setFilter(event.target.value)}
+            onChange={(event) => { setFilter(event.target.value); filterIme.onChange(event.target.value); }}
+            onCompositionStart={filterIme.onCompositionStart}
+            onCompositionEnd={filterIme.onCompositionEnd}
             className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
           />
           <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-[var(--text-muted)]">

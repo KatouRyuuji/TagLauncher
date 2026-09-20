@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { Tag, ItemWithTags } from "../types";
 import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useImeComposition } from "../hooks/useImeComposition";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import { DialogHeader } from "./DialogHeader";
@@ -60,7 +61,10 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
     : [];
   // 候选超出一屏时给过滤框，不再靠肉眼扫描 pill 墙
   const [candidateFilter, setCandidateFilter] = useState("");
-  const candidateQuery = candidateFilter.trim().toLowerCase();
+  // IME 组合中只更新文本，组合结束才过滤（appliedFilter）
+  const [appliedFilter, setAppliedFilter] = useState("");
+  const filterIme = useImeComposition<string>(setAppliedFilter);
+  const candidateQuery = appliedFilter.trim().toLowerCase();
   const visibleCandidates = candidateQuery
     ? candidates.filter((t) => t.name.toLowerCase().includes(candidateQuery))
     : candidates;
@@ -194,7 +198,9 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                     <input
                       type="search"
                       value={candidateFilter}
-                      onChange={(event) => setCandidateFilter(event.target.value)}
+                      onChange={(event) => { setCandidateFilter(event.target.value); filterIme.onChange(event.target.value); }}
+                      onCompositionStart={filterIme.onCompositionStart}
+                      onCompositionEnd={filterIme.onCompositionEnd}
                       placeholder="过滤父标签"
                       aria-label="过滤父标签"
                       className="input-frame mt-2 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"

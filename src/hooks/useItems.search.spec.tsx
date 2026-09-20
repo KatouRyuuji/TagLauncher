@@ -1,8 +1,9 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useItems } from "./useItems";
 import { useAppStore } from "../stores/appStore";
 import { buildSearchIndex } from "../lib/search";
+import { ensurePinyin } from "../lib/pinyinProvider";
 import type { ItemWithTags } from "../types";
 import * as db from "../lib/db";
 
@@ -19,6 +20,11 @@ const fixtures: ItemWithTags[] = [
 ];
 
 describe("对象搜索按需索引", () => {
+  beforeAll(async () => {
+    // 搜索/高亮链路经 pinyinProvider 懒加载：测试同步调用前确保模块就绪
+    await ensurePinyin();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useAppStore.setState({ searchQuery: "", searchMode: "all", selectedTagIds: [], excludedTagIds: [], selectedCabinetId: null, showFavorites: false, showRecent: false, typeFilter: "all", sortMode: "smart", tagRelations: [] });
@@ -41,26 +47,32 @@ describe("对象搜索按需索引", () => {
     expect(db.relocateMissing).toHaveBeenCalledTimes(2);
   });
 
-  it("首屏、类型和标签筛选直接使用数据，无搜索词时不构建拼音索引", async () => {
+  it("索引闲时预热只建一次；首屏、类型和标签筛选不触发新构建", async () => {
     const { result } = renderHook(useItems);
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.items.map((item) => item.id)).toEqual([2, 1]);
+    // loadAll 后的闲时预热（含 pinyin-pro 懒加载）只建一次索引
+    await waitFor(() => expect(buildSearchIndex).toHaveBeenCalledTimes(1));
     act(() => useAppStore.setState({ selectedTagIds: [1], typeFilter: "folder" }));
     expect(result.current.items.map((item) => item.id)).toEqual([1]);
-    expect(buildSearchIndex).not.toHaveBeenCalled();
+    expect(buildSearchIndex).toHaveBeenCalledTimes(1);
   });
 
-  it("首次搜索构建索引，继续输入复用索引，清空后恢复筛选和排序", async () => {
+  it("首次搜索仅一次索引调用（命中预热缓存），继续输入与清空不再新建", async () => {
     const { result } = renderHook(useItems);
     await waitFor(() => expect(result.current.loading).toBe(false));
+    // 预热完成（1 次调用）
+    await waitFor(() => expect(buildSearchIndex).toHaveBeenCalledTimes(1));
+    // 首次搜索：memo 调用一次 buildSearchIndex，但内部命中预热缓存不做全量构建
     act(() => useAppStore.setState({ searchQuery: "xmwd" }));
     await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([1]));
-    expect(buildSearchIndex).toHaveBeenCalledTimes(1);
+    expect(buildSearchIndex).toHaveBeenCalledTimes(2);
+    // 继续输入：source 未变，memo 复用，零新调用
     act(() => useAppStore.setState({ searchQuery: "vsc" }));
     await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([2]));
-    expect(buildSearchIndex).toHaveBeenCalledTimes(1);
+    expect(buildSearchIndex).toHaveBeenCalledTimes(2);
     act(() => useAppStore.setState({ searchQuery: "", typeFilter: "folder" }));
     await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([1]));
-    expect(buildSearchIndex).toHaveBeenCalledTimes(1);
+    expect(buildSearchIndex).toHaveBeenCalledTimes(2);
   });
 });

@@ -20,7 +20,7 @@ describe("useSearch", () => {
     vi.useRealTimers();
   });
 
-  it("输入立即更新 inputValue，searchQuery 在 150ms 防抖后才生效", () => {
+  it("输入立即更新 inputValue，searchQuery 在 150ms 防抖后才生效", async () => {
     const { result } = renderHook(() => useSearch());
 
     act(() => { result.current.handleSearch("忍者"); });
@@ -29,13 +29,13 @@ describe("useSearch", () => {
     expect(result.current.searchQuery).toBe("");
     expect(result.current.inputValue).not.toBe(result.current.searchQuery);
 
+    // 防抖回调内经 ensurePinyin 还有一个异步边界（pinyin-pro 懒加载门控）
     act(() => { vi.advanceTimersByTime(150); });
-
-    expect(result.current.searchQuery).toBe("忍者");
+    await vi.waitFor(() => expect(result.current.searchQuery).toBe("忍者"));
     expect(result.current.inputValue).toBe("忍者");
   });
 
-  it("连续输入只以最后一次为准，期间始终处于待生效状态", () => {
+  it("连续输入只以最后一次为准，期间始终处于待生效状态", async () => {
     const { result } = renderHook(() => useSearch());
 
     act(() => { result.current.handleSearch("a"); });
@@ -48,8 +48,7 @@ describe("useSearch", () => {
     expect(result.current.inputValue).toBe("ab");
 
     act(() => { vi.advanceTimersByTime(50); });
-
-    expect(result.current.searchQuery).toBe("ab");
+    await vi.waitFor(() => expect(result.current.searchQuery).toBe("ab"));
   });
 
   it("清空输入立即生效，不留待生效状态（Escape 后防抖不得把旧词写回）", () => {

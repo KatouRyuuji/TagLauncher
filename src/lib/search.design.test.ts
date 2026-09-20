@@ -2,6 +2,10 @@
 // lib/search.design.test.ts — 搜索设计回归（索引构建 / 表达式 / 模糊容错 / 层级标签）
 // ============================================================================
 import { assert, test, run } from "./__testutil";
+import { ensurePinyin } from "./pinyinProvider";
+
+// pinyin-pro 经 pinyinProvider 懒加载：test() 注册即执行，须在文件顶部就绪
+await ensurePinyin();
 import { buildSearchIndex, filterItemsByTags, filterSearchIndex, searchWithIndex } from "./search";
 import { buildDescendantsMap } from "./tagGraph";
 import { setSynonymGroups } from "./synonyms";

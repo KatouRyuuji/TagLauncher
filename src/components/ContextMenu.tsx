@@ -680,7 +680,7 @@ function useBottomScrollFade(ref: React.RefObject<HTMLElement | null>, deps: Rea
   }, deps);
 }
 
-function MenuItem({
+export function MenuItem({
   icon: Icon,
   label,
   onClick,

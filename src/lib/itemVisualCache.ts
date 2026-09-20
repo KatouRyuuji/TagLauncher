@@ -41,11 +41,12 @@ function pump() {
     running++;
     void getItemVisual(entry.item.id).then((visual) => {
       entry.value = visual.path === entry.item.path ? visual.icon_path : null;
-      entry.expiresAt = Date.now() + (entry.value ? 5 * 60_000 : 10_000);
+      entry.expiresAt = Date.now() + (entry.value ? 5 * 60_000 : 60_000);
     }, (error: unknown) => {
       console.warn("读取对象图标失败", error);
       entry.value = null;
-      entry.expiresAt = Date.now() + 10_000;
+      // 失败/空值冷却 60s：与后端 .none 冷却（10min）同向收敛，滚动回访不再密集重打 IPC
+      entry.expiresAt = Date.now() + 60_000;
     }).finally(() => {
       running--;
       entry.running = false;

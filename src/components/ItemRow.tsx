@@ -6,12 +6,8 @@ import { FavoriteStar } from "./FavoriteStar";
 import { ItemDragHandle } from "./ItemDragHandle";
 import { ItemTagsEditor } from "./ItemTagsEditor";
 import { ItemVisualIcon } from "./ItemVisualIcon";
-import {
-  beginInternalPointerDrag,
-  findClosestNumberDataAttribute,
-} from "../lib/internalPointerDrag";
+import { useItemDragStart } from "./useItemDragStart";
 import { getFileSuffix, getTypeLabel, splitPathTail, formatRelativeTime } from "../lib/itemUtils";
-import { showToast } from "../lib/toast";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
@@ -42,7 +38,12 @@ function ItemRowComponent({
   onRequestRemoveFromApp,
   onUpdateThumbnail,
   selected,
+  active = false,
   contextSelection,
+  dragItemIds,
+  onAddItemsToCabinet,
+  onSetFavorites,
+  onRequestBatchRemoveFromApp,
 }: ItemCardProps) {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [showTagEditor, setShowTagEditor] = useState(false);
@@ -65,68 +66,25 @@ function ItemRowComponent({
   const showRecent = useAppStore((state) => state.showRecent);
   const lastUsedText = showRecent ? formatRelativeTime(item.last_used_at) : "";
 
-  const handleItemHandlePointerDown = (event: React.PointerEvent<HTMLSpanElement>) => {
-    beginInternalPointerDrag({
-      event,
-      payload: { kind: "item", itemId: item.id, label: item.name },
-      findHoverTarget: (pointerEvent) => {
-        const favoriteTarget = findClosestNumberDataAttribute(
-          pointerEvent.clientX,
-          pointerEvent.clientY,
-          "[data-drop-item-favorite]",
-          "dropItemFavorite",
-        );
-        if (favoriteTarget === 1) return { kind: "item-favorites" };
-
-        const cabinetId = findClosestNumberDataAttribute(
-          pointerEvent.clientX,
-          pointerEvent.clientY,
-          "[data-drop-item-cabinet-id]",
-          "dropItemCabinetId",
-        );
-        if (cabinetId !== null) return { kind: "item-cabinet", cabinetId };
-
-        const clearCurrentFilter = findClosestNumberDataAttribute(
-          pointerEvent.clientX,
-          pointerEvent.clientY,
-          "[data-drop-item-clear-current-filter]",
-          "dropItemClearCurrentFilter",
-        );
-        if (clearCurrentFilter === 1) return { kind: "item-clear-current-filter" };
-
-        const removeFromApp = findClosestNumberDataAttribute(
-          pointerEvent.clientX,
-          pointerEvent.clientY,
-          "[data-drop-item-remove-from-app]",
-          "dropItemRemoveFromApp",
-        );
-        return removeFromApp === 1 ? { kind: "item-remove-from-app" } : null;
-      },
-      onDrop: async (target) => {
-        if (target?.kind === "item-favorites") {
-          // 已收藏时拖到收藏区不再静默无效
-          if (!item.is_favorite) await onToggleFavorite();
-          else showToast(`「${item.name}」已在收藏中`, "info");
-          return;
-        }
-        if (target?.kind === "item-cabinet") {
-          // 前端可确定的重复（拖到当前所在柜）直接提示，不发请求
-          if (target.cabinetId === currentCabinetId) {
-            showToast(`「${item.name}」已在此文件柜中`, "info");
-            return;
-          }
-          await onAddItemToCabinet(target.cabinetId, item.id);
-          return;
-        }
-        if (target?.kind === "item-clear-current-filter") {
-          await onClearCurrentFilter(item.id);
-          return;
-        }
-        if (target?.kind === "item-remove-from-app") {
-          await onRequestRemoveFromApp(item.id);
-        }
-      },
-    });
+  const handleItemHandlePointerDown = useItemDragStart({
+    item,
+    cabinets,
+    currentCabinetId,
+    dragItemIds,
+    onToggleFavorite,
+    onSetFavorites,
+    onAddItemToCabinet,
+    onAddItemsToCabinet,
+    onClearCurrentFilter,
+    onRequestRemoveFromApp,
+    onRequestBatchRemoveFromApp,
+  });
+  // 行本体拖拽（Explorer：从图标本体拖），与抓手同一起手；交互子元素不触发
+  const handleRowBodyPointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.closest("button,a,input,select,textarea,kbd,[role='button'],[data-tag-drag],[data-item-drag]")) return;
+    handleItemHandlePointerDown(event);
   };
 
   return (
@@ -143,19 +101,13 @@ function ItemRowComponent({
             ? "bg-[var(--accent-primary-bg)] shadow-[inset_3px_0_0_var(--accent-primary)]"
             : "hover:bg-[var(--bg-hover)]"
         }`}
+        onPointerDown={handleRowBodyPointerDown}
         onDoubleClick={onLaunch}
         onContextMenu={(event) => {
           event.preventDefault();
           setMenuPos({ x: event.clientX, y: event.clientY });
         }}
-        onKeyDown={(event) => {
-          // 仅当事件源自行本身时响应 Enter；stopPropagation 避免与 window 热键重复启动。
-          if (event.key !== "Enter" || event.target !== event.currentTarget) return;
-          event.preventDefault();
-          event.stopPropagation();
-          onLaunch();
-        }}
-        tabIndex={0}
+        tabIndex={active ? 0 : -1}
       >
         <div className="flex items-center gap-1">
           <ItemDragHandle

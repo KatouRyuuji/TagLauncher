@@ -115,7 +115,11 @@ describe("可见图标请求", () => {
       await vi.waitFor(() => expect(listener).toHaveBeenCalledWith(null));
       cache.subscribeItemVisual(item(1), vi.fn());
       expect(getVisual).toHaveBeenCalledTimes(1);
+      // 失败冷却 60s：11s 时仍在冷却，61s 后允许重试
       clock.mockReturnValue(12000);
+      cache.subscribeItemVisual(item(1), vi.fn());
+      expect(getVisual).toHaveBeenCalledTimes(1);
+      clock.mockReturnValue(62000);
       cache.subscribeItemVisual(item(1), vi.fn());
       expect(getVisual).toHaveBeenCalledTimes(2);
     } finally { warning.mockRestore(); clock.mockRestore(); }

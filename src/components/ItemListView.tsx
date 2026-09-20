@@ -4,6 +4,7 @@ import { ArrowUp } from "lucide-react";
 import type { ItemViewProps } from "../types";
 import { useAppStore } from "../stores/appStore";
 import { isHeaderSortActive, toggleHeaderSort, type ListHeaderColumn } from "../lib/itemQuery";
+import { peekPendingItemFocus, focusSelectableItem, clearPendingItemFocus } from "../lib/workspaceChrome";
 import { ITEM_LIST_BASE_ROW_HEIGHT, ITEM_LIST_GRID_TEMPLATE, ItemRow } from "./ItemRow";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
@@ -15,7 +16,6 @@ type ItemRowViewProps = Omit<
   | "items"
   | "loading"
   | "onSetManyTags"
-  | "onAddItemsToCabinet"
   | "onRemoveItemsFromCabinet"
   | "selectedItemIds"
   | "onSelectItems"
@@ -26,11 +26,15 @@ const ItemListRow = memo(function ItemListRow({
   viewProps,
   selected,
   contextSelection,
+  selectedItemIds,
+  active,
 }: {
   item: ItemViewProps["items"][number];
   viewProps: ItemRowViewProps;
   selected: boolean;
   contextSelection: ContextSelectionInfo | null;
+  selectedItemIds: number[];
+  active: boolean;
 }) {
   const {
     tags,
@@ -42,14 +46,22 @@ const ItemListRow = memo(function ItemListRow({
     onAddNewTagToItem,
     onRecycleNewTags,
     onToggleFavorite,
+    onSetFavorites,
     onAddItemToCabinet,
+    onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
     onRequestRemoveFromApp,
+    onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
   } = viewProps;
   const handleLaunch = useCallback(() => onLaunch(item.id), [item.id, onLaunch]);
   const handleToggleFavorite = useCallback(() => { void onToggleFavorite(item.id).catch(() => {}); }, [item.id, onToggleFavorite]);
+  // Explorer 语义：拖动已选中项 = 拖整个选中集；未选中项 = 只拖自己（useMemo 保引用稳定）
+  const dragItemIds = useMemo(
+    () => (selected && selectedItemIds.length > 1 ? selectedItemIds : [item.id]),
+    [selected, selectedItemIds, item.id],
+  );
 
   return (
     <ItemRow
@@ -63,13 +75,18 @@ const ItemListRow = memo(function ItemListRow({
       onAddNewTagToItem={onAddNewTagToItem}
       onRecycleNewTags={onRecycleNewTags}
       onToggleFavorite={handleToggleFavorite}
+      onSetFavorites={onSetFavorites}
       onAddItemToCabinet={onAddItemToCabinet}
+      onAddItemsToCabinet={onAddItemsToCabinet}
       onRemoveItemFromCabinet={onRemoveItemFromCabinet}
       onClearCurrentFilter={onClearCurrentFilter}
       onRequestRemoveFromApp={onRequestRemoveFromApp}
+      onRequestBatchRemoveFromApp={onRequestBatchRemoveFromApp}
       onUpdateThumbnail={onUpdateThumbnail}
       selected={selected}
       contextSelection={contextSelection}
+      dragItemIds={dragItemIds}
+      active={active}
     />
   );
 });
@@ -126,16 +143,20 @@ export function ItemListView({
   onAddNewTagToItem,
   onRecycleNewTags,
   onToggleFavorite,
+  onSetFavorites,
   onAddItemToCabinet,
+  onAddItemsToCabinet,
   onRemoveItemFromCabinet,
   onClearCurrentFilter,
   onRequestRemoveFromApp,
+  onRequestBatchRemoveFromApp,
   onUpdateThumbnail,
   selectedItemIds,
   onSelectItems,
   libraryEmpty,
   onClearFilters,
   onAddItems,
+  onRefreshWorkspace,
 }: ItemViewProps) {
   const viewProps = useMemo(() => ({
     tags,
@@ -147,10 +168,13 @@ export function ItemListView({
     onAddNewTagToItem,
     onRecycleNewTags,
     onToggleFavorite,
+    onSetFavorites,
     onAddItemToCabinet,
+    onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
     onRequestRemoveFromApp,
+    onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
   }), [
     tags,
@@ -162,10 +186,13 @@ export function ItemListView({
     onAddNewTagToItem,
     onRecycleNewTags,
     onToggleFavorite,
+    onSetFavorites,
     onAddItemToCabinet,
+    onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
     onRequestRemoveFromApp,
+    onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
   ]);
 
@@ -204,6 +231,29 @@ export function ItemListView({
   }, [items]);
 
   const lastSelectedId = selectedItemIds[selectedItemIds.length - 1];
+
+  // 活动项（roving focus）：选中集末尾；pending 焦点在行挂载后消费
+  const activeId = lastSelectedId ?? null;
+  const activeMounted = useMemo(() => {
+    if (activeId == null) return false;
+    const idx = items.findIndex((item) => item.id === activeId);
+    if (idx < 0) return false;
+    return virtualItems.some((v) => v.index === idx);
+  }, [activeId, items, virtualItems]);
+
+  useEffect(() => {
+    const pending = peekPendingItemFocus();
+    if (pending == null) return;
+    if (focusSelectableItem(pending)) clearPendingItemFocus();
+  }, [virtualItems]);
+
+  // 焦点回补：活动项随虚拟化卸载导致焦点掉到 body 时退回容器
+  useEffect(() => {
+    if (activeMounted) return;
+    if (document.activeElement !== document.body) return;
+    scrollRef.current?.focus({ preventScroll: true });
+  }, [activeMounted]);
+
   const skipScrollRef = useRef(true);
   const lastScrolledIdRef = useRef<number | null>(null);
   useEffect(() => {
@@ -291,6 +341,9 @@ export function ItemListView({
       onSelectItems={onSelectItems}
       scrollElementRef={scrollRef}
       getItemRects={getItemRects}
+      onAddItems={onAddItems}
+      onRefreshWorkspace={onRefreshWorkspace}
+      containerTabIndex={activeMounted ? -1 : 0}
     >
       {/* 全幅表格（对标资源管理器详细信息视图）：表头吸附、整行分隔线，无外层卡片 */}
       <div>
@@ -328,6 +381,8 @@ export function ItemListView({
                   viewProps={viewProps}
                   selected={selectedItemIdSet.has(item.id)}
                   contextSelection={selectedItemIdSet.has(item.id) ? contextSelectionInfo : null}
+                  selectedItemIds={selectedItemIds}
+                  active={item.id === activeId}
                 />
               </div>
             );

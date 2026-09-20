@@ -16,6 +16,7 @@ import {
   isTransientMenuOpen,
   isWorkspaceOverlayOpen,
   openItemContextMenu,
+  requestItemFocus,
   resetWorkspaceSearchInput,
   scrollItemIntoView,
   setWorkspaceSelectionAnchor,
@@ -60,6 +61,8 @@ export function useWorkspaceHotkeys({
   const setViewMode = useAppStore((state) => state.setViewMode);
   const searchQuery = useAppStore((state) => state.searchQuery);
   const setSearchQuery = useAppStore((state) => state.setSearchQuery);
+  // typeahead 缓冲（裸打字母/汉字跳匹配项，600ms 窗）
+  const typeaheadRef = useRef({ text: "", ts: 0 });
 
   const refs = useRef({
     allItems,
@@ -144,6 +147,9 @@ export function useWorkspaceHotkeys({
       // data-workspace-overlay（会被守卫拦截），且预览打开时 Ctrl+A/C/D 应
       // 作用于预览对象而非背景选中集。
       if (ctx.previewItemId !== null) {
+        // 焦点在预览内按钮上时 Enter/Space 让按钮原生激活（与主分支 onButton 守卫同口径）：
+        // 否则想点「复制路径」会变成关预览+启动对象
+        if (onButton && (event.key === "Enter" || event.key === " ")) return;
         if (ctrl && !typing) {
           const previewItem = ctx.allItems.find((item) => item.id === ctx.previewItemId);
           if (event.key.toLowerCase() === "a") {
@@ -300,17 +306,44 @@ export function useWorkspaceHotkeys({
         return;
       }
 
-      if (!ctrl && (event.key === "g" || event.key === "G")) {
+      if (ctrl && (event.key === "g" || event.key === "G")) {
+        event.preventDefault();
         ctx.setViewMode("grid");
         return;
       }
-      if (!ctrl && (event.key === "i" || event.key === "I")) {
+      if (ctrl && (event.key === "i" || event.key === "I")) {
+        event.preventDefault();
         ctx.setViewMode("icons");
         return;
       }
-      if (!ctrl && (event.key === "l" || event.key === "L")) {
+      if (ctrl && (event.key === "l" || event.key === "L")) {
+        event.preventDefault();
         ctx.setViewMode("list");
         return;
+      }
+
+      // typeahead（Explorer/Raycast 惯例）：裸打字母/汉字跳到名称匹配项。
+      // 600ms 缓冲窗；前缀命中优先，其次子串命中；命中即单选并滚动跟随
+      if (!ctrl && !event.altKey && !event.metaKey && event.key.length === 1 && !event.key.match(/[\s]/)) {
+        const now = Date.now();
+        const buffer = (now - typeaheadRef.current.ts < 600 ? typeaheadRef.current.text : "") + event.key.toLowerCase();
+        typeaheadRef.current = { text: buffer, ts: now };
+        const lower = buffer.toLowerCase();
+        const items = ctx.items;
+        const match = items.find((item) => item.name.toLowerCase().startsWith(lower))
+          ?? items.find((item) => item.name.toLowerCase().includes(lower));
+        if (match) {
+          event.preventDefault();
+          setWorkspaceSelectionAnchor(match.id);
+          selectVisible(items, match, ctx.setSelectedItemIds);
+          requestItemFocus(match.id);
+          return;
+        }
+        return;
+      }
+      // 非可打印键（方向键/Home/功能键）重置缓冲
+      if (event.key.length > 1) {
+        typeaheadRef.current = { text: "", ts: 0 };
       }
 
       if (event.key === "Home") {
@@ -406,6 +439,7 @@ function jumpSelection(
   const next = items[index];
   if (!next) return;
   requestSelectionScrollFollow(next.id);
+  requestItemFocus(next.id);
   setSelectedItemIds([next.id]);
   scrollItemIntoView(next.id);
 }
@@ -440,6 +474,7 @@ function extendSelection(
   const ids = rangeSelectionIds(items, anchor, focus.id);
   if (ids.length === 0) return;
   requestSelectionScrollFollow(focus.id);
+  requestItemFocus(focus.id);
   setSelectedItemIds(ids);
   scrollItemIntoView(focus.id);
 }

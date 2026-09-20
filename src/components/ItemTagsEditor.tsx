@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { ItemWithTags, Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useImeComposition } from "../hooks/useImeComposition";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { isImeKeyboardEvent, compareNames } from "../lib/itemQuery";
 import { tagFilterPlaceholder } from "../lib/itemActionCopy";
@@ -27,6 +28,9 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
   const [creating, setCreating] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [tagFilter, setTagFilter] = useState("");
+  // IME 组合中只更新文本，组合结束才过滤（appliedTagFilter）
+  const [appliedTagFilter, setAppliedTagFilter] = useState("");
+  const tagFilterIme = useImeComposition<string>(setAppliedTagFilter);
   // 跟踪本次会话中通过 quick-create 真正新建的标签 id（复用同名已有标签不计入）：
   // 进入编辑器时快照已有 id，之后 diff 出的新 id 即为新建。
   const knownTagIdsRef = useRef<Set<number>>(new Set(tags.map((t) => t.id)));
@@ -52,7 +56,15 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
     onClose();
   };
 
-  useEscapeKey(handleClose, !saving && !creating);
+  // Esc 两级：过滤词非空先清词（再按才关弹窗），空时关闭
+  useEscapeKey(() => {
+    if (tagFilter) {
+      setTagFilter("");
+      setAppliedTagFilter("");
+      return;
+    }
+    handleClose();
+  }, !saving && !creating);
 
   const toggleTag = (id: number) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
@@ -98,7 +110,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
   };
 
   // 标签矩阵：先按过滤词收窄，再按拼音排序（全应用统一的 zh-CN Collator），已选整体置顶
-  const tagQuery = tagFilter.trim().toLowerCase();
+  const tagQuery = appliedTagFilter.trim().toLowerCase();
   const matchedTags = tagQuery ? tags.filter((tag) => tag.name.toLowerCase().includes(tagQuery)) : tags;
   const orderedTags = [...matchedTags].sort((a, b) => compareNames(a.name, b.name));
   const selectedTags = orderedTags.filter((tag) => selectedIds.includes(tag.id));
@@ -161,7 +173,9 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
               placeholder={tagFilterPlaceholder}
               disabled={saving || creating}
               value={tagFilter}
-              onChange={(event) => setTagFilter(event.target.value)}
+              onChange={(event) => { setTagFilter(event.target.value); tagFilterIme.onChange(event.target.value); }}
+              onCompositionStart={tagFilterIme.onCompositionStart}
+              onCompositionEnd={tagFilterIme.onCompositionEnd}
               className="mb-2 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
             />
           )}

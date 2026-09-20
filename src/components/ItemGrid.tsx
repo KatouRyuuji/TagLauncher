@@ -5,7 +5,7 @@ import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
 import { SelectionCanvas, consumeSelectionScrollFollow, type Rect } from "./SelectionCanvas";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { gridOverscanRows, setWorkspaceGridLanes } from "../lib/workspaceChrome";
+import { gridOverscanRows, setWorkspaceGridLanes, peekPendingItemFocus, focusSelectableItem, clearPendingItemFocus } from "../lib/workspaceChrome";
 import type { ContextSelectionInfo } from "./ItemCard";
 import { useAppStore } from "../stores/appStore";
 
@@ -58,7 +58,6 @@ type ItemCardViewProps = Omit<
   | "items"
   | "loading"
   | "onSetManyTags"
-  | "onAddItemsToCabinet"
   | "onRemoveItemsFromCabinet"
   | "selectedItemIds"
   | "onSelectItems"
@@ -70,12 +69,16 @@ const ItemGridCard = memo(function ItemGridCard({
   selected,
   contextSelection,
   variant,
+  selectedItemIds,
+  active,
 }: {
   item: ItemViewProps["items"][number];
   viewProps: ItemCardViewProps;
   selected: boolean;
   contextSelection: ContextSelectionInfo | null;
   variant: "card" | "icon";
+  selectedItemIds: number[];
+  active: boolean;
 }) {
   const {
     tags,
@@ -87,14 +90,23 @@ const ItemGridCard = memo(function ItemGridCard({
     onAddNewTagToItem,
     onRecycleNewTags,
     onToggleFavorite,
+    onSetFavorites,
     onAddItemToCabinet,
+    onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
     onRequestRemoveFromApp,
+    onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
   } = viewProps;
   const handleLaunch = useCallback(() => onLaunch(item.id), [item.id, onLaunch]);
   const handleToggleFavorite = useCallback(() => { void onToggleFavorite(item.id).catch(() => {}); }, [item.id, onToggleFavorite]);
+  // Explorer 语义：拖动已选中项 = 拖整个选中集；未选中项 = 只拖自己。
+  // useMemo 保持引用稳定（内联字面量会击穿外层 memo）
+  const dragItemIds = useMemo(
+    () => (selected && selectedItemIds.length > 1 ? selectedItemIds : [item.id]),
+    [selected, selectedItemIds, item.id],
+  );
 
   return (
     <ItemCard
@@ -108,14 +120,19 @@ const ItemGridCard = memo(function ItemGridCard({
       onAddNewTagToItem={onAddNewTagToItem}
       onRecycleNewTags={onRecycleNewTags}
       onToggleFavorite={handleToggleFavorite}
+      onSetFavorites={onSetFavorites}
       onAddItemToCabinet={onAddItemToCabinet}
+      onAddItemsToCabinet={onAddItemsToCabinet}
       onRemoveItemFromCabinet={onRemoveItemFromCabinet}
       onClearCurrentFilter={onClearCurrentFilter}
       onRequestRemoveFromApp={onRequestRemoveFromApp}
+      onRequestBatchRemoveFromApp={onRequestBatchRemoveFromApp}
       onUpdateThumbnail={onUpdateThumbnail}
       selected={selected}
       contextSelection={contextSelection}
       variant={variant}
+      dragItemIds={dragItemIds}
+      active={active}
     />
   );
 });
@@ -132,16 +149,20 @@ export function ItemGrid({
   onAddNewTagToItem,
   onRecycleNewTags,
   onToggleFavorite,
+  onSetFavorites,
   onAddItemToCabinet,
+  onAddItemsToCabinet,
   onRemoveItemFromCabinet,
   onClearCurrentFilter,
   onRequestRemoveFromApp,
+  onRequestBatchRemoveFromApp,
   onUpdateThumbnail,
   selectedItemIds,
   onSelectItems,
   libraryEmpty,
   onClearFilters,
   onAddItems,
+  onRefreshWorkspace,
 }: ItemViewProps) {
   const viewMode = useAppStore((state) => state.viewMode);
   const iconLayout = viewMode === "icons";
@@ -162,10 +183,13 @@ export function ItemGrid({
     onAddNewTagToItem,
     onRecycleNewTags,
     onToggleFavorite,
+    onSetFavorites,
     onAddItemToCabinet,
+    onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
     onRequestRemoveFromApp,
+    onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
   }), [
     tags,
@@ -177,10 +201,13 @@ export function ItemGrid({
     onAddNewTagToItem,
     onRecycleNewTags,
     onToggleFavorite,
+    onSetFavorites,
     onAddItemToCabinet,
+    onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
     onRequestRemoveFromApp,
+    onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
   ]);
 
@@ -249,6 +276,31 @@ export function ItemGrid({
   // 每次渲染把可见行的真实测量数据记录下来，供 getItemRects 使用。
   // 注意：写 ref 属于副作用，必须放在 useLayoutEffect 中（渲染期写入在并发渲染被丢弃时会残留脏数据）。
   const virtualItems = virtualizer.getVirtualItems();
+
+  // 活动项（roving focus）：选中集末尾；方向键 arm 的 pending 焦点在行挂载后消费
+  const activeId = selectedItemIds[selectedItemIds.length - 1] ?? null;
+  const activeMounted = useMemo(() => {
+    if (activeId == null) return false;
+    if (fewResults) return items.some((item) => item.id === activeId);
+    const idx = items.findIndex((item) => item.id === activeId);
+    if (idx < 0) return false;
+    const row = Math.floor(idx / Math.max(1, lanes));
+    return virtualItems.some((v) => v.index === row);
+  }, [activeId, fewResults, items, lanes, virtualItems]);
+
+  // pending 焦点消费：挂载即聚焦（未挂载则等下一次渲染，虚拟化滚动后自然重跑）
+  useEffect(() => {
+    const pending = peekPendingItemFocus();
+    if (pending == null) return;
+    if (focusSelectableItem(pending)) clearPendingItemFocus();
+  }, [virtualItems]);
+
+  // 焦点回补：活动项随虚拟化卸载导致焦点掉到 body 时退回容器
+  useEffect(() => {
+    if (activeMounted) return;
+    if (document.activeElement !== document.body) return;
+    scrollRef.current?.focus({ preventScroll: true });
+  }, [activeMounted]);
   useLayoutEffect(() => {
     for (const vRow of virtualItems) {
       rowMetricsRef.current.set(vRow.index, { start: vRow.start, size: vRow.size });
@@ -310,6 +362,8 @@ export function ItemGrid({
       selected={selectedItemIdSet.has(item.id)}
       contextSelection={selectedItemIdSet.has(item.id) ? contextSelectionInfo : null}
       variant={iconLayout ? "icon" : "card"}
+      selectedItemIds={selectedItemIds}
+      active={item.id === activeId}
     />
   );
 
@@ -363,6 +417,9 @@ export function ItemGrid({
       onSelectItems={onSelectItems}
       scrollElementRef={scrollRef}
       getItemRects={fewResults ? undefined : getItemRects}
+      onAddItems={onAddItems}
+      onRefreshWorkspace={onRefreshWorkspace}
+      containerTabIndex={activeMounted ? -1 : 0}
     >
       {fewResults ? (
         <div data-region="item-grid-inner" role="list" aria-label="项目列表" className="item-grid-few">

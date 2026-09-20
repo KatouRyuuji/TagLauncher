@@ -6,7 +6,6 @@
 // ============================================================================
 
 import { useMemo } from "react";
-import { useSearch } from "../hooks/useSearch";
 import { resolveWorkspaceScope } from "../lib/workspaceScope";
 import { useAppStore } from "../stores/appStore";
 
@@ -20,7 +19,8 @@ export function WorkspaceScopeHeader({ visibleCount }: { visibleCount: number })
   const tags = useAppStore((state) => state.tags);
   const tagRelations = useAppStore((state) => state.tagRelations);
   const typeFilter = useAppStore((state) => state.typeFilter);
-  const { searchQuery } = useSearch();
+  // 直订阅 searchQuery：经 useSearch 会连坐 searchInputValue，每击键白跑一次 resolve
+  const searchQuery = useAppStore((state) => state.searchQuery);
 
   const scope = useMemo(
     () =>

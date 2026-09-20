@@ -1,4 +1,4 @@
-import { pinyin } from "pinyin-pro";
+import { pinyinSync as pinyin } from "./pinyinProvider";
 
 export interface HighlightSegment {
   text: string;
@@ -28,7 +28,30 @@ function extractHighlightTerms(query: string): string[] {
  * 首字母缩写（段首字母串以 term 为前缀 → 高亮前 term.length 个汉字）；
  * 整词拼音前缀（段全拼逐字累加以 term 为前缀 → 高亮覆盖该前缀的汉字区间）。
  * 与 search.ts 的前缀匹配口径一致。
+ * 拼音转换按汉字段 LRU 缓存：同一批名称/标签在逐击键高亮中不再重复跑 pinyin-pro。
  */
+const PINYIN_CACHE_MAX = 1024;
+const pinyinFirstCache = new Map<string, string>();
+const pinyinFullCache = new Map<string, string[]>();
+
+function cachedPinyinFirst(chars: string): string {
+  const cached = pinyinFirstCache.get(chars);
+  if (cached !== undefined) return cached;
+  const value = pinyin(chars, { pattern: "first", toneType: "none", type: "array" }).join("");
+  if (pinyinFirstCache.size >= PINYIN_CACHE_MAX) pinyinFirstCache.clear();
+  pinyinFirstCache.set(chars, value);
+  return value;
+}
+
+function cachedPinyinFull(chars: string): string[] {
+  const cached = pinyinFullCache.get(chars);
+  if (cached !== undefined) return cached;
+  const value = pinyin(chars, { toneType: "none", type: "array" });
+  if (pinyinFullCache.size >= PINYIN_CACHE_MAX) pinyinFullCache.clear();
+  pinyinFullCache.set(chars, value);
+  return value;
+}
+
 function pinyinHighlightRange(text: string, term: string): [number, number] | null {
   HAN_RUN_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -37,11 +60,10 @@ function pinyinHighlightRange(text: string, term: string): [number, number] | nu
     const chars = match[0];
 
     if (term.length <= chars.length) {
-      const initials = pinyin(chars, { pattern: "first", toneType: "none", type: "array" }).join("");
-      if (initials.startsWith(term)) return [start, start + term.length];
+      if (cachedPinyinFirst(chars).startsWith(term)) return [start, start + term.length];
     }
 
-    const full = pinyin(chars, { toneType: "none", type: "array" });
+    const full = cachedPinyinFull(chars);
     let cumulative = "";
     for (let k = 0; k < full.length; k += 1) {
       cumulative += full[k];
@@ -56,11 +78,33 @@ function pinyinHighlightRange(text: string, term: string): [number, number] | nu
   return null;
 }
 
+/** splitHighlightSegments 结果缓存：键 = query + 文本，逐击键跨卡片复用 */
+const SEGMENT_CACHE_MAX = 512;
+const segmentCache = new Map<string, HighlightSegment[]>();
+
 /**
  * 将文本按查询词拆分为高亮片段。所有字面词项参与子串匹配（大小写不敏感）；
  * 纯字母词项在含汉字的文本上额外尝试拼音/首字母高亮。空查询返回整段非高亮。
  */
 export function splitHighlightSegments(text: string, query: string): HighlightSegment[] {
+  if (!text) return [{ text: "", highlighted: false }];
+  const cacheKey = `${query}${text}`;
+  const cached = segmentCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const segments = computeHighlightSegments(text, query);
+  if (segmentCache.size >= SEGMENT_CACHE_MAX) {
+    // 简单失效：清掉最早一半（Map 迭代序即插入序）
+    let drop = SEGMENT_CACHE_MAX / 2;
+    for (const key of segmentCache.keys()) {
+      segmentCache.delete(key);
+      if ((drop -= 1) <= 0) break;
+    }
+  }
+  segmentCache.set(cacheKey, segments);
+  return segments;
+}
+
+function computeHighlightSegments(text: string, query: string): HighlightSegment[] {
   if (!text) return [{ text: "", highlighted: false }];
   const terms = extractHighlightTerms(query);
   if (terms.length === 0) return [{ text, highlighted: false }];

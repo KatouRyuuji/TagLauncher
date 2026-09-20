@@ -334,7 +334,9 @@ export function useTheme() {
           customs.find((custom) => custom.id === desired) ??
           getDefaultTheme();
         setCurrentThemeId(theme.id);
-        applyAndBroadcast(theme);
+        // boot 已套用同一主题时跳过一次全文档 apply（消启动闪切）；
+        // 不同才重套（持久化主题、外部意图、模式解析结果与 boot 不同）
+        if (theme.id !== boot.id) applyAndBroadcast(theme);
         themeCatalogReadyRef.current = true;
       } catch {
         if (!settled) applyAndBroadcast(getDefaultTheme());

@@ -1,4 +1,41 @@
 import { assert, test, run } from "./__testutil";
+import { ensurePinyin } from "./pinyinProvider";
+
+// pinyin-pro 经 pinyinProvider 懒加载：test() 注册即执行，须在文件顶部就绪
+await ensurePinyin();
+
+test("冻结排序键：启动后 last_used_at 刷新不重排，收藏切换立即跨区，新成员用活值落位", () => {
+  const items = [
+    { id: 1, name: "Alpha", type: "exe", is_favorite: false, last_used_at: "2026-09-10", created_at: "2026-01-01" },
+    { id: 2, name: "Beta", type: "exe", is_favorite: false, last_used_at: "2026-09-11", created_at: "2026-01-01" },
+    { id: 3, name: "Gamma", type: "exe", is_favorite: false, last_used_at: "2026-09-12", created_at: "2026-01-01" },
+  ];
+  const frozen: SortKeyOverrides["lastUsedAt"] = new Map(items.map((item) => [item.id, item.last_used_at]));
+  // 启动 1 号后它的活值最新，但冻结键保持快照：顺序不变
+  const launched = items.map((item) =>
+    item.id === 1 ? { ...item, last_used_at: "2026-09-20" } : item,
+  );
+  assert.deepEqual(
+    sortItemsByMode(launched, "smart", { lastUsedAt: frozen }).map((entry) => entry.id),
+    [3, 2, 1],
+  );
+  // 不冻结则 1 号升到最前（对照）
+  assert.deepEqual(sortItemsByMode(launched, "smart").map((entry) => entry.id), [1, 3, 2]);
+  // 收藏切换用活值立即跨区（不受冻结键约束）
+  const favorited = launched.map((item) =>
+    item.id === 1 ? { ...item, is_favorite: true } : item,
+  );
+  assert.deepEqual(
+    sortItemsByMode(favorited, "smart", { lastUsedAt: frozen }).map((entry) => entry.id),
+    [1, 3, 2],
+  );
+  // 新成员不在快照里：用活值落到正确位置
+  const withNew = [...launched, { id: 4, name: "New", type: "exe", is_favorite: false, last_used_at: "2026-09-19", created_at: "2026-01-01" }];
+  assert.deepEqual(
+    sortItemsByMode(withNew, "smart", { lastUsedAt: frozen }).map((entry) => entry.id),
+    [4, 3, 2, 1],
+  );
+});
 import {
   applyTypeFilter,
   applyWorkspaceQuery,

@@ -22,6 +22,9 @@ export function useEscapeKey(onEscape: () => void, active = true): void {
     const entry = () => onEscapeRef.current();
     escapeStack.push(entry);
     const handler = (event: KeyboardEvent) => {
+      // IME 组合期（中文输入按 Esc 取消拼音候选）不触发浮层关闭，
+      // 与 useWorkspaceHotkeys 的组合期守卫同口径
+      if (event.isComposing || event.key === "Process") return;
       // 带 data-esc-local 的元素（如浮动面板键盘拖拽手柄）自行处理 Esc，不走全局栈
       if (
         event.target instanceof HTMLElement &&

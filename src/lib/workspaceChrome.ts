@@ -109,3 +109,37 @@ export function setWorkspaceSelectionAnchor(id: number | null): void {
 export function getWorkspaceSelectionAnchor(): number | null {
   return selectionAnchorId;
 }
+
+// ---- 键盘导航焦点跟随（roving focus 的待聚焦标记） ----
+// 方向键/跳选先 arm 一个一次性标记；ItemGrid/ItemListView 在虚拟化行挂载后消费并真实
+// 聚焦。预览导航（movePreview 走 selectVisible）不 arm，QuickPreview 的 focus trap 不破。
+const PENDING_FOCUS_STALE_MS = 500;
+let pendingItemFocus: { id: number; ts: number } | null = null;
+
+export function requestItemFocus(id: number): void {
+  pendingItemFocus = { id, ts: Date.now() };
+}
+
+/** 读 pending 焦点（不消费）：陈旧（>500ms）即丢弃 */
+export function peekPendingItemFocus(): number | null {
+  if (!pendingItemFocus) return null;
+  if (Date.now() - pendingItemFocus.ts > PENDING_FOCUS_STALE_MS) {
+    pendingItemFocus = null;
+    return null;
+  }
+  return pendingItemFocus.id;
+}
+
+export function clearPendingItemFocus(): void {
+  pendingItemFocus = null;
+}
+
+/** pending 项已挂载即聚焦；返回是否成功聚焦 */
+export function focusSelectableItem(id: number): boolean {
+  const el = document.querySelector(`[data-selectable-item-id="${id}"]`);
+  if (el instanceof HTMLElement) {
+    el.focus({ preventScroll: true });
+    return true;
+  }
+  return false;
+}

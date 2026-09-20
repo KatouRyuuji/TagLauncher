@@ -2,11 +2,24 @@ import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } f
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, filterItemsByTags, filterSearchIndex, searchWithIndex } from "../lib/search";
+import { ensurePinyin } from "../lib/pinyinProvider";
 import { applyTypeFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/itemQuery";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
 import { TAGS_WRITTEN_EVENT } from "./useTags";
+
+/** 搜索索引闲时预热的单片大小（1000 条/片，片间让出主线程） */
+const SEARCH_WARM_SLICE = 1000;
+/** 预热片间隔：单片构建 ~100-200ms，间隔拉长避免 IPC/交互排队超过人感阈值 */
+const SEARCH_WARM_GAP_MS = 250;
+/** 预热条目上限：超大库不为全量预热付首分钟成本——
+ *  前 5000 条（最近使用头部）覆盖高频命中，其余靠首次搜索的防抖窗口构建 */
+const SEARCH_WARM_MAX_ENTRIES = 5000;
+
+/** 主题换色后的就地改色事件：detail.tagColors = { tagId: color }。
+ *  只改颜色不动结构，无需 TAGS_WRITTEN_EVENT 的全量重取级联。 */
+export const ITEM_TAG_COLORS_PATCH_EVENT = "taglauncher-item-tag-colors-patch";
 import { invalidateItemVisuals } from "../lib/itemVisualCache";
 import type { ItemWithTags } from "../types";
 
@@ -91,6 +104,22 @@ export function useItems() {
   const cabinetItemsRef = useRef<ItemWithTags[]>([]);
   const relocatingRef = useRef<Promise<number> | null>(null);
   const relocateMissingRef = useRef<() => void>(() => {});
+  // 闲时预热定时器（取消/卸载清理用）
+  const warmupTimerRef = useRef<{ kind: "idle"; id: number } | { kind: "timeout"; id: ReturnType<typeof setTimeout> } | null>(null);
+  // 会话内冻结排序键：启动对象只刷新 last_used_at 不重排视图（Explorer 语义）。
+  // 快照重拍时机 = loadAll 成功 / 排序变更 / 视图域切换；launch 的 refreshItemById 不重拍
+  const frozenSortKeysRef = useRef<ReadonlyMap<number, string | null | undefined> | null>(null);
+  const captureFrozenSortKeys = useCallback(
+    (items: ItemWithTags[]) => new Map(items.map((item) => [item.id, item.last_used_at] as const)),
+    [],
+  );
+  const cancelSearchWarmup = useCallback(() => {
+    if (warmupTimerRef.current === null) return;
+    if (warmupTimerRef.current.kind === "idle") window.cancelIdleCallback?.(warmupTimerRef.current.id);
+    else clearTimeout(warmupTimerRef.current.id);
+    warmupTimerRef.current = null;
+  }, []);
+  useEffect(() => cancelSearchWarmup, [cancelSearchWarmup]);
   // 仅首屏加载显示整屏 loading；后台刷新（刷新按钮/跨盘找回后）保留旧列表原地更新，
   // 不清空、不闪 spinner、不丢滚动位置。
   const initialLoadRef = useRef(true);
@@ -116,8 +145,43 @@ export function useItems() {
         // 记录刷新前的失效态，用于检测"本次新变为失效"的对象并主动提示
         const prev = new Map(allItemsRef.current.map((i) => [i.id, i]));
         const data = await db.getItems(false);
-        invalidateItemVisuals();
+        // 不在此失效图标缓存：getItems(false) 不触碰 icon_path，内部级联（标签写/
+        // 主题换色）不应引发图标重取；手动刷新入口单独负责图标失效
         setAllItems(data);
+        // 全量加载 = 显式重排点：重拍冻结排序键
+        frozenSortKeysRef.current = captureFrozenSortKeys(data);
+        // 搜索索引闲时预热（含 pinyin-pro 懒加载分片）：首次击键不再全量构建。
+        // 模块级 searchFieldsCache 按内容指纹跨刷新复用，预热只补未命中条目。
+        // 取消上一次未触发的预热并随卸载清理：避免陈旧定时器在新数据/新会话上误建
+        cancelSearchWarmup();
+        const warm = () => {
+          warmupTimerRef.current = null;
+          void ensurePinyin().then(() => {
+            // 1000 条/片 × 250ms 间隔的空闲切片预热（上限 5000 条）：
+            // 整块构建在 10k+ 库上会冻结主线程数秒；超大库只暖头部高频区
+            const warmTarget = Math.min(data.length, SEARCH_WARM_MAX_ENTRIES);
+            const step = (start: number) => {
+              if (warmupTimerRef.current === null && start > 0) return; // 已被取消
+              if (start >= warmTarget) {
+                warmupTimerRef.current = null;
+                return;
+              }
+              buildSearchIndex(data.slice(0, start + SEARCH_WARM_SLICE), "all");
+              if (start + SEARCH_WARM_SLICE >= warmTarget) {
+                warmupTimerRef.current = null;
+                return;
+              }
+              const next = start + SEARCH_WARM_SLICE;
+              warmupTimerRef.current = { kind: "timeout", id: setTimeout(() => step(next), SEARCH_WARM_GAP_MS) };
+            };
+            step(0);
+          });
+        };
+        if (typeof window.requestIdleCallback === "function") {
+          warmupTimerRef.current = { kind: "idle", id: window.requestIdleCallback(warm, { timeout: 2000 }) };
+        } else {
+          warmupTimerRef.current = { kind: "timeout", id: setTimeout(warm, 200) };
+        }
         setLoadError(null);
 
         const newlyMissing = data.filter(
@@ -228,6 +292,25 @@ export function useItems() {
     };
   }, [loadAll]);
 
+  // 对账解耦：后台对账（启动首跑/60s 节流/手动刷新）有实际写入时，
+  // 走纯读 loadAll 同步失效标记与重定位结果（此时已不含对账成本）
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) => listen<db.ReconcileSummary>("items-reconciled", (event) => {
+        if (!cancelled && event.payload.changed) void loadAll();
+      }))
+      .then((stop) => {
+        unlisten = stop;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [loadAll]);
+
   // 标签改名/删除后，对象卡片上的标签 pill 渲染自 item.tags：监听标签写事件
   // 全量刷新对象，避免卡片残留幽灵标签（旧名称/已删标签）。
   useEffect(() => {
@@ -235,6 +318,29 @@ export function useItems() {
     window.addEventListener(TAGS_WRITTEN_EVENT, handler);
     return () => window.removeEventListener(TAGS_WRITTEN_EVENT, handler);
   }, [loadAll]);
+
+  // 主题换色（色位写回）只变 color：按 tag id 就地更新对象内嵌标签色，
+  // 不走全量重取（旧级联 = get_items 全表 + 图标重取 + 全网格重渲染）。
+  useEffect(() => {
+    const patch = (items: ItemWithTags[], tagColors: Record<number, string>): ItemWithTags[] =>
+      items.map((item) => {
+        if (!item.tags.some((tag) => tagColors[tag.id] !== undefined)) return item;
+        return {
+          ...item,
+          tags: item.tags.map((tag) =>
+            tagColors[tag.id] !== undefined ? { ...tag, color: tagColors[tag.id] } : tag,
+          ),
+        };
+      });
+    const handler = (event: Event) => {
+      const tagColors = (event as CustomEvent<{ tagColors?: Record<number, string> }>).detail?.tagColors;
+      if (!tagColors) return;
+      setAllItems((current) => patch(current, tagColors));
+      setCabinetItems((current) => patch(current, tagColors));
+    };
+    window.addEventListener(ITEM_TAG_COLORS_PATCH_EVENT, handler);
+    return () => window.removeEventListener(ITEM_TAG_COLORS_PATCH_EVENT, handler);
+  }, []);
 
   const refreshItemById = useCallback(async (itemId: number) => {
     const item = await db.getItem(itemId);
@@ -311,8 +417,23 @@ export function useItems() {
     if (searchIndex) {
       return applyTypeFilter(searchWithIndex(searchIndex, deferredSearchQuery), typeFilter);
     }
-    return applyWorkspaceQuery(tagFiltered, { typeFilter, sortMode });
+    return applyWorkspaceQuery(tagFiltered, {
+      typeFilter,
+      sortMode,
+      sortKeyOverrides: { lastUsedAt: frozenSortKeysRef.current ?? undefined },
+    });
   }, [searchIndex, tagFiltered, deferredSearchQuery, typeFilter, sortMode]);
+
+  // 排序变更 / 视图域切换 = 显式重排点：按当前数据重拍冻结排序键
+  const scopeKey = `${sortMode}|${showFavorites}|${showRecent}|${selectedCabinetId}`;
+  const prevScopeKeyRef = useRef(scopeKey);
+  useEffect(() => {
+    if (prevScopeKeyRef.current === scopeKey) return;
+    prevScopeKeyRef.current = scopeKey;
+    frozenSortKeysRef.current = captureFrozenSortKeys(
+      selectedCabinetId !== null ? cabinetItemsRef.current : allItemsRef.current,
+    );
+  }, [scopeKey, selectedCabinetId, captureFrozenSortKeys]);
 
   const addItems = useCallback(async (paths: string[]) => {
     await withErrorToast("批量导入", async () => {
@@ -518,12 +639,23 @@ export function useItems() {
     [],
   );
 
+  // 手动刷新入口（刷新按钮/命令面板）：用户点刷新 = 图标缓存一并失效重取，
+  // 且显式触发对账（异步调度，有写入时经 items-reconciled 回来再 loadAll）；
+  // 内部级联（标签写、主题换色、监视导入）走 loadAll，不动图标也不对账
+  const refresh = useCallback(async (options?: { reconcile?: boolean }) => {
+    invalidateItemVisuals();
+    if (options?.reconcile) {
+      void db.reconcileItems({ force: true }).catch(() => {});
+    }
+    await loadAll();
+  }, [loadAll]);
+
   return {
     items: filtered,
     allItems,
     loading,
     loadError,
-    refresh: loadAll,
+    refresh,
     relocateMissing,
     addItems,
     removeItem,

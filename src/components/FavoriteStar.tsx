@@ -12,6 +12,8 @@ export function FavoriteStar({ active, onClick }: FavoriteStarProps) {
       aria-label={active ? "取消收藏" : "加入收藏"}
       aria-pressed={active}
       title={active ? "取消收藏" : "加入收藏"}
+      // 卡片/行是单一 Tab 停点（roving focus）：星标退出 Tab 序，键盘用 Ctrl+D 收藏
+      tabIndex={-1}
       onClick={(event) => {
         event.stopPropagation();
         onClick?.();
