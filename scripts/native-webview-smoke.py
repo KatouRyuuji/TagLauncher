@@ -195,12 +195,13 @@ def main() -> int:
                 )
                 assert draft_retained
                 settings = page.get_by_role("dialog", name="设置工作台")
-                close = settings.get_by_role("button", name="关闭", exact=True)
-                if close.count() == 0:
-                    close = settings.get_by_role("button", name="完成", exact=True)
-                close.focus()
+                # 底栏「关闭/完成」按钮已按设计收敛（关闭出口 = 右上 X + Esc）：
+                # 焦点陷阱验证改为 X 聚焦后 Tab 循环不逃出对话框
+                page.locator('button[aria-label="关闭设置"]').focus()
                 page.keyboard.press("Tab")
-                assert page.locator('button[aria-label="关闭设置"]').evaluate("el=>el===document.activeElement")
+                assert page.get_by_role("dialog", name="设置工作台").evaluate(
+                    "el => el.contains(document.activeElement)"
+                )
                 capture(page, sandbox / "settings-ai.png")
                 page.keyboard.press("Escape")
                 page.get_by_role("dialog", name="设置工作台").wait_for(state="detached")
