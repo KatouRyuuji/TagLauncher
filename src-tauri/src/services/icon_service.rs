@@ -98,6 +98,36 @@ pub fn fill_item_visual(app: &AppHandle, item: &mut Item) {
     }
 }
 
+/// 手动刷新时清除图标失败标记（.none）：用户点刷新 = 立即重试，不再等负缓存冷却。
+/// 覆盖 shell 图标 / 音频封面 / 视频缩略图三类标记（统一 .none 后缀）。
+#[cfg(target_os = "windows")]
+pub fn clear_none_markers(app: &AppHandle) -> Result<(), String> {
+    let cache_dir = crate::services::path_service::resolve_app_paths(app)
+        .save_dir
+        .join("item-icons");
+    let entries = match std::fs::read_dir(&cache_dir) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(()), // 目录不存在 = 没有标记可清
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_none_marker = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("none"))
+            .unwrap_or(false);
+        if is_none_marker {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn clear_none_markers(_app: &AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 fn is_shortcut_path(path: &str) -> bool {
     Path::new(path)

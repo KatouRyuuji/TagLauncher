@@ -229,6 +229,8 @@ interface AppState {
   setTypeFilter: (filter: TypeFilter) => void;
   setCardSizeScale: (scale: number, options?: { persist?: boolean }) => void;
   setIconSizeScale: (scale: number, options?: { persist?: boolean }) => void;
+  /** 立即持久化当前视图偏好（尺寸滑杆等 persist:false 写入后的显式落盘；值未变也可用） */
+  persistWorkspacePrefsNow: () => void;
   setWorkspaceFiltersOpen: (open: boolean) => void;
   setSidebarHintDismissed: (dismissed: boolean) => void;
   setTagGraphOpen: (open: boolean) => void;
@@ -400,6 +402,9 @@ export const useAppStore = create<AppState>((set, get) => {
     set({ iconSizeScale: next });
     applyCardSizeVars(get().cardSizeScale, next);
     if (options?.persist !== false) persistNow();
+  },
+  persistWorkspacePrefsNow: () => {
+    persistNow();
   },
   setWorkspaceFiltersOpen: (open) => {
     if (get().workspaceFiltersOpen === open) return;

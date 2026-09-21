@@ -41,6 +41,8 @@ export interface ItemCardProps {
   onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onRemoveItemFromCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onClearCurrentFilter: (itemId: number) => Promise<void>;
+  /** 批量清除当前筛选归类（整组拖拽落点用，单次 IPC/事务） */
+  onClearCurrentFilters?: (itemIds: number[]) => Promise<void>;
   onRequestRemoveFromApp: (itemId: number, options?: { forceDialog?: boolean; preferDeleteFiles?: boolean }) => Promise<void>;
   onUpdateThumbnail: (itemId: number, iconPath: string | null) => Promise<void>;
   selected: boolean;
@@ -126,6 +128,7 @@ function ItemCardComponent({
   onAddItemToCabinet,
   onRemoveItemFromCabinet,
   onClearCurrentFilter,
+  onClearCurrentFilters,
   onRequestRemoveFromApp,
   onUpdateThumbnail,
   selected,
@@ -158,6 +161,7 @@ function ItemCardComponent({
     onAddItemToCabinet,
     onAddItemsToCabinet,
     onClearCurrentFilter,
+    onClearCurrentFilters,
     onRequestRemoveFromApp,
     onRequestBatchRemoveFromApp,
   });

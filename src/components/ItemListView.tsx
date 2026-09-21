@@ -21,6 +21,9 @@ type ItemRowViewProps = Omit<
   | "onSelectItems"
 >;
 
+/** 未选中行的稳定空选中集：避免选择数组每次换引用击穿所有可见行 memo */
+const NO_SELECTION: number[] = [];
+
 const ItemListRow = memo(function ItemListRow({
   item,
   viewProps,
@@ -51,6 +54,7 @@ const ItemListRow = memo(function ItemListRow({
     onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
+    onClearCurrentFilters,
     onRequestRemoveFromApp,
     onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
@@ -80,6 +84,7 @@ const ItemListRow = memo(function ItemListRow({
       onAddItemsToCabinet={onAddItemsToCabinet}
       onRemoveItemFromCabinet={onRemoveItemFromCabinet}
       onClearCurrentFilter={onClearCurrentFilter}
+      onClearCurrentFilters={onClearCurrentFilters}
       onRequestRemoveFromApp={onRequestRemoveFromApp}
       onRequestBatchRemoveFromApp={onRequestBatchRemoveFromApp}
       onUpdateThumbnail={onUpdateThumbnail}
@@ -148,6 +153,7 @@ export function ItemListView({
   onAddItemsToCabinet,
   onRemoveItemFromCabinet,
   onClearCurrentFilter,
+  onClearCurrentFilters,
   onRequestRemoveFromApp,
   onRequestBatchRemoveFromApp,
   onUpdateThumbnail,
@@ -173,6 +179,7 @@ export function ItemListView({
     onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
+    onClearCurrentFilters,
     onRequestRemoveFromApp,
     onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
@@ -191,6 +198,7 @@ export function ItemListView({
     onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
+    onClearCurrentFilters,
     onRequestRemoveFromApp,
     onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
@@ -363,6 +371,7 @@ export function ItemListView({
         <div ref={rowContainerRef} role="list" aria-label="项目列表" style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {virtualizer.getVirtualItems().map((vRow) => {
             const item = items[vRow.index]!;
+            const isSelected = selectedItemIdSet.has(item.id);
             return (
               <div
                 key={vRow.key}
@@ -379,9 +388,9 @@ export function ItemListView({
                 <ItemListRow
                   item={item}
                   viewProps={viewProps}
-                  selected={selectedItemIdSet.has(item.id)}
-                  contextSelection={selectedItemIdSet.has(item.id) ? contextSelectionInfo : null}
-                  selectedItemIds={selectedItemIds}
+                  selected={isSelected}
+                  contextSelection={isSelected ? contextSelectionInfo : null}
+                  selectedItemIds={isSelected ? selectedItemIds : NO_SELECTION}
                   active={item.id === activeId}
                 />
               </div>

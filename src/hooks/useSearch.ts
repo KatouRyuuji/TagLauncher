@@ -19,12 +19,16 @@ export function useSearch() {
   const setSearchInputValue = useAppStore((state) => state.setSearchInputValue);
   // 使用 ref 存储定时器 ID，避免组件重渲染时丢失
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // 最近一次请求的词：防抖回调挂到 pinyin 分片上的 .then 可能晚于 Esc/清空到达，
+  // 写回前比对，防止已清空的旧词复活（幽灵词过滤）
+  const lastRequestedRef = useRef("");
 
   /**
    * 处理搜索输入（带 150ms 防抖）
    * 由 SearchBar 的 onChange 调用。清空时立即生效，避免 Escape 后待处理的防抖把词写回去。
    */
   const handleSearch = useCallback((value: string) => {
+    lastRequestedRef.current = value;
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = undefined;
@@ -37,7 +41,12 @@ export function useSearch() {
     debounceRef.current = setTimeout(() => {
       // pinyin-pro 懒加载：防抖窗口天然覆盖首次拉取分片的时间，
       // 之后的打分/高亮同步路径才能直接取到模块
-      void ensurePinyin().then(() => setSearchQuery(value));
+      void ensurePinyin().then(() => {
+        if (lastRequestedRef.current !== value) return;
+        setSearchQuery(value);
+      }).catch(() => {
+        // 分片加载失败（pinyinProvider 已重置、下次输入重试）：本次搜索不生效
+      });
     }, 150);
   }, [setSearchQuery, setSearchInputValue]);
 

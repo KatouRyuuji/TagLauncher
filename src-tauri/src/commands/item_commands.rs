@@ -133,6 +133,12 @@ pub fn reconcile_items(
     })
 }
 
+/// 手动刷新时清除图标失败标记（.none），下一次取图立即重试而不等负缓存冷却。
+#[tauri::command(async)]
+pub fn clear_icon_none_markers(app: AppHandle) -> Result<(), String> {
+    crate::services::icon_service::clear_none_markers(&app)
+}
+
 #[derive(serde::Serialize)]
 pub struct ItemVisual {
     path: String,

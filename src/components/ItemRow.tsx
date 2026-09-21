@@ -35,6 +35,7 @@ function ItemRowComponent({
   onAddItemToCabinet,
   onRemoveItemFromCabinet,
   onClearCurrentFilter,
+  onClearCurrentFilters,
   onRequestRemoveFromApp,
   onUpdateThumbnail,
   selected,
@@ -76,6 +77,7 @@ function ItemRowComponent({
     onAddItemToCabinet,
     onAddItemsToCabinet,
     onClearCurrentFilter,
+    onClearCurrentFilters,
     onRequestRemoveFromApp,
     onRequestBatchRemoveFromApp,
   });

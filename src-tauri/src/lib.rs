@@ -254,6 +254,7 @@ pub fn run() {
             reconcile_items,
             get_item,
             get_item_visual,
+            clear_icon_none_markers,
             get_items_by_ids,
             get_object_file_info,
             list_object_directory,

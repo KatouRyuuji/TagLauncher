@@ -13,6 +13,8 @@ export interface ItemDragStartOptions {
   onAddItemToCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onAddItemsToCabinet?: (cabinetId: number, itemIds: number[]) => Promise<void>;
   onClearCurrentFilter: (itemId: number) => Promise<void>;
+  /** 批量清除当前筛选归类（整组拖拽落点用，单次 IPC/事务） */
+  onClearCurrentFilters?: (itemIds: number[]) => Promise<void>;
   onRequestRemoveFromApp: (itemId: number) => Promise<void>;
   onRequestBatchRemoveFromApp?: () => Promise<void>;
 }
@@ -31,6 +33,7 @@ export function useItemDragStart({
   onAddItemToCabinet,
   onAddItemsToCabinet,
   onClearCurrentFilter,
+  onClearCurrentFilters,
   onRequestRemoveFromApp,
   onRequestBatchRemoveFromApp,
 }: ItemDragStartOptions) {
@@ -107,6 +110,10 @@ export function useItemDragStart({
           return;
         }
         if (target?.kind === "item-clear-current-filter") {
+          if (itemIds.length > 1 && onClearCurrentFilters) {
+            await onClearCurrentFilters(itemIds);
+            return;
+          }
           for (const id of itemIds) {
             await onClearCurrentFilter(id);
           }

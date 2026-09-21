@@ -12,7 +12,6 @@ import { useCallback, useRef } from "react";
  */
 export function useImeComposition<T>(apply: (value: T) => void) {
   const composingRef = useRef(false);
-  const pendingRef = useRef<T | null>(null);
 
   const onCompositionStart = useCallback(() => {
     composingRef.current = true;
@@ -21,19 +20,17 @@ export function useImeComposition<T>(apply: (value: T) => void) {
   const onCompositionEnd = useCallback(
     (event: React.CompositionEvent<HTMLInputElement>) => {
       composingRef.current = false;
-      const value = (pendingRef.current ?? (event.currentTarget.value as unknown as T));
-      pendingRef.current = null;
-      apply(value);
+      // 恒取已提交文本（currentTarget.value 此时已是上屏结果）；
+      // 组合期 onChange 存下的中间拼音串不能用来过滤
+      apply(event.currentTarget.value as unknown as T);
     },
     [apply],
   );
 
   const onChange = useCallback(
     (value: T) => {
-      if (composingRef.current) {
-        pendingRef.current = value;
-        return;
-      }
+      // 组合期只更新显示文本、不触发过滤；compositionend 时以最终文本过滤
+      if (composingRef.current) return;
       apply(value);
     },
     [apply],

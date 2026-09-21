@@ -63,6 +63,9 @@ type ItemCardViewProps = Omit<
   | "onSelectItems"
 >;
 
+/** 未选中卡片的稳定空选中集：避免选择数组每次换引用击穿所有可见卡片 memo */
+const NO_SELECTION: number[] = [];
+
 const ItemGridCard = memo(function ItemGridCard({
   item,
   viewProps,
@@ -95,6 +98,7 @@ const ItemGridCard = memo(function ItemGridCard({
     onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
+    onClearCurrentFilters,
     onRequestRemoveFromApp,
     onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
@@ -125,6 +129,7 @@ const ItemGridCard = memo(function ItemGridCard({
       onAddItemsToCabinet={onAddItemsToCabinet}
       onRemoveItemFromCabinet={onRemoveItemFromCabinet}
       onClearCurrentFilter={onClearCurrentFilter}
+      onClearCurrentFilters={onClearCurrentFilters}
       onRequestRemoveFromApp={onRequestRemoveFromApp}
       onRequestBatchRemoveFromApp={onRequestBatchRemoveFromApp}
       onUpdateThumbnail={onUpdateThumbnail}
@@ -154,6 +159,7 @@ export function ItemGrid({
   onAddItemsToCabinet,
   onRemoveItemFromCabinet,
   onClearCurrentFilter,
+  onClearCurrentFilters,
   onRequestRemoveFromApp,
   onRequestBatchRemoveFromApp,
   onUpdateThumbnail,
@@ -188,6 +194,7 @@ export function ItemGrid({
     onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
+    onClearCurrentFilters,
     onRequestRemoveFromApp,
     onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
@@ -206,6 +213,7 @@ export function ItemGrid({
     onAddItemsToCabinet,
     onRemoveItemFromCabinet,
     onClearCurrentFilter,
+    onClearCurrentFilters,
     onRequestRemoveFromApp,
     onRequestBatchRemoveFromApp,
     onUpdateThumbnail,
@@ -354,18 +362,21 @@ export function ItemGrid({
     };
   }, [items, selectedItemIds]);
 
-  const renderItemGridCard = (item: ItemViewProps["items"][number]) => (
-    <ItemGridCard
-      key={item.id}
-      item={item}
-      viewProps={viewProps}
-      selected={selectedItemIdSet.has(item.id)}
-      contextSelection={selectedItemIdSet.has(item.id) ? contextSelectionInfo : null}
-      variant={iconLayout ? "icon" : "card"}
-      selectedItemIds={selectedItemIds}
-      active={item.id === activeId}
-    />
-  );
+  const renderItemGridCard = (item: ItemViewProps["items"][number]) => {
+    const isSelected = selectedItemIdSet.has(item.id);
+    return (
+      <ItemGridCard
+        key={item.id}
+        item={item}
+        viewProps={viewProps}
+        selected={isSelected}
+        contextSelection={isSelected ? contextSelectionInfo : null}
+        variant={iconLayout ? "icon" : "card"}
+        selectedItemIds={isSelected ? selectedItemIds : NO_SELECTION}
+        active={item.id === activeId}
+      />
+    );
+  };
 
   // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
   // 已渲染行使用真实测量值，未渲染行用 estimateSize 估算，从而支持跨屏框选。

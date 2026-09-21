@@ -66,6 +66,11 @@ export async function getItemVisual(id: number): Promise<ItemVisual> {
   return invokeCmd("get_item_visual", { id });
 }
 
+/** 手动刷新时清除图标失败标记（.none 负缓存），下一次取图立即重试。 */
+export async function clearIconNoneMarkers(): Promise<void> {
+  return invokeCmd("clear_icon_none_markers");
+}
+
 /** 获取单个项目（含标签信息和自动图标） */
 export async function getItem(id: number): Promise<ItemWithTags> {
   return invokeCmd("get_item", { id });

@@ -786,6 +786,10 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       state.modFiles.delete(`${str(args.modId)}:${str(args.relativePath)}`);
       return null;
 
+    // 手动刷新的图标失败标记清除：演示后端无图标负缓存，直接成功
+    case "clear_icon_none_markers":
+      return null;
+
     default:
       throw new Error(`演示后端未实现命令：${cmd}`);
   }

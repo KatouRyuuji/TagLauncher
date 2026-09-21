@@ -16,8 +16,10 @@ import type { ItemWithTags, Tag } from "../types";
 interface UseItemTagActionsParams {
   findItemById: (itemId: number) => ItemWithTags | undefined;
   setItemTags: (itemId: number, tagIds: number[]) => Promise<void>;
+  setManyItemTags: (changes: Array<{ itemId: number; tagIds: number[] }>) => Promise<void>;
   addTag: (name: string, color: string) => Promise<Tag>;
   removeItemFromCabinet: (cabinetId: number, itemId: number) => Promise<void>;
+  removeItemsFromCabinet: (cabinetId: number, itemIds: number[]) => Promise<void>;
 }
 
 export interface UseItemTagActionsResult {
@@ -25,13 +27,17 @@ export interface UseItemTagActionsResult {
   removeTagFromItem: (itemId: number, tagId: number) => Promise<void>;
   addNewTagToItem: (itemId: number, tagName: string, baseTagIds?: number[]) => Promise<number[]>;
   clearCurrentFilter: (itemId: number) => Promise<void>;
+  /** 批量清除当前筛选归类（整组拖拽落点用）：标签筛选走一次 setManyItemTags，柜筛选走一次 removeItemsFromCabinet */
+  clearCurrentFilterForItems: (itemIds: number[]) => Promise<void>;
 }
 
 export function useItemTagActions({
   findItemById,
   setItemTags,
+  setManyItemTags,
   addTag,
   removeItemFromCabinet,
+  removeItemsFromCabinet,
 }: UseItemTagActionsParams): UseItemTagActionsResult {
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
@@ -122,5 +128,35 @@ export function useItemTagActions({
     [findItemById, removeItemFromCabinet, selectedCabinetId, selectedTagIds, setItemTags],
   );
 
-  return { addTagToItem, removeTagFromItem, addNewTagToItem, clearCurrentFilter };
+  const clearCurrentFilterForItems = useCallback(
+    async (itemIds: number[]) => {
+      if (itemIds.length === 0) return;
+
+      if (selectedTagIds.length > 0) {
+        const activeTagIds = new Set(selectedTagIds);
+        const changes: Array<{ itemId: number; tagIds: number[] }> = [];
+        for (const itemId of itemIds) {
+          const item = findItemById(itemId);
+          if (!item) continue;
+          const nextTagIds = item.tags
+            .filter((tag) => !activeTagIds.has(tag.id))
+            .map((tag) => tag.id);
+          if (nextTagIds.length !== item.tags.length) {
+            changes.push({ itemId, tagIds: nextTagIds });
+          }
+        }
+        if (changes.length > 0) {
+          await setManyItemTags(changes);
+        }
+        return;
+      }
+
+      if (selectedCabinetId !== null) {
+        await removeItemsFromCabinet(selectedCabinetId, itemIds);
+      }
+    },
+    [findItemById, removeItemsFromCabinet, selectedCabinetId, selectedTagIds, setManyItemTags],
+  );
+
+  return { addTagToItem, removeTagFromItem, addNewTagToItem, clearCurrentFilter, clearCurrentFilterForItems };
 }

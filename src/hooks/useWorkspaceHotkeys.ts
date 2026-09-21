@@ -61,7 +61,7 @@ export function useWorkspaceHotkeys({
   const setViewMode = useAppStore((state) => state.setViewMode);
   const searchQuery = useAppStore((state) => state.searchQuery);
   const setSearchQuery = useAppStore((state) => state.setSearchQuery);
-  // typeahead 缓冲（裸打字母/汉字跳匹配项，600ms 窗）
+  // typeahead 缓冲（裸打字母跳匹配项，600ms 窗）
   const typeaheadRef = useRef({ text: "", ts: 0 });
 
   const refs = useRef({
@@ -322,7 +322,9 @@ export function useWorkspaceHotkeys({
         return;
       }
 
-      // typeahead（Explorer/Raycast 惯例）：裸打字母/汉字跳到名称匹配项。
+      // typeahead（Explorer/Raycast 惯例）：裸打字母/数字/符号跳到名称匹配项。
+      // IME 上屏文本不产生 keydown（组合期按键也被 isComposing 守卫拦截），
+      // 汉字检索请用搜索框——此处只对直接按键生效。
       // 600ms 缓冲窗；前缀命中优先，其次子串命中；命中即单选并滚动跟随
       if (!ctrl && !event.altKey && !event.metaKey && event.key.length === 1 && !event.key.match(/[\s]/)) {
         const now = Date.now();

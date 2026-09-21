@@ -113,7 +113,10 @@ export function useItems() {
     (items: ItemWithTags[]) => new Map(items.map((item) => [item.id, item.last_used_at] as const)),
     [],
   );
+  // 预热代数：每次取消/重调度自增；挂在 pinyin 分片与切片链上的回调凭代数判断是否已被取代
+  const warmupGenRef = useRef(0);
   const cancelSearchWarmup = useCallback(() => {
+    warmupGenRef.current += 1;
     if (warmupTimerRef.current === null) return;
     if (warmupTimerRef.current.kind === "idle") window.cancelIdleCallback?.(warmupTimerRef.current.id);
     else clearTimeout(warmupTimerRef.current.id);
@@ -154,14 +157,18 @@ export function useItems() {
         // 模块级 searchFieldsCache 按内容指纹跨刷新复用，预热只补未命中条目。
         // 取消上一次未触发的预热并随卸载清理：避免陈旧定时器在新数据/新会话上误建
         cancelSearchWarmup();
+        const warmupGen = warmupGenRef.current;
         const warm = () => {
           warmupTimerRef.current = null;
           void ensurePinyin().then(() => {
+            // 分片到达时本轮预热可能已被取代（新一轮 loadAll）：代数不符直接放弃，
+            // 否则旧链会用陈旧数据建片并与新链交错、双倍占用主线程
+            if (warmupGen !== warmupGenRef.current) return;
             // 1000 条/片 × 250ms 间隔的空闲切片预热（上限 5000 条）：
             // 整块构建在 10k+ 库上会冻结主线程数秒；超大库只暖头部高频区
             const warmTarget = Math.min(data.length, SEARCH_WARM_MAX_ENTRIES);
             const step = (start: number) => {
-              if (warmupTimerRef.current === null && start > 0) return; // 已被取消
+              if (warmupGen !== warmupGenRef.current) return; // 已被取消/取代
               if (start >= warmTarget) {
                 warmupTimerRef.current = null;
                 return;
@@ -175,6 +182,8 @@ export function useItems() {
               warmupTimerRef.current = { kind: "timeout", id: setTimeout(() => step(next), SEARCH_WARM_GAP_MS) };
             };
             step(0);
+          }).catch(() => {
+            // 分片加载失败（pinyinProvider 已重置）：本轮预热放弃，下次 loadAll/输入重试
           });
         };
         if (typeof window.requestIdleCallback === "function") {
@@ -413,6 +422,20 @@ export function useItems() {
     [sourceSearchIndex, tagFilteredIds],
   );
 
+  // 排序变更 / 视图域切换 = 显式重排点：渲染期同步重拍冻结排序键，
+  // 本帧即按新快照排序（effect 后拍会先按旧快照渲一帧、且不再触发 memo 重算）。
+  // 柜内数据未归属当前选中柜时不拍（scopeKey 置 null 跳过），等数据到达的这次渲染
+  // 再按新柜数据拍——拿上一柜/空残留做快照会让整个文件柜会话冻结失效。
+  // 渲染期写 ref 此处安全：capture 是纯函数、按 key 幂等，被丢弃的渲染留下的
+  // 旧 key 会在下一次渲染因不匹配而重拍自愈。
+  const cabinetReady = selectedCabinetId === null || cabinetItemsOwner === selectedCabinetId;
+  const scopeKey = cabinetReady ? `${sortMode}|${showFavorites}|${showRecent}|${selectedCabinetId}` : null;
+  const frozenScopeRef = useRef<string | null>(null);
+  if (scopeKey !== null && frozenScopeRef.current !== scopeKey) {
+    frozenScopeRef.current = scopeKey;
+    frozenSortKeysRef.current = captureFrozenSortKeys(selectedCabinetId !== null ? cabinetItems : allItems);
+  }
+
   const filtered = useMemo(() => {
     if (searchIndex) {
       return applyTypeFilter(searchWithIndex(searchIndex, deferredSearchQuery), typeFilter);
@@ -423,17 +446,6 @@ export function useItems() {
       sortKeyOverrides: { lastUsedAt: frozenSortKeysRef.current ?? undefined },
     });
   }, [searchIndex, tagFiltered, deferredSearchQuery, typeFilter, sortMode]);
-
-  // 排序变更 / 视图域切换 = 显式重排点：按当前数据重拍冻结排序键
-  const scopeKey = `${sortMode}|${showFavorites}|${showRecent}|${selectedCabinetId}`;
-  const prevScopeKeyRef = useRef(scopeKey);
-  useEffect(() => {
-    if (prevScopeKeyRef.current === scopeKey) return;
-    prevScopeKeyRef.current = scopeKey;
-    frozenSortKeysRef.current = captureFrozenSortKeys(
-      selectedCabinetId !== null ? cabinetItemsRef.current : allItemsRef.current,
-    );
-  }, [scopeKey, selectedCabinetId, captureFrozenSortKeys]);
 
   const addItems = useCallback(async (paths: string[]) => {
     await withErrorToast("批量导入", async () => {
@@ -639,11 +651,13 @@ export function useItems() {
     [],
   );
 
-  // 手动刷新入口（刷新按钮/命令面板）：用户点刷新 = 图标缓存一并失效重取，
+  // 手动刷新入口（刷新按钮/命令面板）：用户点刷新 = 图标缓存一并失效重取
+  // （前端缓存 + 后端 .none 失败标记双清，瞬时失败不再锁到冷却结束），
   // 且显式触发对账（异步调度，有写入时经 items-reconciled 回来再 loadAll）；
   // 内部级联（标签写、主题换色、监视导入）走 loadAll，不动图标也不对账
   const refresh = useCallback(async (options?: { reconcile?: boolean }) => {
     invalidateItemVisuals();
+    void db.clearIconNoneMarkers().catch(() => {});
     if (options?.reconcile) {
       void db.reconcileItems({ force: true }).catch(() => {});
     }

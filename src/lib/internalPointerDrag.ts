@@ -239,6 +239,9 @@ export function beginInternalPointerDrag({
   sourceElement.setPointerCapture?.(pointerId);
   event.preventDefault();
   event.stopPropagation();
+  // preventDefault 拦掉了兼容 mousedown 的默认聚焦；把焦点补给拖拽源（不可聚焦元素是 no-op），
+  // 否则点击卡片/行后焦点留在搜索框，Enter/Space/方向键会被工作台热键的 typing 守卫吞掉
+  sourceElement.focus({ preventScroll: true });
 }
 
 export function findClosestNumberDataAttribute(

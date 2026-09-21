@@ -276,7 +276,8 @@ export function applyMarqueeSelection(
   }
   if (mode === "toggle") {
     const kept = prevSelected.filter((id) => !hit.has(id));
-    const added = Array.from(hit).filter((id) => !prevSelected.includes(id));
+    const prevSet = new Set(prevSelected);
+    const added = Array.from(hit).filter((id) => !prevSet.has(id));
     return [...kept, ...added];
   }
   return Array.from(hit);

@@ -43,6 +43,7 @@ export function StatusBar({
   const iconSizeScale = useAppStore((state) => state.iconSizeScale);
   const setCardSizeScale = useAppStore((state) => state.setCardSizeScale);
   const setIconSizeScale = useAppStore((state) => state.setIconSizeScale);
+  const persistWorkspacePrefsNow = useAppStore((state) => state.persistWorkspacePrefsNow);
   const [relocating, setRelocating] = useState(false);
   const [lastRelocateResult, setLastRelocateResult] = useState<number | null>(null);
   const [watchCount, setWatchCount] = useState(0);
@@ -124,6 +125,21 @@ export function StatusBar({
   useEffect(() => () => {
     if (scaleRafRef.current !== null) cancelAnimationFrame(scaleRafRef.current);
   }, []);
+  // 外部改值（±按钮/重置/视图切换换尺度）后同步待写值，避免原地点松滑杆把挂载旧值写回
+  useEffect(() => {
+    pendingScaleRef.current = sizeScale;
+  }, [sizeScale]);
+
+  // 拖动期 rAF 写入均为 persist:false；松手/键盘调整结束时统一 flush + 显式落盘。
+  // 值未变时 setSizeScale 等值早退会跳过 persist，故落盘独立调用。
+  const flushScalePersist = () => {
+    if (scaleRafRef.current !== null) {
+      cancelAnimationFrame(scaleRafRef.current);
+      scaleRafRef.current = null;
+    }
+    setSizeScale(pendingScaleRef.current, { persist: false });
+    persistWorkspacePrefsNow();
+  };
 
   const parts = [`${visibleCount} 项目`, scope];
   // 选中计数由悬浮批量工具条承载（BatchSelectionToolbar「n 已选中」），状态栏不重复
@@ -208,12 +224,10 @@ export function StatusBar({
                   setSizeScale(pendingScaleRef.current, { persist: false });
                 });
               }}
-              onPointerUp={() => {
-                if (scaleRafRef.current !== null) {
-                  cancelAnimationFrame(scaleRafRef.current);
-                  scaleRafRef.current = null;
-                }
-                setSizeScale(pendingScaleRef.current);
+              onPointerUp={flushScalePersist}
+              onKeyUp={(event) => {
+                // 键盘（方向键/Home/End/PageUp/PageDown）调滑杆无 pointerup 路径，keyup 时落盘
+                if (/^(Arrow|Home$|End$|PageUp$|PageDown$)/.test(event.key)) flushScalePersist();
               }}
               aria-label={sizeLabel}
               aria-valuetext={`${sizePct}%`}

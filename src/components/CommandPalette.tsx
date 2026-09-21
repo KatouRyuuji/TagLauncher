@@ -104,6 +104,9 @@ export function CommandPalette({
   const listRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // 最近一次调度的词：挂在 pinyin 分片上的 .then 可能晚于 Esc 清空/面板重开到达，
+  // 写回前比对，防止旧词复活（与工作台搜索同一守卫）
+  const lastScheduledRef = useRef("");
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open, autoFocus: false });
 
   const [cabinetItemIds, setCabinetItemIds] = useState<Set<number> | null>(null);
@@ -231,6 +234,7 @@ export function CommandPalette({
     setQuery("");
     setFilterQuery("");
     setActive(0);
+    lastScheduledRef.current = "";
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = undefined;
@@ -246,6 +250,7 @@ export function CommandPalette({
   }, []);
 
   const scheduleFilterQuery = (value: string) => {
+    lastScheduledRef.current = value;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (value === "") {
       setFilterQuery("");
@@ -253,7 +258,12 @@ export function CommandPalette({
     }
     debounceRef.current = setTimeout(() => {
       // pinyin-pro 懒加载：与工作台搜索同一门控（防抖窗口覆盖分片拉取）
-      void ensurePinyin().then(() => setFilterQuery(value));
+      void ensurePinyin().then(() => {
+        if (lastScheduledRef.current !== value) return;
+        setFilterQuery(value);
+      }).catch(() => {
+        // 分片加载失败（pinyinProvider 已重置、下次输入重试）：本次过滤不生效
+      });
     }, 150);
   };
 
@@ -273,6 +283,7 @@ export function CommandPalette({
   useEscapeKey(() => {
     if (query) {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      lastScheduledRef.current = "";
       setQuery("");
       setFilterQuery("");
       return;

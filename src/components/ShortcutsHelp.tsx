@@ -51,7 +51,7 @@ const GROUPS: { title: string; icon: LucideIcon; note?: string; items: ShortcutI
       { keys: "Ctrl+C", action: "复制选中路径（多项换行）" },
       { keys: "Ctrl+D", action: "收藏 / 取消收藏" },
       { keys: "Ctrl+G / I / L", action: "网格 / 大图标 / 列表" },
-      { keys: "裸打字母或汉字", action: "跳到名称匹配项（typeahead）" },
+      { keys: "裸打字母", action: "跳到名称匹配项（typeahead）" },
     ],
   },
   {

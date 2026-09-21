@@ -55,6 +55,8 @@ export interface ItemViewProps {
   onRemoveItemFromCabinet: (cabinetId: number, itemId: number) => Promise<void>;
   onRemoveItemsFromCabinet: (cabinetId: number, itemIds: number[]) => Promise<void>;
   onClearCurrentFilter: (itemId: number) => Promise<void>;
+  /** 批量清除当前筛选归类（整组拖拽落点用，单次 IPC/事务） */
+  onClearCurrentFilters?: (itemIds: number[]) => Promise<void>;
   onRequestRemoveFromApp: (itemId: number, options?: { forceDialog?: boolean; preferDeleteFiles?: boolean }) => Promise<void>;
   /** 批量移除当前选中集（整组拖到移除区时调用；dragged ids 即选中集） */
   onRequestBatchRemoveFromApp?: () => Promise<void>;

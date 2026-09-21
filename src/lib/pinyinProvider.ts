@@ -11,12 +11,17 @@ type PinyinModule = typeof import("pinyin-pro");
 let cached: PinyinModule | null = null;
 let inflight: Promise<PinyinModule> | null = null;
 
-/** 加载（或取已加载的）pinyin-pro；多次调用共享同一 Promise。 */
+/** 加载（或取已加载的）pinyin-pro；多次调用共享同一 Promise。失败不闩锁：重置 inflight，下次调用重试。 */
 export function ensurePinyin(): Promise<PinyinModule> {
   if (cached) return Promise.resolve(cached);
   inflight ??= import("pinyin-pro").then((mod) => {
     cached = mod;
     return mod;
+  });
+  // 分片加载失败（WebView2 缓存损坏/杀软拦截）时必须可重试，
+  // 否则 rejected Promise 被 ??= 永久闩锁，搜索整会话静默死亡
+  inflight.catch(() => {
+    inflight = null;
   });
   return inflight;
 }

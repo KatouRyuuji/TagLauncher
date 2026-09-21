@@ -20,6 +20,10 @@ const THROTTLE: Duration = Duration::from_secs(60);
 pub struct ReconcileScheduler {
     last_run: Mutex<Option<Instant>>,
     in_flight: AtomicBool,
+    /// 对账在跑期间到达的强制请求：登记后在跑完立即补一轮（手动刷新不再被静默丢弃）
+    pending_force: AtomicBool,
+    /// acquire/release 与 pending 登记的互斥门，防「登记 pending 与释放 in_flight」竞态
+    gate: Mutex<()>,
 }
 
 impl ReconcileScheduler {
@@ -27,6 +31,8 @@ impl ReconcileScheduler {
         Self {
             last_run: Mutex::new(None),
             in_flight: AtomicBool::new(false),
+            pending_force: AtomicBool::new(false),
+            gate: Mutex::new(()),
         }
     }
 }
@@ -74,23 +80,44 @@ pub fn run_sweep(app: &AppHandle) -> Result<ReconcileSummary, String> {
         item_service::read_reconcile_snapshot(&conn)?
     };
     let writes = item_service::plan_reconcile(snapshot);
-    let summary = summarize(&writes, started.elapsed());
+    let mut applied = 0usize;
     for chunk in writes.chunks(APPLY_CHUNK_SIZE) {
-        {
+        let result = {
             let conn = db.get_conn();
-            item_service::apply_reconcile(&conn, chunk)?;
+            item_service::apply_reconcile(&conn, chunk)
+        };
+        if let Err(error) = result {
+            // 分块提交是为读取让锁，代价是中途失败不再全有或全无：
+            // 已落库的部分先 emit 让前端如实反映，剩余写入由下一遍对账
+            // （对账幂等：按最新快照重新计划）补齐，不留下无声的半成状态。
+            let partial = summarize(&writes[..applied], started.elapsed());
+            if partial.changed {
+                let _ = app.emit("items-reconciled", partial);
+            }
+            return Err(format!(
+                "对账回写中断（已应用 {applied}/{} 行，下一遍对账补齐）: {error}",
+                writes.len()
+            ));
         }
+        applied += chunk.len();
         // 块间让出全局锁：大批量回写（如整盘失效）不再阻塞读取
         std::thread::yield_now();
     }
-    Ok(summary)
+    Ok(summarize(&writes, started.elapsed()))
 }
 
-/// 调度一次后台对账。force 绕过 60s 节流；已在跑或节流窗口内返回 false。
+/// 调度一次后台对账。force 绕过 60s 节流；节流窗口内返回 false。
+/// 对账在跑时：普通请求丢弃，强制请求登记 pending_force、在跑完立即补一轮。
 pub fn request_reconcile(app: &AppHandle, force: bool) -> bool {
     let scheduler = app.state::<ReconcileScheduler>();
-    if scheduler.in_flight.swap(true, Ordering::SeqCst) {
-        return false;
+    {
+        let _gate = scheduler.gate.lock().unwrap();
+        if scheduler.in_flight.swap(true, Ordering::SeqCst) {
+            if force {
+                scheduler.pending_force.store(true, Ordering::SeqCst);
+            }
+            return false;
+        }
     }
     {
         let mut last = scheduler.last_run.lock().unwrap();
@@ -106,18 +133,24 @@ pub fn request_reconcile(app: &AppHandle, force: bool) -> bool {
     }
     let handle = app.clone();
     std::thread::spawn(move || {
-        match run_sweep(&handle) {
-            Ok(summary) => {
-                if summary.changed {
-                    let _ = handle.emit("items-reconciled", summary);
+        loop {
+            match run_sweep(&handle) {
+                Ok(summary) => {
+                    if summary.changed {
+                        let _ = handle.emit("items-reconciled", summary);
+                    }
                 }
+                Err(error) => eprintln!("[reconcile] 后台对账失败: {error}"),
             }
-            Err(error) => eprintln!("[reconcile] 后台对账失败: {error}"),
+            let scheduler = handle.state::<ReconcileScheduler>();
+            let _gate = scheduler.gate.lock().unwrap();
+            // 在跑期间登记的强制请求：in_flight 保持 true，立即补一轮
+            if scheduler.pending_force.swap(false, Ordering::SeqCst) {
+                continue;
+            }
+            scheduler.in_flight.store(false, Ordering::SeqCst);
+            break;
         }
-        handle
-            .state::<ReconcileScheduler>()
-            .in_flight
-            .store(false, Ordering::SeqCst);
     });
     true
 }

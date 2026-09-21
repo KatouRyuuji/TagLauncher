@@ -182,11 +182,13 @@ function App() {
   }, []);
 
   // 单对象标签动作：增删标签、新建并追加、清除当前筛选归类。
-  const { addTagToItem, removeTagFromItem, addNewTagToItem, clearCurrentFilter } = useItemTagActions({
+  const { addTagToItem, removeTagFromItem, addNewTagToItem, clearCurrentFilter, clearCurrentFilterForItems } = useItemTagActions({
     findItemById,
     setItemTags,
+    setManyItemTags,
     addTag,
     removeItemFromCabinet,
+    removeItemsFromCabinet,
   });
 
   // 对象移除确认流（单个 / 批量）：读取"本次跳过"标记，需确认时挂起并交由弹窗渲染。
@@ -350,6 +352,7 @@ function App() {
     onRemoveItemFromCabinet: removeItemFromCabinet,
     onRemoveItemsFromCabinet: removeItemsFromCabinet,
     onClearCurrentFilter: clearCurrentFilter,
+    onClearCurrentFilters: clearCurrentFilterForItems,
     onRequestRemoveFromApp: requestRemoveFromApp,
     onRequestBatchRemoveFromApp: requestBatchRemoveFromApp,
     onUpdateThumbnail: updateItemIcon,
