@@ -330,10 +330,23 @@ export function useWorkspaceHotkeys({
         const now = Date.now();
         const buffer = (now - typeaheadRef.current.ts < 600 ? typeaheadRef.current.text : "") + event.key.toLowerCase();
         typeaheadRef.current = { text: buffer, ts: now };
-        const lower = buffer.toLowerCase();
+        // 单趟扫描：首个前缀命中即定，途中记下首个子串命中兜底；
+        // 小写名经 WeakMap 按对象缓存（对象不可变、随列表更新自然失效），
+        // 避免每击键对全表 name.toLowerCase() 两遍分配
         const items = ctx.items;
-        const match = items.find((item) => item.name.toLowerCase().startsWith(lower))
-          ?? items.find((item) => item.name.toLowerCase().includes(lower));
+        let substringMatch: ItemWithTags | undefined;
+        let match: ItemWithTags | undefined;
+        for (const item of items) {
+          const lower = typeaheadLowerName(item);
+          if (lower.startsWith(buffer)) {
+            match = item;
+            break;
+          }
+          if (!substringMatch && lower.includes(buffer)) {
+            substringMatch = item;
+          }
+        }
+        match ??= substringMatch;
         if (match) {
           event.preventDefault();
           setWorkspaceSelectionAnchor(match.id);
@@ -387,7 +400,8 @@ export function useWorkspaceHotkeys({
 
       if (event.key === "Enter") {
         if (onButton) return;
-        const item = pickSelectedItem(ctx.items, ctx.selectedItemIds);
+        // 焦点卡未选中（方向键移动后 Esc 清选）时回退到焦点卡，Enter 不做死键
+        const item = pickSelectedItem(ctx.items, ctx.selectedItemIds) ?? pickFocusedItem(ctx.items);
         if (item) {
           event.preventDefault();
           ctx.onLaunch(item.id);
@@ -397,7 +411,7 @@ export function useWorkspaceHotkeys({
 
       if (event.key === " ") {
         if (onButton) return;
-        const item = pickSelectedItem(ctx.items, ctx.selectedItemIds);
+        const item = pickSelectedItem(ctx.items, ctx.selectedItemIds) ?? pickFocusedItem(ctx.items);
         if (item) {
           event.preventDefault();
           ctx.setPreviewItemId(item.id);
@@ -420,6 +434,29 @@ function pickSelectedItem(items: ItemWithTags[], selectedItemIds: number[]): Ite
   const id = selectedItemIds[selectedItemIds.length - 1];
   if (id == null) return undefined;
   return items.find((item) => item.id === id);
+}
+
+/** 焦点所在卡片/行的对象（roving focus 落点未选中时的回退取项） */
+function pickFocusedItem(items: ItemWithTags[]): ItemWithTags | undefined {
+  const host = document.activeElement instanceof HTMLElement
+    ? document.activeElement.closest<HTMLElement>("[data-selectable-item-id]")
+    : null;
+  const raw = host?.dataset.selectableItemId;
+  if (!raw) return undefined;
+  const id = Number(raw);
+  return items.find((item) => item.id === id);
+}
+
+/** typeahead 小写名缓存：对象不可变，列表更新换对象后旧条目随 GC 自然失效 */
+const typeaheadLowerNameCache = new WeakMap<ItemWithTags, string>();
+
+function typeaheadLowerName(item: ItemWithTags): string {
+  let lower = typeaheadLowerNameCache.get(item);
+  if (lower === undefined) {
+    lower = item.name.toLowerCase();
+    typeaheadLowerNameCache.set(item, lower);
+  }
+  return lower;
 }
 
 function selectVisible(

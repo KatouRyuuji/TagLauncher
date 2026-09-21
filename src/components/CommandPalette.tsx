@@ -212,9 +212,12 @@ export function CommandPalette({
   // 否则切到「仅标签」后在面板里输对象名命中不了对象。
   // ≥2 字符才建索引并起搜：单字符（尤其单 CJK 字）扫全库既贵又不出有效候选
   const itemSearchQuery = filterQuery.trim().length >= 2 ? filterQuery.trim() : "";
+  // 索引与查询词无关（buildSearchIndex 只读 scopedItems）：门控用布尔，
+  // 否则 ≥2 字符后每次防抖击键都把全库索引重建一遍
+  const hasItemQuery = itemSearchQuery.length > 0;
   const searchIndex = useMemo(
-    () => (open && itemSearchQuery ? buildSearchIndex(scopedItems, "all") : { entries: [], mode: "all" as const }),
-    [open, scopedItems, itemSearchQuery],
+    () => (open && hasItemQuery ? buildSearchIndex(scopedItems, "all") : { entries: [], mode: "all" as const }),
+    [open, scopedItems, hasItemQuery],
   );
   const matchedItems = useMemo(() => {
     if (!itemSearchQuery) return [];

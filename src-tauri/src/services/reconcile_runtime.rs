@@ -24,6 +24,9 @@ pub struct ReconcileScheduler {
     pending_force: AtomicBool,
     /// acquire/release 与 pending 登记的互斥门，防「登记 pending 与释放 in_flight」竞态
     gate: Mutex<()>,
+    /// 对账执行全局串行化：后台对账与 reconcile_items wait=true 同步对账不得并发
+    /// （并发会拿同一快照重复计划/回写，并污染 wait=true 的测时）
+    sweep_lock: Mutex<()>,
 }
 
 impl ReconcileScheduler {
@@ -33,6 +36,7 @@ impl ReconcileScheduler {
             in_flight: AtomicBool::new(false),
             pending_force: AtomicBool::new(false),
             gate: Mutex::new(()),
+            sweep_lock: Mutex::new(()),
         }
     }
 }
@@ -74,6 +78,8 @@ const APPLY_CHUNK_SIZE: usize = 500;
 /// 服务层行为零改动：快照/计划/回写与过期守卫全部沿用。
 pub fn run_sweep(app: &AppHandle) -> Result<ReconcileSummary, String> {
     let started = Instant::now();
+    let scheduler = app.state::<ReconcileScheduler>();
+    let _sweep = scheduler.sweep_lock.lock().unwrap();
     let db = app.state::<crate::db::Database>();
     let snapshot = {
         let conn = db.get_conn();

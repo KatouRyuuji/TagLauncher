@@ -68,3 +68,5 @@ tmp-verify/
 
 # 本机规划草稿
 plan/
+__pycache__/
+*.pyc

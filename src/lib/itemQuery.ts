@@ -101,7 +101,9 @@ export function applyTypeFilter<T extends Pick<ItemWithTags, "type">>(items: T[]
 export interface SortKeyOverrides {
   /** id → 冻结的 last_used_at（会话内冻结排序键）：命中即用冻结值，未命中用活值。
    *  启动对象只刷新 last_used_at 不重排视图（Explorer 语义）；
-   *  快照在 loadAll / 排序变更 / 视图域切换时重拍。 */
+   *  快照在 loadAll / 排序变更 / 视图域切换时重拍。
+   *  只对 smart 排序生效：显式「最近使用」排序是活视图——用户点名看最近，
+   *  启动必须立即升顶，冻结会让该视图会话内失去活性。 */
   readonly lastUsedAt?: ReadonlyMap<number, string | null | undefined>;
 }
 
@@ -119,7 +121,8 @@ export function compareItems(
     case "name":
       return compareNames(a.name, b.name);
     case "recent": {
-      const used = compareTimestamps(usedAt(b) ?? "", usedAt(a) ?? "");
+      // 显式「最近使用」= 活视图：不经冻结键，启动立即升顶（见 SortKeyOverrides 注释）
+      const used = compareTimestamps(b.last_used_at ?? "", a.last_used_at ?? "");
       return used || compareNames(a.name, b.name);
     }
     case "added": {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CheckSquare, FilePlus2, FolderPlus, RefreshCw, XSquare } from "lucide-react";
-import { applyContextSelection, applyMarqueeSelection, applyPointerSelection, type MarqueeMode } from "../lib/itemQuery";
+import { applyContextSelection, applyMarqueeSelection, applyPointerSelection, stepMenuIndex, type MarqueeMode } from "../lib/itemQuery";
 import { getWorkspaceSelectionAnchor, setWorkspaceSelectionAnchor } from "../lib/workspaceChrome";
 import { shouldSuppressInternalDragClick } from "../stores/internalDragStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
@@ -524,6 +524,33 @@ function BackgroundContextMenu({
   onSelectAll: () => void;
   onClearSelection: () => void;
 }) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // 打开即聚焦首项：Shift+F10 等键盘路径打开后方向键可直接漫游
+  useEffect(() => {
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, []);
+
+  // 方向键/Home/End 在菜单项间漫游（与对象右键菜单同一 stepMenuIndex 语义）
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.isComposing) return;
+      const menu = menuRef.current;
+      if (!menu) return;
+      const items = Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+      if (items.length === 0) return;
+      const active = event.target instanceof HTMLElement ? event.target : null;
+      const current = items.findIndex((el) => el === active || (active !== null && el.contains(active)));
+      const next = stepMenuIndex(items.length, current, event.key);
+      if (next == null) return;
+      event.preventDefault();
+      items[next]?.focus();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   return createPortal(
     <>
       <div
@@ -538,6 +565,7 @@ function BackgroundContextMenu({
         }}
       />
       <div
+        ref={menuRef}
         data-context-menu=""
         role="menu"
         className="modal-surface fixed w-[200px] overflow-y-auto p-1.5"

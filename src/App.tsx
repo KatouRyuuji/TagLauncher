@@ -223,7 +223,8 @@ function App() {
   const handleManualRefresh = useCallback(() => refresh({ reconcile: true }), [refresh]);
 
   const handleSelectItems = useCallback((itemIds: number[]) => {
-    setSelectedItemIds(itemIds);  }, []);
+    setSelectedItemIds(itemIds);
+  }, []);
 
   // 复选集合的批量动作 + 可移除标签并集。
   const {

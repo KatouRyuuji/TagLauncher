@@ -292,7 +292,10 @@ export function useItems() {
         if (!cancelled) void loadAll();
       }))
       .then((stop) => {
-        unlisten = stop;
+        // listen 是异步注册：cleanup 先于本回调时 unlisten 尚未拿到句柄，
+        // 立即停掉，否则监听器永久泄漏（StrictMode 双挂载必现）
+        if (cancelled) stop();
+        else unlisten = stop;
       })
       .catch(() => {});
     return () => {
@@ -311,7 +314,8 @@ export function useItems() {
         if (!cancelled && event.payload.changed) void loadAll();
       }))
       .then((stop) => {
-        unlisten = stop;
+        if (cancelled) stop();
+        else unlisten = stop;
       })
       .catch(() => {});
     return () => {
@@ -328,8 +332,7 @@ export function useItems() {
     return () => window.removeEventListener(TAGS_WRITTEN_EVENT, handler);
   }, [loadAll]);
 
-  // 主题换色（色位写回）只变 color：按 tag id 就地更新对象内嵌标签色，
-  // 不走全量重取（旧级联 = get_items 全表 + 图标重取 + 全网格重渲染）。
+  // 主题换色（色位写回）只变 color：按 tag id 就地更新对象内嵌标签色，不走全量重取。
   useEffect(() => {
     const patch = (items: ItemWithTags[], tagColors: Record<number, string>): ItemWithTags[] =>
       items.map((item) => {
@@ -443,9 +446,13 @@ export function useItems() {
     return applyWorkspaceQuery(tagFiltered, {
       typeFilter,
       sortMode,
-      sortKeyOverrides: { lastUsedAt: frozenSortKeysRef.current ?? undefined },
+      // 冻结键只服务反瞬移场景：显式 recent 排序 / 最近使用域是活视图，启动必须立即升顶
+      sortKeyOverrides:
+        showRecent || sortMode === "recent"
+          ? undefined
+          : { lastUsedAt: frozenSortKeysRef.current ?? undefined },
     });
-  }, [searchIndex, tagFiltered, deferredSearchQuery, typeFilter, sortMode]);
+  }, [searchIndex, tagFiltered, deferredSearchQuery, typeFilter, sortMode, showRecent]);
 
   const addItems = useCallback(async (paths: string[]) => {
     await withErrorToast("批量导入", async () => {

@@ -46,9 +46,9 @@ THRESHOLDS = {
     "list_ms_warm": {1000: 50, 10000: 300, 50000: 1500},
     "search_hot_ms": {1000: 200, 10000: 250, 50000: 600},
     "search_cold_ms": {1000: 300, 10000: 800, 50000: 4000},
-    # 主题切换 = 点击→scheme 翻转+两帧：含 240ms 设计过渡与色位补丁重排（与库规模无关），
-    # 阈值按 600ms 记录线；回归对比仍走 baseline >15%
-    "theme_switch_ms": {1000: 600, 10000: 600, 50000: 600},
+    # 主题切换 = 点击→scheme 翻转→色位写回 IPC+patch 事件→补丁重渲染（两帧）→CSS 过渡排空，
+    # 全链路页内落定；阈值按 1500ms 记录线（过渡本身 ~240-320ms 计入），回归对比仍走 baseline >15%
+    "theme_switch_ms": {1000: 1500, 10000: 1500, 50000: 1500},
 }
 
 
@@ -61,17 +61,55 @@ def git_sha() -> str:
         return "unknown"
 
 
+def production_schema_sql() -> tuple[list[str], int]:
+    """生产建库 SQL 批次 + 最新 schema 版本号。
+
+    夹具必须与生产同构：只刮 schema.rs create_tables 函数体内的 r#"..."# 批次
+    （函数范围按花括号配对定位，文件下方测试模块里的老库模拟批次不能要），
+    再补 FTS 触发器批次与各迁移的幂等索引（idx_item_tags_item_position /
+    idx_items_identity 等——漏了会让 list/search 数字失真）；
+    版本号取迁移注册表最高值，不再硬编码。
+    """
+    schema_src = (ROOT / "src-tauri/src/db/schema.rs").read_text(encoding="utf-8")
+    fn_start = schema_src.index("pub fn create_tables")
+    brace_at = schema_src.index("{", fn_start)
+    depth = 0
+    fn_end = brace_at
+    for pos in range(brace_at, len(schema_src)):
+        ch = schema_src[pos]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                fn_end = pos
+                break
+    body = schema_src[fn_start:fn_end]
+    batches = re.findall(r'r#"(.*?)"#', body, re.S)
+    trigger = re.search(r'FTS_UPDATE_TRIGGER: &str = r#"(.*?)"#', schema_src, re.S)
+    if trigger:
+        batches.append(trigger.group(1))
+    mig_dir = ROOT / "src-tauri/src/db/migrations"
+    index_re = re.compile(r"CREATE\s+(?:UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS[^;]*", re.S)
+    for mig in sorted(mig_dir.glob("v*.rs")):
+        for stmt in index_re.findall(mig.read_text(encoding="utf-8")):
+            batches.append(stmt + ";")
+    mod_src = (mig_dir / "mod.rs").read_text(encoding="utf-8")
+    latest = max(int(v) for v in re.findall(r"Box::new\(v(\d+)", mod_src))
+    return batches, latest
+
+
 def build_fixture_bulk(sandbox: Path, count: int, rows_only: bool) -> None:
     """合成数据夹具：类型/中文名/标签/收藏/失效按真实混合分布，单事务批量写入。"""
     save = sandbox / "Save"
     files = sandbox / "Files"
     save.mkdir()
     files.mkdir()
-    source = (ROOT / "src-tauri/src/db/schema.rs").read_text(encoding="utf-8")
-    schema = re.search(r'r#"(.*?)"#', source.split("pub fn create_tables", 1)[1], re.S).group(1)
+    batches, latest_version = production_schema_sql()
     conn = sqlite3.connect(save / "taglauncher.db")
-    conn.executescript(schema)
-    conn.execute("INSERT INTO app_meta(key,value) VALUES ('schema_version','14')")
+    for batch in batches:
+        conn.executescript(batch)
+    conn.execute("INSERT INTO app_meta(key,value) VALUES ('schema_version', ?)", (str(latest_version),))
 
     items = []
     item_tags = []
@@ -260,11 +298,22 @@ def measure_once(exe_src: Path, count: int, rows_only: bool, keep_sandbox: bool)
                 # ④ 滚动帧率探针（程序式 scrollTop 走全表）
                 scroll = page.evaluate(RAF_PROBE_JS, 3000)
 
-                # ⑤ 主题切换：点暗色 radio → scheme 翻转 + 两帧落定
+                # ⑤ 主题切换全链路：点暗色 radio → scheme 翻转 → 色位写回 IPC +
+                # patch 事件 → 卡片补丁重渲染（两帧）→ CSS 过渡排空。
+                # 只等 scheme 翻转 + 两帧的口径测不到异步色位级联，数字随库规模几乎不变即证
+                page.evaluate(
+                    "() => { window.__themePatched = false;"
+                    " window.addEventListener('taglauncher-item-tag-colors-patch',"
+                    "   () => { window.__themePatched = true; }, { once: true }); }"
+                )
                 t = time.monotonic()
                 page.locator("#sidebar-theme-mode-dark").click()
                 page.wait_for_function("() => document.documentElement.dataset.scheme === 'dark'", timeout=10_000)
+                # 色位补丁（recolor IPC + patch 事件 + 补丁重渲染）：夹具有标签，事件必到
+                page.wait_for_function("() => window.__themePatched === true", timeout=30_000)
                 page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+                # CSS 设计过渡排空（getAnimations 含 transition；上限兜底）
+                page.wait_for_function("() => document.getAnimations().length === 0", timeout=5_000)
                 theme_switch_ms = (time.monotonic() - t) * 1000
 
                 browser.close()

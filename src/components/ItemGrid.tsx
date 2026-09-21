@@ -416,7 +416,22 @@ export function ItemGrid({
   }
 
   if (items.length === 0) {
-    return <WorkspaceEmptyState kind={libraryEmpty ? "library" : "filter"} onClearFilters={onClearFilters} onAddItems={onAddItems} />;
+    // 空态也挂在 SelectionCanvas 里：空白右键背景菜单（添加文件/刷新）在空库/空筛选时同样可用
+    return (
+      <SelectionCanvas
+        dataRegion="item-grid"
+        className="flex-1 overflow-y-auto"
+        itemIds={itemIds}
+        selectedItemIds={selectedItemIds}
+        onSelectItems={onSelectItems}
+        scrollElementRef={scrollRef}
+        onAddItems={onAddItems}
+        onRefreshWorkspace={onRefreshWorkspace}
+        containerTabIndex={0}
+      >
+        <WorkspaceEmptyState kind={libraryEmpty ? "library" : "filter"} onClearFilters={onClearFilters} onAddItems={onAddItems} />
+      </SelectionCanvas>
+    );
   }
 
   return (

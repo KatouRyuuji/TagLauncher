@@ -67,6 +67,9 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
   const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
   const composingRef = useRef(false);
   const lastCompositionValueRef = useRef<string | null>(null);
+  // 同值吞噬守卫的撤防定时器：IME 的同值补发 input 与 compositionend 在同一任务链内，
+  // 超时未到的同值输入（如清空后再粘贴同一文本）属于新输入，不得吞噬
+  const compositionGuardTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const update = () => setModButtons(getToolbarButtons());
@@ -83,6 +86,12 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
     window.addEventListener(SEARCH_RESET_EVENT, reset);
     return () => window.removeEventListener(SEARCH_RESET_EVENT, reset);
   }, [handleSearch]);
+
+  useEffect(() => () => {
+    if (compositionGuardTimerRef.current !== null) {
+      window.clearTimeout(compositionGuardTimerRef.current);
+    }
+  }, []);
 
   const handleBrowse = async () => {
     const paths = await pickFilesToAdd();
@@ -129,6 +138,13 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               // 部分 IME 在 compositionend 后还会补一个同值 input 事件：
               // 防抖已吸收重复搜索，这里挡的是 mod 监听器的双份通知
               lastCompositionValueRef.current = value;
+              if (compositionGuardTimerRef.current !== null) {
+                window.clearTimeout(compositionGuardTimerRef.current);
+              }
+              compositionGuardTimerRef.current = window.setTimeout(() => {
+                compositionGuardTimerRef.current = null;
+                lastCompositionValueRef.current = null;
+              }, 0);
             }}
             onChange={(event) => {
               const value = event.target.value;

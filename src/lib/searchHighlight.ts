@@ -38,7 +38,7 @@ function cachedPinyinFirst(chars: string): string {
   const cached = pinyinFirstCache.get(chars);
   if (cached !== undefined) return cached;
   const value = pinyin(chars, { pattern: "first", toneType: "none", type: "array" }).join("");
-  if (pinyinFirstCache.size >= PINYIN_CACHE_MAX) pinyinFirstCache.clear();
+  evictOldestHalf(pinyinFirstCache, PINYIN_CACHE_MAX);
   pinyinFirstCache.set(chars, value);
   return value;
 }
@@ -47,9 +47,19 @@ function cachedPinyinFull(chars: string): string[] {
   const cached = pinyinFullCache.get(chars);
   if (cached !== undefined) return cached;
   const value = pinyin(chars, { toneType: "none", type: "array" });
-  if (pinyinFullCache.size >= PINYIN_CACHE_MAX) pinyinFullCache.clear();
+  evictOldestHalf(pinyinFullCache, PINYIN_CACHE_MAX);
   pinyinFullCache.set(chars, value);
   return value;
+}
+
+/** 到顶淘汰最旧一半（Map 迭代序即插入序）：整体 clear 会连热点一起清掉 */
+function evictOldestHalf<V>(cache: Map<string, V>, max: number): void {
+  if (cache.size < max) return;
+  let drop = Math.floor(max / 2);
+  for (const key of cache.keys()) {
+    cache.delete(key);
+    if ((drop -= 1) <= 0) break;
+  }
 }
 
 function pinyinHighlightRange(text: string, term: string): [number, number] | null {
