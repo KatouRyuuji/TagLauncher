@@ -1,5 +1,5 @@
 import { assert, test, run } from "./__testutil";
-import { TYPE_ICONS, TYPE_LABELS, getTypeLabel, getFileSuffix, truncatePathMiddle } from "./itemUtils";
+import { TYPE_ICONS, TYPE_LABELS, TYPE_DETAILS, getTypeLabel, getTypeDetail, getFileSuffix, truncatePathMiddle } from "./itemUtils";
 import type { ItemWithTags } from "../types";
 
 function item(type: string, name: string): ItemWithTags {
@@ -16,13 +16,27 @@ function item(type: string, name: string): ItemWithTags {
 
 // ── getTypeLabel ────────────────────────────────────────────────────────
 
-test("getTypeLabel：已知类型返回中文标签", () => {
+test("getTypeLabel：已知类型返回与筛选同口径的六类标签", () => {
   assert.equal(getTypeLabel("folder"), "文件夹");
-  assert.equal(getTypeLabel("exe"), "应用程序");
+  assert.equal(getTypeLabel("exe"), "程序");
+  assert.equal(getTypeLabel("bat"), "脚本");
+  assert.equal(getTypeLabel("ps1"), "脚本");
 });
 
 test("getTypeLabel：未知类型原样返回，不抛异常", () => {
   assert.equal(getTypeLabel("unknown-type"), "unknown-type");
+});
+
+test("getTypeDetail：细分技术名拼在主标签后；无细节时即主标签", () => {
+  assert.equal(getTypeDetail("ps1"), "脚本 · PowerShell");
+  assert.equal(getTypeDetail("exe"), "程序 · 应用程序");
+  assert.equal(getTypeDetail("folder"), "文件夹");
+});
+
+test("TYPE_DETAILS 键是 TYPE_LABELS 子集，不引入第七类展示口径", () => {
+  for (const key of Object.keys(TYPE_DETAILS)) {
+    assert.ok(key in TYPE_LABELS, `TYPE_DETAILS 多出键 ${key}`);
+  }
 });
 
 test("TYPE_ICONS 与 TYPE_LABELS：键集合一致，避免只在一处登记新类型", () => {

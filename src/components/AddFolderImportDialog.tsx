@@ -94,12 +94,19 @@ export function AddFolderImportDialog({
             </p>
           )}
           {shownNames.length > 0 && (
-            <ul className="mt-2 space-y-0.5 text-[13px] leading-5 text-[var(--text-muted)]">
+            <ul className="mt-2 space-y-1">
               {shownNames.map((name, index) => (
-                <li key={`${index}:${name}`} className="truncate" title={name}>{name}</li>
+                <li
+                  key={`${index}:${name}`}
+                  className="flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--surface-recessed)] px-2 py-1 text-[13px] leading-5 text-[var(--text-secondary)]"
+                  title={name}
+                >
+                  <Folder className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" aria-hidden="true" />
+                  <span className="truncate">{name}</span>
+                </li>
               ))}
               {previewNames.length > shownNames.length && (
-                <li>等 {previewNames.length} 个</li>
+                <li className="px-2 text-[12px] leading-5 text-[var(--text-faint)]">等 {previewNames.length} 个</li>
               )}
             </ul>
           )}

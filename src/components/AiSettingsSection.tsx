@@ -272,7 +272,7 @@ export function AiSettingsSection() {
           {busy === "test" ? "测试中…" : "测试连接"}
         </button>
         {hasStoredKey && (
-          <button type="button" onClick={() => void handleClearKey()} disabled={!loaded || busy !== null} className="action-button px-4 text-xs disabled:opacity-50">
+          <button type="button" onClick={() => void handleClearKey()} disabled={!loaded || busy !== null} className="action-button action-button-danger px-4 text-xs disabled:opacity-50">
             清除密钥
           </button>
         )}

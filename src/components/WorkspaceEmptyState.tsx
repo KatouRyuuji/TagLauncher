@@ -154,7 +154,12 @@ export function WorkspaceEmptyState({
                 </button>
               )}
               {showClearFilters && (
-                <button type="button" className="action-button" onClick={onClearFilters}>
+                /* 与「清空搜索」同级：单独出现时升主按钮，两者并存时保持一次一主 */
+                <button
+                  type="button"
+                  className={`action-button${copy.showClearSearch ? "" : " action-button-primary"}`}
+                  onClick={onClearFilters}
+                >
                   <FilterX className="h-4 w-4" aria-hidden="true" />
                   清空所有筛选
                 </button>

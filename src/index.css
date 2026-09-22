@@ -502,6 +502,10 @@ html.theme-switching * {
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     background: var(--bg-input);
+    transition:
+      background-color var(--transition-fast),
+      border-color var(--transition-fast),
+      color var(--transition-fast);
     /* 线性图标全局加深一档：14–17px 细线图标用三级色显「没画完」 */
     color: var(--text-secondary);
     cursor: pointer;
@@ -525,6 +529,11 @@ html.theme-switching * {
     background: var(--bg-input);
     color: var(--text-secondary);
     cursor: pointer;
+    transition:
+      background-color var(--transition-fast),
+      border-color var(--transition-fast),
+      color var(--transition-fast),
+      transform var(--transition-fast);
   }
 
   .action-button:hover:not(:disabled) {
@@ -1257,6 +1266,12 @@ html.theme-switching * {
     animation: app-float-in var(--transition-normal);
   }
 
+  /* 遮罩入场：纯底衬先到位（120ms），对话框再浮入，层次关系可读。
+     只作用在 click-catcher 底衬（fixed inset-0），避免与宿主面板的 float-in 叠动画 */
+  [data-workspace-overlay].fixed.inset-0 {
+    animation: app-overlay-in var(--transition-fast);
+  }
+
   /* 抽屉入场：设置工作台右缘滑入 24px + 淡入 */
   .drawer-enter {
     animation: app-drawer-in var(--transition-normal);
@@ -1422,6 +1437,15 @@ html.theme-switching * {
     content: none;
   }
 
+}
+
+@keyframes app-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes app-float-in {

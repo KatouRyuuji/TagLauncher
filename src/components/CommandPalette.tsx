@@ -34,7 +34,7 @@ import { getCabinetItems } from "../lib/db";
 import { onCabinetItemsChanged } from "../lib/modApi";
 import { focusWorkspaceSearch, resetWorkspaceSearchInput } from "../lib/workspaceChrome";
 import { useAppStore } from "../stores/appStore";
-import { getTypeLabel, truncatePathMiddle } from "../lib/itemUtils";
+import { getTypeLabel, getTypeDetail, truncatePathMiddle } from "../lib/itemUtils";
 import type { ItemWithTags } from "../types";
 
 const PALETTE_PRIMARY = new Set([
@@ -392,10 +392,10 @@ export function CommandPalette({
             <X aria-hidden="true" size={16} strokeWidth={1.8} />
           </button>
         </div>
-        <div className="flex items-center justify-between border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-4 py-2">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-4 py-2">
           <span className="instrument-label">命令 / 项目</span>
-          {/* 计数不补零：个位数补零会被读成两个数字的拼接 bug */}
-          <span className="data-readout text-[13px] text-[var(--text-faint)]">{rows.length}</span>
+          {/* 计数不补零：个位数补零会被读成两个数字的拼接 bug；footer 已有命令/项目分项计数 */}
+          <span className="data-readout shrink-0 text-[13px] text-[var(--text-faint)]">{rows.length}</span>
         </div>
         {/* 高度随内容自适应：结果少时面板收矮，不为空结果留半屏死白（上限防撑出视口） */}
         <div ref={listRef} className="max-h-[min(56vh,460px)] overflow-y-auto p-2">
@@ -443,7 +443,7 @@ export function CommandPalette({
                     {truncatePathMiddle(row.item.path)}
                   </span>
                 </span>
-                <span className="row-sub shrink-0 text-[13px] text-[var(--text-faint)]">{getTypeLabel(row.item.type)}</span>
+                <span className="row-sub shrink-0 text-[13px] text-[var(--text-faint)]" title={getTypeDetail(row.item.type)}>{getTypeLabel(row.item.type)}</span>
               </button>
             );
           })}

@@ -105,12 +105,14 @@ export function SidebarThemeSwitcher() {
       data-region="sidebar-theme"
       className="flex shrink-0 flex-col gap-2.5 border-t border-[var(--line-hairline)] px-3 py-2.5"
     >
-      <div
-        role="radiogroup"
-        aria-label="官方主题"
-        className="flex items-center justify-between"
-      >
-        {swatches.map((swatch, index) => {
+      <div>
+        <div className="mb-1 text-[10px] font-medium tracking-wide text-[var(--text-faint)]">主题</div>
+        <div
+          role="radiogroup"
+          aria-label="官方主题"
+          className="flex items-center justify-between"
+        >
+          {swatches.map((swatch, index) => {
           const selected = swatch.id === selectedFamilyId;
           return (
             <button
@@ -128,8 +130,8 @@ export function SidebarThemeSwitcher() {
             >
               <span
                 aria-hidden="true"
-                className={`rounded-full ring-1 ring-[color-mix(in_srgb,var(--border-strong)_42%,transparent)] ${
-                  selected ? "h-4 w-4" : "h-3.5 w-3.5"
+                className={`rounded-full ring-1 ring-[color-mix(in_srgb,var(--border-strong)_42%,transparent)] transition-transform ${
+                  selected ? "h-4 w-4" : "h-3.5 w-3.5 hover:scale-110"
                 }`}
                 style={{
                   backgroundColor: swatch.swatchColor,
@@ -141,6 +143,7 @@ export function SidebarThemeSwitcher() {
             </button>
           );
         })}
+        </div>
       </div>
 
       <div

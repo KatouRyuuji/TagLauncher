@@ -7,7 +7,7 @@ import { ItemDragHandle } from "./ItemDragHandle";
 import { ItemTagsEditor } from "./ItemTagsEditor";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import { useItemDragStart } from "./useItemDragStart";
-import { getFileSuffix, getTypeLabel, splitPathTail, formatRelativeTime } from "../lib/itemUtils";
+import { getFileSuffix, getTypeLabel, getTypeDetail, splitPathTail, formatRelativeTime } from "../lib/itemUtils";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
@@ -157,9 +157,10 @@ function ItemRowComponent({
               <span className="min-w-0 truncate">{splitPathTail(item.path).dir}</span>
               <span dir="rtl" className="max-w-[60%] shrink-0 truncate text-left" style={{ unicodeBidi: "plaintext" }}>{splitPathTail(item.path).tail}</span>
             </p>
-            {lastUsedText !== "" && (
-              <p className="mt-0.5 truncate text-[12px] leading-4 text-[var(--text-faint)]">
-                上次使用 {lastUsedText}
+            {/* 元行高度对齐：失效且从未启动时也要占住这一行，不比邻居「矮一截」 */}
+            {(lastUsedText !== "" || item.is_missing) && (
+              <p className={`mt-0.5 truncate text-[12px] leading-4 ${item.is_missing && lastUsedText === "" ? "text-[var(--color-warning-ink)]" : "text-[var(--text-faint)]"}`}>
+                {lastUsedText !== "" ? `上次使用 ${lastUsedText}` : "失效 · 可找回"}
               </p>
             )}
           </div>
@@ -171,8 +172,9 @@ function ItemRowComponent({
 
         <div className="text-right">
           {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="mb-0.5 flex justify-end" />}
-          <div className="flex items-center justify-end gap-1.5">
-            <p className="truncate text-[13px] font-semibold text-[var(--text-secondary)]" title={getTypeLabel(item.type)}>
+          {/* 星标是独立动作位（固定 28px），不贴在类型文案末尾被读成类型的一部分 */}
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-right text-[13px] font-semibold text-[var(--text-secondary)]" title={getTypeDetail(item.type)}>
               {getTypeLabel(item.type)}
             </p>
             <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center [&_button]:bg-transparent">

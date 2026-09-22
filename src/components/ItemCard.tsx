@@ -8,7 +8,7 @@ import { ItemTagsEditor } from "./ItemTagsEditor";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import { useItemDragStart } from "./useItemDragStart";
 import { cardOpenLabel } from "../lib/itemActionCopy";
-import { getFileSuffix, getTypeLabel, formatRelativeTime } from "../lib/itemUtils";
+import { getFileSuffix, getTypeLabel, getTypeDetail, formatRelativeTime } from "../lib/itemUtils";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
@@ -182,7 +182,14 @@ function ItemCardComponent({
   const cardSizeScale = useAppStore((state) => state.cardSizeScale);
   const showRecent = useAppStore((state) => state.showRecent);
   const lastUsedText = formatRelativeTime(item.last_used_at);
-  const showLastUsed = (cardSizeScale >= 1.45 || showRecent) && lastUsedText !== "";
+  // 元行档位：≥150% 或「最近」视图；失效且从未启动也要占住这一行
+  const showMetaLine = cardSizeScale >= 1.45 || showRecent;
+  const metaLine =
+    lastUsedText !== ""
+      ? `上次使用 ${lastUsedText}`
+      : item.is_missing
+        ? "失效 · 可找回"
+        : "";
 
   // Mod ItemCard 插槽
   const modSlots = useModItemSlots();
@@ -287,13 +294,13 @@ function ItemCardComponent({
                 </span>
               )}
             </div>
-            {showLastUsed && (
-              <p className="mt-0.5 truncate text-[12px] leading-4 text-[var(--text-faint)]">
-                上次使用 {lastUsedText}
+            {showMetaLine && metaLine !== "" && (
+              <p className={`mt-0.5 truncate text-[12px] leading-4 ${item.is_missing && lastUsedText === "" ? "text-[var(--color-warning-ink)]" : "text-[var(--text-faint)]"}`}>
+                {metaLine}
               </p>
             )}
             <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[13px] leading-4 text-[var(--text-faint)]">
-              <span className="instrument-label truncate" title={getTypeLabel(item.type)}>
+              <span className="instrument-label truncate" title={getTypeDetail(item.type)}>
                 {getTypeLabel(item.type)}
               </span>
               {fileSuffix !== "无后缀" && (

@@ -294,6 +294,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                         fill="none"
                         stroke={active ? "var(--accent-primary)" : "var(--border-strong)"}
                         strokeWidth={active ? 2 : 1.5}
+                        style={{ transition: "stroke 150ms ease-out, stroke-width 150ms ease-out" }}
                         markerEnd={`url(#${arrowMarkerId}${active ? "-active" : ""})`}
                       />
                     );

@@ -10,11 +10,19 @@ export const TYPE_ICONS: Record<string, string> = {
   ps1: "🔧",
 };
 
+/** 展示口径与 TYPE_FILTERS 六类对齐：文件夹/图片/音频/视频/程序/脚本 */
 export const TYPE_LABELS: Record<string, string> = {
   folder: "文件夹",
   image: "图片",
   audio: "音频",
   video: "视频",
+  exe: "程序",
+  bat: "脚本",
+  ps1: "脚本",
+};
+
+/** 细粒度技术名：tooltip 用；主展示仍是六类，避免筛选与列表两套口径 */
+export const TYPE_DETAILS: Record<string, string> = {
   exe: "应用程序",
   bat: "批处理",
   ps1: "PowerShell",
@@ -22,6 +30,13 @@ export const TYPE_LABELS: Record<string, string> = {
 
 export function getTypeLabel(itemType: string): string {
   return TYPE_LABELS[itemType] || itemType;
+}
+
+/** tooltip 全称：「脚本 · PowerShell」；无细节时即展示标签 */
+export function getTypeDetail(itemType: string): string {
+  const label = getTypeLabel(itemType);
+  const detail = TYPE_DETAILS[itemType];
+  return detail && detail !== label ? `${label} · ${detail}` : label;
 }
 
 /** 中段折叠省略号；保留头尾字符的兜底折叠（文件名自身超长时使用）。 */

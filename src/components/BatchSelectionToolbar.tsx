@@ -333,7 +333,7 @@ function ToolbarMenuButton({
             // 菜单内 pointerdown 阻止冒泡：工具条根的 stopPropagation 保护不到
             // portal 出去的菜单，不拦则 window 的点击外部关闭会先卸载菜单导致 click 丢失
             onPointerDown={(event) => event.stopPropagation()}
-            className="fixed min-w-[190px] overflow-auto rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1 shadow-[var(--shadow-dropdown)]"
+            className="fixed min-w-[248px] overflow-auto rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1 shadow-[var(--shadow-dropdown)]"
             style={{
               bottom: menuPos.bottom,
               left: menuPos.left,
@@ -392,7 +392,7 @@ function TagOwnershipMenu({
         </div>
       )}
       {showFilter && (
-        <div className="mb-1 flex items-center gap-2">
+        <div className="mb-1 space-y-1">
           <input
             type="search"
             autoFocus
@@ -401,9 +401,10 @@ function TagOwnershipMenu({
             onChange={(event) => { setFilter(event.target.value); filterIme.onChange(event.target.value); }}
             onCompositionStart={filterIme.onCompositionStart}
             onCompositionEnd={filterIme.onCompositionEnd}
-            className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
+            className="w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
           />
-          <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-[var(--text-muted)]">
+          {/* 开关独占一行：与过滤框同行时右缘会被弹层裁切 */}
+          <label className="flex cursor-pointer items-center gap-1.5 px-0.5 text-[11px] text-[var(--text-muted)]">
             <input
               type="checkbox"
               checked={onlyPartial}

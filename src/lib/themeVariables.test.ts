@@ -300,9 +300,11 @@ test("已交付 CSS 含签名配方与 reduced-motion 静态化", () => {
   assert.ok(indexCss.includes("var(--shadow-focus)"));
   assert.ok(indexCss.includes("0 0 0 4px color-mix(in srgb, var(--accent-primary) 12%, transparent)"));
   assert.ok(indexCss.includes(".tag-pill"));
-  assert.ok(indexCss.includes("22%"));
+  assert.ok(indexCss.includes("color-mix(in srgb, var(--tag-color) 46%, transparent)"));
   assert.ok(indexCss.includes("card-hover-lift"));
-  assert.ok(indexCss.includes("translateY(-1px)"));
+  /* hover 只改描边不上移（1923cc9 起）：避免悬停整行重绘 */
+  assert.ok(indexCss.includes("transition: border-color var(--transition-fast)"));
+  assert.ok(!indexCss.includes("translateY(-1px)"));
   assert.ok(indexCss.includes("@media (prefers-reduced-motion: reduce)"));
   assert.ok(indexCss.includes("animation-duration: 0.01ms !important"));
   assert.ok(indexCss.includes(".settings-field:focus-within"));

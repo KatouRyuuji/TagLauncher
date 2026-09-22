@@ -293,7 +293,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             onChange={(next) => setSortMode(next as SortMode)}
             groups={[
               { label: "推荐", options: SORT_OPTIONS.filter((option) => option.value === "smart") },
-              { label: "字段", options: SORT_OPTIONS.filter((option) => option.value !== "smart") },
+              { label: "排序依据", options: SORT_OPTIONS.filter((option) => option.value !== "smart") },
             ]}
             ariaLabel="排序方式"
             className="flex h-full min-w-14 items-center gap-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none"
