@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useOverlayOpen } from "../lib/overlayGate";
 import { createPortal } from "react-dom";
 import {
   Check,
@@ -27,7 +28,7 @@ import { summarizeTagOwnership, type TaggableItem } from "../lib/tagOwnership";
 
 const TAG_MENU_FILTER_THRESHOLD = 8;
 
-/** 主内容区底部的批量操作工具条（选中对象时出现） */
+/** 主内容区底部的批量操作工具条。贴在状态栏上方，不盖住列表末行。右键菜单打开时不渲染。 */
 export function BatchSelectionToolbar({
   suppressed = false,
   selectedCount,
@@ -72,6 +73,7 @@ export function BatchSelectionToolbar({
   onClearSelection: () => void;
 }) {
   const [openMenu, setOpenMenu] = useState<"add-tag" | "remove-tag" | "cabinet" | null>(null);
+  const contextMenuOpen = useOverlayOpen();
   // 批量操作进行中：禁用全部操作入口防止重复提交（大批量写库有可感知耗时），
   // 并以 aria-busy + spinner 让用户知道操作正在执行而非无响应。
   const [busy, setBusy] = useState(false);
@@ -117,7 +119,7 @@ export function BatchSelectionToolbar({
   }, [openMenu]);
 
   // 无选中或被覆盖层让位时走同一条卸载路径（不改 opacity，避免键盘仍能 Tab 到按钮）。
-  if (selectedCount === 0 || suppressed) return null;
+  if (selectedCount === 0 || suppressed || contextMenuOpen) return null;
 
   const runAction = (action: () => Promise<void>) => {
     if (busy) return;
@@ -131,7 +133,7 @@ export function BatchSelectionToolbar({
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-2 bottom-10 z-50 flex justify-center sm:inset-x-5"
+      className="pointer-events-none z-30 flex shrink-0 justify-center border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 py-1.5"
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div
@@ -207,6 +209,7 @@ export function BatchSelectionToolbar({
             type="button"
             role="menuitem"
             disabled={!canRemoveFromCabinet}
+            title={canRemoveFromCabinet ? "从当前文件柜移出" : "先打开一个文件柜，才能从中移出"}
             onClick={() => runAction(onRemoveFromCabinet)}
             className="mt-1 flex w-full items-center justify-between rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:text-[var(--text-faint)] disabled:hover:bg-transparent"
           >
@@ -448,18 +451,20 @@ function MenuOption({
       role="menuitem"
       title={allOwned ? tagAlreadyOwnedTitle : undefined}
       onClick={onClick}
-      className="flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      className="flex min-h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
     >
-      {/* 已全部标满：色点上叠白色勾；部分标满：右侧给迷你徽章计数 */}
+      {/* 已全部标满：色点上叠白色勾；部分标满：计数做浅色小字紧随标签名，不再甩到行尾 */}
       <span className="flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: color }}>
         {allOwned && <Check aria-hidden="true" size={8} strokeWidth={3} className="text-[var(--text-invert)]" />}
       </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {someOwned && (
-        <span className="data-readout shrink-0 rounded-full bg-[var(--accent-primary-bg-light)] px-1.5 text-[11px] tabular-nums text-[var(--accent-primary-ink)]">
-          已标 {ownership.have}/{ownership.total}
-        </span>
-      )}
+      <span className="min-w-0 flex-1 truncate">
+        {label}
+        {someOwned && (
+          <span className="data-readout ml-1.5 text-[11px] tabular-nums text-[var(--text-faint)]">
+            已标 {ownership.have}/{ownership.total}
+          </span>
+        )}
+      </span>
     </button>
   );
 }

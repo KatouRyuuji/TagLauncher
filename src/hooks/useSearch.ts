@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 import { ensurePinyin } from "../lib/pinyinProvider";
+import { showToast } from "../lib/toast";
 
 export function useSearch() {
   const searchQuery = useAppStore((state) => state.searchQuery);
@@ -45,7 +46,10 @@ export function useSearch() {
         if (lastRequestedRef.current !== value) return;
         setSearchQuery(value);
       }).catch(() => {
-        // 分片加载失败（pinyinProvider 已重置、下次输入重试）：本次搜索不生效
+        if (lastRequestedRef.current !== value) return;
+        const applied = useAppStore.getState().searchQuery;
+        setSearchInputValue(applied);
+        showToast("拼音索引没有就绪，这次搜索没有生效", "error");
       });
     }, 150);
   }, [setSearchQuery, setSearchInputValue]);

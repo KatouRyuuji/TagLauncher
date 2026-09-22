@@ -133,6 +133,9 @@ const TUNED: Record<string, Partial<Record<keyof typeof SEMANTIC_TO_SYS, string>
     "color-warning-ink": "#895f04",
     "color-danger": "#c0392b",
     "color-danger-ink": "#bb382a",
+    // 次要文字加深一档（第四轮评审：12–13px 浅灰扫读费力，全校准至 ≥6:1）
+    "text-secondary": "#4b4b4b",
+    "text-tertiary": "#5e5e5e",
   },
   // 素墨暗：语义色与霜靛暗同值（暗底警示同样醒目）
   "mono-dark": {
@@ -142,6 +145,9 @@ const TUNED: Record<string, Partial<Record<keyof typeof SEMANTIC_TO_SYS, string>
     "color-warning-ink": "#d4a838",
     "color-danger": "#cd4747",
     "color-danger-ink": "#da7c7c",
+    // 暗色次级文字明度上调一档（第四轮评审：暗底灰字贴近可读性下限）
+    "text-secondary": "#bdbdbd",
+    "text-tertiary": "#9c9c9c",
   },
   // 藤色暗：accent 向暖紫（梅紫方向）推 ~12°，与霜靛暗的冷靛拉开色相距离，
   // 暗色下两族快速切换不再「换了个寂寞」（第三轮评审主题横向对比）
@@ -149,6 +155,40 @@ const TUNED: Record<string, Partial<Record<keyof typeof SEMANTIC_TO_SYS, string>
     "accent-primary": "#a855d1",
     "accent-primary-ink": "#e2c9f6",
     "accent-signal": "#a855d1",
+    // 琥珀提亮（第四轮评审：状态徽章在紫黑底上发闷）；次级文字上调一档
+    "color-warning": "#deb44e",
+    "color-warning-ink": "#deb44e",
+    "text-secondary": "#b4a8ca",
+    "text-tertiary": "#978fa9",
+  },
+  // 亮面次要文字全校准加深一档（第四轮评审，四族同一条公式）
+  "a1-light": {
+    "text-secondary": "#424d64",
+    "text-tertiary": "#525c72",
+  },
+  "a1-dark": {
+    "text-secondary": "#aeb8c9",
+    "text-tertiary": "#8f99aa",
+  },
+  "a3-light": {
+    "text-secondary": "#4e3d67",
+    "text-tertiary": "#665475",
+  },
+  // 樱花亮：accent 降饱和 ~17% 并向品红推 6°，与标签红/橙拉开色相距离（第四轮评审：
+  // 实色 pill 与侧栏暖色标签点互相抢戏）；次级文字同公式加深
+  "a6-light": {
+    "accent-primary": "#c94578",
+    "accent-primary-ink": "#8d3f5d",
+    "accent-signal": "#c94578",
+    "text-secondary": "#7c3548",
+    "text-tertiary": "#8c4259",
+  },
+  "a6-dark": {
+    // 琥珀提亮（同 a3-dark）；次级文字上调一档
+    "color-warning": "#e2b851",
+    "color-warning-ink": "#e2b851",
+    "text-secondary": "#dab0bc",
+    "text-tertiary": "#b08a97",
   },
 };
 
@@ -245,8 +285,8 @@ test("藤色纸色由工厂拉开，樱花发丝沾春色，素墨 accent 仍是
   assert.equal(inkLight!.variables["bg-base"], "#f5f5f5");
 });
 
-test("暗色主题提高标签胶囊不透明度，缺省补齐仍是 9%", () => {
-  assert.equal(canonicalTheme.variables["tag-color-alpha"], "30%");
+test("暗色标签胶囊与亮色同一低对比，缺省补齐仍是 9%", () => {
+  assert.equal(canonicalTheme.variables["tag-color-alpha"], "9%");
   assert.equal(sakuraTheme.variables["tag-color-alpha"], "9%");
   assert.equal(DEFAULT_THEME_VARIABLES["tag-color-alpha"], "9%");
 });

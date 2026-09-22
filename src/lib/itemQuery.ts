@@ -8,21 +8,31 @@
 import { pinyinSync as pinyin } from "./pinyinProvider";
 import type { ItemWithTags } from "../types";
 
-/** 工作台排序：智能（收藏→最近使用→名称）/ 名称 / 最近使用 / 添加时间 / 类型 */
-export type SortMode = "smart" | "name" | "recent" | "added" | "type";
+/** 工作台排序：智能（收藏→最近使用→名称）/ 名称 / 最近使用 / 添加时间 / 类型；
+ *  名称与添加时间带方向变体（-desc 后缀），其余模式固定方向。 */
+export type SortMode = "smart" | "name" | "name-desc" | "recent" | "added" | "added-desc" | "type";
 
 /** 工作台视图：卡片网格 / 大图标 / 列表 */
 export type ViewMode = "grid" | "list" | "icons";
+
+/** 列表行密度：舒适（默认 68px）/ 紧凑（56px，一屏更多行） */
+export type ListDensity = "comfortable" | "compact";
+
+export function isListDensity(value: unknown): value is ListDensity {
+  return value === "comfortable" || value === "compact";
+}
 
 /** 类型筛选：脚本合并 bat+ps1，避免顶栏 chip 过多 */
 export type TypeFilter = "all" | "folder" | "image" | "audio" | "video" | "exe" | "script";
 
 export const SORT_OPTIONS: { value: SortMode; label: string; hint?: string }[] = [
-  { value: "smart", label: "智能", hint: "收藏优先，其次最近使用，再按名称" },
-  { value: "name", label: "名称" },
-  { value: "recent", label: "最近使用" },
-  { value: "added", label: "添加时间" },
-  { value: "type", label: "类型" },
+  { value: "smart", label: "智能（收藏·最近）", hint: "收藏优先，其次最近使用，再按名称" },
+  { value: "name", label: "名称 A→Z", hint: "按名称拼音升序" },
+  { value: "name-desc", label: "名称 Z→A", hint: "按名称拼音降序" },
+  { value: "recent", label: "最近使用", hint: "最近打开过的在前" },
+  { value: "added", label: "添加时间（新→旧）", hint: "最新加入库的在前" },
+  { value: "added-desc", label: "添加时间（旧→新）", hint: "最早加入库的在前" },
+  { value: "type", label: "类型", hint: "按类型分组：文件夹、图片、音频、视频、程序、脚本" },
 ];
 
 export const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
@@ -64,7 +74,15 @@ export function isViewMode(value: unknown): value is ViewMode {
 }
 
 export function isSortMode(value: unknown): value is SortMode {
-  return value === "smart" || value === "name" || value === "recent" || value === "added" || value === "type";
+  return (
+    value === "smart" ||
+    value === "name" ||
+    value === "name-desc" ||
+    value === "recent" ||
+    value === "added" ||
+    value === "added-desc" ||
+    value === "type"
+  );
 }
 
 export function isTypeFilter(value: unknown): value is TypeFilter {
@@ -120,6 +138,8 @@ export function compareItems(
   switch (mode) {
     case "name":
       return compareNames(a.name, b.name);
+    case "name-desc":
+      return compareNames(b.name, a.name);
     case "recent": {
       // 显式「最近使用」= 活视图：不经冻结键，启动立即升顶（见 SortKeyOverrides 注释）
       const used = compareTimestamps(b.last_used_at ?? "", a.last_used_at ?? "");
@@ -127,6 +147,10 @@ export function compareItems(
     }
     case "added": {
       const added = compareTimestamps(b.created_at, a.created_at);
+      return added || compareNames(a.name, b.name);
+    }
+    case "added-desc": {
+      const added = compareTimestamps(a.created_at, b.created_at);
       return added || compareNames(a.name, b.name);
     }
     case "type": {
@@ -373,14 +397,25 @@ const HEADER_SORT_TARGET: Record<ListHeaderColumn, SortMode> = {
   type: "type",
 };
 
-/** 点击表头列：切到该列排序；已按该列排序则再点一次回到智能排序。 */
+/** 名称列当前是否为降序（表头指示箭头方向）。 */
+export function isHeaderSortDesc(current: SortMode, column: ListHeaderColumn): boolean {
+  return column === "name" && current === "name-desc";
+}
+
+/** 点击表头列：名称列循环 升序 → 降序 → 智能；类型列在 类型 ↔ 智能 间切换。 */
 export function toggleHeaderSort(current: SortMode, column: ListHeaderColumn): SortMode {
+  if (column === "name") {
+    if (current === "name") return "name-desc";
+    if (current === "name-desc") return "smart";
+    return "name";
+  }
   const target = HEADER_SORT_TARGET[column];
   return current === target ? "smart" : target;
 }
 
 /** 该表头列的排序当前是否生效（用于渲染排序指示箭头）。 */
 export function isHeaderSortActive(current: SortMode, column: ListHeaderColumn): boolean {
+  if (column === "name") return current === "name" || current === "name-desc";
   return current === HEADER_SORT_TARGET[column];
 }
 

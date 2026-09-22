@@ -308,7 +308,8 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                       key={level}
                       className="flex w-full items-stretch gap-4 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--bg-surface)_60%,transparent)] px-2 py-3"
                     >
-                      <div className="data-readout flex w-14 shrink-0 items-center justify-end border-r border-[var(--line-hairline)] pr-3 text-right text-[12px] font-medium text-[var(--text-secondary)]">
+                      {/* 层标列加宽并不换行：w-14 时「第 1 层」折成「第 1」/「层」竖排两行 */}
+                      <div className="data-readout flex w-16 shrink-0 items-center justify-end whitespace-nowrap border-r border-[var(--line-hairline)] pr-3 text-right text-[12px] font-medium text-[var(--text-secondary)]">
                         第 {level + 1} 层
                       </div>
                       <div className="flex min-w-0 flex-1 flex-wrap gap-6">

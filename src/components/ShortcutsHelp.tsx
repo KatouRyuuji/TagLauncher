@@ -44,7 +44,7 @@ const GROUPS: { title: string; icon: LucideIcon; note?: string; items: ShortcutI
       { keys: "Ctrl+A", action: "全选当前结果" },
       { keys: "单击 / Ctrl / Shift+单击", action: "选择 / 加选 / 范围" },
       { keys: "拖拽框选 / Alt+拖拽", action: "框选 / 减选框内项" },
-      { keys: "右键已选标签 / 侧栏 Alt+单击", action: "排除 / 取消排除标签" },
+      { keys: ["右键已选标签", "侧栏 Alt+单击"], action: "排除 / 取消排除标签" },
       { keys: "Shift + 方向键", action: "范围选择" },
       { keys: "Shift+F10 / 菜单键", action: "打开选中项菜单" },
       { keys: "Delete", action: "从库中移除（可改删本地文件）" },

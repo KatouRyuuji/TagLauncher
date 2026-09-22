@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import {
   ArrowDownUp,
   Clock3,
-  Command,
   FilePlus2,
   Filter,
   FolderPlus,
@@ -21,6 +20,7 @@ import {
   Tags,
   TriangleAlert,
   X,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
@@ -351,7 +351,8 @@ export function CommandPalette({
       >
         <div className="flex items-center gap-3 border-b border-[var(--line-hairline)] px-4 py-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-            <Command aria-hidden="true" size={17} strokeWidth={1.8} />
+            {/* 闪电而非 ⌘：⌘ 是 macOS Command 键符号，Windows 原生工具里平台违和 */}
+            <Zap aria-hidden="true" size={17} strokeWidth={1.8} />
           </div>
           <Search aria-hidden="true" size={17} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
           <input
@@ -396,7 +397,8 @@ export function CommandPalette({
           {/* 计数不补零：个位数补零会被读成两个数字的拼接 bug */}
           <span className="data-readout text-[13px] text-[var(--text-faint)]">{rows.length}</span>
         </div>
-        <div ref={listRef} className="max-h-[min(56vh,460px)] min-h-[200px] overflow-y-auto p-2">
+        {/* 高度随内容自适应：结果少时面板收矮，不为空结果留半屏死白（上限防撑出视口） */}
+        <div ref={listRef} className="max-h-[min(56vh,460px)] overflow-y-auto p-2">
           {rows.length === 0 && (
             <p className="px-3 py-6 text-center text-sm text-[var(--text-muted)]">没有匹配的命令或项目</p>
           )}

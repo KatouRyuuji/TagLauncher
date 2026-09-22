@@ -14,9 +14,11 @@ interface DraggableTagListProps {
   onReorder: (itemId: number, newTagIds: number[]) => Promise<void>;
   onRemoveTag: (itemId: number, tagId: number) => Promise<void>;
   compact?: boolean;
+  /** 放不下时只露前几枚，其余收成 +N，不把胶囊切成半个。 */
+  maxVisible?: number;
 }
 
-export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: DraggableTagListProps) {
+export function DraggableTagList({ item, onReorder, onRemoveTag, compact, maxVisible }: DraggableTagListProps) {
   const dragIdx = useInternalDragStore((state) =>
     state.drag?.kind === "reorder-tag" && state.drag.itemId === item.id
       ? state.drag.sourceIdx
@@ -118,12 +120,17 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
       ? overTarget.targetIdx
       : null;
 
+  const visibleTags = maxVisible != null && maxVisible > 0 ? item.tags.slice(0, maxVisible) : item.tags;
+  const hiddenCount = item.tags.length - visibleTags.length;
+
   return (
     <div
       data-tag-drag="true"
-      className={`flex flex-wrap ${compact ? "gap-1" : "gap-1.5"}`}
+      className={`flex min-w-0 ${hiddenCount > 0 ? "flex-nowrap" : "flex-wrap"} ${compact ? "gap-1" : "gap-1.5"}`}
     >
-      {item.tags.map((tag, idx) => (
+      {visibleTags.map((tag) => {
+        const idx = item.tags.indexOf(tag);
+        return (
         <span
           key={tag.id}
           data-tag-drag="true"
@@ -154,12 +161,18 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact }: Drag
             <X size={12} strokeWidth={1.8} aria-hidden="true" />
           </button>
         </span>
-      ))}
+        );
+      })}
+      {hiddenCount > 0 && (
+        <span className="tag-pill shrink-0 px-2 py-0.5 text-[12px]" title={item.tags.slice(visibleTags.length).map((tag) => tag.name).join("、")}>
+          +{hiddenCount}
+        </span>
+      )}
       {dragIdx !== null && (
         <span
           data-reorder-remove-item-id={item.id}
           onDoubleClick={(event) => event.stopPropagation()}
-          className={`inline-flex items-center rounded-[var(--radius-full)] border border-dashed px-2.5 py-1 text-[13px] font-medium transition-all ${
+          className={`inline-flex items-center rounded-[var(--radius-full)] border border-dashed px-2.5 py-1 text-[13px] font-medium transition-colors ${
             removeZoneActive
               ? "border-[var(--color-danger)] bg-[var(--color-danger-bg)] text-[var(--color-danger-ink)]"
               : "border-[var(--border-medium)] text-[var(--text-faint)]"

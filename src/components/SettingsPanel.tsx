@@ -184,16 +184,14 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
           activeSection === "theme"
             ? { backgroundColor: "var(--overlay-bg)", zIndex: "var(--z-settings-overlay)" }
             : {
-                backgroundColor: "color-mix(in srgb, var(--overlay-bg) 100%, black 25%)",
-                backdropFilter: "blur(var(--overlay-blur))",
-                WebkitBackdropFilter: "blur(var(--overlay-blur))",
+                backgroundColor: "var(--overlay-bg)",
                 zIndex: "var(--z-settings-overlay)",
               }
         }
         onClick={onClose}
       />
       <div
-        className="pointer-events-none fixed inset-x-0 bottom-0 top-[var(--titlebar-height)] flex justify-end"
+        className="pointer-events-none fixed inset-x-0 bottom-0 top-[var(--titlebar-height)] flex"
         style={{ zIndex: "var(--z-settings-panel)" }}
       >
         <aside
@@ -201,7 +199,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
           role="dialog"
           aria-modal="true"
           aria-labelledby="settings-panel-title"
-          className="drawer-enter pointer-events-auto flex h-full w-[980px] max-w-[calc(100vw-12px)] flex-col overflow-hidden border-l border-[var(--border-default)] bg-[var(--surface-raised)] shadow-[var(--shadow-overlay)]"
+          className="drawer-enter pointer-events-auto flex h-full w-full flex-col overflow-hidden bg-[var(--surface-raised)]"
         >
           <header className="flex h-[68px] shrink-0 items-center justify-between gap-4 border-b border-[var(--line-hairline)] px-4 sm:px-5">
             <div className="flex min-w-0 items-center gap-3">
@@ -214,9 +212,12 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 </h2>
               </div>
             </div>
-            <button type="button" onClick={onClose} className="icon-button shrink-0" title="关闭设置" aria-label="关闭设置">
-              <X aria-hidden="true" size={17} strokeWidth={1.8} />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="text-xs text-[var(--text-faint)]">Esc 返回</span>
+              <button type="button" onClick={onClose} className="icon-button shrink-0" title="关闭设置" aria-label="关闭设置">
+                <X aria-hidden="true" size={17} strokeWidth={1.8} />
+              </button>
+            </div>
           </header>
 
           <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[184px_minmax(0,1fr)] sm:grid-rows-1">
@@ -368,12 +369,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             </div>
           </div>
 
-          <footer className="flex min-h-[56px] shrink-0 items-center gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 sm:px-5">
-            {/* 关闭出口 = 右上 X + Esc，底栏不再重复按钮 */}
-            <span className="hidden items-center gap-2 text-xs text-[var(--text-faint)] sm:flex">
-              按 Esc 返回工作台
-            </span>
-          </footer>
+
         </aside>
       </div>
     </>

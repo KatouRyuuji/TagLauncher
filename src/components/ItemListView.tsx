@@ -1,11 +1,11 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import type { ItemViewProps } from "../types";
 import { useAppStore } from "../stores/appStore";
-import { isHeaderSortActive, toggleHeaderSort, type ListHeaderColumn } from "../lib/itemQuery";
+import { isHeaderSortActive, isHeaderSortDesc, toggleHeaderSort, type ListHeaderColumn } from "../lib/itemQuery";
 import { peekPendingItemFocus, focusSelectableItem, clearPendingItemFocus } from "../lib/workspaceChrome";
-import { ITEM_LIST_BASE_ROW_HEIGHT, ITEM_LIST_GRID_TEMPLATE, ItemRow } from "./ItemRow";
+import { ITEM_LIST_BASE_ROW_HEIGHT, ITEM_LIST_COMPACT_ROW_HEIGHT, ITEM_LIST_GRID_TEMPLATE, ItemRow } from "./ItemRow";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
 import { SelectionCanvas, consumeSelectionScrollFollow, type Rect } from "./SelectionCanvas";
@@ -97,7 +97,8 @@ const ItemListRow = memo(function ItemListRow({
 });
 
 /**
- * 可点击排序的表头单元格：点击切到该列排序，再点回到智能排序（对齐资源管理器习惯）。
+ * 可点击排序的表头单元格：名称列循环 升序 → 降序 → 智能，类型列 类型 ↔ 智能
+ * （对齐资源管理器习惯），箭头方向即升降序。
  * 有搜索词时排序不套用（保留命中顺序），但设置仍生效——清空搜索后立即按所选排序。
  */
 function SortableHeaderCell({
@@ -115,19 +116,31 @@ function SortableHeaderCell({
   const sortMode = useAppStore((state) => state.sortMode);
   const setSortMode = useAppStore((state) => state.setSortMode);
   const active = isHeaderSortActive(sortMode, column);
+  const desc = isHeaderSortDesc(sortMode, column);
+  const Arrow = desc ? ArrowDown : ArrowUp;
 
   return (
     <button
       type="button"
       aria-pressed={active}
       onClick={() => setSortMode(toggleHeaderSort(sortMode, column))}
-      title={active ? "再点一次回到智能排序" : `按${label}排序`}
+      title={
+        column === "name"
+          ? sortMode === "name"
+            ? "再点一次按名称降序"
+            : sortMode === "name-desc"
+              ? "再点一次回到智能排序"
+              : "按名称升序"
+          : active
+            ? "再点一次回到智能排序"
+            : `按${label}排序`
+      }
       className={`group inline-flex h-8 items-center gap-1 text-[13px] font-semibold transition-colors ${
         align === "right" ? "justify-end text-right" : "text-left"
       } ${active ? "text-[var(--accent-primary)]" : "text-[var(--text-faint)] hover:text-[var(--text-secondary)]"} ${className ?? ""}`}
     >
       {label}
-      <ArrowUp
+      <Arrow
         className={`h-3 w-3 transition-opacity ${active ? "opacity-100" : "opacity-0 group-hover:opacity-50"}`}
         strokeWidth={2}
         aria-hidden="true"
@@ -206,6 +219,8 @@ export function ItemListView({
 
   const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
   const itemIds = useMemo(() => items.map((item) => item.id), [items]);
+  const listDensity = useAppStore((state) => state.listDensity);
+  const rowHeightEstimate = listDensity === "compact" ? ITEM_LIST_COMPACT_ROW_HEIGHT : ITEM_LIST_BASE_ROW_HEIGHT;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowMetricsRef = useRef<Map<number, { start: number; size: number }>>(new Map());
@@ -213,7 +228,7 @@ export function ItemListView({
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ITEM_LIST_BASE_ROW_HEIGHT,
+    estimateSize: () => rowHeightEstimate,
     // 行 key 用对象 id 而非默认行索引：筛选/排序/换柜后行 key 变化触发 React
     // 重建行 DOM 并由 measureElement 同步重测；索引复用会让旧行高残留在
     // itemSizeCache（v3 同步测量命中缓存即不读 DOM），表现为行距错乱。
@@ -234,6 +249,7 @@ export function ItemListView({
   // 行高重测无需 virtualizer.measure()：getItemKey 按对象 id 变化触发
   // measureElement 重测；同 id 行的纯高度变化（多行标签/Mod footer）由虚拟器
   // 内部 ResizeObserver 自动校正（measure() 清缓存后复用行不会重测，见 ItemGrid）。
+  // 密度切换同理：行高经 estimateSize + ResizeObserver 重测收敛。
   useLayoutEffect(() => {
     rowMetricsRef.current.clear();
   }, [items]);
@@ -301,7 +317,7 @@ export function ItemListView({
   // 注意：vRow.start 相对于行容器（position:relative 的 div），而行容器位于 sticky
   // 表头之下，因此必须用行容器的实际 DOM 位置校正，否则框选矩形整体上移一个表头高度。
   const rowContainerRef = useRef<HTMLDivElement>(null);
-  const getItemRects = useCallback((): Map<number, Rect> => {
+  const getItemRects = useCallback((band?: { top: number; bottom: number }): Map<number, Rect> => {
     const container = scrollRef.current;
     if (!container) return new Map();
 
@@ -319,8 +335,11 @@ export function ItemListView({
     const map = new Map<number, Rect>();
     for (let index = 0; index < items.length; index++) {
       const metric = rowMetricsRef.current.get(index);
-      const start = metric?.start ?? index * ITEM_LIST_BASE_ROW_HEIGHT;
-      const size = metric?.size ?? ITEM_LIST_BASE_ROW_HEIGHT;
+      const start = metric?.start ?? index * rowHeightEstimate;
+      const size = metric?.size ?? rowHeightEstimate;
+      const top = baseTop + start;
+      const bottom = top + size;
+      if (band && (bottom < band.top || top > band.bottom)) continue;
       map.set(items[index].id, {
         left: baseLeft,
         top: baseTop + start,
@@ -329,7 +348,7 @@ export function ItemListView({
       });
     }
     return map;
-  }, [items]);
+  }, [items, rowHeightEstimate]);
 
   if (loading) {
     return <WorkspaceSkeleton view="list" />;
@@ -340,7 +359,7 @@ export function ItemListView({
     return (
       <SelectionCanvas
         dataRegion="item-list"
-        className="flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+        className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
         itemIds={itemIds}
         selectedItemIds={selectedItemIds}
         onSelectItems={onSelectItems}
@@ -358,7 +377,7 @@ export function ItemListView({
     <SelectionCanvas
       dataRegion="item-list"
       // scrollbar-gutter 恒留滚动槽：列表可滚动与否一眼可辨，避免末项被裁的错觉
-      className="flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+      className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
       itemIds={itemIds}
       selectedItemIds={selectedItemIds}
       onSelectItems={onSelectItems}
@@ -383,7 +402,7 @@ export function ItemListView({
 
         {/* 虚拟化列表：position:relative 撑开滚动高度；行用 top 定位（非 transform，
             否则会令行内右键菜单等 position:fixed 元素错位），高度由 measureElement 动态测量。 */}
-        <div ref={rowContainerRef} role="list" aria-label="项目列表" style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+        <div ref={rowContainerRef} role="list" aria-label="项目列表" style={{ height: virtualizer.getTotalSize() + 12, position: "relative" }}>
           {virtualizer.getVirtualItems().map((vRow) => {
             const item = items[vRow.index]!;
             const isSelected = selectedItemIdSet.has(item.id);

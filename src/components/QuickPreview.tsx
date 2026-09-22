@@ -135,8 +135,7 @@ export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps)
               type="button"
               className="action-button action-button-primary"
               onClick={() => {
-                setPreviewItemId(null);
-                void onLaunch(item.id);
+                void Promise.resolve(onLaunch(item.id)).finally(() => setPreviewItemId(null));
               }}
             >
               {isFolder ? (

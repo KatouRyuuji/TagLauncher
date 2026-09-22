@@ -20,6 +20,7 @@ import { TagEditor } from "./TagEditor";
 import { TagRelationsEditor } from "./TagRelationsEditor";
 import { SidebarThemeSwitcher } from "./SidebarThemeSwitcher";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
+import { buildDescendantsMap } from "../lib/tagGraph";
 import { flattenTagTree } from "../lib/tagTree";
 import { onCabinetItemsChanged } from "../lib/modApi";
 import { useImeComposition } from "../hooks/useImeComposition";
@@ -118,15 +119,29 @@ export function Sidebar({
     [allItems],
   );
 
+  // 计数与单击筛选同一口径：父标签并入后代，避免侧栏写 3、点开却是 4。
   const itemCountByTag = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const item of allItems) {
-      for (const tag of item.tags) {
-        m.set(tag.id, (m.get(tag.id) ?? 0) + 1);
+    const descendants = buildDescendantsMap(tagRelations);
+    const includedBy = new Map<number, number[]>();
+    const tagIds = new Set(tags.map((tag) => tag.id));
+    for (const tagId of tagIds) {
+      const closure = descendants.get(tagId) ?? new Set([tagId]);
+      for (const member of closure) {
+        const owners = includedBy.get(member) ?? [];
+        owners.push(tagId);
+        includedBy.set(member, owners);
       }
     }
-    return m;
-  }, [allItems]);
+    const counts = new Map<number, number>();
+    for (const item of allItems) {
+      const credited = new Set<number>();
+      for (const tag of item.tags) {
+        for (const owner of includedBy.get(tag.id) ?? [tag.id]) credited.add(owner);
+      }
+      for (const id of credited) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return counts;
+  }, [allItems, tags, tagRelations]);
 
   const tagRows = useMemo(
     () =>
@@ -233,26 +248,10 @@ export function Sidebar({
       data-region="sidebar"
       aria-label="资源导航"
       className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-[var(--line-hairline)] bg-[var(--bg-surface)] ${mobileOpen ? "is-mobile-open" : ""}`}
-      style={{ width: "var(--sidebar-width)", backdropFilter: "var(--sidebar-backdrop-filter)" }}
+      style={{ width: "var(--sidebar-width)" }}
     >
-      <header className="shrink-0 border-b border-[var(--line-hairline)] px-3 pb-3 pt-3">
-        {/* 库概览计数（品牌标识在窗口栏，侧栏顶部直接给数据）；加载期用骨架条，不闪「库是空的」 */}
-        <div className="grid grid-cols-3 divide-x divide-[var(--line-hairline)] border-y border-[var(--line-hairline)]">
-          {loading ? (
-            <>
-              <div className="flex flex-col items-center gap-1 py-1.5"><span className="skeleton-block h-4 w-8 rounded" /><span className="skeleton-block h-2.5 w-6 rounded" /></div>
-              <div className="flex flex-col items-center gap-1 py-1.5"><span className="skeleton-block h-4 w-8 rounded" /><span className="skeleton-block h-2.5 w-6 rounded" /></div>
-              <div className="flex flex-col items-center gap-1 py-1.5"><span className="skeleton-block h-4 w-8 rounded" /><span className="skeleton-block h-2.5 w-6 rounded" /></div>
-            </>
-          ) : (
-            <>
-              <CountReadout value={allItems.length} label="项目" />
-              <CountReadout value={tags.length} label="标签" />
-              <CountReadout value={cabinets.length} label="文件柜" />
-            </>
-          )}
-        </div>
-      </header>
+      {/* 顶部不再放库概览统计：项目/标签/文件柜计数在导航行与分区标题里已各有一处，
+          同屏重复且层级弱（品牌标识在窗口栏，侧栏直接给导航） */}
 
       <div data-region="sidebar-nav" className="flex min-h-0 flex-1 flex-col">
       <nav
@@ -346,9 +345,12 @@ export function Sidebar({
 
               {loading ? (
                 <div className="mt-1 space-y-0.5" aria-busy="true" aria-label="标签加载中">
-                  {/* 四种宽度循环：等宽骨架条排一列像进度条，错落才像标签行 */}
+                  {/* 与真实标签行同构：圆点占位 + 四种宽度循环的横条（等宽排一列像进度条） */}
                   {[0, 1, 2, 3, 4].map((row) => (
-                    <div key={row} className={`skeleton-block h-8 rounded-[var(--radius-sm)] ${SIDEBAR_SKELETON_WIDTHS[row % SIDEBAR_SKELETON_WIDTHS.length]}`} />
+                    <div key={row} className="flex h-8 items-center gap-2 px-1">
+                      <span className="skeleton-block h-2.5 w-2.5 shrink-0 rounded-full" />
+                      <span className={`skeleton-block h-3.5 rounded ${SIDEBAR_SKELETON_WIDTHS[row % SIDEBAR_SKELETON_WIDTHS.length]}`} />
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -417,8 +419,7 @@ export function Sidebar({
                       />
                       <span className={`min-w-0 flex-1 truncate text-[13px] font-medium ${excluded ? "line-through" : ""}`}>{tag.name}</span>
                       {showDescendantHint && (
-                        // 缩进已表达层级；文字提示只在悬停/聚焦时浮出，避免半数行都挂着同一枚小字
-                        <span className="ml-1 shrink-0 text-[11px] text-[var(--text-faint)] opacity-0 transition-opacity group-hover/tag:opacity-100 group-focus-visible/tag:opacity-100">含下级</span>
+                        <span className="ml-1 shrink-0 text-[11px] text-[var(--text-faint)]">含下级</span>
                       )}
                       <NavCount value={itemCountByTag.get(tag.id) ?? 0} />
                     </button>
@@ -532,13 +533,11 @@ export function Sidebar({
       {(!sidebarHintDismissed || activeDragKind === "item") && (
         <div
           data-region="sidebar-hint"
-          className="flex min-h-10 shrink-0 items-start gap-2 px-3 pb-2.5 pt-0 text-[13px] leading-4 text-[var(--text-faint)]"
+          className="flex h-9 shrink-0 items-center gap-2 border-t border-[var(--line-hairline)] px-3 text-[13px] leading-4 text-[var(--text-faint)]"
         >
-          <Info className="mt-px h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" strokeWidth={1.8} aria-hidden="true" />
-          <span className="min-w-0 flex-1">
-            {activeDragKind === "item"
-              ? "释放到收藏夹或文件柜完成归档（不会移动磁盘文件）"
-              : "拖标签到项目打标，拖项目到文件柜。文件柜是分组，不是磁盘文件夹。"}
+          <Info className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" strokeWidth={1.8} aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate" title={activeDragKind === "item" ? "释放到收藏夹或文件柜完成归档（不会移动磁盘文件）" : "拖标签到项目打标，拖项目到文件柜。文件柜是分组，不是磁盘文件夹。"}>
+            {activeDragKind === "item" ? "松开即归档，不移动文件" : "拖放打标，不移动文件"}
           </span>
           {activeDragKind !== "item" && (
             <button
@@ -615,17 +614,6 @@ export function Sidebar({
         />
       )}
     </aside>
-  );
-}
-
-function CountReadout({ value, label }: { value: number; label: string }) {
-  return (
-    <div className="flex h-9 min-w-0 items-center justify-center gap-1 px-1">
-      <strong className="data-readout truncate text-[13px] font-semibold text-[var(--text-primary)]">
-        {value}
-      </strong>
-      <span className="truncate text-[13px] text-[var(--text-faint)]">{label}</span>
-    </div>
   );
 }
 

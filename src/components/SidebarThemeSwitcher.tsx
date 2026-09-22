@@ -124,11 +124,11 @@ export function SidebarThemeSwitcher() {
               tabIndex={swatch.id === tabbableFamilyId ? 0 : -1}
               onClick={() => void setTheme(swatch.themeId)}
               onKeyDown={(event) => onFamilyKeyDown(event, index)}
-              className="flex h-7 w-7 items-center justify-center rounded-full transition-transform hover:scale-110 focus-visible:z-10"
+              className="flex h-7 w-7 items-center justify-center rounded-full focus-visible:z-10"
             >
               <span
                 aria-hidden="true"
-                className={`rounded-full ring-1 ring-[color-mix(in_srgb,var(--border-strong)_42%,transparent)] transition-[transform,box-shadow] ${
+                className={`rounded-full ring-1 ring-[color-mix(in_srgb,var(--border-strong)_42%,transparent)] ${
                   selected ? "h-4 w-4" : "h-3.5 w-3.5"
                 }`}
                 style={{

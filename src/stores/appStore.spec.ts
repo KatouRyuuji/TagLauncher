@@ -28,7 +28,7 @@ describe("appStore", () => {
       typeFilter: "all",
       cardSizeScale: 1,
       iconSizeScale: 1,
-      workspaceFiltersOpen: true,
+      workspaceFiltersOpen: false,
       tagGraphOpen: false,
       commandPaletteOpen: false,
       shortcutsHelpOpen: false,
@@ -256,8 +256,8 @@ describe("appStore", () => {
     expect(document.documentElement.style.getPropertyValue("--grid-col-min-icons")).toBe("");
   });
 
-  it("无偏好时 workspaceFiltersOpen 默认为展开", () => {
-    expect(useAppStore.getState().workspaceFiltersOpen).toBe(true);
+  it("无偏好时 workspaceFiltersOpen 默认为收起", () => {
+    expect(useAppStore.getState().workspaceFiltersOpen).toBe(false);
   });
 
   it("setWorkspaceFiltersOpen 写入 workspace_prefs 并记住收起", () => {

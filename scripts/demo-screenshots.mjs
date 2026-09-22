@@ -121,7 +121,7 @@ async function closeOverlays(page) {
 }
 
 async function openSettings(page) {
-  await page.locator('button[title="设置"]').click();
+  await page.locator('button[aria-label="设置"]').click();
   await page.getByRole("dialog", { name: "设置工作台" }).waitFor();
   await settle();
 }
@@ -129,7 +129,7 @@ async function openSettings(page) {
 async function ensureFiltersOpen(page) {
   const bar = page.locator('[data-region="filterbar"]');
   if (await bar.count()) return;
-  await page.getByRole("button", { name: "筛选", exact: true }).click();
+  await page.getByRole("button", { name: "筛选类型与搜索范围", exact: true }).click();
   await settle(250);
 }
 
@@ -280,11 +280,15 @@ async function featureTour(page) {
   await check("列表视图渲染 11 行", (await itemCount(page)) === 11);
   await check("列表表头含名称/标签/类型", page.locator('button:has-text("名称")').first().isVisible());
 
-  // 03b 表头点击排序（按名称）→ 再点回智能
+  // 03b 表头点击排序（名称升序 → 降序 → 回智能）
   await page.locator('[data-region="item-list"] button:has-text("名称")').click();
   await settle(400);
   await check("表头排序后首行是工作文档（zh-CN 排序中文在前）",
     (await page.locator('[data-region="main"] [data-selectable-item-id] h3').first().textContent())?.includes("工作文档"));
+  await page.locator('[data-region="item-list"] button:has-text("名称")').click();
+  await settle(400);
+  await check("表头再点后名称降序（首行不再是工作文档）",
+    !((await page.locator('[data-region="main"] [data-selectable-item-id] h3').first().textContent())?.includes("工作文档")));
   await page.locator('[data-region="item-list"] button:has-text("名称")').click();
   await settle(400);
   await page.locator('button[title="网格视图"]').click();
@@ -475,8 +479,8 @@ async function featureTour(page) {
   await page.locator('button[aria-label="排序方式"]').click();
   await settle(300);
   await shot(page, "sort-menu-排序下拉");
-  await check("排序下拉展开 5 个选项", (await page.locator('[role="listbox"] [role="option"]').count()) === 5);
-  await page.locator('[role="option"]', { hasText: "名称" }).click();
+  await check("排序下拉展开 7 个选项（智能 + 名称/添加时间双方向 + 最近 + 类型）", (await page.locator('[role="listbox"] [role="option"]').count()) === 7);
+  await page.locator('[role="option"]', { hasText: "名称 A→Z" }).click();
   await settle(500);
   await check("按名称排序后首项是工作文档（zh-CN 排序中文在前）",
     (await page.locator('[data-region="main"] [data-selectable-item-id] h3').first().textContent())?.includes("工作文档"));
@@ -621,8 +625,10 @@ async function featureTour(page) {
   await shot(page, "settings-theme-设置-主题外观");
   await check("设置面板打开", page.getByRole("dialog", { name: "设置工作台" }).isVisible());
 
-  // 25b 官方配色 Gallery 是主选择器；「当前主题」下拉只在有自定义/Mod 主题时渲染
+  // 25b 官方配色 Gallery 是主选择器；「当前主题」下拉只在有自定义/Mod 主题时渲染。
+  // 与 25 的打开态区分：悬停樱花卡呈现 Gallery 的 hover 预览态
   const themeTrigger = page.getByRole("dialog", { name: "设置工作台" }).locator('button[aria-label="当前主题"]');
+  await themeGallery(page).getByRole("radio", { name: "樱花", exact: true }).hover();
   await settle(300);
   await shot(page, "settings-theme-gallery-设置-官方配色Gallery");
   await check("Gallery 列出 4 个官方配色家族", (await themeGallery(page).getByRole("radio").count()) === 4);
@@ -633,7 +639,8 @@ async function featureTour(page) {
   await shot(page, "settings-ai-设置-AI自动打标");
 
   // 26 AI 一键打标（mock 建议 → 真实编排进度：先截进行中，再等完成）
-  await check("AI 区块以「为未打标对象打标」为主按钮", page.getByRole("button", { name: /为未打标/ }).evaluate((el) => el.classList.contains("action-button-primary")));
+  await check("AI 区块唯一主按钮是「保存配置」（每屏一个主动作）", page.getByRole("button", { name: /保存配置/ }).evaluate((el) => el.classList.contains("action-button-primary")));
+  await check("运行打标按钮均为次级（不再双实心蓝争抢）", page.getByRole("button", { name: /为未打标/ }).evaluate((el) => !el.classList.contains("action-button-primary")));
   await page.getByRole("button", { name: "为全部重新打标" }).click();
   await page.getByRole("dialog", { name: "AI 打标进度" }).waitFor();
   await shot(page, "ai-tagging-running-AI打标-进行中");

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { ExternalLink } from "lucide-react";
 import * as db from "../lib/db";
 import type { UpdateInfo } from "../lib/db";
 import { formatBytes } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
 
 const LAST_CHECK_KEY = "taglauncher.update_last_check";
+const RELEASES_PAGE_URL = "https://github.com/KatouRyuuji/TagLauncher/releases";
 
 interface LastCheckRecord {
   ts: number;
@@ -67,7 +69,8 @@ export function UpdateSettingsSection() {
   };
 
   return (
-    <section className="surface-card-soft mt-6 p-5">
+    // 单卡片页面窄栏居中：整页只有一个信息块时不摊满设置工作台宽度
+    <section className="surface-card-soft mx-auto mt-6 max-w-[680px] p-5">
       <h3 className="text-lg font-semibold text-[var(--text-primary)]">软件更新</h3>
       <p className="mt-1 text-sm text-[var(--text-muted)]">
         更新来自 GitHub Releases。检查对照远端版本，有新版本再手动下载安装，不会自动安装。
@@ -85,14 +88,24 @@ export function UpdateSettingsSection() {
               : "尚未检查过更新"}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void handleCheck()}
-          disabled={checking}
-          className="action-button action-button-primary shrink-0 px-4 text-xs disabled:opacity-50"
-        >
-          {checking ? "检查中…" : "检查更新"}
-        </button>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <button
+            type="button"
+            onClick={() => void handleCheck()}
+            disabled={checking}
+            className="action-button action-button-primary px-4 text-xs disabled:opacity-50"
+          >
+            {checking ? "检查中…" : "检查更新"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void shellOpen(RELEASES_PAGE_URL).catch(() => showToast("打开更新日志失败", "error"))}
+            className="action-button px-3 py-1.5 text-xs"
+          >
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            查看更新日志
+          </button>
+        </div>
       </div>
 
       {result?.hasUpdate && (

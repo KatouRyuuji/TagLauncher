@@ -76,7 +76,8 @@ export function AiTaggingModal({ progress, onCancel, onClose, onViewResults }: A
 
           <div className="px-6 py-5">
             <div
-              className="h-2.5 w-full overflow-hidden rounded-[var(--radius-sm)] bg-[var(--bg-hover)]"
+              /* 轨道常驻可见：浅色主题下 bg-hover 近白，0% 时进度感消失——改用 10% 墨底轨道 */
+              className="h-2.5 w-full overflow-hidden rounded-[var(--radius-sm)] bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]"
               role="progressbar"
               aria-valuenow={percent}
               aria-valuemin={0}
@@ -84,7 +85,7 @@ export function AiTaggingModal({ progress, onCancel, onClose, onViewResults }: A
               aria-label="打标进度"
             >
               <div
-                className="h-full origin-left bg-[var(--accent-primary)] transition-transform duration-300"
+                className="h-full origin-left bg-[var(--accent-primary)] transition-transform duration-[var(--transition-normal)]"
                 style={{ transform: `scaleX(${percent / 100})` }}
               />
             </div>
@@ -148,20 +149,26 @@ export function AiTaggingModal({ progress, onCancel, onClose, onViewResults }: A
               </button>
             ) : (
               <>
+                {/* 完成态下一步是验收结果：有结果时「查看结果」升主按钮，「关闭」退次级；
+                    无结果时「关闭」仍是唯一主按钮 */}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className={`action-button ${onViewResults && progress.taggedIds.length > 0 ? "" : "action-button-primary"}`}
+                >
+                  <Check aria-hidden="true" size={15} strokeWidth={1.9} />
+                  关闭
+                </button>
                 {onViewResults && progress.taggedIds.length > 0 && (
                   <button
                     type="button"
                     onClick={() => onViewResults(progress.taggedIds)}
-                    className="action-button"
+                    className="action-button action-button-primary"
                     title="在主网格中选中刚打标的对象，核对标签"
                   >
                     查看结果（{progress.taggedIds.length}）
                   </button>
                 )}
-                <button type="button" onClick={onClose} className="action-button action-button-primary">
-                  <Check aria-hidden="true" size={15} strokeWidth={1.9} />
-                  关闭
-                </button>
               </>
             )}
           </div>

@@ -34,6 +34,7 @@ import {
 import * as db from "../lib/db";
 import { showToast } from "../lib/toast";
 import { copyText } from "../lib/clipboard";
+import { useOverlayGate } from "../lib/overlayGate";
 import { useAppStore } from "../stores/appStore";
 import type { Cabinet, ItemWithTags } from "../types";
 import type { ContextSelectionInfo } from "./ItemCard";
@@ -76,6 +77,7 @@ export function ContextMenu({
   onRemoveItemFromCabinet,
   onUpdateThumbnail,
 }: ContextMenuProps) {
+  useOverlayGate();
   const [folderWatched, setFolderWatched] = useState(false);
   // 二级菜单同时只开一个：文件柜 / 缩略图共用同一套定位、悬停延时与键盘机制
   const [openSubmenu, setOpenSubmenu] = useState<"cabinet" | "thumbnail" | null>(null);
@@ -528,7 +530,7 @@ export function ContextMenu({
             }}
             className={`flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm ${
               showThumbnailSub
-                ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                ? "bg-[var(--accent-primary-bg)] text-[var(--text-primary)]"
                 : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             }`}
           >
@@ -567,7 +569,7 @@ export function ContextMenu({
               }}
               className={`flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm ${
                 showCabinetSub
-                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                  ? "bg-[var(--accent-primary-bg)] text-[var(--text-primary)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
               }`}
             >
@@ -623,6 +625,7 @@ export function ContextMenu({
               onClick={async () => {
                 try {
                   await onAddItemToCabinet(cabinet.id, item.id);
+                  showToast(`已加入文件柜「${cabinet.name}」`, "success");
                   onClose();
                 } catch {
                   // 失败提示已由 withErrorToast 统一弹出；菜单保持打开便于重试

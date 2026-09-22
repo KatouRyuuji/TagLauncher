@@ -89,8 +89,6 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
         className="absolute inset-0"
         style={{
           backgroundColor: "var(--overlay-bg)",
-          backdropFilter: "blur(var(--overlay-blur))",
-          WebkitBackdropFilter: "blur(var(--overlay-blur))",
         }}
         onClick={() => onClose(hideNextTime)}
       />

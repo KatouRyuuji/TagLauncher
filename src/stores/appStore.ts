@@ -10,9 +10,11 @@ import { create } from "zustand";
 import type { Tag, Cabinet, TagRelation } from "../types";
 import * as db from "../lib/db";
 import {
+  isListDensity,
   isSortMode,
   isTypeFilter,
   isViewMode,
+  type ListDensity,
   type SortMode,
   type TypeFilter,
   type ViewMode,
@@ -106,6 +108,7 @@ interface WorkspacePrefs {
   workspaceFiltersOpen?: boolean;
   cardSizeScale?: number;
   iconSizeScale?: number;
+  listDensity?: ListDensity;
 }
 
 /** 读取持久化的缩放值：非法值丢弃（回退默认 1），合法值夹取到允许范围 */
@@ -131,6 +134,7 @@ function loadWorkspacePrefs(): WorkspacePrefs {
         : undefined,
       cardSizeScale: loadSizeScale(parsed.cardSizeScale, CARD_SIZE_SCALE_RANGE),
       iconSizeScale: loadSizeScale(parsed.iconSizeScale, ICON_SIZE_SCALE_RANGE),
+      listDensity: isListDensity(parsed.listDensity) ? parsed.listDensity : undefined,
     };
   } catch {
     return {};
@@ -186,6 +190,8 @@ interface AppState {
   searchInputValue: string;
   searchMode: SearchMode;
   viewMode: ViewMode;
+  /** 列表行密度（仅 list 视图生效）：紧凑档一屏更多行 */
+  listDensity: ListDensity;
   sortMode: SortMode;
   typeFilter: TypeFilter;
   /** 卡片视图尺寸缩放（1 = 默认 256px 列宽） */
@@ -202,6 +208,8 @@ interface AppState {
   previewItemId: number | null;
   /** 状态栏 / 右键 / 命令面板共用的失效项目复核弹窗 */
   missingReviewOpen: boolean;
+  /** 状态栏即时反馈：正在打开、刷新结果、键盘跳转未命中。不持久化。 */
+  activityNotice: string | null;
   /**
    * 阻断式重启遮罩：切换数据目录 / 导入数据 / 云端恢复成功后激活。
    * 这些操作后旧库写入已冻结、重启才生效，遮罩阻断一切交互并自动重启，
@@ -225,6 +233,7 @@ interface AppState {
   setSearchInputValue: (value: string) => void;
   setSearchMode: (mode: SearchMode) => void;
   setViewMode: (mode: ViewMode) => void;
+  setListDensity: (density: ListDensity) => void;
   setSortMode: (mode: SortMode) => void;
   setTypeFilter: (filter: TypeFilter) => void;
   setCardSizeScale: (scale: number, options?: { persist?: boolean }) => void;
@@ -232,6 +241,7 @@ interface AppState {
   /** 立即持久化当前视图偏好（尺寸滑杆等 persist:false 写入后的显式落盘；值未变也可用） */
   persistWorkspacePrefsNow: () => void;
   setWorkspaceFiltersOpen: (open: boolean) => void;
+  setActivityNotice: (notice: string | null) => void;
   setSidebarHintDismissed: (dismissed: boolean) => void;
   setTagGraphOpen: (open: boolean) => void;
   setCommandPaletteOpen: (open: boolean) => void;
@@ -254,6 +264,7 @@ export const useAppStore = create<AppState>((set, get) => {
       workspaceFiltersOpen: state.workspaceFiltersOpen,
       cardSizeScale: state.cardSizeScale,
       iconSizeScale: state.iconSizeScale,
+      listDensity: state.listDensity,
     });
   };
 
@@ -271,16 +282,18 @@ export const useAppStore = create<AppState>((set, get) => {
   searchInputValue: "",
   searchMode: initialPrefs.searchMode ?? "all",
   viewMode: initialPrefs.viewMode ?? "grid",
+  listDensity: initialPrefs.listDensity ?? "comfortable",
   sortMode: initialPrefs.sortMode ?? "smart",
   typeFilter: initialPrefs.typeFilter ?? "all",
   cardSizeScale: initialPrefs.cardSizeScale ?? 1,
   iconSizeScale: initialPrefs.iconSizeScale ?? 1,
-  workspaceFiltersOpen: initialPrefs.workspaceFiltersOpen ?? true,
+  workspaceFiltersOpen: initialPrefs.workspaceFiltersOpen ?? false,
   sidebarHintDismissed: loadSidebarHintDismissed(),
   tagGraphOpen: false,
   commandPaletteOpen: false,
   shortcutsHelpOpen: false,
   previewItemId: null,
+  activityNotice: null,
   missingReviewOpen: false,
   restartOverlay: null,
 
@@ -377,6 +390,11 @@ export const useAppStore = create<AppState>((set, get) => {
     set({ viewMode: mode });
     persistNow();
   },
+  setListDensity: (density) => {
+    if (get().listDensity === density) return;
+    set({ listDensity: density });
+    persistNow();
+  },
   setSortMode: (mode) => {
     if (get().sortMode === mode) return;
     set({ sortMode: mode });
@@ -410,6 +428,10 @@ export const useAppStore = create<AppState>((set, get) => {
     if (get().workspaceFiltersOpen === open) return;
     set({ workspaceFiltersOpen: open });
     persistNow();
+  },
+  setActivityNotice: (notice) => {
+    if (get().activityNotice === notice) return;
+    set({ activityNotice: notice });
   },
   setSidebarHintDismissed: (dismissed) => {
     if (get().sidebarHintDismissed === dismissed) return;

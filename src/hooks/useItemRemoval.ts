@@ -42,6 +42,7 @@ export interface RemoveRequestOptions {
 export interface RemoveConfirmDialogProps {
   open: boolean;
   items: RemoveConfirmItem[];
+  busyLabel?: string | null;
   skipNextTime: boolean;
   preferDeleteFiles: boolean;
   onSkipNextTimeChange: (v: boolean) => void;
@@ -75,6 +76,7 @@ export function useItemRemoval({
   const [pendingRemoveItemId, setPendingRemoveItemId] = useState<number | null>(null);
   const [pendingBatchRemoveItemIds, setPendingBatchRemoveItemIds] = useState<number[] | null>(null);
   const [skipRemoveItemConfirm, setSkipRemoveItemConfirm] = useState(false);
+  const [removeBusyLabel, setRemoveBusyLabel] = useState<string | null>(null);
   const [preferDeleteFiles, setPreferDeleteFiles] = useState(false);
 
   const commitRemove = useCallback(
@@ -119,15 +121,18 @@ export function useItemRemoval({
     if (itemIds.length === 0) return;
 
     const deleteFiles = mode === "files";
-    setPendingRemoveItemId(null);
-    setPendingBatchRemoveItemIds(null);
+    setRemoveBusyLabel(deleteFiles ? "正在移到回收站…" : "正在从库中移除…");
     try {
       await commitRemove(itemIds, deleteFiles);
     } catch {
+      setRemoveBusyLabel(null);
       setSkipRemoveItemConfirm(false);
       setPreferDeleteFiles(false);
       return;
     }
+    setRemoveBusyLabel(null);
+    setPendingRemoveItemId(null);
+    setPendingBatchRemoveItemIds(null);
 
     try {
       if (skipRemoveItemConfirm && !deleteFiles) {
@@ -178,6 +183,7 @@ export function useItemRemoval({
       items: pendingItems,
       skipNextTime: skipRemoveItemConfirm,
       preferDeleteFiles,
+      busyLabel: removeBusyLabel,
       onSkipNextTimeChange: setSkipRemoveItemConfirm,
       onConfirm: handleConfirmRemoveFromApp,
       onCancel: handleCancelRemoveFromApp,

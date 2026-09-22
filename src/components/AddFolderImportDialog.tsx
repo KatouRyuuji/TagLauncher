@@ -61,7 +61,8 @@ export function AddFolderImportDialog({
   if (!open) return null;
 
   const previewNames = folderNames.map(pathBasename).filter((name) => name.length > 0);
-  const shownNames = previewNames.slice(0, 4);
+  // 纵向列表最多 3 行：顿号单行连排在多选时必然溢出或截断
+  const shownNames = previewNames.slice(0, 3);
 
   return (
     <>
@@ -93,10 +94,14 @@ export function AddFolderImportDialog({
             </p>
           )}
           {shownNames.length > 0 && (
-            <p className="mt-2 text-[13px] leading-5 text-[var(--text-muted)]">
-              {shownNames.join("、")}
-              {previewNames.length > shownNames.length ? ` 等 ${previewNames.length} 个` : ""}
-            </p>
+            <ul className="mt-2 space-y-0.5 text-[13px] leading-5 text-[var(--text-muted)]">
+              {shownNames.map((name, index) => (
+                <li key={`${index}:${name}`} className="truncate" title={name}>{name}</li>
+              ))}
+              {previewNames.length > shownNames.length && (
+                <li>等 {previewNames.length} 个</li>
+              )}
+            </ul>
           )}
 
           <div className="mt-4 flex flex-col gap-2" role="radiogroup" aria-label="添加方式">

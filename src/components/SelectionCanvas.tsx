@@ -6,6 +6,7 @@ import { getWorkspaceSelectionAnchor, setWorkspaceSelectionAnchor } from "../lib
 import { shouldSuppressInternalDragClick } from "../stores/internalDragStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
+import { useOverlayGate } from "../lib/overlayGate";
 import { MenuItem } from "./ContextMenu";
 
 interface SelectionCanvasProps {
@@ -22,7 +23,7 @@ interface SelectionCanvasProps {
    * 若提供，框选将基于这些逻辑坐标命中全部 item（包括虚拟化卸载的项），
    * 否则回退到 querySelectorAll 仅命中当前 DOM 中的项。
    */
-  getItemRects?: () => Map<number, Rect>;
+  getItemRects?: (band?: { top: number; bottom: number }) => Map<number, Rect>;
   /** 空白右键背景菜单的「添加文件/文件夹」入口（与顶栏添加按钮同一导入流程） */
   onAddItems?: (paths: string[]) => Promise<void>;
   /** 空白右键背景菜单的「刷新」入口（显式对账 + 图标重取） */
@@ -194,7 +195,7 @@ export function SelectionCanvas({
     if (getItemRects) {
       const contentRect = clientRectToContentRect(selectionRect, container);
       const result: number[] = [];
-      for (const [id, rect] of getItemRects()) {
+      for (const [id, rect] of getItemRects({ top: contentRect.top, bottom: contentRect.bottom })) {
         if (rectsIntersect(contentRect, rect)) {
           result.push(id);
         }
@@ -524,6 +525,7 @@ function BackgroundContextMenu({
   onSelectAll: () => void;
   onClearSelection: () => void;
 }) {
+  useOverlayGate();
   const menuRef = useRef<HTMLDivElement>(null);
 
   // 打开即聚焦首项：Shift+F10 等键盘路径打开后方向键可直接漫游

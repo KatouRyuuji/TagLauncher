@@ -33,7 +33,7 @@ export function VideoPreviewBody({
 
   return (
     <div>
-      <div className="preview-video-stage">
+      <div className="preview-video-stage" data-failed={failed ? "" : undefined}>
         {src && (
           <video
             controls
@@ -75,7 +75,7 @@ function VideoFailChrome() {
         size={40}
         strokeWidth={1.5}
         aria-hidden="true"
-        className="text-[color-mix(in_srgb,var(--bg-elevated)_55%,transparent)]"
+        className="text-[color-mix(in_srgb,var(--bg-elevated)_78%,transparent)]"
       />
       <p className="preview-video-fail-hint text-sm">
         无法在应用内预览该格式，可用底栏「打开」调用外部播放器

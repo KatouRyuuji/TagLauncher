@@ -170,8 +170,9 @@ export function DataSettingsSection() {
         </div>
       )}
 
-      <div className="mt-4 space-y-4">
-        <div>
+      {/* 四个分区统一卡片化：与「当前数据目录」同一内嵌卡配方，不再卡片/裸排混排 */}
+      <div className="mt-4 space-y-3">
+        <div className="rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3">
           <h4 className="text-xs font-semibold text-[var(--text-muted)]">文件夹监视</h4>
           <div className="mt-2">
             <SettingsToggle
@@ -192,7 +193,7 @@ export function DataSettingsSection() {
           </div>
         </div>
 
-        <div>
+        <div className="rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3">
           <h4 className="text-xs font-semibold text-[var(--text-muted)]">备份与导出</h4>
           <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" onClick={() => void handleBackup()} disabled={busy !== null} className="action-button action-button-primary px-4 text-xs disabled:opacity-50">
@@ -210,7 +211,7 @@ export function DataSettingsSection() {
           </p>
         </div>
 
-        <div>
+        <div className="rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3">
           <h4 className="text-xs font-semibold text-[var(--text-muted)]">位置</h4>
           <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" onClick={() => void handleSwitchDir()} disabled={busy !== null} className="action-button px-4 text-xs disabled:opacity-50">
@@ -230,7 +231,7 @@ export function DataSettingsSection() {
           </p>
         </div>
 
-        <div>
+        <div className="rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3">
           <h4 className="text-xs font-semibold text-[var(--text-muted)]">危险</h4>
           <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" onClick={() => void handleImport()} disabled={busy !== null} className="action-button action-button-danger px-4 text-xs disabled:opacity-50">

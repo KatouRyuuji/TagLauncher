@@ -63,6 +63,7 @@ import {
   sortItemsByMode,
   toggleHeaderSort,
   isHeaderSortActive,
+  isHeaderSortDesc,
 } from "./itemQuery";
 import type { ItemWithTags } from "../types";
 
@@ -259,6 +260,8 @@ test("nextTypeFilter：再点当前类型回到全部", () => {
 
 test("isSortMode / isTypeFilter 守卫", () => {
   assert.equal(isSortMode("smart"), true);
+  assert.equal(isSortMode("name-desc"), true);
+  assert.equal(isSortMode("added-desc"), true);
   assert.equal(isSortMode("nope"), false);
   assert.equal(isTypeFilter("script"), true);
   assert.equal(isTypeFilter("video"), true);
@@ -289,21 +292,38 @@ test("toggleHeaderSort：点击表头切到该列排序", () => {
   assert.equal(toggleHeaderSort("smart", "type"), "type");
 });
 
-test("toggleHeaderSort：已按该列排序时再点一次回到智能排序", () => {
-  assert.equal(toggleHeaderSort("name", "name"), "smart");
+test("toggleHeaderSort：名称列循环 升序 → 降序 → 智能", () => {
+  assert.equal(toggleHeaderSort("name", "name"), "name-desc");
+  assert.equal(toggleHeaderSort("name-desc", "name"), "smart");
   assert.equal(toggleHeaderSort("type", "type"), "smart");
 });
 
 test("toggleHeaderSort：在两列之间直接切换，无须先回智能", () => {
   assert.equal(toggleHeaderSort("name", "type"), "type");
+  assert.equal(toggleHeaderSort("name-desc", "type"), "type");
   assert.equal(toggleHeaderSort("type", "name"), "name");
 });
 
-test("isHeaderSortActive：仅当前列排序生效时为 true", () => {
+test("isHeaderSortActive / isHeaderSortDesc：名称列升降序都算生效", () => {
   assert.equal(isHeaderSortActive("name", "name"), true);
+  assert.equal(isHeaderSortActive("name-desc", "name"), true);
   assert.equal(isHeaderSortActive("name", "type"), false);
   assert.equal(isHeaderSortActive("smart", "name"), false);
   assert.equal(isHeaderSortActive("type", "type"), true);
+  assert.equal(isHeaderSortDesc("name", "name"), false);
+  assert.equal(isHeaderSortDesc("name-desc", "name"), true);
+  assert.equal(isHeaderSortDesc("name-desc", "type"), false);
+});
+
+test("名称 / 添加时间带方向变体", () => {
+  const entries = [
+    { id: 1, name: "beta", type: "exe", is_favorite: false, last_used_at: null, created_at: "2024-01-02" },
+    { id: 2, name: "alpha", type: "exe", is_favorite: false, last_used_at: null, created_at: "2024-01-01" },
+  ];
+  assert.deepEqual(sortItemsByMode(entries, "name").map((entry) => entry.id), [2, 1]);
+  assert.deepEqual(sortItemsByMode(entries, "name-desc").map((entry) => entry.id), [1, 2]);
+  assert.deepEqual(sortItemsByMode(entries, "added").map((entry) => entry.id), [1, 2]);
+  assert.deepEqual(sortItemsByMode(entries, "added-desc").map((entry) => entry.id), [2, 1]);
 });
 
 await run("itemQuery");

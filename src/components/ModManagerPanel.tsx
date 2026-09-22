@@ -184,7 +184,8 @@ export function ModManagerPanel() {
                       已启用
                     </span>
                   ) : (
-                    <span className="rounded-[var(--radius-full)] bg-[var(--bg-hover)] px-2 py-1 text-[13px] font-semibold text-[var(--text-muted)]">
+                    /* 禁用态用描边徽章：浅色主题下 bg-hover 近白底，扫视时看不出状态 */
+                    <span className="rounded-[var(--radius-full)] border border-[var(--border-subtle)] bg-[var(--surface-recessed)] px-2 py-0.5 text-[13px] font-semibold text-[var(--text-muted)]">
                       已禁用
                     </span>
                   )}

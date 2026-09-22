@@ -59,6 +59,7 @@ function App() {
     items,
     allItems,
     loading,
+    cabinetPending,
     loadError,
     addItems,
     removeItems,
@@ -210,12 +211,25 @@ function App() {
         }
       }
       const last = recentLaunchRef.current.get(itemId) ?? 0;
-      if (now - last < 300) return;
+      if (now - last < 300) {
+        useAppStore.getState().setActivityNotice("仍在打开，请稍候");
+        return;
+      }
       recentLaunchRef.current.set(itemId, now);
-      // launchItem 失败时 withErrorToast 已弹 toast，这里吞掉 rejection 避免 unhandled 噪音
-      await launchItem(itemId).catch(() => {});
+      const name = findItemById(itemId)?.name;
+      useAppStore.getState().setActivityNotice(name ? `正在打开「${name}」` : "正在打开");
+      try {
+        await launchItem(itemId);
+      } catch {
+        recentLaunchRef.current.delete(itemId);
+      } finally {
+        const notice = useAppStore.getState().activityNotice;
+        if (notice?.startsWith("正在打开") || notice === "仍在打开，请稍候") {
+          useAppStore.getState().setActivityNotice(null);
+        }
+      }
     },
-    [launchItem],
+    [findItemById, launchItem],
   );
 
   // 手动刷新（刷新按钮/命令面板「刷新」）：显式触发对账 + 图标重取；
@@ -338,7 +352,7 @@ function App() {
     items,
     tags,
     cabinets,
-    loading,
+    loading: loading || cabinetPending,
     currentCabinetId: selectedCabinetId,
     onLaunch: handleLaunchItem,
     onSetTags: setItemTags,
@@ -412,7 +426,7 @@ function App() {
         data-region="main"
         aria-labelledby="workspace-heading"
         tabIndex={-1}
-        className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-base)]"
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-base)]"
         {...dragHandlers}
       >
         <h1 id="workspace-heading" className="sr-only">
@@ -420,7 +434,7 @@ function App() {
         </h1>
         <SearchBar onAddItems={requestAddPaths} onRefresh={handleManualRefresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} hasLibraryItems={allItems.length > 0} />
         {allItems.length > 0 && <TagFilterBar />}
-        {allItems.length > 0 && <WorkspaceScopeHeader visibleCount={items.length} />}
+        {allItems.length > 0 && <WorkspaceScopeHeader visibleCount={items.length} pending={cabinetPending} />}
         {/* 加载失败且本地无任何缓存时渲染可重试的错误面板；有缓存时保留旧列表，
             失败已由 toast 提示，避免把可用数据替换成错误页。 */}
         {loadError && !loading && allItems.length === 0 ? (

@@ -110,12 +110,13 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
       <span aria-hidden="true" style={{ color: toastIconColor(toast.type), flexShrink: 0 }}>
         {toastIcon(toast.type)}
       </span>
-      <span className="flex-1 line-clamp-2 break-words">{toast.message}</span>
+      <span className={`flex-1 break-words ${toast.type === "error" || toast.type === "warning" ? "" : "line-clamp-2"}`}>{toast.message}</span>
       <button
         onClick={() => onDismiss(toast.id)}
         className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-full)] opacity-50 transition-opacity hover:bg-[var(--bg-hover)] hover:opacity-100"
         style={{ color: "var(--text-muted)" }}
         title="关闭通知"
+        aria-label="关闭通知"
       >
         <X size={15} strokeWidth={1.8} aria-hidden="true" />
       </button>

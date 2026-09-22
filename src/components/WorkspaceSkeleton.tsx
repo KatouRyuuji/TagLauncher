@@ -6,7 +6,8 @@
 // 微动效 shimmer 定义在 index.css（.skeleton-block），reduced-motion 下自动静止。
 // ============================================================================
 
-import { ITEM_LIST_BASE_ROW_HEIGHT, ITEM_LIST_GRID_TEMPLATE } from "./ItemRow";
+import { ITEM_LIST_BASE_ROW_HEIGHT, ITEM_LIST_COMPACT_ROW_HEIGHT, ITEM_LIST_GRID_TEMPLATE } from "./ItemRow";
+import { useAppStore } from "../stores/appStore";
 
 /**
  * 骨架占位数量：按视口高度估算一屏行数（多算一行让底部被裁切，暗示"还有更多"），
@@ -22,10 +23,16 @@ function estimateRowCount(): number {
   return Math.min(30, Math.ceil(window.innerHeight / ITEM_LIST_BASE_ROW_HEIGHT) + 1);
 }
 
+/** 列表行高跟随密度档：骨架与真实列表同构 */
+function useListRowHeight(): number {
+  const listDensity = useAppStore((state) => state.listDensity);
+  return listDensity === "compact" ? ITEM_LIST_COMPACT_ROW_HEIGHT : ITEM_LIST_BASE_ROW_HEIGHT;
+}
+
 export function WorkspaceSkeleton({ view }: { view: "grid" | "list" | "icons" }) {
   return (
     <div
-      className={view === "list" ? "flex-1 overflow-hidden" : "flex-1 overflow-hidden p-4"}
+      className={view === "list" ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-hidden p-4"}
       role="status"
       aria-label="正在加载项目数据"
       data-region="workspace-skeleton"
@@ -89,6 +96,7 @@ function SkeletonGrid() {
 
 function SkeletonList() {
   const count = estimateRowCount();
+  const rowHeight = useListRowHeight();
   return (
     <div>
       <div
@@ -104,7 +112,7 @@ function SkeletonList() {
         <div
           key={index}
           className="grid items-center gap-3 border-b border-[var(--line-hairline)] px-4 py-2 last:border-b-0"
-          style={{ minHeight: ITEM_LIST_BASE_ROW_HEIGHT, gridTemplateColumns: ITEM_LIST_GRID_TEMPLATE }}
+          style={{ minHeight: rowHeight, gridTemplateColumns: ITEM_LIST_GRID_TEMPLATE }}
         >
           <div className="flex gap-1">
             <div className="skeleton-block h-7 w-7 rounded-[var(--radius-md)]" />

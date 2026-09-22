@@ -200,7 +200,7 @@ function ColorDotField({
                     ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[nextIndex]
                     ?.focus();
                 }}
-                className={`h-6 w-6 rounded-full transition-transform hover:scale-110 focus-visible:scale-110 ${
+                className={`h-6 w-6 rounded-full transition-colors ${
                   selected ? "ring-2 ring-offset-2 ring-offset-[var(--bg-surface)]" : ""
                 }`}
                 style={{

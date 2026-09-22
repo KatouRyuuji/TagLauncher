@@ -20,6 +20,8 @@ import type { ItemCardProps } from "./ItemCard";
 export const ITEM_LIST_GRID_TEMPLATE = "72px minmax(120px,1fr) minmax(96px,300px) 112px";
 /** 普通行的稳定基准高度；Mod footer 与多行标签仍由虚拟化器动态测量。 */
 export const ITEM_LIST_BASE_ROW_HEIGHT = 68;
+/** 紧凑档行高：一屏行数约 +21%（11 行 → 13+ 行），信息结构不变只收留白 */
+export const ITEM_LIST_COMPACT_ROW_HEIGHT = 56;
 
 function ItemRowComponent({
   item,
@@ -63,6 +65,9 @@ function ItemRowComponent({
     currentCabinetId === null ? null : cabinets.find((cabinet) => cabinet.id === currentCabinetId)?.name ?? null;
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
   const searchQuery = useAppStore((state) => state.searchQuery);
+  const listDensity = useAppStore((state) => state.listDensity);
+  const compact = listDensity === "compact";
+  const rowHeight = compact ? ITEM_LIST_COMPACT_ROW_HEIGHT : ITEM_LIST_BASE_ROW_HEIGHT;
   // 「最近使用」视图补时间维度：否则「最近」只靠标题一句话支撑
   const showRecent = useAppStore((state) => state.showRecent);
   const lastUsedText = showRecent ? formatRelativeTime(item.last_used_at) : "";
@@ -95,8 +100,8 @@ function ItemRowComponent({
         data-drop-tag-item-id={item.id}
         data-selectable-item-id={item.id}
         role="listitem"
-        style={{ minHeight: ITEM_LIST_BASE_ROW_HEIGHT, gridTemplateColumns: ITEM_LIST_GRID_TEMPLATE }}
-        className={`item-row-render-scope item-focus-ring group grid items-center gap-3 border-b border-[var(--line-hairline)] px-4 py-2 transition-[background-color,box-shadow] ${
+        style={{ minHeight: rowHeight, gridTemplateColumns: ITEM_LIST_GRID_TEMPLATE }}
+        className={`item-row-render-scope item-focus-ring group grid items-center gap-3 border-b border-[color-mix(in_srgb,var(--border-default)_88%,transparent)] px-4 ${compact ? "py-1.5" : "py-2"} ${
           tagDragOver
             ? "bg-[var(--accent-primary-bg-light)] shadow-[inset_3px_0_0_var(--accent-primary)]"
             : selected
@@ -122,7 +127,7 @@ function ItemRowComponent({
         </div>
 
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-xl">
+          <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] ${compact ? "h-8 w-8 text-base" : "h-10 w-10 text-xl"}`}>
             <ItemVisualIcon
               item={item}
               emojiClass="leading-none"

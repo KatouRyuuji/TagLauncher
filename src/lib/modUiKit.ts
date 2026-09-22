@@ -318,7 +318,7 @@ export function createInput(opts: UiInputOptions): HTMLInputElement {
   el.style.fontSize = getCssVar("font-size-base", "14px");
   el.style.fontFamily = "inherit";
   el.style.outline = "none";
-  el.style.transition = `border-color ${getCssVar("transition-fast", "0.15s")}, box-shadow ${getCssVar("transition-fast", "0.15s")}`;
+  el.style.transition = `border-color ${getCssVar("transition-fast", "0.15s")}`;
   el.style.width = "100%";
   el.style.boxSizing = "border-box";
 

@@ -35,6 +35,8 @@ export function resolveEmptyStateVariant(
 export interface EmptyStateCopy {
   title: string;
   description: string;
+  /** 概念注脚（小字灰档）：与操作引导分层，目前仅 library 空态产出 */
+  footnote?: string;
   /** 是否显示「清空搜索」按钮（仅搜索无命中时） */
   showClearSearch: boolean;
   /** 是否显示「清空所有筛选」按钮（筛选/搜索/柜/收藏/最近无命中时） */
@@ -71,11 +73,12 @@ export function emptyStateCopy(
 ): EmptyStateCopy {
   switch (variant) {
     case "library": {
-      const libraryLead = "将文件或文件夹拖到主区域，或点下方按钮加入库。文件柜只是分组，不会移动磁盘上的文件。";
       const remainingHint = libraryRemainingHint(context);
+      // 主引导（大字）与概念注脚（小字）分层：操作路径一句话讲完，概念解释退居注脚
       return {
         title: "暂无项目",
-        description: remainingHint ? `${libraryLead}${remainingHint}` : libraryLead,
+        description: "将文件或文件夹拖到主区域，或点下方按钮加入库。",
+        footnote: remainingHint ? `文件柜只是分组，不会移动磁盘上的文件。${remainingHint}` : "文件柜只是分组，不会移动磁盘上的文件。",
         showClearSearch: false,
         showClearFilters: false,
       };

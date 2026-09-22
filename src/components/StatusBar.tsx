@@ -38,11 +38,14 @@ export function StatusBar({
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const reviewOpen = useAppStore((state) => state.missingReviewOpen);
   const setReviewOpen = useAppStore((state) => state.setMissingReviewOpen);
+  const activityNotice = useAppStore((state) => state.activityNotice);
   const viewMode = useAppStore((state) => state.viewMode);
   const cardSizeScale = useAppStore((state) => state.cardSizeScale);
   const iconSizeScale = useAppStore((state) => state.iconSizeScale);
   const setCardSizeScale = useAppStore((state) => state.setCardSizeScale);
   const setIconSizeScale = useAppStore((state) => state.setIconSizeScale);
+  const listDensity = useAppStore((state) => state.listDensity);
+  const setListDensity = useAppStore((state) => state.setListDensity);
   const persistWorkspacePrefsNow = useAppStore((state) => state.persistWorkspacePrefsNow);
   const [relocating, setRelocating] = useState(false);
   const [lastRelocateResult, setLastRelocateResult] = useState<number | null>(null);
@@ -68,6 +71,7 @@ export function StatusBar({
 
   useEffect(() => {
     if (reviewOpen && missingCount === 0) {
+      showToast("当前没有失效项目", "info");
       setReviewOpen(false);
     }
   }, [missingCount, reviewOpen, setReviewOpen]);
@@ -154,12 +158,12 @@ export function StatusBar({
     <footer
       data-region="statusbar"
       aria-label="工作区状态"
-      className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[color-mix(in_srgb,var(--bg-card)_88%,transparent)] px-3 text-[13px] text-[var(--text-faint)]"
+      className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 text-[13px] text-[var(--text-faint)]"
     >
       <div className="flex min-w-0 items-center gap-2">
         <span className="status-led shrink-0" aria-hidden="true" />
         <span className="data-readout min-w-0 truncate text-[var(--text-muted)]">
-          {parts.join(" / ")}
+          {activityNotice ?? parts.join(" / ")}
         </span>
         {searchPending && (
           <span
@@ -196,6 +200,33 @@ export function StatusBar({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        {viewMode === "list" && (
+          /* 列表视图没有卡片尺寸，缩放槽位换成行密度：紧凑档一屏行数约 +21% */
+          <div role="group" aria-label="行密度" className="segmented-control h-6">
+            <button
+              type="button"
+              onClick={() => setListDensity("comfortable")}
+              className={`control-chip h-5 min-h-5 rounded-[var(--radius-sm)] border-0 px-2 text-[12px] font-medium ${
+                listDensity === "comfortable" ? "control-chip-active" : ""
+              }`}
+              aria-pressed={listDensity === "comfortable"}
+              title="舒适行高（68px）"
+            >
+              舒适
+            </button>
+            <button
+              type="button"
+              onClick={() => setListDensity("compact")}
+              className={`control-chip h-5 min-h-5 rounded-[var(--radius-sm)] border-0 px-2 text-[12px] font-medium ${
+                listDensity === "compact" ? "control-chip-active" : ""
+              }`}
+              aria-pressed={listDensity === "compact"}
+              title="紧凑行高（56px），一屏更多行"
+            >
+              紧凑
+            </button>
+          </div>
+        )}
         {viewMode !== "list" && (
           <div className="flex items-center gap-1" role="group" aria-label={sizeLabel}>
             <button

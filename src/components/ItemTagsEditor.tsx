@@ -129,13 +129,14 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
         className="tag-pill gap-2 px-3 py-2 text-xs"
         style={{
           "--tag-color": tag.color,
-          // 已选 = 标签色 15% 底 + 同色描边，扫视即可分辨
-          ...(selected
-            ? {
-                backgroundColor: `color-mix(in srgb, ${tag.color} 15%, var(--bg-surface))`,
-                borderColor: `color-mix(in srgb, ${tag.color} 55%, transparent)`,
-              }
-            : {}),
+          // 底色规则统一：未选一律中性灰底（色相只由圆点承担）；
+          // 已选 = 标签色 15% 底 + 同色描边 + ✓ 双编码，扫视即可分辨
+          backgroundColor: selected
+            ? `color-mix(in srgb, ${tag.color} 15%, var(--bg-surface))`
+            : "color-mix(in srgb, var(--text-primary) 5%, var(--bg-surface))",
+          borderColor: selected
+            ? `color-mix(in srgb, ${tag.color} 55%, transparent)`
+            : "var(--border-subtle)",
         } as CSSProperties}
       >
         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
@@ -223,7 +224,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
               type="button"
               onClick={() => void handleAddNewTag()}
               disabled={!newTagName.trim() || saving || creating}
-              className="action-button action-button-primary disabled:opacity-40"
+              className="action-button action-button-primary disabled:opacity-60"
             >
               {creating ? "创建中…" : "创建"}
             </button>

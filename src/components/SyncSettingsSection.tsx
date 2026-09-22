@@ -223,7 +223,7 @@ export function SyncSettingsSection() {
                   type="button"
                   onClick={() => void handleClearPassword()}
                   disabled={!loaded || busy !== null}
-                  className="min-h-[44px] shrink-0 rounded-[var(--radius-md)] px-3 text-xs text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="action-button min-h-[44px] shrink-0 px-3 text-xs text-[var(--color-danger-ink)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   清除密码
                 </button>

@@ -381,7 +381,7 @@ export function ItemGrid({
   // 基于虚拟化器测量数据返回每个 item 在滚动容器内容坐标系中的矩形。
   // 已渲染行使用真实测量值，未渲染行用 estimateSize 估算，从而支持跨屏框选。
   // 注意：此 Hook 必须位于所有条件返回之前，否则违反 Rules of Hooks。
-  const getItemRects = useCallback((): Map<number, Rect> => {
+  const getItemRects = useCallback((band?: { top: number; bottom: number }): Map<number, Rect> => {
     const container = scrollRef.current;
     if (!container) return new Map();
 
@@ -397,6 +397,9 @@ export function ItemGrid({
       const metric = rowMetricsRef.current.get(rowIndex);
       const rowStart = metric?.start ?? rowIndex * rowEstimate;
       const rowSize = metric?.size ?? rowEstimate;
+      const rowTop = paddingTop + rowStart;
+      const rowBottom = rowTop + rowSize;
+      if (band && (rowBottom < band.top || rowTop > band.bottom)) continue;
 
       for (let colIndex = 0; colIndex < lanes; colIndex++) {
         const itemIndex = rowIndex * lanes + colIndex;
@@ -420,7 +423,7 @@ export function ItemGrid({
     return (
       <SelectionCanvas
         dataRegion="item-grid"
-        className="flex-1 overflow-y-auto"
+        className="min-h-0 flex-1 overflow-y-auto"
         itemIds={itemIds}
         selectedItemIds={selectedItemIds}
         onSelectItems={onSelectItems}
@@ -437,7 +440,7 @@ export function ItemGrid({
   return (
     <SelectionCanvas
       dataRegion="item-grid"
-      className={fewResults ? "flex-1 overflow-y-auto" : "flex-1 overflow-y-auto p-4"}
+      className={fewResults ? "min-h-0 flex-1 overflow-y-auto" : "min-h-0 flex-1 overflow-y-auto p-4"}
       itemIds={itemIds}
       selectedItemIds={selectedItemIds}
       onSelectItems={onSelectItems}

@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from "react";
-import { Check, FolderOpen, Play, TriangleAlert } from "lucide-react";
+import { FolderOpen, Play, TriangleAlert } from "lucide-react";
 import { ContextMenu } from "./ContextMenu";
 import { DraggableTagList } from "./DraggableTagList";
 import { FavoriteStar } from "./FavoriteStar";
@@ -8,7 +8,7 @@ import { ItemTagsEditor } from "./ItemTagsEditor";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import { useItemDragStart } from "./useItemDragStart";
 import { cardOpenLabel } from "../lib/itemActionCopy";
-import { getFileSuffix, getTypeLabel, splitPathTail, formatRelativeTime } from "../lib/itemUtils";
+import { getFileSuffix, getTypeLabel, formatRelativeTime } from "../lib/itemUtils";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
@@ -103,7 +103,7 @@ function ItemOpenButton({
       }}
       title={label}
       aria-label={`${label} ${item.name}`}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] text-[var(--accent-primary)] opacity-0 transition-[color,background-color,opacity] hover:bg-[var(--accent-primary)] hover:text-[var(--text-invert)] focus-visible:opacity-100 group-hover:opacity-100 ${
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] text-[var(--accent-primary)] opacity-0 hover:bg-[var(--accent-primary)] hover:text-[var(--text-invert)] focus-visible:opacity-100 group-hover:opacity-100 ${
         compact
           ? "bg-[color-mix(in_srgb,var(--bg-card)_88%,transparent)]"
           : "bg-[var(--accent-primary-bg)]"
@@ -174,10 +174,9 @@ function ItemCardComponent({
     handleItemHandlePointerDown(event);
   };
   const fileSuffix = getFileSuffix(item);
-  const { dir: pathDir, tail: pathTail } = splitPathTail(item.path);
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
   const searchQuery = useAppStore((state) => state.searchQuery);
-  // 大图标 ≥150% 档：大卡片要换更多信息——补路径与标签行（第三轮评审 P0）
+  // 大图标 ≥150% 档补标签行
   const iconSizeScale = useAppStore((state) => state.iconSizeScale);
   // 卡片 ≥150% 档补「上次使用」相对时间；「最近使用」视图任何档位都带时间维度
   const cardSizeScale = useAppStore((state) => state.cardSizeScale);
@@ -199,16 +198,16 @@ function ItemCardComponent({
         data-selected={selected ? "true" : "false"}
         role="listitem"
         aria-label={`${item.name}${selected ? "，已选择" : ""}`}
-        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-xl)] border bg-[var(--bg-card)] shadow-[var(--shadow-card)] ${
+        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-xl)] border bg-[var(--bg-card)] ${
           iconLayout ? "items-center p-2.5" : "p-3"
         } ${
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
             : selected
-            ? "border-[var(--accent-primary)] bg-[color-mix(in_srgb,var(--accent-primary)_12%,var(--bg-surface))] ring-1 ring-inset ring-[var(--accent-primary)]"
-            : "border-[var(--line-hairline)] hover:border-[var(--border-default)] hover:bg-[var(--bg-card-hover)]"
+            ? "border-[var(--accent-primary)] bg-[color-mix(in_srgb,var(--accent-primary)_12%,var(--bg-surface))]"
+            : "border-[var(--line-hairline)] hover:border-[var(--border-default)]"
         }`}
-        style={{ backdropFilter: "var(--card-backdrop-filter)" }}
+        title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
         onPointerDown={handleCardBodyPointerDown}
         onDoubleClick={onLaunch}
         onContextMenu={(event) => {
@@ -220,16 +219,13 @@ function ItemCardComponent({
         {iconLayout ? (
           <>
             <div className="relative w-full">
-              <div className="aspect-square w-full overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-[42px]">
+              <div className="aspect-square w-full overflow-hidden rounded-[var(--radius-lg)] bg-[var(--surface-recessed)] text-[42px]">
                 <ItemVisualIcon
                   item={item}
                   emojiClass="leading-none"
                   imageClass="h-full w-full object-cover"
                 />
               </div>
-              <span className="absolute left-1.5 bottom-1.5 inline-flex items-center rounded-[var(--radius-sm)] border border-[var(--line-hairline)] bg-[color-mix(in_srgb,var(--bg-card)_88%,transparent)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]">
-                {getTypeLabel(item.type)}
-              </span>
               {item.is_missing && (
                 <span
                   className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[12px] font-semibold text-[var(--color-warning-ink)]"
@@ -239,21 +235,10 @@ function ItemCardComponent({
                   失效
                 </span>
               )}
-              <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--bg-card)_86%,transparent)] p-0.5 shadow-[var(--shadow-sm)] backdrop-blur-sm">
-                {selected && (
-                  <span
-                    className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary)] text-[var(--text-invert)]"
-                    role="img"
-                    aria-label="已选择"
-                    title="已选择"
-                  >
-                    <Check className="h-3.5 w-3.5" strokeWidth={2.2} aria-hidden="true" />
-                  </span>
-                )}
+              <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5">
                 <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
               </div>
-              {/* 衬底与按钮同现同隐：按钮未浮出时不留空白银盒 */}
-              <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--bg-card)_86%,transparent)] p-0.5 opacity-0 shadow-[var(--shadow-sm)] backdrop-blur-sm transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+              <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                 <ItemOpenButton item={item} onLaunch={onLaunch} compact />
                 <ItemDragHandle
                   onPointerDown={handleItemHandlePointerDown}
@@ -269,17 +254,8 @@ function ItemCardComponent({
             </h3>
             {iconSizeScale >= 1.5 && (
               <>
-                <p
-                  className={`mt-0.5 flex w-full min-w-0 justify-center text-[12px] leading-4 ${
-                    item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"
-                  }`}
-                  title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
-                >
-                  <span className="min-w-0 truncate">{pathDir}</span>
-                  <span dir="rtl" className="max-w-[60%] shrink-0 truncate text-left" style={{ unicodeBidi: "plaintext" }}>{pathTail}</span>
-                </p>
                 <div className="mt-1.5 w-full" onClick={(event) => event.stopPropagation()}>
-                  <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} />
+                  <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} maxVisible={cardSizeScale < 0.9 ? 1 : undefined} />
                 </div>
               </>
             )}
@@ -287,7 +263,7 @@ function ItemCardComponent({
         ) : (
           <>
         <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-[var(--card-thumb-size)] w-[var(--card-thumb-size)] shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] text-[26px]">
+          <div className="flex h-[var(--card-thumb-size)] w-[var(--card-thumb-size)] shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] bg-[var(--surface-recessed)] text-[26px]">
             <ItemVisualIcon
               item={item}
               emojiClass="leading-none"
@@ -296,7 +272,7 @@ function ItemCardComponent({
           </div>
 
           {/* 文本列为右上角的星标/选中勾预留安全间距，任何状态下文字不与控件重叠 */}
-          <div className={`min-w-0 flex-1 ${selected ? "pr-16" : "pr-9"}`}>
+          <div className="min-w-0 flex-1 pr-9">
             <div className="flex min-w-0 items-center gap-1.5">
               <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
                 <SearchHighlightText text={item.name} query={searchQuery} />
@@ -311,16 +287,6 @@ function ItemCardComponent({
                 </span>
               )}
             </div>
-            <p
-              className={`item-card-path mt-0.5 flex min-w-0 text-[13px] leading-4 ${
-                item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"
-              }`}
-              title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
-            >
-              {/* 目录段先行截断，末段名保底可见；末段自身超长时从头部省略，扩展名始终完整 */}
-              <span className="min-w-0 truncate">{pathDir}</span>
-              <span dir="rtl" className="max-w-[60%] shrink-0 truncate text-left" style={{ unicodeBidi: "plaintext" }}>{pathTail}</span>
-            </p>
             {showLastUsed && (
               <p className="mt-0.5 truncate text-[12px] leading-4 text-[var(--text-faint)]">
                 上次使用 {lastUsedText}
@@ -341,37 +307,22 @@ function ItemCardComponent({
             </div>
           </div>
 
-          {/* 右上角常驻区：仅选中勾与星标（星标非收藏时半隐，组件内处理） */}
-          <div className="absolute right-2.5 top-2.5 flex items-center gap-0.5">
+          <div className="absolute right-2 top-2 flex items-center gap-0.5">
             {modSlots.header.length > 0 && <div ref={headerSlotRef} className="flex items-center gap-1" />}
-            {selected && (
-              <span
-                className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary)] text-[var(--text-invert)]"
-                role="img"
-                aria-label="已选择"
-                title="已选择"
-              >
-                <Check className="h-3.5 w-3.5" strokeWidth={2.2} aria-hidden="true" />
-              </span>
-            )}
+            <div className="flex items-center gap-0.5 rounded-[var(--radius-md)] bg-[var(--bg-card)] p-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+              {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="flex items-center gap-1" />}
+              <ItemOpenButton item={item} onLaunch={onLaunch} compact />
+              <ItemDragHandle
+                onPointerDown={handleItemHandlePointerDown}
+                className="h-7 w-7 opacity-100"
+              />
+            </div>
             <FavoriteStar active={item.is_favorite} onClick={onToggleFavorite} />
           </div>
         </div>
 
-        {/* 标签行：左侧标签列表，右侧启动/拖拽（悬停显现，在文档流内、不与文字重叠） */}
-        <div className="mt-2.5 flex min-h-7 items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} />
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {/* Mod 插槽：actions */}
-            {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="flex items-center gap-1" />}
-            <ItemOpenButton item={item} onLaunch={onLaunch} />
-            <ItemDragHandle
-              onPointerDown={handleItemHandlePointerDown}
-              className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-            />
-          </div>
+        <div className="mt-1.5 min-h-7">
+          <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} maxVisible={cardSizeScale < 0.9 ? 1 : undefined} />
         </div>
 
         {/* Mod 插槽：footer */}

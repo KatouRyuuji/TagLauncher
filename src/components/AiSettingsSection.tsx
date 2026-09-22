@@ -207,7 +207,14 @@ export function AiSettingsSection() {
             placeholder="claude-haiku-4-5-20251001"
             spellCheck={false}
             className={inputClass}
+            list="ai-model-candidates"
           />
+          {/* 自由文本仍可填任意模型；候选只给当前 Claude 家族的常用值，减少拼写错误 */}
+          <datalist id="ai-model-candidates">
+            <option value="claude-haiku-4-5-20251001" />
+            <option value="claude-sonnet-5" />
+            <option value="claude-opus-5" />
+          </datalist>
         </SettingsField>
         <SettingsField label={`每个对象最多标签数 —— ${config.maxTags}`}>
           {/* 当前值放标签行：贴滑杆右端的读数会随手柄位移脱节 */}
@@ -222,6 +229,9 @@ export function AiSettingsSection() {
           />
           <div className="mt-0.5 flex max-w-md items-center justify-between text-[11px] text-[var(--text-faint)]" aria-hidden="true">
             <span>1</span>
+            <span>5</span>
+            <span>10</span>
+            <span>15</span>
             <span>20</span>
           </div>
         </SettingsField>
@@ -252,7 +262,8 @@ export function AiSettingsSection() {
         />
       </fieldset>
 
-      {/* 配置操作与运行打标同一行：运行入口是配好 API 的下一步，必须在首屏可见 */}
+      {/* 每屏一个主动作：「保存配置」是唯一实心主钮；运行打标成组居右，一主一次改为两次级，
+          不再双实心蓝争抢（运行入口保持首屏可见的原则不变） */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => void handleSave()} disabled={!loaded || busy !== null} className="action-button action-button-primary px-4 text-xs disabled:opacity-50">
           {busy === "save" ? "保存中…" : "保存配置"}
@@ -266,13 +277,13 @@ export function AiSettingsSection() {
           </button>
         )}
         <span className="mx-1 hidden h-5 w-px bg-[var(--line-hairline)] sm:inline" aria-hidden="true" />
-        <span className="text-xs text-[var(--text-faint)]">运行打标</span>
+        <span className="instrument-label text-[var(--text-faint)]">运行打标</span>
         <button
           type="button"
           onClick={() => void requestTagAll("untagged")}
           aria-disabled={!configured}
           title={configured ? undefined : "未配置 AI 服务"}
-          className={`action-button action-button-primary px-4 text-xs ${configured ? "" : "opacity-50"}`}
+          className={`action-button px-4 text-xs ${configured ? "" : "opacity-50"}`}
         >
           {busy === "tag" ? "统计中…" : "为未打标对象打标"}
         </button>

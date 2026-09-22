@@ -349,11 +349,14 @@ export function useWorkspaceHotkeys({
         match ??= substringMatch;
         if (match) {
           event.preventDefault();
+          useAppStore.getState().setActivityNotice(null);
           setWorkspaceSelectionAnchor(match.id);
           selectVisible(items, match, ctx.setSelectedItemIds);
           requestItemFocus(match.id);
           return;
         }
+        event.preventDefault();
+        useAppStore.getState().setActivityNotice(`没有名称匹配「${buffer}」`);
         return;
       }
       // 非可打印键（方向键/Home/功能键）重置缓冲

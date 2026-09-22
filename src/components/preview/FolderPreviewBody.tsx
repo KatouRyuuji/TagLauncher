@@ -4,12 +4,22 @@
 // 属性缩成顶上一行；行内「打开 / 加入库」悬停或聚焦才浮出。
 // ============================================================================
 
-import { File, Folder, Plus } from "lucide-react";
+import { File, FileSpreadsheet, FileText, Folder, Plus, Presentation } from "lucide-react";
 import * as db from "../../lib/db";
 import { showToast } from "../../lib/toast";
 import type { ItemWithTags } from "../../types";
 import { formatLocalDate } from "./previewFormat";
 import { PreviewTagPills } from "./PreviewTagPills";
+
+/** Office 三件套按扩展名着色（蓝=文档 / 绿=表格 / 橙=演示，全走语义 token），其余文件保持中性灰 */
+function entryIcon(entry: db.ObjectDirectoryEntry): { Icon: typeof File; className: string } {
+  if (entry.is_dir) return { Icon: Folder, className: "shrink-0 text-[var(--color-warning-ink)]" };
+  const ext = entry.name.split(".").pop()?.toLowerCase() ?? "";
+  if (["doc", "docx"].includes(ext)) return { Icon: FileText, className: "shrink-0 text-[var(--color-info-ink)]" };
+  if (["xls", "xlsx", "csv"].includes(ext)) return { Icon: FileSpreadsheet, className: "shrink-0 text-[var(--color-success-ink)]" };
+  if (["ppt", "pptx"].includes(ext)) return { Icon: Presentation, className: "shrink-0 text-[var(--color-warning-ink)]" };
+  return { Icon: File, className: "shrink-0 text-[var(--text-faint)]" };
+}
 
 export function FolderPreviewBody({
   item,
@@ -49,13 +59,11 @@ export function FolderPreviewBody({
         <p className="px-4 py-6 text-sm text-[var(--text-muted)]">空文件夹或无法列出</p>
       ) : (
         <ul className="preview-folder-list">
-          {entries.map((entry) => (
+          {entries.map((entry) => {
+            const { Icon, className } = entryIcon(entry);
+            return (
             <li key={entry.path} className="group flex min-h-9 items-center gap-2 px-4 py-1.5">
-              {entry.is_dir ? (
-                <Folder aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--color-warning-ink)]" />
-              ) : (
-                <File aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
-              )}
+              <Icon aria-hidden="true" size={15} strokeWidth={1.8} className={className} />
               <span className="min-w-0 flex-1 truncate text-sm text-[var(--text-secondary)]">{entry.name}</span>
               <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
                 <button
@@ -85,7 +93,8 @@ export function FolderPreviewBody({
                 )}
               </div>
             </li>
-          ))}
+            );
+          })}
           {/* 列表末尾汇总总数，滚动到底可确认没有遗漏 */}
           <li className="px-4 py-1.5 text-[12px] text-[var(--text-faint)]">
             共 {entryTotal} 项{entryTotal > 48 ? " · 还有更多" : ""}

@@ -124,8 +124,9 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
           <div className="mt-2 grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
             <div>
               <div className="text-label">选择标签</div>
-              {/* 纵向列表与右侧胶囊阵列拉开形态：当前编辑对象 = 左侧 accent 竖条 + 浅底 */}
-              <div className="mt-2 flex max-h-[280px] flex-col gap-0.5 overflow-y-auto">
+              {/* 纵向列表与右侧胶囊阵列拉开形态：当前编辑对象 = 左侧 accent 竖条 + 浅底；
+                  scrollbar-gutter 恒留滚动槽，「还有更多」一眼可辨（末项不再被默默裁半） */}
+              <div className="mt-2 flex max-h-[280px] flex-col gap-0.5 overflow-y-auto [scrollbar-gutter:stable]">
                 {tags.map((tag) => {
                   const active = tag.id === focusedId;
                   return (

@@ -666,7 +666,9 @@ export function useItems() {
     invalidateItemVisuals();
     void db.clearIconNoneMarkers().catch(() => {});
     if (options?.reconcile) {
-      void db.reconcileItems({ force: true }).catch(() => {});
+      void db.reconcileItems({ force: true }).catch(() => {
+        showToast("对账失败", "error");
+      });
     }
     await loadAll();
   }, [loadAll]);
@@ -675,6 +677,7 @@ export function useItems() {
     items: filtered,
     allItems,
     loading,
+    cabinetPending: selectedCabinetId !== null && !showFavorites && !showRecent && cabinetItemsOwner !== selectedCabinetId,
     loadError,
     refresh,
     relocateMissing,

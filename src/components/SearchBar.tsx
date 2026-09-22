@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpDown,
+  ChevronDown,
   FilePlus2,
   Filter,
   FolderPlus,
@@ -8,6 +9,7 @@ import {
   Images,
   Info,
   List,
+  Plus,
   RefreshCw,
   Search,
   Settings,
@@ -19,6 +21,7 @@ import { useAppStore, type SearchMode } from "../stores/appStore";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
 import { SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter, type SortMode } from "../lib/itemQuery";
 import { classifySearchQuery } from "../lib/search";
+import { showToast } from "../lib/toast";
 import { SEARCH_RESET_EVENT, WORKSPACE_SEARCH_ID } from "../lib/workspaceChrome";
 import { SelectMenu } from "./SelectMenu";
 import {
@@ -65,6 +68,9 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
   const filtersForcedOpen = typeFilter !== "all" || searchMode !== "all";
   const showFilterRow = hasLibraryItems && (workspaceFiltersOpen || filtersForcedOpen);
   const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const addMenuAnchorRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
   const lastCompositionValueRef = useRef<string | null>(null);
   // 同值吞噬守卫的撤防定时器：IME 的同值补发 input 与 compositionend 在同一任务链内，
@@ -76,6 +82,24 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
     update();
     return subscribeToolbarButtons(update);
   }, []);
+
+  // 「添加」菜单：点击外部 / Esc 关闭
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (addMenuAnchorRef.current?.contains(event.target as Node)) return;
+      setAddMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAddMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [addMenuOpen]);
 
   useEffect(() => {
     const reset = () => {
@@ -224,7 +248,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
           <button
             type="button"
             onClick={() => setViewMode("grid")}
-            className={`control-chip h-6 min-h-6 w-7 gap-1 rounded-[var(--radius-sm)] border-0 px-0 xl:w-auto xl:px-1.5 ${
+            className={`control-chip h-6 min-h-6 w-7 gap-1 rounded-[var(--radius-sm)] border-0 px-0 ${
               viewMode === "grid" ? "control-chip-active" : ""
             }`}
             title="网格视图"
@@ -232,12 +256,11 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             aria-pressed={viewMode === "grid"}
           >
             <Grid2X2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
-            <span className="hidden xl:inline">网格</span>
           </button>
           <button
             type="button"
             onClick={() => setViewMode("icons")}
-            className={`control-chip h-6 min-h-6 w-7 gap-1 rounded-[var(--radius-sm)] border-0 px-0 xl:w-auto xl:px-1.5 ${
+            className={`control-chip h-6 min-h-6 w-7 gap-1 rounded-[var(--radius-sm)] border-0 px-0 ${
               viewMode === "icons" ? "control-chip-active" : ""
             }`}
             title="大图标视图"
@@ -245,12 +268,11 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             aria-pressed={viewMode === "icons"}
           >
             <Images className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
-            <span className="hidden xl:inline">大图标</span>
           </button>
           <button
             type="button"
             onClick={() => setViewMode("list")}
-            className={`control-chip h-6 min-h-6 w-7 gap-1 rounded-[var(--radius-sm)] border-0 px-0 xl:w-auto xl:px-1.5 ${
+            className={`control-chip h-6 min-h-6 w-7 gap-1 rounded-[var(--radius-sm)] border-0 px-0 ${
               viewMode === "list" ? "control-chip-active" : ""
             }`}
             title="列表视图"
@@ -258,31 +280,67 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             aria-pressed={viewMode === "list"}
           >
             <List className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
-            <span className="hidden xl:inline">列表</span>
           </button>
         </div>
 
-        <div role="group" aria-label="导入" className="flex shrink-0 items-center gap-1.5">
+        <div
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[13px] text-[var(--text-secondary)]"
+          title={SORT_OPTIONS.find((option) => option.value === sortMode)?.hint}
+        >
+          <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" strokeWidth={1.8} aria-hidden="true" />
+          <SelectMenu
+            value={sortMode}
+            onChange={(next) => setSortMode(next as SortMode)}
+            groups={[
+              { label: "推荐", options: SORT_OPTIONS.filter((option) => option.value === "smart") },
+              { label: "字段", options: SORT_OPTIONS.filter((option) => option.value !== "smart") },
+            ]}
+            ariaLabel="排序方式"
+            className="flex h-full min-w-14 items-center gap-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none"
+          />
+        </div>
+
+        <div role="group" aria-label="导入" className="relative flex shrink-0 items-center" ref={addMenuAnchorRef}>
+          {/* 两个次级导入操作合并为一个入口：把顶栏黄金位置的视觉重量还给搜索框 */}
           <button
             type="button"
-            onClick={handleBrowse}
-            className="action-button h-8 min-h-8 px-2.5 text-xs max-[1150px]:w-8 max-[1150px]:px-0"
-            title="添加文件"
-            aria-label="添加文件"
+            onClick={() => setAddMenuOpen((value) => !value)}
+            className="action-button h-8 min-h-8 gap-1 px-2.5 text-xs max-[1150px]:w-8 max-[1150px]:px-0"
+            title="添加文件或文件夹"
+            aria-label="添加文件或文件夹"
+            aria-haspopup="menu"
+            aria-expanded={addMenuOpen}
           >
-            <FilePlus2 className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
-            <span className="max-[1150px]:hidden">添加文件</span>
+            <Plus className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden="true" />
+            <span className="max-[1150px]:hidden">添加</span>
+            <ChevronDown className={`h-3 w-3 shrink-0 transition-transform max-[1150px]:hidden ${addMenuOpen ? "rotate-180" : ""}`} strokeWidth={1.8} aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            onClick={handleBrowseFolder}
-            className="action-button h-8 min-h-8 px-2.5 text-xs max-[1150px]:w-8 max-[1150px]:px-0"
-            title="添加文件夹"
-            aria-label="添加文件夹"
-          >
-            <FolderPlus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
-            <span className="max-[1150px]:hidden">添加文件夹</span>
-          </button>
+          {addMenuOpen && (
+            <div
+              role="menu"
+              aria-label="添加"
+              className="absolute right-0 top-full z-[var(--z-select-menu)] mt-1 w-48 overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] py-1 shadow-[var(--shadow-overlay)]"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setAddMenuOpen(false); void handleBrowse(); }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              >
+                <FilePlus2 className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden="true" />
+                添加文件…
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setAddMenuOpen(false); void handleBrowseFolder(); }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              >
+                <FolderPlus className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden="true" />
+                添加文件夹…
+              </button>
+            </div>
+          )}
         </div>
 
         {modButtons.length > 0 && (
@@ -313,17 +371,29 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
           {hasLibraryItems && (
             <button
               type="button"
-              onClick={() => setWorkspaceFiltersOpen(!showFilterRow)}
-              className={`icon-button relative h-8 w-8 ${showFilterRow ? "text-[var(--accent-primary)]" : ""}`}
-              title="筛选"
-              aria-label="筛选"
+              onClick={() => {
+              if (filtersForcedOpen && showFilterRow) {
+                showToast("类型或搜索范围还在，筛选栏保持展开。先选「全部」再收起。", "info");
+                return;
+              }
+              setWorkspaceFiltersOpen(!showFilterRow);
+            }}
+              className={`icon-button relative h-8 w-8 ${
+                typeFilter !== "all" || searchMode !== "all"
+                  ? "border-transparent bg-[var(--accent-primary)] text-[var(--text-invert)]"
+                  : showFilterRow
+                    ? "text-[var(--accent-primary)]"
+                    : ""
+              }`}
+              title="筛选类型与搜索范围"
+              aria-label="筛选类型与搜索范围"
               aria-pressed={showFilterRow}
             >
-              <Filter className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+              <Filter className="h-[17px] w-[17px]" strokeWidth={1.8} aria-hidden="true" />
               {/* 激活筛选计数外显：行收起时也能看出有筛选在作用 */}
               {(typeFilter !== "all" || searchMode !== "all") && (
                 <span
-                  className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--accent-primary)] px-0.5 text-[10px] font-semibold leading-none text-[var(--text-invert)]"
+                  className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--bg-elevated)] px-0.5 text-[10px] font-semibold leading-none text-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]"
                   aria-label={`${(typeFilter !== "all" ? 1 : 0) + (searchMode !== "all" ? 1 : 0)} 个筛选激活`}
                 >
                   {(typeFilter !== "all" ? 1 : 0) + (searchMode !== "all" ? 1 : 0)}
@@ -333,12 +403,20 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
           )}
           <button
             type="button"
-            onClick={onRefresh}
+            onClick={() => {
+              if (refreshing) return;
+              setRefreshing(true);
+              useAppStore.getState().setActivityNotice("正在刷新");
+              void Promise.resolve(onRefresh()).finally(() => {
+                setRefreshing(false);
+                useAppStore.getState().setActivityNotice("列表已是最新");
+              });
+            }}
             className="icon-button h-8 w-8"
-            title="刷新"
-            aria-label="刷新"
+            title="刷新列表"
+            aria-label="刷新列表"
           >
-            <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+            <RefreshCw className={`h-[17px] w-[17px] ${refreshing ? "animate-spin" : ""}`} strokeWidth={1.8} aria-hidden="true" />
           </button>
 
           {onOpenSettings && (
@@ -346,12 +424,14 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               type="button"
               onClick={onOpenSettings}
               className="icon-button h-8 w-8"
-              title="设置"
+              title="设置（Ctrl+,）"
               aria-label="设置"
             >
-              <Settings className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+              <Settings className="h-[17px] w-[17px]" strokeWidth={1.8} aria-hidden="true" />
             </button>
           )}
+
+          <span className="mx-0.5 h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
 
           <button
             type="button"
@@ -360,12 +440,12 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             title="关于 TagLauncher"
             aria-label="关于 TagLauncher"
           >
-            <Info className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+            <Info className="h-[17px] w-[17px]" strokeWidth={1.8} aria-hidden="true" />
           </button>
         </div>
       </div>
 
-      {/* 控制 + 筛选：有库时默认展开（尊重 workspaceFiltersOpen 偏好）；空库不显示 */}
+      {/* 控制 + 筛选：空闲收起；类型或搜索范围不是全部时强制展开 */}
       {showFilterRow && <div
         data-region="filterbar"
         className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 py-1.5"
@@ -387,23 +467,6 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               {mode.label}
             </button>
           ))}
-        </div>
-
-        <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />
-
-        <div
-          className="flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[13px] text-[var(--text-secondary)]"
-          title={SORT_OPTIONS.find((option) => option.value === sortMode)?.hint}
-        >
-          <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" strokeWidth={1.8} aria-hidden="true" />
-          <span className="instrument-label max-[1250px]:hidden">排序</span>
-          <SelectMenu
-            value={sortMode}
-            onChange={(next) => setSortMode(next as SortMode)}
-            options={SORT_OPTIONS}
-            ariaLabel="排序方式"
-            className="flex h-full min-w-14 items-center gap-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none"
-          />
         </div>
 
         <span className="h-5 w-px shrink-0 bg-[var(--line-hairline)]" aria-hidden="true" />

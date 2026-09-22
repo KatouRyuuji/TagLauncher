@@ -14,6 +14,7 @@ import { truncatePathMiddle } from "../lib/itemUtils";
 export function RemoveFromAppConfirmDialog({
   open,
   items,
+  busyLabel = null,
   skipNextTime,
   preferDeleteFiles,
   onSkipNextTimeChange,
@@ -22,6 +23,7 @@ export function RemoveFromAppConfirmDialog({
 }: {
   open: boolean;
   items: RemoveConfirmItem[];
+  busyLabel?: string | null;
   skipNextTime: boolean;
   preferDeleteFiles: boolean;
   onSkipNextTimeChange: (value: boolean) => void;
@@ -29,7 +31,7 @@ export function RemoveFromAppConfirmDialog({
   onCancel: () => void;
 }) {
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open });
-  useEscapeKey(onCancel, open);
+  useEscapeKey(onCancel, open && !busyLabel);
   const primaryRef = useRef<HTMLButtonElement>(null);
 
   // 危险确认弹窗的初始焦点落在安全主按钮（焦点陷阱默认抓第一个可聚焦元素，
@@ -72,7 +74,7 @@ export function RemoveFromAppConfirmDialog({
             </div>
             <div className="min-w-0 flex-1">
               <h2 className="text-base font-semibold text-[var(--text-primary)]">
-                {dialogTitle}
+                {busyLabel ?? dialogTitle}
               </h2>
               <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
                 从库中移除不会动磁盘上的文件。删除本地文件会把磁盘上的文件或整个文件夹移到回收站，并从库里拿掉。
@@ -117,7 +119,7 @@ export function RemoveFromAppConfirmDialog({
                 <Check aria-hidden="true" size={12} strokeWidth={2} className="text-[var(--accent-primary)]" />
               )}
             </span>
-            从库中移除时不再询问
+            从库中移除时不再询问（删除本地文件仍会逐次确认）
           </button>
 
           <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
@@ -125,13 +127,14 @@ export function RemoveFromAppConfirmDialog({
               <button
                 type="button"
                 onClick={() => void onConfirm("files")}
+              disabled={busyLabel != null}
                 className="action-button action-button-danger mr-auto"
               >
                 <Trash2 aria-hidden="true" size={15} strokeWidth={1.8} />
-                删除本地文件
+                删除本地文件（进回收站）
               </button>
             )}
-            <button type="button" autoFocus={preferDeleteFiles} onClick={onCancel} className="action-button">
+            <button type="button" autoFocus={preferDeleteFiles} onClick={onCancel} disabled={busyLabel != null} className="action-button">
               取消
             </button>
             <button
@@ -139,6 +142,7 @@ export function RemoveFromAppConfirmDialog({
               ref={primaryRef}
               autoFocus={!preferDeleteFiles}
               onClick={() => void onConfirm("library")}
+              disabled={busyLabel != null}
               className={preferDeleteFiles ? "action-button" : "action-button action-button-primary"}
             >
               从库中移除
@@ -147,10 +151,11 @@ export function RemoveFromAppConfirmDialog({
               <button
                 type="button"
                 onClick={() => void onConfirm("files")}
+              disabled={busyLabel != null}
                 className="action-button action-button-danger"
               >
                 <Trash2 aria-hidden="true" size={15} strokeWidth={1.8} />
-                删除本地文件
+                删除本地文件（进回收站）
               </button>
             )}
           </div>

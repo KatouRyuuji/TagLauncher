@@ -1,4 +1,4 @@
-import { CircleAlert, FilePlus2, FilterX, FolderPlus, LibraryBig, RefreshCw, SearchX } from "lucide-react";
+import { CircleAlert, FilePlus2, FilterX, FolderInput, FolderPlus, LibraryBig, RefreshCw, Search, SearchX, Tag } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { emptyStateCopy, resolveEmptyStateVariant } from "../lib/emptyStateCopy";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
@@ -13,7 +13,7 @@ export function WorkspaceLoadError({
   onRetry: () => void;
 }) {
   return (
-    <div className="flex flex-1 overflow-auto">
+    <div className="flex min-h-full items-center overflow-auto">
       <section className="empty-state-panel" role="alert" aria-labelledby="workspace-load-error-title">
         <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--color-danger)_24%,var(--border-subtle))] bg-[var(--color-danger-bg)] text-[var(--color-danger-ink)] shadow-[var(--shadow-sm)]">
           <CircleAlert className="h-8 w-8" strokeWidth={1.6} aria-hidden="true" />
@@ -96,11 +96,11 @@ export function WorkspaceEmptyState({
   const showActions = showAddCta || copy.showClearSearch || showClearFilters;
 
   return (
-    <div className="flex flex-1 overflow-auto">
-      {/* 卡片上移至视口上 1/3 区域：顶边距固定、底边距 auto 吃掉剩余空间（左右 auto 居中沿用
-          .empty-state-panel）；面板超高时整体进入滚动流，顶边距只是前导空白，内容不丢可达性 */}
+    <div className="flex min-h-full items-center overflow-auto">
+      {/* 面板垂直居中（margin auto 吃掉上下剩余空间）；library 变体放大为近全区
+          拖放引导面板，见 .empty-state-panel[data-empty-variant="library"] */}
       <section
-        className="empty-state-panel mt-[12vh] mb-auto"
+        className="empty-state-panel"
         data-empty-variant={variant}
         role="status"
         aria-labelledby="workspace-empty-title"
@@ -115,6 +115,24 @@ export function WorkspaceEmptyState({
           <p className="mx-auto mt-2 max-w-[420px] font-body text-[13px] leading-5 text-[var(--text-muted)]">
             {copy.description}
           </p>
+          {variant === "library" && (
+            <ol className="empty-steps" aria-label="上手三步">
+              <li>
+                <FolderInput className="h-4 w-4" strokeWidth={1.7} aria-hidden="true" />
+                <span>拖入文件或文件夹</span>
+              </li>
+              <li aria-hidden="true" className="empty-steps-arrow">→</li>
+              <li>
+                <Tag className="h-4 w-4" strokeWidth={1.7} aria-hidden="true" />
+                <span>给项目打上标签</span>
+              </li>
+              <li aria-hidden="true" className="empty-steps-arrow">→</li>
+              <li>
+                <Search className="h-4 w-4" strokeWidth={1.7} aria-hidden="true" />
+                <span><kbd className="kbd">Ctrl+K</kbd> 随时搜索</span>
+              </li>
+            </ol>
+          )}
           {showActions && (
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
               {showAddCta && (
@@ -142,6 +160,11 @@ export function WorkspaceEmptyState({
                 </button>
               )}
             </div>
+          )}
+          {copy.footnote && (
+            <p className="mx-auto mt-4 max-w-[420px] text-[12px] leading-5 text-[var(--text-faint)]">
+              {copy.footnote}
+            </p>
           )}
         </div>
       </section>
