@@ -7,13 +7,12 @@ const canonicalTheme =
 
 export const THEME_VARIABLE_KEYS = Object.keys(canonicalTheme.variables).sort();
 
-// 规范主题是霜靛·暗，暗色板把标签胶囊 alpha 加实；缺省补齐仍用亮色配方，
-// 避免不完整的自定义亮色主题吃到 30% 实底。
+// 自定义主题缺少标签令牌时使用轻量底色，保留彩色标签作为数据标识。
 export const DEFAULT_THEME_VARIABLES: Record<string, string> = {
   ...canonicalTheme.variables,
-  "tag-color-alpha": "9%",
-  "tag-selected-alpha": "16%",
-  "tag-muted-alpha": "9%",
+  "tag-color-alpha": "7%",
+  "tag-selected-alpha": "12%",
+  "tag-muted-alpha": "5%",
 };
 
 export function withDefaultThemeVariables(theme: ThemeDefinition): ThemeDefinition {

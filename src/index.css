@@ -64,13 +64,13 @@
     --media-caption-gradient: linear-gradient(to top, rgba(15, 23, 42, 0.72), transparent);
     --status-warning-bg: rgba(245, 158, 11, 0.12);
     --status-success-bg: rgba(34, 197, 94, 0.12);
-    --tag-preset-colors: #e11d48,#ea580c,#ca8a04,#16a34a,#0d9488,#3db8bf,#2563eb,#7c3aed;
+    --tag-preset-colors: #365e9d,#7050a0,#a34469,#59616b,#826a23,#3e754f,#a05e31,#247b71,#a14e48,#755940;
 
     --sidebar-width: 232px;
     --grid-col-min: 256px;
     --grid-col-min-icons: 168px;
     /* 卡片缩略图边长；用户尺寸缩放时由 cardSizeVars 内联覆盖 */
-    --card-thumb-size: 52px;
+    --card-thumb-size: 40px;
     /* 卡片内标签文字缩放（小尺寸档同步收小，避免密度被标签行吃掉） */
     --card-text-scale: 1;
     --titlebar-height: 40px;
@@ -153,15 +153,15 @@
     --color-danger-bg: rgba(220, 38, 38, 0.08);
     --color-warning: #d97706;
     --color-success: #16a34a;
-    --color-favorite: #eab308;
+    --color-favorite: #4f618c;
     --overlay-bg: rgba(15, 23, 42, 0.72);
     --scrollbar-thumb: rgba(100, 116, 139, 0.36);
     --scrollbar-thumb-hover: rgba(71, 85, 105, 0.5);
 
     /* 仅由现有主题变量派生，保持第三方主题与 Mod 主题向后兼容。 */
     --surface-raised: var(--bg-elevated);
-    --surface-recessed: var(--bg-input);
-    --line-hairline: color-mix(in srgb, var(--border-default) 72%, transparent);
+    --surface-recessed: var(--bg-hover);
+    --line-hairline: color-mix(in srgb, var(--border-default) 48%, transparent);
     --signal-accent: var(--accent-primary);
     --workspace-grid: color-mix(in srgb, var(--border-default) 28%, transparent);
 
@@ -178,11 +178,6 @@
   body,
   #root {
     height: 100%;
-  }
-
-  /* rem 基准保持 16px，字号一律走 token / 明确 px，避免 rem 放大与绝对 px 两套尺子 */
-  html {
-    font-size: 16px;
   }
 
   /* color-scheme 不写死：由各主题 css 字段按自身明暗声明（内置 light=light、dark/sakura=dark），
@@ -436,14 +431,14 @@ html.theme-switching * {
   }
 
   .surface-card {
-    border: 1px solid var(--border-subtle);
+    border: 1px solid transparent;
     border-radius: var(--radius-xl);
     background: var(--surface-raised);
     box-shadow: var(--shadow-card);
   }
 
   .surface-card-soft {
-    border: 1px solid var(--border-subtle);
+    border: 1px solid transparent;
     border-radius: var(--radius-xl);
     background: color-mix(in srgb, var(--bg-card) 92%, transparent);
   }
@@ -455,7 +450,7 @@ html.theme-switching * {
     gap: 8px;
     min-height: 32px;
     padding: 0 12px;
-    border: 1px solid var(--border-subtle);
+    border: 1px solid transparent;
     border-radius: var(--radius-md);
     background: var(--bg-input);
     color: var(--text-tertiary);
@@ -463,14 +458,14 @@ html.theme-switching * {
   }
 
   .control-chip:hover {
-    border-color: var(--border-default);
+    border-color: transparent;
     color: var(--text-secondary);
     background: color-mix(in srgb, var(--bg-hover) 70%, var(--bg-input));
   }
 
   /* 选中芯片用浅底加深字。实心填充留给 action-button-primary，避免视图、筛选、密度和主按钮同权重。 */
   .control-chip-active {
-    border-color: color-mix(in srgb, var(--accent-primary) 42%, var(--border-subtle));
+    border-color: transparent;
     background: var(--accent-primary-bg);
     color: var(--accent-primary-ink);
     font-weight: var(--font-weight-semibold);
@@ -483,7 +478,7 @@ html.theme-switching * {
     min-height: 20px;
     padding: 0 6px;
     white-space: nowrap;
-    border: 1px solid var(--border-subtle);
+    border: 1px solid transparent;
     border-radius: var(--radius-sm);
     background: var(--bg-input);
     color: var(--text-faint);
@@ -499,9 +494,9 @@ html.theme-switching * {
     justify-content: center;
     width: 34px;
     height: 34px;
-    border: 1px solid var(--border-subtle);
+    border: 1px solid transparent;
     border-radius: var(--radius-md);
-    background: var(--bg-input);
+    background: transparent;
     transition:
       background-color var(--transition-fast),
       border-color var(--transition-fast),
@@ -513,7 +508,7 @@ html.theme-switching * {
 
   .icon-button:hover {
     color: var(--text-primary);
-    border-color: var(--border-default);
+    border-color: transparent;
     background: color-mix(in srgb, var(--bg-hover) 70%, var(--bg-input));
   }
 
@@ -524,9 +519,9 @@ html.theme-switching * {
     gap: 8px;
     min-height: 40px;
     padding: 0 14px;
-    border: 1px solid var(--border-subtle);
+    border: 1px solid transparent;
     border-radius: var(--radius-md);
-    background: var(--bg-input);
+    background: var(--surface-recessed);
     color: var(--text-secondary);
     cursor: pointer;
     transition:
@@ -537,7 +532,7 @@ html.theme-switching * {
   }
 
   .action-button:hover:not(:disabled) {
-    border-color: var(--border-default);
+    border-color: transparent;
     color: var(--text-primary);
     background: color-mix(in srgb, var(--bg-hover) 70%, var(--bg-input));
   }
@@ -556,21 +551,78 @@ html.theme-switching * {
     color: var(--text-faint);
   }
 
-  /* 标签保留用户色相。胶囊用固定混色，不跟主题里偏淡的 --tag-color-alpha，侧栏色点与卡片才能对上。 */
-  .tag-pill {
+  /* 有色墨字承担识别，轻底色只划定标签范围。所有入口共用相同颜色身份。 */
+  .tag-pill,
+  .item-tag,
+  .tag-color-name {
     --tag-color: var(--accent-primary);
+    --tag-ink: color-mix(in srgb, var(--tag-color) 88%, var(--text-primary));
+    --tag-fill: color-mix(in srgb, var(--tag-color) 9%, var(--bg-card));
+    color: var(--tag-ink);
+  }
+  :root[data-scheme="dark"] :is(.tag-pill, .item-tag, .tag-color-name) {
+    --tag-fill: color-mix(in srgb, var(--tag-color) 15%, var(--bg-card));
+  }
+  .tag-pill,
+  .item-tag {
     display: inline-flex;
     align-items: center;
-    border: 1px solid color-mix(in srgb, var(--tag-color) 46%, transparent);
-    border-radius: var(--radius-full);
-    background: color-mix(in srgb, var(--tag-color) 18%, var(--bg-surface));
-    color: var(--text-primary);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: var(--tag-fill);
     font-weight: var(--font-weight-medium);
   }
+  .item-tag {
+    position: relative;
+    max-width: 100%;
+    min-height: 24px;
+    padding: 2px 7px;
+    font-size: 12px;
+    line-height: 18px;
+    white-space: nowrap;
+  }
+  .item-tag-list {
+    padding-top: 6px;
+    padding-bottom: 2px;
+  }
+  .tag-remove {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    box-shadow: var(--shadow-sm);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .item-tag:hover .tag-remove,
+  .tag-remove:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .item-tag-overflow,
+  :root[data-scheme="dark"] .item-tag-overflow {
+    background: var(--bg-hover);
+    color: var(--text-muted);
+  }
+  .item-tag:hover {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tag-color) 22%, transparent);
+  }
 
-  /* 卡片视图的标签胶囊随卡片尺寸缩放（12px 基准与 DraggableTagList 一致） */
-  .item-card-render-scope .tag-pill {
-    font-size: calc(12px * var(--card-text-scale, 1));
+  .item-card-render-scope {
+    box-shadow: none;
+  }
+
+  /* 标签随卡片缩放，字体和颜色保持相同层级。 */
+  .item-card-render-scope .item-tag {
+    font-size: max(12px, calc(12px * var(--card-text-scale, 1)));
   }
 
   /* 最小档（≤75%）：路径行隐藏，小卡片不再名称/路径双重截断 */
@@ -579,27 +631,11 @@ html.theme-switching * {
   }
 
   .tag-pill:hover {
-    border-color: color-mix(in srgb, var(--tag-color) 45%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tag-color) 22%, transparent);
   }
 
   .tag-pill[aria-pressed="true"] {
-    background: color-mix(in srgb, var(--tag-color) var(--tag-selected-alpha), var(--bg-surface));
-    border-color: var(--tag-color);
-  }
-
-  /* 暗色胶囊按色相混进纸色，并加同色描边。不先压黑，暖色不会塌成土褐。 */
-  :root[data-scheme="dark"] .tag-pill {
-    border-color: color-mix(in srgb, var(--tag-color) 58%, transparent);
-    background: color-mix(in srgb, var(--tag-color) 34%, var(--bg-surface));
-  }
-
-  :root[data-scheme="dark"] .tag-pill[aria-pressed="true"] {
-    border-color: var(--tag-color);
-    background: color-mix(in srgb, var(--tag-color) 46%, var(--bg-surface));
-  }
-
-  :root[data-scheme="dark"] .item-row-render-scope {
-    border-bottom-color: color-mix(in srgb, white 14%, transparent);
+    border-color: var(--tag-ink);
   }
 
   .action-button-primary:hover:not(:disabled) {
@@ -714,11 +750,11 @@ html.theme-switching * {
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-start;
-    gap: 12px;
-    padding: 1rem;
+    gap: 16px;
+    padding: 1.25rem;
   }
   .item-grid-few-card {
-    width: min(320px, 100%);
+    width: min(300px, 100%);
   }
   .item-grid-few-card > * {
     width: 100%;
@@ -830,8 +866,8 @@ html.theme-switching * {
   }
 
   .workbench-panel {
-    border: 1px solid var(--line-hairline);
-    border-radius: var(--radius-xl);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
     background: var(--surface-raised);
     box-shadow: var(--shadow-card);
   }
@@ -857,8 +893,13 @@ html.theme-switching * {
   }
 
   .toolbar-strip {
-    background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+    background: var(--bg-surface);
     border-bottom: 1px solid var(--line-hairline);
+  }
+
+  .settings-content > * {
+    width: min(100%, 920px);
+    margin-inline: auto;
   }
 
   .segmented-control {
@@ -866,9 +907,17 @@ html.theme-switching * {
     align-items: center;
     gap: 2px;
     padding: 2px;
-    border: 1px solid var(--border-subtle);
+    border: 1px solid transparent;
     border-radius: calc(var(--radius-md) + 1px);
     background: var(--surface-recessed);
+  }
+  .segmented-control .control-chip {
+    background: transparent;
+  }
+  .segmented-control .control-chip-active {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
   }
 
   .data-readout {
@@ -1168,19 +1217,6 @@ html.theme-switching * {
 }
 
 @layer utilities {
-  /* 卡片标签行恒单行 + 右缘渐隐：溢出不再换行撑高卡片，网格底边保持齐整（全尺寸档一致）。
-     必须在 utilities 层：压过宿主上的 flex-wrap 工具类；
-     子项禁收缩：nowrap 下空间不足时 pill 会被压成竖排，必须保持自然宽度由渐隐裁切 */
-  .item-card-render-scope [data-tag-drag="true"]:has(> .tag-pill) {
-    flex-wrap: nowrap;
-    overflow: hidden;
-    mask-image: linear-gradient(to right, #000 82%, transparent);
-    -webkit-mask-image: linear-gradient(to right, #000 82%, transparent);
-  }
-  .item-card-render-scope [data-tag-drag="true"]:has(> .tag-pill) > * {
-    flex-shrink: 0;
-  }
-
   /* 正文（长文/问候/空状态文案）用 LXGW WenKai；UI 控件仍用 --font-family */
   .font-body {
     font-family: var(--font-family-body);
@@ -1235,22 +1271,19 @@ html.theme-switching * {
     text-transform: none;
   }
 
-  /* 键帽双语言配方：
-     A 软键帽 = currentColor 8% 底 + 20% 边 + 2px 底边台阶 + 接触影 + 顶唇；
-     B 方槽键帽 = 直角 + 表面底 + 强边 */
+  /* 快捷键提示使用轻底与常规字重。 */
   :root[data-shape="a"] .kbd {
     padding: 2px 6px;
-    color: var(--text-primary);
-    background: color-mix(in srgb, currentColor 8%, transparent);
-    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-    border-bottom-width: 2px;
+    color: var(--text-muted);
+    background: var(--bg-hover);
+    border: 1px solid transparent;
     border-radius: var(--radius-sm);
     font-family: var(--font-family-mono);
     font-size: 12px;
-    box-shadow: var(--shadow-sm), inset 0 1px 0 rgb(255 255 255 / 0.86);
+    box-shadow: none;
   }
   :root[data-shape="a"][data-scheme="dark"] .kbd {
-    box-shadow: var(--shadow-sm), inset 0 1px 0 rgb(255 255 255 / 0.08);
+    box-shadow: none;
   }
   :root[data-shape="b"] .kbd {
     border-radius: 0;
@@ -1307,21 +1340,17 @@ html.theme-switching * {
     background-color: var(--accent-primary-bg-light);
   }
 
-  /* 卡片 hover 只改描边。不上移，避免悬停时整行重绘。 */
+  /* 卡片靠抬升与表面层级反馈悬停，保留选中态的主题描边。 */
   .card-hover-lift {
-    transition: border-color var(--transition-fast);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   }
 
   :root[data-shape="a"] .card-hover-lift:hover {
-    border-color: var(--border-medium);
-  }
-
-  :root[data-scheme="dark"] .item-card-render-scope {
-    border-color: color-mix(in srgb, white 16%, transparent);
+    box-shadow: none;
   }
 
   :root[data-shape="b"] .card-hover-lift:hover {
-    border-color: var(--border-strong);
+    box-shadow: none;
   }
 
   /* 选中行配方（菜单/命令面板/下拉一致；令牌值随造型语言分叉，

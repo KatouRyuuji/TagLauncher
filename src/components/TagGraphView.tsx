@@ -333,23 +333,21 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                               className={`relative flex max-w-full shrink-0 items-center gap-2.5 rounded-[var(--radius-md)] border px-5 py-3 text-base shadow-[var(--shadow-card)]${dimmed ? " opacity-55" : ""}`}
                               style={{
                                 borderColor: active
-                                  ? tag.color
-                                  : `color-mix(in srgb, ${tag.color} 36%, var(--border-subtle))`,
-                                backgroundColor: active
-                                  ? `color-mix(in srgb, ${tag.color} 20%, var(--bg-card))`
-                                  : "var(--bg-card)",
-                                color: active ? `color-mix(in srgb, var(--text-primary) 72%, ${tag.color})` : "var(--text-primary)",
+                                  ? "color-mix(in srgb, var(--accent-primary) 42%, var(--border-default))"
+                                  : "transparent",
+                                backgroundColor: active ? "var(--accent-primary-bg)" : "var(--bg-card)",
+                                color: `color-mix(in srgb, ${tag.color} 88%, var(--text-primary))`,
                                 fontWeight: 500,
                               }}
                               title={`${tag.name}（${count} 个对象）双击直接筛选`}
                             >
-                              <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
+                              <span className="h-[10px] w-[10px] shrink-0 rounded-[3px]" style={{ backgroundColor: tag.color }} />
                               <span className="min-w-0 max-w-[180px] truncate">{tag.name}</span>
                               <span
                                 className="ml-1 inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-full)] px-1.5 text-[13px] font-semibold"
                                 style={{
-                                  backgroundColor: `color-mix(in srgb, ${tag.color} 9%, var(--bg-elevated))`,
-                                  color: `color-mix(in srgb, var(--text-primary) 72%, ${tag.color})`,
+                                  backgroundColor: "var(--bg-hover)",
+                                  color: "var(--text-muted)",
                                 }}
                               >
                                 {count}
@@ -370,7 +368,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
             <div className="graph-details flex w-80 shrink-0 flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-surface)]" aria-label="标签详情">
               <div className="border-b border-[var(--border-subtle)] px-5 py-4">
                 <div className="flex items-center gap-2">
-                  <span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ backgroundColor: selectedTag.color }} />
+                  <span className="h-[10px] w-[10px] shrink-0 rounded-[3px]" style={{ backgroundColor: selectedTag.color }} />
                   <h3 className="min-w-0 flex-1 truncate text-base font-semibold text-[var(--text-primary)]">{selectedTag.name}</h3>
                   <button
                     type="button"

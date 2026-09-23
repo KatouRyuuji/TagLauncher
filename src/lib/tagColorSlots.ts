@@ -1,7 +1,7 @@
 import { FALLBACK_TAG_PRESET_COLORS } from "./tagColors";
 
 /** 官方家族标签/文件柜色位数量，对应当前主题 `--tag-preset-colors`。 */
-export const TAG_COLOR_SLOT_COUNT = 8;
+export const TAG_COLOR_SLOT_COUNT = 10;
 
 /** 色位记忆设置键，与 useTagColorSlotSync / 手选色写回共用。 */
 export const COLOR_SLOT_SETTING_KEY = "taglauncher.color_slots";
@@ -45,7 +45,7 @@ export function parseSlotMap(raw: string | null): ColorSlotMap {
   }
 }
 
-/** 手选或打开编辑器时立刻吸附到当前主题 8 色。 */
+/** 手选或打开编辑器时立刻吸附到当前主题色板。 */
 export function snapToPalette(hex: string, palette: string[]): string {
   const board = palette.length > 0 ? palette : FALLBACK_TAG_PRESET_COLORS;
   return board[nearestSlot(board, hex)] ?? board[0] ?? FALLBACK_TAG_PRESET_COLORS[0];
@@ -70,7 +70,7 @@ export function recordPickedColor(
   };
 }
 
-/** 逗号分隔 → 恰好 8 个 hex；不足循环补齐，多余截断；空串回退 Tailwind 演示板。 */
+/** 逗号分隔 → 恰好 10 个 hex；不足循环补齐，多余截断；空串回退 Tailwind 演示板。 */
 export function parsePalette(csv: string): string[] {
   const parts = csv
     .split(",")
@@ -157,7 +157,7 @@ function isNeutralLab(lab: Oklab): boolean {
 
 /**
  * 在板上找最近色位。全中性板（素墨）只比 L，避免从灰阶反推色相；
- * 彩色板用 OKLab 欧氏距离（等价 OKLCH 笛卡尔）。
+ * 彩色标签优先保留色相，明度和饱和度作为次要差异，避免亮黄被吸附为橙色。
  */
 export function nearestSlot(palette: string[], hex: string): number {
   if (palette.length === 0) return 0;
@@ -167,15 +167,22 @@ export function nearestSlot(palette: string[], hex: string): number {
   const labs = palette.map((item) => hexToOklab(item));
   const known = labs.filter((lab): lab is Oklab => lab !== null);
   const allNeutral = known.length === palette.length && known.every(isNeutralLab);
+  const targetChroma = Math.hypot(target.a, target.b);
+  const targetHue = Math.atan2(target.b, target.a);
 
   let bestIndex = 0;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (let i = 0; i < palette.length; i++) {
     const lab = labs[i];
     if (!lab) continue;
-    const distance = allNeutral
-      ? Math.abs(lab.L - target.L)
-      : Math.hypot(lab.L - target.L, lab.a - target.a, lab.b - target.b);
+    const chroma = Math.hypot(lab.a, lab.b);
+    const hueDelta = Math.abs(Math.atan2(lab.b, lab.a) - targetHue);
+    const hueDistance = Math.min(hueDelta, 2 * Math.PI - hueDelta);
+    const distance = allNeutral || targetChroma < NEUTRAL_CHROMA
+      ? Math.hypot(lab.L - target.L, chroma * 3)
+      : chroma < NEUTRAL_CHROMA
+        ? 2
+        : Math.hypot((lab.L - target.L) * 0.3, (chroma - targetChroma) * 0.3, hueDistance * 0.25);
     if (distance < bestDistance) {
       bestDistance = distance;
       bestIndex = i;
@@ -203,7 +210,8 @@ export function resolveSlot(
   previousPalette: string[] | null,
   nextPalette: string[] = [],
 ): number {
-  if (record && isLiveRecord(record, currentHex)) return record.slot;
+  const colorStillOnBoard = !previousPalette?.length || previousPalette.some((hex) => hexEquals(hex, currentHex));
+  if (record && isLiveRecord(record, currentHex) && colorStillOnBoard) return record.slot;
   const palette =
     previousPalette && previousPalette.length > 0
       ? previousPalette

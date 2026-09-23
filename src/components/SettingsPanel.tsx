@@ -440,7 +440,15 @@ function ExtensionThemeSelect({
     <div className="mt-6 border-t border-[var(--line-hairline)] pt-5">
       <span className="instrument-label mb-2 block">自定义与扩展主题</span>
       {!hasExtensions ? (
-        <p className="text-sm text-[var(--text-muted)]">导入 JSON 或安装 Mod 后会出现在这里</p>
+        <div role="status" className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-dashed border-[var(--border-default)] bg-[var(--bg-surface)] px-4 py-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+            <Palette aria-hidden="true" size={18} strokeWidth={1.8} />
+          </span>
+          <span className="min-w-0 text-sm leading-5 text-[var(--text-muted)]">
+            <span className="block font-medium text-[var(--text-primary)]">目前没有扩展主题</span>
+            从右上角「导入」载入 JSON，或安装主题 Mod。
+          </span>
+        </div>
       ) : (
         <SelectMenu
           value={usingExtension ? currentThemeId : ""}

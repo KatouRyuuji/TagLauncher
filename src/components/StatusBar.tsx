@@ -4,7 +4,6 @@ import { useAppStore } from "../stores/appStore";
 import { useSearch } from "../hooks/useSearch";
 import * as db from "../lib/db";
 import { relocateRecoveredCopy } from "../lib/itemActionCopy";
-import { typeFilterLabel } from "../lib/itemQuery";
 import {
   CARD_SIZE_SCALE_RANGE,
   CARD_SIZE_SCALE_STEP,
@@ -15,27 +14,15 @@ import type { ItemWithTags } from "../types";
 import { MissingItemsReviewDialog } from "./MissingItemsReviewDialog";
 
 export function StatusBar({
-  visibleCount,
-  libraryCount,
   missingItems,
   onRelocateMissing,
   onRemoveMissing,
 }: {
-  visibleCount: number;
-  /** 选中计数由 BatchSelectionToolbar 展示，状态栏不再消费；入参保留以兼容调用方 */
-  selectedCount: number;
-  libraryCount: number;
   missingItems: ItemWithTags[];
   onRelocateMissing: () => Promise<number>;
   onRemoveMissing: (ids: number[]) => Promise<void>;
 }) {
   const { searchQuery, inputValue } = useSearch();
-  const typeFilter = useAppStore((state) => state.typeFilter);
-  const showFavorites = useAppStore((state) => state.showFavorites);
-  const showRecent = useAppStore((state) => state.showRecent);
-  const selectedTagIds = useAppStore((state) => state.selectedTagIds);
-  const excludedTagIds = useAppStore((state) => state.excludedTagIds);
-  const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const reviewOpen = useAppStore((state) => state.missingReviewOpen);
   const setReviewOpen = useAppStore((state) => state.setMissingReviewOpen);
   const activityNotice = useAppStore((state) => state.activityNotice);
@@ -101,19 +88,6 @@ export function StatusBar({
     }
   };
 
-  const tagScope = [
-    selectedTagIds.length > 0 ? `${selectedTagIds.length} 个标签` : null,
-    excludedTagIds.length > 0 ? `排除 ${excludedTagIds.length} 个标签` : null,
-  ].filter(Boolean).join(" · ");
-
-  const scope = showFavorites
-    ? "收藏夹"
-    : showRecent
-      ? "最近使用"
-      : selectedCabinetId !== null
-        ? "文件柜"
-        : tagScope || "全部";
-
   const searchPending = inputValue !== searchQuery;
 
   // 尺寸缩放控件仅服务卡片/大图标视图；列表视图行高固定不提供
@@ -145,14 +119,6 @@ export function StatusBar({
     persistWorkspacePrefsNow();
   };
 
-  const parts = [`${visibleCount} 项目`, scope];
-  // 选中计数由悬浮批量工具条承载（BatchSelectionToolbar「n 已选中」），状态栏不重复
-  if (typeFilter !== "all") parts.push(typeFilterLabel(typeFilter));
-  if (searchQuery.trim()) parts.push(`“${searchQuery.trim()}”`);
-  if (visibleCount !== libraryCount && !showFavorites && !showRecent && selectedCabinetId === null) {
-    parts.push(`库内 ${libraryCount}`);
-  }
-
   return (
     <>
     <footer
@@ -161,10 +127,7 @@ export function StatusBar({
       className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 text-[13px] text-[var(--text-faint)]"
     >
       <div className="flex min-w-0 items-center gap-2">
-        <span className="status-led shrink-0" aria-hidden="true" />
-        <span className="data-readout min-w-0 truncate text-[var(--text-muted)]">
-          {activityNotice ?? parts.join(" / ")}
-        </span>
+        {activityNotice && <span className="min-w-0 truncate text-[12px] text-[var(--text-muted)]">{activityNotice}</span>}
         {searchPending && (
           <span
             data-testid="search-pending"

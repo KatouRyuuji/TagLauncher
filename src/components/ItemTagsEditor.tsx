@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Check, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { ItemWithTags, Tag } from "../types";
 import { useEscapeKey } from "../hooks/useEscapeKey";
@@ -8,6 +9,8 @@ import { isImeKeyboardEvent, compareNames } from "../lib/itemQuery";
 import { tagFilterPlaceholder } from "../lib/itemActionCopy";
 import { showToast } from "../lib/toast";
 import { DialogHeader } from "./DialogHeader";
+import { flattenTagTree, type TagTreeRow } from "../lib/tagTree";
+import { useAppStore } from "../stores/appStore";
 
 // 标签数超过阈值才显示过滤框（与 BatchSelectionToolbar 的 TAG_MENU_FILTER_THRESHOLD 对齐）
 const TAG_FILTER_THRESHOLD = 8;
@@ -23,6 +26,7 @@ interface ItemTagsEditorProps {
 }
 
 export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTags, onClose }: ItemTagsEditorProps) {
+  const tagRelations = useAppStore((state) => state.tagRelations);
   const [selectedIds, setSelectedIds] = useState<number[]>(item.tags.map((tag) => tag.id));
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -109,15 +113,16 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
     }
   };
 
-  // 标签矩阵：先按过滤词收窄，再按拼音排序（全应用统一的 zh-CN Collator），已选整体置顶
+  // 标签按侧栏的父子关系呈现，名称和层级是识别主线；过滤时保留原层级。
   const tagQuery = appliedTagFilter.trim().toLowerCase();
-  const matchedTags = tagQuery ? tags.filter((tag) => tag.name.toLowerCase().includes(tagQuery)) : tags;
-  const orderedTags = [...matchedTags].sort((a, b) => compareNames(a.name, b.name));
-  const selectedTags = orderedTags.filter((tag) => selectedIds.includes(tag.id));
-  const unselectedTags = orderedTags.filter((tag) => !selectedIds.includes(tag.id));
+  const tagRows = flattenTagTree(tags, tagRelations, (a, b) => compareNames(a.name, b.name));
+  const visibleTagRows = tagQuery
+    ? tagRows.filter(({ tag }) => tag.name.toLowerCase().includes(tagQuery))
+    : tagRows;
+  const selectedTags = selectedIds.map((id) => tags.find((tag) => tag.id === id)).filter((tag): tag is Tag => tag !== undefined);
   const showTagFilter = tags.length > TAG_FILTER_THRESHOLD;
 
-  const renderTagButton = (tag: Tag) => {
+  const renderTagButton = ({ tag, depth }: TagTreeRow<Tag>) => {
     const selected = selectedIds.includes(tag.id);
     return (
       <button
@@ -126,22 +131,18 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
         onClick={() => toggleTag(tag.id)}
         disabled={saving || creating}
         aria-pressed={selected}
-        className="tag-pill gap-2 px-3 py-2 text-xs"
+        aria-label={tag.name}
+        className={`flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] pr-3 text-left text-[13px] transition-colors ${selected
+          ? "bg-[var(--bg-hover)] font-medium text-[var(--text-primary)]"
+          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"}`}
         style={{
-          "--tag-color": tag.color,
-          // 底色规则统一：未选一律中性灰底（色相只由圆点承担）；
-          // 已选 = 标签色 15% 底 + 同色描边 + ✓ 双编码，扫视即可分辨
-          backgroundColor: selected
-            ? `color-mix(in srgb, ${tag.color} 15%, var(--bg-surface))`
-            : "color-mix(in srgb, var(--text-primary) 5%, var(--bg-surface))",
-          borderColor: selected
-            ? `color-mix(in srgb, ${tag.color} 55%, transparent)`
-            : "var(--border-subtle)",
-        } as CSSProperties}
+          paddingLeft: `${12 + depth * 18}px`,
+        }}
       >
-        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
-        <span>{tag.name}</span>
-        {selected && <span className="text-[13px]">✓</span>}
+        <span aria-hidden="true" className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border ${selected ? "border-[var(--accent-primary)] bg-[var(--accent-primary)] text-[var(--text-invert)]" : "border-[var(--border-strong)]"}`}>
+          {selected && <Check size={11} strokeWidth={2.5} />}
+        </span>
+        <span className="tag-pill min-w-0 truncate px-2 py-0.5" style={{ "--tag-color": tag.color } as CSSProperties}>{tag.name}</span>
       </button>
     );
   };
@@ -155,13 +156,13 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
     >
       <div
         ref={trapRef}
-        className="modal-surface dialog-panel w-[560px] max-w-[calc(100vw-2rem)]"
+        className="modal-surface dialog-panel w-[480px] max-w-[calc(100vw-2rem)]"
         role="dialog"
         aria-modal="true"
         aria-label="管理项目标签"
         onClick={(event) => event.stopPropagation()}
       >
-        <DialogHeader title="管理项目标签" description={item.name} onClose={handleClose} disabled={saving || creating} />
+        <DialogHeader title={`${item.name}的标签`} onClose={handleClose} disabled={saving || creating} />
 
         <div className="dialog-body">
         <section aria-label="已有标签">
@@ -180,30 +181,35 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
               className="mb-2 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
             />
           )}
-          <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-muted)]">
+          <div className="mb-2 flex items-center justify-between text-xs text-[var(--text-muted)]">
             <span>已选 {selectedIds.length} 个标签</span>
-            <span>点击即可切换状态</span>
+            <span>按层级浏览</span>
           </div>
+          {selectedIds.length > 0 && (
+            <div className="mb-4 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto" aria-label="已选标签">
+              {selectedTags.map((tag) => (
+                <button key={tag.id} type="button" className="tag-pill gap-1.5 px-2 py-1 text-[12px]" style={{ "--tag-color": tag.color } as CSSProperties}
+                  disabled={saving || creating} onClick={() => toggleTag(tag.id)} aria-label={`移除已选标签「${tag.name}」`}>
+                  {tag.name}<X size={12} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          )}
 
           {tags.length === 0 ? (
             <p className="py-6 text-center text-sm text-[var(--text-muted)]">当前还没有可用标签</p>
-          ) : orderedTags.length === 0 ? (
+          ) : visibleTagRows.length === 0 ? (
             <p className="py-6 text-center text-sm text-[var(--text-muted)]">无匹配标签</p>
           ) : (
-            <div className="flex max-h-56 flex-wrap gap-2 overflow-y-auto pr-1">
-              {selectedTags.map(renderTagButton)}
-              {selectedTags.length > 0 && unselectedTags.length > 0 && (
-                <div className="h-px w-full bg-[var(--border-subtle)]" aria-hidden="true" />
-              )}
-              {unselectedTags.map(renderTagButton)}
+            <div className="max-h-64 space-y-0.5 overflow-y-auto pr-1" role="group" aria-label="按层级排列的标签">
+              {visibleTagRows.map(renderTagButton)}
             </div>
           )}
         </section>
 
         <section className="mt-5 border-t border-[var(--border-subtle)] pt-4" aria-label="新建标签">
-          <h3 className="text-sm font-medium text-[var(--text-primary)]">新建标签</h3>
-          <p className="mt-1 text-[13px] text-[var(--text-secondary)]">创建后加入当前选择，保存时应用到项目。</p>
-          <div className="mt-3 flex gap-2">
+          <h3 className="sr-only">新建标签</h3>
+          <div className="flex gap-2">
             <input
               type="text"
               aria-label="新标签名称"

@@ -38,7 +38,6 @@ function renderStatusBar() {
   return render(
     <StatusBar
       visibleCount={3}
-      selectedCount={0}
       libraryCount={10}
       missingItems={[]}
       onRelocateMissing={async () => 0}
@@ -99,8 +98,7 @@ describe("StatusBar 失效对象找回", () => {
     render(
       <StatusBar
         visibleCount={3}
-        selectedCount={0}
-        libraryCount={10}
+          libraryCount={10}
         missingItems={missingItems}
         onRelocateMissing={async () => 0}
         onRemoveMissing={async () => {}}
@@ -117,8 +115,7 @@ describe("StatusBar 失效对象找回", () => {
     render(
       <StatusBar
         visibleCount={3}
-        selectedCount={0}
-        libraryCount={10}
+          libraryCount={10}
         missingItems={missingItems}
         onRelocateMissing={async () => 2}
         onRemoveMissing={async () => {}}
@@ -141,8 +138,7 @@ describe("StatusBar 失效对象找回", () => {
       render(
         <StatusBar
           visibleCount={3}
-          selectedCount={0}
-          libraryCount={10}
+              libraryCount={10}
           missingItems={missingItems}
           onRelocateMissing={async () => {
             throw new Error("磁盘不可读");

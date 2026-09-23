@@ -109,6 +109,9 @@ export function Sidebar({
   const [editingCabinet, setEditingCabinet] = useState<Cabinet | null>(null);
   const [showAddCabinet, setShowAddCabinet] = useState(false);
   const [showRelationsEditor, setShowRelationsEditor] = useState(false);
+  const [collapsedTagIds, setCollapsedTagIds] = useState<Set<number>>(() => new Set());
+  const initializedTagTreeRef = useRef(false);
+  const wasLibraryEmptyRef = useRef(allItems.length === 0);
   const visibleSection = activeDragKind === "item" ? "cabinets" : sidebarTab;
   const favoriteCount = useMemo(
     () => allItems.reduce((count, item) => count + (item.is_favorite ? 1 : 0), 0),
@@ -164,6 +167,33 @@ export function Sidebar({
     if (!q) return tagRows;
     return tagRows.filter(({ tag }) => tag.name.toLowerCase().includes(q));
   }, [tagRows, appliedTagQuery]);
+
+  useEffect(() => {
+    if (tags.length === 0) return;
+    const libraryEmpty = allItems.length === 0;
+    if (!initializedTagTreeRef.current || libraryEmpty !== wasLibraryEmptyRef.current) {
+      setCollapsedTagIds(
+        libraryEmpty
+          ? new Set(tagRows.filter((row) => row.hasChildren).map((row) => row.tag.id))
+          : new Set(),
+      );
+      initializedTagTreeRef.current = true;
+      wasLibraryEmptyRef.current = libraryEmpty;
+    }
+  }, [allItems.length, tags.length, tagRows]);
+
+  const visibleTagRows = useMemo(() => {
+    if (appliedTagQuery.trim()) return filteredTagRows;
+    const visible: typeof filteredTagRows = [];
+    const ancestorIds: number[] = [];
+    for (const row of filteredTagRows) {
+      const hidden = ancestorIds.slice(0, row.depth).some((id) => collapsedTagIds.has(id));
+      ancestorIds.length = row.depth;
+      ancestorIds[row.depth] = row.tag.id;
+      if (!hidden) visible.push(row);
+    }
+    return visible;
+  }, [appliedTagQuery, collapsedTagIds, filteredTagRows]);
 
   // 已选标签滚出可视区时自动定位：侧栏既是选择器也是状态显示器
   const tagScrollRef = useRef<HTMLDivElement>(null);
@@ -247,7 +277,7 @@ export function Sidebar({
       id="workspace-sidebar"
       data-region="sidebar"
       aria-label="资源导航"
-      className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-[var(--line-hairline)] bg-[var(--bg-surface)] ${mobileOpen ? "is-mobile-open" : ""}`}
+      className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden bg-[var(--bg-base)] ${mobileOpen ? "is-mobile-open" : ""}`}
       style={{ width: "var(--sidebar-width)" }}
     >
       {/* 顶部不再放库概览统计：项目/标签/文件柜计数在导航行与分区标题里已各有一处，
@@ -256,10 +286,10 @@ export function Sidebar({
       <div data-region="sidebar-nav" className="flex min-h-0 flex-1 flex-col">
       <nav
         aria-label="工作台导航"
-        className="shrink-0 border-b border-[var(--line-hairline)] px-2 py-3"
+        className="shrink-0 px-2 py-3"
       >
         <section aria-labelledby="sidebar-navigation-label">
-          <SectionHeader id="sidebar-navigation-label" label="导航" />
+          <h2 id="sidebar-navigation-label" className="sr-only">导航</h2>
           <div className="mt-1 space-y-0.5">
             <FilterNavButton
               active={selectedTagIds.length === 0 && excludedTagIds.length === 0 && selectedCabinetId === null && !showFavorites && !showRecent}
@@ -296,7 +326,7 @@ export function Sidebar({
         </section>
       </nav>
 
-      <div className="shrink-0 border-b border-[var(--line-hairline)] px-2 py-2">
+      <div className="shrink-0 px-2 py-2">
         <div className="segmented-control flex w-full" role="group" aria-label="资源分类">
           <SidebarTabButton
             active={visibleSection === "tags"}
@@ -345,10 +375,10 @@ export function Sidebar({
 
               {loading ? (
                 <div className="mt-1 space-y-0.5" aria-busy="true" aria-label="标签加载中">
-                  {/* 与真实标签行同构：圆点占位 + 四种宽度循环的横条（等宽排一列像进度条） */}
+                  {/* 与真实标签行同构：颜色标记占位 + 错落宽度的名称条。 */}
                   {[0, 1, 2, 3, 4].map((row) => (
                     <div key={row} className="flex h-8 items-center gap-2 px-1">
-                      <span className="skeleton-block h-2.5 w-2.5 shrink-0 rounded-full" />
+                      <span className="skeleton-block h-3.5 w-1 shrink-0 rounded-sm" />
                       <span className={`skeleton-block h-3.5 rounded ${SIDEBAR_SKELETON_WIDTHS[row % SIDEBAR_SKELETON_WIDTHS.length]}`} />
                     </div>
                   ))}
@@ -368,61 +398,83 @@ export function Sidebar({
                 />
               )}
               <div className="mt-1 space-y-0.5">
-                {filteredTagRows.map(({ tag, depth, hasChildren }) => {
+                {visibleTagRows.map(({ tag, depth, hasChildren }) => {
                   const active = selectedTagIds.includes(tag.id);
                   const excluded = excludedTagIds.includes(tag.id);
-                  const showDescendantHint = hasChildren && !active && !excluded;
+                  const collapsed = collapsedTagIds.has(tag.id);
+                  const canCollapse = hasChildren && !appliedTagQuery.trim();
                   const activeTagStyle = active
                     ? {
-                        borderColor: `color-mix(in srgb, ${tag.color} var(--tag-selected-border-alpha), transparent)`,
-                        backgroundColor: `color-mix(in srgb, ${tag.color} var(--tag-selected-alpha), var(--bg-surface))`,
-                        boxShadow: `inset 3px 0 0 ${tag.color}`,
+                        borderColor: "transparent",
+                        backgroundColor: "var(--accent-primary-bg)",
                       }
                     : undefined;
                   return (
-                    <button
+                    <div
                       key={tag.id}
-                      type="button"
-                      data-tag-row-id={tag.id}
-                      aria-pressed={active}
-                      aria-label={excluded ? `${tag.name}（已排除）` : undefined}
-                      style={activeTagStyle}
-                      onPointerDown={(event) => handleTagPointerDown(event, tag)}
-                      onClick={(event) => handleTagClick(event, tag.id)}
-                      title={hasChildren ? "单击筛选；Alt+单击排除含此标签的项目。选中时也包含下级标签的项目" : "单击筛选；Alt+单击排除含此标签的项目"}
-                      onKeyDown={(event) => {
-                        // 键盘可达的编辑入口（对齐右键菜单）：F2 重命名 / Delete 删除，均打开编辑弹窗
-                        if (event.key === "F2" || event.key === "Delete") {
+                      className={`flex h-8 min-w-0 items-center gap-0.5 ${depth === 1 ? "ml-3" : depth === 2 ? "ml-6" : ""}`}
+                    >
+                      {canCollapse ? (
+                        <button
+                          type="button"
+                          aria-label={`${collapsed ? "展开" : "折叠"} ${tag.name}的下级标签`}
+                          aria-expanded={!collapsed}
+                          onClick={() => setCollapsedTagIds((current) => {
+                            const next = new Set(current);
+                            if (next.has(tag.id)) next.delete(tag.id);
+                            else next.add(tag.id);
+                            return next;
+                          })}
+                          className="flex h-7 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                        >
+                          {collapsed
+                            ? <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+                            : <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />}
+                        </button>
+                      ) : (
+                        <span className="w-6 shrink-0" aria-hidden="true" />
+                      )}
+                      <button
+                        type="button"
+                        data-tag-row-id={tag.id}
+                        aria-pressed={active}
+                        aria-label={excluded ? `${tag.name}（已排除）` : undefined}
+                        style={activeTagStyle}
+                        onPointerDown={(event) => handleTagPointerDown(event, tag)}
+                        onClick={(event) => handleTagClick(event, tag.id)}
+                        title={hasChildren ? "单击筛选并包含下级标签；Alt+单击排除" : "单击筛选；Alt+单击排除"}
+                        onKeyDown={(event) => {
+                          if (event.key === "F2" || event.key === "Delete") {
+                            event.preventDefault();
+                            setEditingTag(tag);
+                          }
+                        }}
+                        onContextMenu={(event) => {
                           event.preventDefault();
                           setEditingTag(tag);
-                        }
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        setEditingTag(tag);
-                      }}
-                      className={`group/tag flex h-8 w-full cursor-grab items-center gap-2 rounded-[var(--radius-sm)] border ${depth === 1 ? "pr-2.5 pl-[22px]" : depth === 2 ? "pr-2.5 pl-[36px]" : "px-2.5"} text-left transition-colors active:cursor-grabbing ${
-                        active
-                          ? "font-semibold text-[var(--text-primary)]"
-                          : excluded
-                            ? "border-transparent text-[var(--text-faint)]"
-                            : "border-transparent text-[var(--text-secondary)] hover:border-[var(--line-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                      }`}
-                    >
-                      <span
-                        data-tag-color-dot=""
-                        className="h-3 w-3 shrink-0 rounded-full ring-1 ring-[color-mix(in_srgb,var(--border-strong)_42%,transparent)]"
-                        style={{
-                          backgroundColor: excluded ? "var(--text-faint)" : tag.color,
                         }}
-                        aria-hidden="true"
-                      />
-                      <span className={`min-w-0 flex-1 truncate text-[13px] font-medium ${excluded ? "line-through" : ""}`}>{tag.name}</span>
-                      {showDescendantHint && (
-                        <span className="ml-1 shrink-0 text-[11px] text-[var(--text-faint)]">含下级</span>
-                      )}
-                      <NavCount value={itemCountByTag.get(tag.id) ?? 0} />
-                    </button>
+                        className={`group/tag flex h-8 min-w-0 flex-1 cursor-grab items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors active:cursor-grabbing ${
+                          active
+                            ? "font-semibold text-[var(--text-primary)]"
+                            : excluded
+                              ? "border-transparent text-[var(--text-faint)]"
+                              : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                        }`}
+                      >
+                        <span
+                          data-tag-color-mark=""
+                          className="h-[10px] w-[10px] shrink-0 rounded-[3px]"
+                          style={{
+                            backgroundColor: excluded
+                              ? "var(--text-faint)"
+                              : tag.color,
+                          }}
+                          aria-hidden="true"
+                        />
+                        <span className={`min-w-0 flex-1 truncate text-[13px] ${depth === 0 ? "font-medium" : "font-normal"} ${excluded ? "line-through" : ""}`}>{tag.name}</span>
+                        <NavCount value={itemCountByTag.get(tag.id) ?? 0} />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -481,10 +533,10 @@ export function Sidebar({
                       }}
                       className={`flex h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors ${
                         hovered
-                          ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] text-[var(--accent-primary-ink)]"
+                          ? "border-transparent bg-[var(--accent-primary-bg-light)] text-[var(--accent-primary-ink)]"
                           : active
-                            ? "border-[color-mix(in_srgb,var(--accent-primary)_24%,transparent)] bg-[var(--accent-primary-bg)] font-semibold text-[var(--text-primary)]"
-                            : "border-transparent text-[var(--text-secondary)] hover:border-[var(--line-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                            ? "border-transparent bg-[var(--accent-primary-bg)] font-semibold text-[var(--text-primary)]"
+                            : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                       }`}
                     >
                       <span
@@ -533,7 +585,7 @@ export function Sidebar({
       {(!sidebarHintDismissed || activeDragKind === "item") && (
         <div
           data-region="sidebar-hint"
-          className="flex h-9 shrink-0 items-center gap-2 border-t border-[var(--line-hairline)] px-3 text-[13px] leading-4 text-[var(--text-faint)]"
+          className="flex h-8 shrink-0 items-center gap-2 px-3 text-[12px] leading-4 text-[var(--text-muted)]"
         >
           <Info className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" strokeWidth={1.8} aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate" title={activeDragKind === "item" ? "释放到收藏夹或文件柜完成归档（不会移动磁盘文件）" : "拖标签到项目打标，拖项目到文件柜。文件柜是分组，不是磁盘文件夹。"}>
@@ -668,7 +720,7 @@ function SidebarIconButton({
 
 function NavCount({ value }: { value: number }) {
   return (
-    <span className={`data-readout inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-recessed)] px-1 text-[13px] text-[var(--text-faint)] ${value === 0 ? "opacity-40" : ""}`}>
+    <span className={`min-w-6 shrink-0 text-right text-[12px] tabular-nums text-[var(--text-muted)] ${value === 0 ? "opacity-40" : ""}`}>
       {value}
     </span>
   );
@@ -679,7 +731,7 @@ function AddRowButton({ label, onClick }: { label: string; onClick: () => void }
     <button
       type="button"
       onClick={onClick}
-      className="mt-1.5 flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-dashed border-[var(--border-default)] px-2 text-[13px] font-medium text-[var(--text-tertiary)] hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-bg-light)] hover:text-[var(--accent-primary)]"
+      className="mt-1.5 flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-hover)] px-2 text-[13px] font-medium text-[var(--text-tertiary)] hover:bg-[var(--accent-primary-bg-light)] hover:text-[var(--accent-primary)]"
     >
       <Plus className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
       <span>{label}</span>
@@ -705,7 +757,7 @@ function SidebarTabButton({
       onClick={onClick}
       className={`flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-[13px] font-medium transition-colors ${
         active
-          ? "bg-[var(--surface-raised)] text-[var(--accent-primary-ink)] shadow-[inset_0_-2px_0_var(--accent-primary),var(--shadow-sm)]"
+          ? "bg-[var(--surface-raised)] text-[var(--text-primary)] shadow-[var(--shadow-sm)]"
           : "text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       }`}
     >
@@ -750,12 +802,11 @@ function FilterNavButton({
       title={subtitle}
       className={`flex h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors ${
         active
-          ? "border-[color-mix(in_srgb,var(--accent-primary)_24%,transparent)] bg-[var(--accent-primary-bg)] font-semibold text-[var(--accent-primary-ink)]"
-          : "border-transparent text-[var(--text-secondary)] hover:border-[var(--line-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          ? "border-transparent bg-[var(--accent-primary-bg)] font-semibold text-[var(--accent-primary-ink)]"
+          : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       } ${className ?? ""}`}
       style={{
         ...style,
-        ...(active ? { boxShadow: "inset 3px 0 0 var(--accent-primary)" } : undefined),
         ...accentStyle,
       }}
       {...props}

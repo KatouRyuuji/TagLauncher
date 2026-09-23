@@ -8,6 +8,8 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import { DialogHeader } from "./DialogHeader";
 import { buildDescendantsMap } from "../lib/tagGraph";
+import { flattenTagTree } from "../lib/tagTree";
+import { compareNames } from "../lib/itemQuery";
 
 interface TagRelationsEditorProps {
   tags: Tag[];
@@ -23,6 +25,7 @@ interface TagRelationsEditorProps {
  */
 export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRelation, onClose }: TagRelationsEditorProps) {
   const relations = useAppStore((s) => s.tagRelations);
+  const tagRows = useMemo(() => flattenTagTree(tags, relations, (a, b) => compareNames(a.name, b.name)), [tags, relations]);
   const [focusedId, setFocusedId] = useState<number | null>(tags[0]?.id ?? null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -127,20 +130,24 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
               {/* 纵向列表与右侧胶囊阵列拉开形态：当前编辑对象 = 左侧 accent 竖条 + 浅底；
                   scrollbar-gutter 恒留滚动槽，「还有更多」一眼可辨（末项不再被默默裁半） */}
               <div className="mt-2 flex max-h-[280px] flex-col gap-0.5 overflow-y-auto [scrollbar-gutter:stable]">
-                {tags.map((tag) => {
+                {tagRows.map(({ tag, depth }) => {
                   const active = tag.id === focusedId;
                   return (
                     <button
                       key={tag.id}
                       type="button"
                       onClick={() => { setFocusedId(tag.id); setError(null); }}
-                      className={`flex items-center gap-2 rounded-[var(--radius-sm)] border-l-2 px-2.5 py-1.5 text-left text-sm ${
+                      style={{ paddingLeft: `${10 + depth * 14}px` }}
+                      className={`flex items-center gap-2 rounded-[var(--radius-sm)] py-1.5 pr-2.5 text-left text-sm ${
                         active
-                          ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] font-medium text-[var(--text-primary)]"
-                          : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                          ? "bg-[var(--accent-primary-bg-light)] font-semibold text-[var(--text-primary)]"
+                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                       }`}
                     >
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
+                      <span
+                        className="h-[10px] w-[10px] shrink-0 rounded-[3px]"
+                        style={{ backgroundColor: tag.color }}
+                      />
                       <span className="min-w-0 flex-1 truncate">{tag.name}</span>
                     </button>
                   );
@@ -152,7 +159,10 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
               <div>
               <div className="rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_70%,transparent)] p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                  <span className="h-3 w-3 rounded-full" style={{ backgroundColor: focused.color }} />
+                  <span
+                    className="h-4 w-1 rounded-full"
+                    style={{ backgroundColor: focused.color }}
+                  />
                   <span className="truncate">{focused.name}</span>
                   <span className="text-xs font-normal text-[var(--text-faint)]">
                     {parentIds.length} 个父 · {childCount} 个子
@@ -180,7 +190,6 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                             aria-label={`移除父标签「${p.name}」`}
                             title="点击移除该父标签"
                           >
-                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
                             <span className="max-w-[120px] truncate">{p.name}</span>
                             <svg className="h-3 w-3 opacity-60 group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
@@ -219,9 +228,8 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                           type="button"
                           disabled={busy}
                           onClick={() => runMutation(() => onAddRelation(c.id, focused.id))}
-                          className="flex items-center gap-1.5 rounded-[var(--radius-full)] border border-dashed border-[var(--border-default)] px-2.5 py-1 text-xs text-[var(--text-secondary)] hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)] disabled:opacity-50"
+                          className="flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-hover)] px-2.5 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] disabled:opacity-50"
                         >
-                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.color }} />
                           <span className="max-w-[120px] truncate">{c.name}</span>
                           <span className="text-[var(--text-faint)]">＋</span>
                         </button>

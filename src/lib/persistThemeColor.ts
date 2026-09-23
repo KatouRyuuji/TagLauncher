@@ -7,7 +7,7 @@ import {
   snapToPalette,
 } from "./tagColorSlots";
 
-/** 把标签/文件柜手选色吸附到当前主题 8 位，并立刻写入色位记忆。 */
+/** 把标签/文件柜手选色吸附到当前主题 10 位，并立刻写入色位记忆。 */
 export async function persistPickedThemeColor(
   kind: "tags" | "cabinets",
   id: number,

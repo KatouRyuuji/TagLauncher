@@ -21,8 +21,8 @@ export function FavoriteStar({ active, onClick }: FavoriteStarProps) {
       onDoubleClick={(event) => event.stopPropagation()}
       className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-md)] transition-[color,background-color,opacity] ${
         active
-          ? "bg-[color-mix(in_srgb,var(--color-favorite)_14%,transparent)] text-[var(--color-favorite)]"
-          : "text-[var(--text-faint)] opacity-40 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--color-favorite)] focus-visible:opacity-100"
+          ? "text-[var(--color-favorite)] hover:bg-[var(--bg-hover)]"
+          : "text-[var(--text-faint)] opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--color-favorite)] focus-visible:opacity-100"
       }`}
     >
       <Star

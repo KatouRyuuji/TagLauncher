@@ -34,7 +34,9 @@ function resolvePreviousPalette(
     const previous = paletteOfTheme(previousThemeId);
     if (previous) return previous;
   }
-  return [...FALLBACK_TAG_PRESET_COLORS];
+  // 首次进入官方主题且没有色位记录时，就近吸附到当前主题板。
+  // 回退板的色位顺序与官方板不同，按索引搬运会把蓝色标签写成绿色等无关色。
+  return paletteOfTheme(themeId) ?? [...FALLBACK_TAG_PRESET_COLORS];
 }
 
 /**

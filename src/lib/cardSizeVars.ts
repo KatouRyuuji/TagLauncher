@@ -17,7 +17,7 @@ export const ICON_SIZE_SCALE_RANGE = { min: 0.7, max: 1.75 } as const;
 
 export const BASE_CARD_COL_MIN = 256;
 export const BASE_ICON_COL_MIN = 168;
-const BASE_CARD_THUMB = 52;
+const BASE_CARD_THUMB = 40;
 
 /** 步进 0.05：滑杆 step=5% 与 +/- 按钮同口径 */
 export const CARD_SIZE_SCALE_STEP = 0.05;
@@ -40,7 +40,7 @@ export function applyCardSizeVars(cardScale: number, iconScale: number): void {
   const textScale = Math.min(1.1, Math.max(0.85, cardScale));
   if (textScale === 1) root.style.removeProperty("--card-text-scale");
   else root.style.setProperty("--card-text-scale", String(textScale));
-  // 小尺寸档标记：卡片标签行收为单行渐隐，不再换行撑高卡片
+  // 小尺寸档标记供主题控制卡片密度。
   if (textScale < 0.95) root.setAttribute("data-card-small", "1");
   else root.removeAttribute("data-card-small");
   // 最小档（≤75%）标记：路径行整体隐藏，把空间与对比度预算让给完整标题

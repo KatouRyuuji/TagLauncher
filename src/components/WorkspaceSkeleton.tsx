@@ -32,7 +32,7 @@ function useListRowHeight(): number {
 export function WorkspaceSkeleton({ view }: { view: "grid" | "list" | "icons" }) {
   return (
     <div
-      className={view === "list" ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-hidden p-4"}
+      className={view === "list" ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-hidden p-5"}
       role="status"
       aria-label="正在加载项目数据"
       data-region="workspace-skeleton"
@@ -47,7 +47,7 @@ function SkeletonIcons() {
   const count = estimateCardCount(200, 168);
   return (
     <div
-      className="grid gap-3"
+      className="grid gap-4"
       style={{ gridTemplateColumns: "repeat(auto-fill, minmax(var(--grid-col-min-icons), 1fr))" }}
     >
       {Array.from({ length: count }, (_, index) => (
@@ -68,7 +68,7 @@ function SkeletonGrid() {
   const count = estimateCardCount(150, 256);
   return (
     <div
-      className="grid gap-3"
+      className="grid gap-4"
       style={{ gridTemplateColumns: "repeat(auto-fill, minmax(var(--grid-col-min), 1fr))" }}
     >
       {Array.from({ length: count }, (_, index) => (

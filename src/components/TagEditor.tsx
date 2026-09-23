@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type CSSProperties } from "react";
+import { Check } from "lucide-react";
 import { createPortal } from "react-dom";
 import { getThemeTagPresetColors, nameColorByHue } from "../lib/tagColors";
 import { snapToPalette } from "../lib/tagColorSlots";
@@ -104,7 +105,11 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
             />
           </label>
 
-          <ColorDotField colors={presetColors} value={color} onChange={setColor} />
+          <TagColorField colors={presetColors} value={color} onChange={setColor} />
+          <div className="mt-4 flex items-center gap-3 text-[12px] text-[var(--text-muted)]">
+            <span>标签预览</span>
+            <span className="tag-pill px-2 py-1" style={{ "--tag-color": color } as CSSProperties}>{name.trim() || `${label}名称`}</span>
+          </div>
           </fieldset>
 
           <div className="dialog-footer">
@@ -154,7 +159,7 @@ export function TagEditor({ tag, label = "标签", onSave, onDelete, onClose }: 
   );
 }
 
-function ColorDotField({
+function TagColorField({
   colors,
   value,
   onChange,
@@ -168,8 +173,8 @@ function ColorDotField({
   return (
     <div className="mt-5">
       <div className="text-[13px] font-medium text-[var(--text-primary)]">颜色</div>
-      <div className="mt-2 flex items-center gap-3">
-        <div role="radiogroup" aria-label="分类颜色" className="flex flex-wrap items-center gap-2">
+      <div className="mt-2">
+        <div role="radiogroup" aria-label="分类颜色" className="grid grid-cols-5 gap-2">
           {options.map((preset, index) => {
             const selected = sameHex(value, preset);
             const label = nameColorByHue(preset);
@@ -200,18 +205,15 @@ function ColorDotField({
                     ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[nextIndex]
                     ?.focus();
                 }}
-                className={`h-6 w-6 rounded-full transition-colors ${
-                  selected ? "ring-2 ring-offset-2 ring-offset-[var(--bg-surface)]" : ""
-                }`}
-                style={{
-                  backgroundColor: preset,
-                  ...(selected ? { ["--tw-ring-color" as string]: preset } : {}),
-                }}
-              />
+                className="tag-pill min-h-9 justify-between gap-1 px-2 text-[12px]"
+                style={{ "--tag-color": preset, borderColor: selected ? "var(--tag-ink)" : "transparent" } as CSSProperties}
+              >
+                <span>{label}</span>
+                <Check size={12} aria-hidden="true" className={selected ? "opacity-100" : "opacity-0"} />
+              </button>
             );
           })}
         </div>
-        <span className="text-xs text-[var(--text-secondary)]">已选：{nameColorByHue(value)}</span>
       </div>
     </div>
   );

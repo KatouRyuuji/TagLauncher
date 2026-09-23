@@ -27,9 +27,9 @@ export const CHROME_TOKENS: Record<string, string> = {
 
   "drag-ghost-offset-x": "14px",
   "drag-ghost-offset-y": "14px",
-  "tag-color-alpha": "9%",
-  "tag-selected-alpha": "16%",
-  "tag-muted-alpha": "9%",
+  "tag-color-alpha": "7%",
+  "tag-selected-alpha": "12%",
+  "tag-muted-alpha": "5%",
   "tag-selected-border-alpha": "100%",
   "border-width": "1px",
   "border-style": "solid",

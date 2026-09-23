@@ -454,10 +454,12 @@ function MenuOption({
       onClick={onClick}
       className="flex min-h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
     >
-      {/* 已全部标满：色点上叠白色勾；部分标满：计数做浅色小字紧随标签名，不再甩到行尾 */}
-      <span className="flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: color }}>
-        {allOwned && <Check aria-hidden="true" size={8} strokeWidth={3} className="text-[var(--text-invert)]" />}
-      </span>
+      {/* 颜色只作窄标记，归属状态由末端勾选和文字计数表达。 */}
+      <span
+        className="h-[10px] w-[10px] shrink-0 rounded-[3px]"
+        style={{ backgroundColor: color }}
+        aria-hidden="true"
+      />
       <span className="min-w-0 flex-1 truncate">
         {label}
         {someOwned && (
@@ -466,6 +468,7 @@ function MenuOption({
           </span>
         )}
       </span>
+      {allOwned && <Check aria-hidden="true" size={14} strokeWidth={2} className="shrink-0 text-[var(--accent-primary)]" />}
     </button>
   );
 }

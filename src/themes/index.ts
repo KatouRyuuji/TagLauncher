@@ -57,7 +57,7 @@ export function getPresetTheme(id: string): ThemeDefinition | undefined {
   return presetThemes.find((t) => t.id === id);
 }
 
-/** 首页官方主题色点：家族名、当前模式对应的主题 id、代表色（取该家族亮色 accent） */
+/** 官方主题的外观选择项：家族名、当前模式对应的主题 id、代表色。 */
 export interface OfficialFamilySwatch {
   id: string;
   name: string;

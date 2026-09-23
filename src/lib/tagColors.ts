@@ -7,6 +7,8 @@ export const FALLBACK_TAG_PRESET_COLORS = [
   "#3b82f6",
   "#8b5cf6",
   "#ec4899",
+  "#6b6b6b",
+  "#795c43",
 ];
 
 export function getThemeTagPresetColors(): string[] {
@@ -56,6 +58,8 @@ export function nameColorByHue(hex: string): string {
   else if (max === g) h = 60 * ((b - r) / delta + 2);
   else h = 60 * ((r - g) / delta + 4);
   if (h < 0) h += 360;
+
+  if (h > 15 && h <= 40 && (l < 0.4 || (l > 0.55 && l < 0.7 && s < 0.4))) return "赭棕";
 
   if (h <= 15 || h > 345) return "蔷薇";
   if (h <= 40) return "蜜橙";

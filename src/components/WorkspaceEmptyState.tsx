@@ -137,13 +137,13 @@ export function WorkspaceEmptyState({
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
               {showAddCta && (
                 <>
-                  <button type="button" className="action-button" onClick={() => void handleAddFiles()}>
-                    <FilePlus2 className="h-4 w-4" aria-hidden="true" />
-                    添加文件
-                  </button>
                   <button type="button" className="action-button action-button-primary" onClick={() => void handleAddFolders()}>
                     <FolderPlus className="h-4 w-4" aria-hidden="true" />
-                    添加文件夹
+                    导入文件夹…
+                  </button>
+                  <button type="button" className="action-button" onClick={() => void handleAddFiles()}>
+                    <FilePlus2 className="h-4 w-4" aria-hidden="true" />
+                    选择文件…
                   </button>
                 </>
               )}
@@ -165,6 +165,11 @@ export function WorkspaceEmptyState({
                 </button>
               )}
             </div>
+          )}
+          {variant === "library" && (
+            <p className="mt-3 text-xs leading-5 text-[var(--text-muted)]">
+              文件夹导入可只登记文件夹，也可将其中的文件加入库；原文件不会移动。
+            </p>
           )}
           {copy.footnote && (
             <p className="mx-auto mt-4 max-w-[420px] text-[12px] leading-5 text-[var(--text-faint)]">

@@ -3,14 +3,11 @@ import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import {
   ArrowRight,
   Check,
+  ChevronDown,
   ExternalLink,
-  FilePlus2,
   Heart,
-  Search,
   Tag,
-  Tags,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import qrCodeImage from "../assets/QRCode.png";
 import { useEscapeKey } from "../hooks/useEscapeKey";
@@ -23,29 +20,25 @@ interface WelcomeModalProps {
 }
 
 const BILIBILI_URL = "https://space.bilibili.com/445111";
-const GREETING = "轻量、极速的标签式资源管理器";
+const GREETING = "把常用内容收在一个地方，用标签快速找到。";
 
 interface FeatureEntry {
   title: string;
   description: string;
-  icon: LucideIcon;
 }
 
 const STEPS: FeatureEntry[] = [
   {
     title: "添加文件或文件夹",
     description: "拖进工作台，或点右上角「添加文件 / 添加文件夹」。侧栏「文件柜」只是分组，不是磁盘目录。",
-    icon: FilePlus2,
   },
   {
     title: "打一个标签",
     description: "从侧栏把标签拖到项目上，或右键选择「管理标签」",
-    icon: Tags,
   },
   {
     title: "搜索并打开",
     description: "按 / 或 F3 搜索，双击打开。Ctrl+K 打开命令面板",
-    icon: Search,
   },
 ];
 
@@ -95,18 +88,18 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
 
       <section
         ref={trapRef}
-        className="modal-surface relative flex max-h-[90dvh] w-[min(860px,calc(100vw-24px))] flex-col overflow-hidden"
+        className="modal-surface relative flex max-h-[90dvh] w-[min(620px,calc(100vw-24px))] flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="welcome-modal-title"
       >
-        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-[var(--line-hairline)] px-4 py-4 sm:px-6">
+        <header className="flex shrink-0 items-start justify-between gap-4 px-5 pt-6 pb-4 sm:px-8 sm:pt-8">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-              <Tag aria-hidden="true" size={21} strokeWidth={1.8} />
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
+              <Tag aria-hidden="true" size={20} strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
-              <h2 id="welcome-modal-title" className="truncate text-lg font-semibold text-[var(--text-primary)]">
+              <h2 id="welcome-modal-title" className="truncate text-[21px] font-semibold tracking-[-0.02em] text-[var(--text-primary)]">
                 欢迎使用 TagLauncher
                 {appVersion && (
                   <span className="data-readout ml-2 align-middle text-[13px] font-normal text-[var(--text-faint)]">
@@ -114,6 +107,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
                   </span>
                 )}
               </h2>
+              <p className="mt-1 text-[13px] text-[var(--text-muted)]">{GREETING}</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -131,68 +125,49 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <div className="border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-4 py-3 sm:px-6">
-            <p className="font-body text-sm font-medium text-[var(--text-primary)]">{GREETING}</p>
-            <p className="mt-1 font-body text-xs leading-5 text-[var(--text-muted)]">
-              不再翻文件夹：给文件打上标签，按标签一秒找到并打开。
-            </p>
-          </div>
-
-          <section className="min-w-0 px-4 py-5 sm:px-6" aria-labelledby="welcome-steps-title">
-            <h3 id="welcome-steps-title" className="text-base font-semibold text-[var(--text-primary)]">
-              三步上手
-            </h3>
-            <ol className="mt-3 grid gap-2 sm:grid-cols-3">
-              {STEPS.map((step) => {
-                const Icon = step.icon;
-                return (
-                  <li
-                    key={step.title}
-                    className="flex min-w-0 gap-3 rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--bg-card)] px-3 py-3"
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]">
-                      <Icon aria-hidden="true" size={16} strokeWidth={1.8} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-[var(--text-primary)]">
-                        {step.title}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">{step.description}</p>
-                    </div>
-                  </li>
-                );
-              })}
+          <section className="min-w-0 px-5 pt-2 pb-5 sm:px-8" aria-labelledby="welcome-steps-title">
+            <h3 id="welcome-steps-title" className="text-[12px] font-semibold text-[var(--text-muted)]">从这里开始</h3>
+            <ol className="mt-4 space-y-4">
+              {STEPS.map((step, index) => (
+                <li key={step.title} className="flex min-w-0 gap-4">
+                  <span className="data-readout w-6 shrink-0 pt-0.5 text-[12px] text-[var(--accent-primary)]">0{index + 1}</span>
+                  <div className="min-w-0">
+                    <p className="text-[14px] font-semibold text-[var(--text-primary)]">{step.title}</p>
+                    <p className="mt-1 text-[13px] leading-5 text-[var(--text-muted)]">{step.description}</p>
+                  </div>
+                </li>
+              ))}
             </ol>
           </section>
 
-          <aside
-            className="mx-4 mb-5 flex items-center gap-4 rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] p-4 sm:mx-6"
-            aria-label="赞助开发者"
-          >
-            <img
-              src={qrCodeImage}
-              alt="赞赏码"
-              className="h-32 w-32 shrink-0 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-white object-contain p-1.5"
-              draggable={false}
-            />
-            <div className="min-w-0">
-              <p className="flex items-center gap-1.5 text-sm font-semibold text-[var(--text-primary)]">
-                <Heart aria-hidden="true" size={16} strokeWidth={1.8} className="text-[var(--accent-primary)]" />
-                赞助开发者
-              </p>
-              <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
-                扫码请作者喝一杯咖啡，帮助 TagLauncher 继续迭代。
-              </p>
-              <a
-                href={BILIBILI_URL}
-                onClick={handleOpenBilibili}
-                className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold text-[var(--accent-primary-ink)] underline-offset-4 hover:underline"
-              >
-                B 站主页
-                <ExternalLink aria-hidden="true" size={14} strokeWidth={1.8} />
-              </a>
+          <details className="mx-5 mb-5 rounded-[var(--radius-md)] bg-[var(--surface-recessed)] px-4 py-3 sm:mx-8">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-[13px] font-medium text-[var(--text-secondary)] [&::-webkit-details-marker]:hidden">
+              <Heart aria-hidden="true" size={15} strokeWidth={1.8} />
+              支持开发者
+              <ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} className="ml-auto" />
+            </summary>
+            <div className="mt-4 flex items-center gap-4" aria-label="赞助开发者">
+              <img
+                src={qrCodeImage}
+                alt="赞赏码"
+                className="h-24 w-24 shrink-0 rounded-[var(--radius-sm)] bg-white object-contain p-1.5"
+                draggable={false}
+              />
+              <div className="min-w-0">
+                <p className="text-xs leading-5 text-[var(--text-muted)]">
+                  扫码请作者喝一杯咖啡，帮助 TagLauncher 继续迭代。
+                </p>
+                <a
+                  href={BILIBILI_URL}
+                  onClick={handleOpenBilibili}
+                  className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold text-[var(--accent-primary-ink)] underline-offset-4 hover:underline"
+                >
+                  B 站主页
+                  <ExternalLink aria-hidden="true" size={14} strokeWidth={1.8} />
+                </a>
+              </div>
             </div>
-          </aside>
+          </details>
         </div>
 
         <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 py-3 sm:px-6">

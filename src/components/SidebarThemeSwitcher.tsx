@@ -1,14 +1,14 @@
 // ============================================================================
-// components/SidebarThemeSwitcher.tsx — 首页侧栏底部官方主题色点与亮/暗分段
+// components/SidebarThemeSwitcher.tsx — 首页侧栏外观折叠入口
 // ----------------------------------------------------------------------------
-// 色点列出全部官方配色家族，代表色取该家族亮色 accent；点击后套用该家族在
-// 当前亮/暗下的主题 id。亮/暗分段写入显式 light/dark（离开跟随系统）。
+// 展开后列出全部官方配色家族及亮/暗切换。
+// 点击后套用该家族在当前模式下的主题 id；模式切换离开跟随系统状态。
 // 当前主题不属于官方家族时，亮/暗分段禁用，避免改写自定义/Mod 配色。
 // 套用与持久化走 useTheme 的 setTheme / changeColorMode。
 // ============================================================================
 
 import { type KeyboardEvent } from "react";
-import { Moon, Sun } from "lucide-react";
+import { ChevronDown, Moon, Palette, Sun } from "lucide-react";
 import { findFamilyByThemeId, listOfficialFamilySwatches } from "../themes";
 import { useThemeContextOptional } from "./ThemeProvider";
 
@@ -101,18 +101,22 @@ export function SidebarThemeSwitcher() {
   const darkSelected = effectiveMode === "dark";
 
   return (
-    <div
+    <details
       data-region="sidebar-theme"
-      className="flex shrink-0 flex-col gap-2.5 border-t border-[var(--line-hairline)] px-3 py-2.5"
+      className="group/appearance shrink-0 px-3 py-2"
     >
-      <div>
-        <div className="mb-1 text-[10px] font-medium tracking-wide text-[var(--text-faint)]">主题</div>
-        <div
-          role="radiogroup"
-          aria-label="官方主题"
-          className="flex items-center justify-between"
-        >
-          {swatches.map((swatch, index) => {
+      <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-[var(--radius-sm)] px-1 text-[12px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] [&::-webkit-details-marker]:hidden" aria-label="主题与外观">
+        <Palette size={14} aria-hidden="true" />
+        <span>外观</span><span className="ml-auto">{currentFamily?.name ?? currentTheme.name} · {lightSelected ? "浅色" : "深色"}</span>
+        <ChevronDown size={12} aria-hidden="true" className="group-open/appearance:rotate-180" />
+      </summary>
+      <div className="flex items-center justify-between gap-2 pt-2 pb-1">
+      <div
+        role="radiogroup"
+        aria-label="官方主题"
+        className="flex items-center"
+      >
+        {swatches.map((swatch, index) => {
           const selected = swatch.id === selectedFamilyId;
           return (
             <button
@@ -143,7 +147,6 @@ export function SidebarThemeSwitcher() {
             </button>
           );
         })}
-        </div>
       </div>
 
       <div
@@ -155,7 +158,7 @@ export function SidebarThemeSwitcher() {
             ? "切换亮色或暗色"
             : "当前主题自带配色，亮/暗切换仅对内置主题生效"
         }
-        className="flex h-9 w-full items-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-recessed)] p-0.5"
+        className="flex h-8 w-[72px] shrink-0 items-center rounded-[var(--radius-md)] bg-[var(--surface-recessed)] p-0.5"
       >
         <button
           id="sidebar-theme-mode-light"
@@ -175,7 +178,6 @@ export function SidebarThemeSwitcher() {
           } disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-[var(--text-muted)]`}
         >
           <Sun className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-          <span className="ml-1 hidden text-[12px] font-medium min-[200px]:inline">浅色</span>
         </button>
         <button
           id="sidebar-theme-mode-dark"
@@ -195,9 +197,9 @@ export function SidebarThemeSwitcher() {
           } disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-[var(--text-muted)]`}
         >
           <Moon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-          <span className="ml-1 hidden text-[12px] font-medium min-[200px]:inline">深色</span>
         </button>
       </div>
-    </div>
+      </div>
+    </details>
   );
 }

@@ -223,7 +223,7 @@ describe("appStore", () => {
     useAppStore.getState().setCardSizeScale(1.25);
     expect(useAppStore.getState().cardSizeScale).toBe(1.25);
     expect(document.documentElement.style.getPropertyValue("--grid-col-min")).toBe("320px");
-    expect(document.documentElement.style.getPropertyValue("--card-thumb-size")).toBe("65px");
+    expect(document.documentElement.style.getPropertyValue("--card-thumb-size")).toBe("50px");
     const stored = JSON.parse(localStorage.getItem("taglauncher.workspace_prefs") ?? "{}") as {
       cardSizeScale?: number;
     };

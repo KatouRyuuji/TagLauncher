@@ -1,8 +1,7 @@
 // ============================================================================
 // components/ThemeFamilyGallery.tsx — 设置里官方四族的主选择器
 // ----------------------------------------------------------------------------
-// 2×2 预览卡即选择器：每张卡用该族当前亮/暗主题的真实变量画小工作台
-// （纸色底 + 侧栏 + 两张小卡 + 前三位 tag-preset-colors 胶囊），点卡
+// 预览卡即选择器：每张卡用该族当前亮/暗主题的真实变量画小工作台，点卡
 // setTheme(resolveFamilyThemeId(family, mode))。当前主题若是自定义/Mod，
 // 四卡都不勾。
 // ============================================================================
@@ -10,7 +9,6 @@
 import { type KeyboardEvent } from "react";
 import { Check } from "lucide-react";
 import type { ResolvedColorMode } from "../lib/colorMode";
-import { parsePalette } from "../lib/tagColorSlots";
 import {
   THEME_FAMILIES,
   findFamilyByThemeId,
@@ -85,14 +83,14 @@ export function ThemeFamilyGallery({
         role="radiogroup"
         aria-label="官方配色"
         data-theme-family-gallery=""
-        className="mt-3 grid grid-cols-2 gap-3"
+        className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4"
       >
         {THEME_FAMILIES.map((family, index) => {
           const theme = familyTheme(themes, family, effectiveMode);
           if (!theme) return null;
           const colors = theme.variables;
+          const tagColors = colors["tag-preset-colors"].split(",");
           const selected = selectedFamily?.id === family.id;
-          const presets = parsePalette(colors["tag-preset-colors"] ?? "").slice(0, 3);
           const radius = family.lang === "b" ? "2px" : "8px";
           return (
             <button
@@ -111,15 +109,15 @@ export function ThemeFamilyGallery({
                 aria-hidden="true"
                 className="flex h-24 overflow-hidden border p-1"
                 style={{
-                  background: colors["bg-base"],
+                  background: colors["bg-surface"],
                   borderColor: colors["border-default"],
                   borderRadius: radius,
                 }}
               >
                 <span
-                  className="mr-1.5 flex w-8 shrink-0 flex-col gap-1 border-r p-1"
+                  className="mr-1.5 flex w-8 shrink-0 flex-col gap-1 p-1"
                   style={{
-                    background: colors["bg-surface"],
+                    background: colors["bg-base"],
                     borderColor: colors["border-default"],
                   }}
                 >
@@ -132,44 +130,22 @@ export function ThemeFamilyGallery({
                     {[0, 1].map((card) => (
                       <span
                         key={card}
-                        className="flex min-w-0 flex-1 border"
-                        style={{
-                          background: colors["bg-card"] ?? colors["bg-surface"],
-                          borderColor: colors["border-default"],
-                          borderRadius: family.lang === "b" ? "1px" : "4px",
-                        }}
-                      />
+                        className="flex min-w-0 flex-1 flex-col gap-1.5 pt-1"
+                      >
+                        <span className="h-4 w-4 rounded-sm" style={{ background: colors["bg-hover"] }} />
+                        <span className="h-1 w-4/5 opacity-70" style={{ background: colors["text-primary"] }} />
+                        <span className="h-1 w-1/2 opacity-45" style={{ background: colors["text-secondary"] }} />
+                        <span className="h-2 w-4/5 rounded-sm" style={{ background: `color-mix(in srgb, ${tagColors[card]} 20%, ${colors["bg-surface"]})` }} />
+                      </span>
                     ))}
                   </span>
                   <span className="flex gap-1">
-                    {presets.map((hex, pillIndex) => (
-                      <span
-                        key={`${hex}-${pillIndex}`}
-                        className="h-3 min-w-0 flex-1 rounded-full"
-                        style={{
-                          background: hex,
-                          boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${hex} 35%, transparent)`,
-                        }}
-                      />
-                    ))}
+                    {tagColors.map((color) => <span key={color} className="h-1.5 min-w-0 flex-1 rounded-sm" style={{ background: color }} />)}
                   </span>
                 </span>
               </span>
-              <span className="mt-2 flex items-center justify-between gap-1 px-0.5 text-xs font-medium">
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="truncate">{family.name}</span>
-                  {/* 族名旁主色速览：前三位预设色点 + 主按钮色 HEX，免逐卡对照 */}
-                  <span aria-hidden="true" className="flex shrink-0 items-center gap-1">
-                    {presets.map((hex, dotIndex) => (
-                      <span key={`${hex}-dot-${dotIndex}`} className="h-2 w-2 rounded-full" style={{ background: hex }} />
-                    ))}
-                  </span>
-                  {colors["accent-primary"] && (
-                    <span className="data-readout shrink-0 text-[10px] font-normal text-[var(--text-faint)]">
-                      {colors["accent-primary"]}
-                    </span>
-                  )}
-                </span>
+              <span className="mt-2 flex items-center justify-between gap-1 px-0.5 text-[13px] font-medium">
+                <span className="truncate">{family.name}</span>
                 {selected && <Check size={14} strokeWidth={2} aria-hidden="true" />}
               </span>
             </button>

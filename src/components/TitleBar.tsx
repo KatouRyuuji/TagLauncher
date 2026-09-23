@@ -14,9 +14,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Menu, Minus, Square, X } from "lucide-react";
-// 32x32 小图标（与 src-tauri/icons/32x32.png 同源）：完整 icon.png 有 1.5MB，
-// 作为窗口栏图标会无谓膨胀前端包体
-import appIcon from "../assets/icon-32.png";
 
 export function TitleBar({
   sidebarOpen = false,
@@ -86,12 +83,10 @@ export function TitleBar({
             <Menu aria-hidden="true" size={16} strokeWidth={1.8} />
           </button>
         )}
-        {/* 品牌区关闭 pointer-events，使 mousedown 落在带 drag-region 的 header 上。
-            logo 取标题栏高度的 3/4（40px 栏配 30px 图标），与文字一同垂直居中。 */}
+        {/* 品牌区关闭 pointer-events，使 mousedown 落在带 drag-region 的 header 上。 */}
         <div className="pointer-events-none flex min-w-0 items-center self-stretch pl-3">
         <div className="flex min-w-0 items-center gap-2.5 pr-3">
-          <img src={appIcon} alt="" className="h-[30px] w-[30px] shrink-0" draggable={false} />
-          <span className="truncate text-[14px] font-semibold leading-4 text-[var(--text-primary)]">
+          <span className="truncate text-[13px] font-medium leading-4 text-[var(--text-secondary)]">
             TagLauncher
           </span>
         </div>

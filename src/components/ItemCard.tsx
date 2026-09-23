@@ -205,14 +205,14 @@ function ItemCardComponent({
         data-selected={selected ? "true" : "false"}
         role="listitem"
         aria-label={`${item.name}${selected ? "，已选择" : ""}`}
-        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-xl)] border bg-[var(--bg-card)] ${
-          iconLayout ? "items-center p-2.5" : "p-3"
+        className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-lg)] border ${
+          iconLayout ? "items-center p-2.5" : "p-4"
         } ${
           tagDragOver
             ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)]"
             : selected
             ? "border-[var(--accent-primary)] bg-[color-mix(in_srgb,var(--accent-primary)_12%,var(--bg-surface))]"
-            : "border-[var(--line-hairline)] hover:border-[var(--border-default)]"
+            : "border-transparent bg-transparent hover:bg-[var(--bg-hover)]"
         }`}
         title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
         onPointerDown={handleCardBodyPointerDown}
@@ -328,7 +328,7 @@ function ItemCardComponent({
           </div>
         </div>
 
-        <div className="mt-1.5 min-h-7">
+        <div className="mt-2 min-h-6">
           <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} maxVisible={cardSizeScale < 0.9 ? 1 : undefined} />
         </div>
 

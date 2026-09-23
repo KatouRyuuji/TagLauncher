@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { Fragment, useEffect, useRef } from "react";
+import { X } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 
 export function TagFilterBar() {
@@ -61,7 +62,7 @@ export function TagFilterBar() {
   return (
     <div
       data-region="tagfilterbar"
-      className="flex h-11 shrink-0 items-center border-b border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3"
+      className="flex h-11 shrink-0 items-center bg-[var(--bg-surface)] px-3"
     >
       <div
         ref={scrollRef}
@@ -100,30 +101,25 @@ export function TagFilterBar() {
                 aria-pressed={active}
                 aria-label={excluded ? `${tag.name}（已排除）` : undefined}
                 data-excluded={excluded || undefined}
-                title={excluded ? `${tag.name}（已排除，右键取消排除）` : `${tag.name}（右键排除含此标签的项目）`}
+                title={excluded ? `${tag.name}（已排除，点击取消）` : `${tag.name}（点击取消筛选，右键改为排除）`}
                 style={excluded
                   ? {
-                      borderColor: "var(--border-subtle)",
+                      borderColor: "transparent",
                       backgroundColor: "var(--bg-hover)",
                       boxShadow: "none",
                     }
                   : {
-                      borderColor: active
-                        ? `color-mix(in srgb, ${tag.color} 65%, var(--border-default))`
-                        : `color-mix(in srgb, ${tag.color} 24%, var(--border-subtle))`,
+                      borderColor: "transparent",
                       backgroundColor: active
-                        ? `color-mix(in srgb, ${tag.color} 12%, var(--bg-card))`
-                        : `color-mix(in srgb, ${tag.color} 7%, transparent)`,
-                      color: active ? "var(--text-primary)" : "var(--text-secondary)",
-                      boxShadow: active ? `inset 0 -2px 0 ${tag.color}` : "none",
+                        ? `color-mix(in srgb, ${tag.color} 10%, var(--bg-card))`
+                        : "var(--bg-hover)",
+                      color: active ? `color-mix(in srgb, ${tag.color} 88%, var(--text-primary))` : "var(--text-secondary)",
+                      boxShadow: "none",
                     }}
               >
-                <span
-                  className="h-1.5 w-1.5 rounded-[1px]"
-                  style={{ backgroundColor: excluded ? "var(--text-faint)" : tag.color }}
-                  aria-hidden="true"
-                />
+                {excluded && <span aria-hidden="true" className="text-[11px] font-semibold">非</span>}
                 <span className={excluded ? "line-through" : undefined}>{tag.name}</span>
+                <X className="h-3 w-3 opacity-60" strokeWidth={1.8} aria-hidden="true" />
               </button>
             </Fragment>
           );

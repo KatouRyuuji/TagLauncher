@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { assert, test, run } from "./__testutil";
 import { sakuraTheme } from "../themes/sakura";
 import { ryuujiThemes } from "../themes/ryuuji";
@@ -7,308 +7,109 @@ import { THEME_FAMILIES, presetThemes } from "../themes";
 import { DEFAULT_THEME_VARIABLES } from "../themes/tokens";
 import { shapeLangTokens } from "../themes/shapeLang";
 
-// 规范主题：工厂生成的霜靛·暗，与 tokens.ts 的 DEFAULT_THEME_VARIABLES 同源
 const canonicalTheme = ryuujiThemes.find((theme) => theme.id === "8cebf811-9b9d-4c49-ac9f-1d1fa685ce93") ?? ryuujiThemes[0];
+const themeLoaderSource = readFileSync(resolve(process.cwd(), "src-tauri/src/extensions/theme_loader.rs"), "utf-8");
+const skyCloud = JSON.parse(
+  readFileSync(resolve(process.cwd(), "ExampleTheme/SkyCloudTheme/theme.json"), "utf-8"),
+) as { variables: Record<string, string> };
 
 function variableKeys(theme: { variables: Record<string, string> }): string[] {
   return Object.keys(theme.variables).sort();
 }
 
 function extractRequiredVariables(source: string): string[] {
-  const startMarker = "const REQUIRED_VARIABLES: &[&str] = &[";
-  const start = source.indexOf(startMarker);
+  const marker = "const REQUIRED_VARIABLES: &[&str] = &[";
+  const start = source.indexOf(marker);
   if (start < 0) throw new Error("未找到 REQUIRED_VARIABLES");
-  const bodyStart = start + startMarker.length;
-  const end = source.indexOf("];", bodyStart);
+  const end = source.indexOf("];", start + marker.length);
   if (end < 0) throw new Error("未找到 REQUIRED_VARIABLES 结束标记");
-  const names: string[] = [];
-  const re = /"([^"]+)"/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(source.slice(bodyStart, end)))) {
-    names.push(match[1]);
-  }
-  return names;
+  return [...source.slice(start + marker.length, end).matchAll(/"([^"]+)"/g)].map((match) => match[1]);
 }
 
-const skyCloud = JSON.parse(
-  readFileSync(resolve(process.cwd(), "ExampleTheme/SkyCloudTheme/theme.json"), "utf-8"),
-) as { variables: Record<string, string> };
-
-const themeLoaderSource = readFileSync(
-  resolve(process.cwd(), "src-tauri/src/extensions/theme_loader.rs"),
-  "utf-8",
-);
-const required = extractRequiredVariables(themeLoaderSource);
-const indexCss = readFileSync(resolve(process.cwd(), "src/index.css"), "utf-8");
-
-test("提取逻辑健全：REQUIRED_VARIABLES 数量合理", () => {
-  assert.ok(required.length >= 80, `仅提取到 ${required.length} 个必填变量`);
-});
-
-test("sakura 与全部工厂主题的 variables 键集合一致", () => {
-  const sakuraKeys = variableKeys(sakuraTheme);
-  assert.deepEqual(variableKeys(canonicalTheme), sakuraKeys);
-  for (const theme of ryuujiThemes) {
-    assert.deepEqual(variableKeys(theme), sakuraKeys, `${theme.id} 键集合不一致`);
-  }
-});
-
-test("预设主题 id 全部为 uuid 形态，且家族注册表覆盖每套预设", () => {
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-  const familyThemeIds = THEME_FAMILIES.flatMap((family) => [family.light, family.dark]);
+test("预设主题共用完整变量键集并被家族注册表覆盖", () => {
+  const expectedKeys = variableKeys(sakuraTheme);
+  const registeredIds = THEME_FAMILIES.flatMap((family) => [family.light, family.dark]);
   for (const theme of [sakuraTheme, ...ryuujiThemes]) {
-    assert.ok(UUID_RE.test(theme.id), `${theme.name} 的 id 应为 uuid：${theme.id}`);
-    assert.ok(familyThemeIds.includes(theme.id), `家族注册表未覆盖 ${theme.id}`);
+    assert.deepEqual(variableKeys(theme), expectedKeys, theme.name + " 主题变量不完整");
+    assert.ok(registeredIds.includes(theme.id), "未注册主题 " + theme.id);
+    assert.match(theme.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   }
 });
 
-test("内置主题与 :root 回退把空格预览放在 Mod 模态之下", () => {
-  assert.equal(canonicalTheme.variables["z-quick-preview"], "160");
-  assert.equal(canonicalTheme.variables["z-command-palette"], "210");
-  assert.equal(canonicalTheme.variables["z-shortcuts-help"], "215");
-  assert.ok(indexCss.includes("--z-quick-preview: 160;"));
-  assert.ok(!indexCss.includes("--z-quick-preview: 205;"));
-});
-
-test("示例主题 Sky Cloud 覆盖全部内置键，且预览层级为 160", () => {
-  const missing = variableKeys(canonicalTheme).filter((key) => !(key in skyCloud.variables));
-  assert.deepEqual(missing, [], `示例主题缺少：${missing.join(", ")}`);
-  assert.equal(skyCloud.variables["z-quick-preview"], "160");
-});
-
-test("示例主题满足 Rust 必填变量，安装时不会被 theme_loader 拒绝", () => {
-  const missing = required.filter((key) => !(key in skyCloud.variables));
-  assert.deepEqual(missing, [], `示例主题缺少必填变量：${missing.join(", ")}`);
-});
-
-test("Rust 必填变量与内置主题键集合一致（旧主题缺失键由 DEFAULT_THEME_VARIABLES 补齐，仅告警）", () => {
+test("内置主题与示例主题覆盖 Rust 必填变量", () => {
+  const required = extractRequiredVariables(themeLoaderSource);
+  assert.ok(required.length >= 80, "仅提取到 " + required.length + " 个必填变量");
   assert.deepEqual([...required].sort(), variableKeys(canonicalTheme));
+  assert.deepEqual(variableKeys(canonicalTheme).filter((key) => !(key in skyCloud.variables)), []);
+  assert.equal(canonicalTheme.variables["z-quick-preview"], "160");
 });
 
-const SEMANTIC_TO_SYS: Record<string, string> = {
-  "bg-base": "bg",
-  "text-primary": "text",
-  "text-secondary": "text-2",
-  "text-tertiary": "text-3",
-  "accent-primary": "primary",
-  "accent-primary-ink": "primary-ink",
-  "accent-signal": "signal",
-  "color-danger": "danger",
-  "color-danger-ink": "danger-ink",
-  "color-warning": "warning",
-  "color-warning-ink": "warning-ink",
-  "color-success": "success",
-  "color-success-ink": "success-ink",
-  "text-invert": "on-primary",
-};
-
-function ryuujiRoot(): string | null {
-  const candidates = [
-    process.env.RYUUJI_DESIGN,
-    "D:/PersonalProject/RyuujiDesign",
-    resolve(process.cwd(), "..", "RyuujiDesign"),
-    resolve(process.cwd(), "..", "..", "RyuujiDesign"),
-  ].filter((value): value is string => Boolean(value));
-  return candidates.find((dir) => existsSync(join(dir, "styles/palettes.css"))) ?? null;
+function rgb(hex: string): number[] {
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+}
+function blend(a: number[], b: number[], amount: number): number[] {
+  return a.map((channel, i) => channel * amount + b[i] * (1 - amount));
+}
+function contrast(a: number[], b: number[]): number {
+  const luminance = (channels: number[]) => channels.map((value) => {
+    const c = value / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }).reduce((sum, value, i) => sum + value * [0.2126, 0.7152, 0.0722][i], 0);
+  const x = luminance(a), y = luminance(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
 
-function cssVar(source: string, name: string): string | null {
-  const match = source.match(new RegExp(`--${name}:\\s*([^;]+);`));
-  return match ? match[1].trim() : null;
-}
-
-function normalizeCssValue(value: string): string {
-  return value.replace(/\s+/g, " ").replace(/0px/g, "0").trim();
-}
-
-// 效果优先：RyuujiDesign 是参考而非硬绑定。以下键经设计评审刻意调离源值，
-// 每条附调优理由；新增调优须连同理由一起登记，否则默认与 palettes.css 逐值一致。
-const TUNED: Record<string, Partial<Record<keyof typeof SEMANTIC_TO_SYS, string>>> = {
-  // 素墨亮：去色只作用 UI 装饰色——警告/危险/成功语义色保留彩色（与樱花亮同值），
-  // 「失效待处理」信号在素墨下不隐身（第二轮评审必须修 #1）
-  "mono-light": {
-    "color-success": "#1faa64",
-    "color-success-ink": "#167645",
-    "color-warning": "#e8a006",
-    "color-warning-ink": "#895f04",
-    "color-danger": "#c0392b",
-    "color-danger-ink": "#bb382a",
-    // 次要文字加深一档（第四轮评审：12–13px 浅灰扫读费力，全校准至 ≥6:1）
-    "text-secondary": "#4b4b4b",
-    "text-tertiary": "#5e5e5e",
-  },
-  // 素墨暗：语义色与霜靛暗同值（暗底警示同样醒目）
-  "mono-dark": {
-    "color-success": "#52c878",
-    "color-success-ink": "#52c878",
-    "color-warning": "#d4a838",
-    "color-warning-ink": "#d4a838",
-    "color-danger": "#cd4747",
-    "color-danger-ink": "#da7c7c",
-    // 暗色次级文字明度上调一档（第四轮评审：暗底灰字贴近可读性下限）
-    "text-secondary": "#bdbdbd",
-    "text-tertiary": "#9c9c9c",
-  },
-  // 藤色暗：accent 向暖紫（梅紫方向）推 ~12°，与霜靛暗的冷靛拉开色相距离，
-  // 暗色下两族快速切换不再「换了个寂寞」（第三轮评审主题横向对比）
-  "a3-dark": {
-    "accent-primary": "#a855d1",
-    "accent-primary-ink": "#e2c9f6",
-    "accent-signal": "#a855d1",
-    // 琥珀提亮（第四轮评审：状态徽章在紫黑底上发闷）；次级文字上调一档
-    "color-warning": "#deb44e",
-    "color-warning-ink": "#deb44e",
-    "text-secondary": "#b4a8ca",
-    "text-tertiary": "#978fa9",
-  },
-  // 亮面次要文字全校准加深一档（第四轮评审，四族同一条公式）
-  "a1-light": {
-    "text-secondary": "#424d64",
-    "text-tertiary": "#525c72",
-  },
-  "a1-dark": {
-    "text-secondary": "#aeb8c9",
-    "text-tertiary": "#8f99aa",
-  },
-  "a3-light": {
-    "text-secondary": "#4e3d67",
-    "text-tertiary": "#665475",
-  },
-  // 樱花亮：accent 降饱和 ~17% 并向品红推 6°，与标签红/橙拉开色相距离（第四轮评审：
-  // 实色 pill 与侧栏暖色标签点互相抢戏）；次级文字同公式加深
-  "a6-light": {
-    "accent-primary": "#c94578",
-    "accent-primary-ink": "#8d3f5d",
-    "accent-signal": "#c94578",
-    "text-secondary": "#7c3548",
-    "text-tertiary": "#8c4259",
-  },
-  "a6-dark": {
-    // 琥珀提亮（同 a3-dark）；次级文字上调一档
-    "color-warning": "#e2b851",
-    "color-warning-ink": "#e2b851",
-    "text-secondary": "#dab0bc",
-    "text-tertiary": "#b08a97",
-  },
-};
-
-test("关键语义色与 RyuujiDesign palettes.css 逐值一致（显式调优清单除外）", () => {
-  const root = ryuujiRoot();
-  if (!root) {
-    const locked = new Set(THEME_FAMILIES.map((family) => family.id === "mono-b" ? "mono" : family.id));
-    assert.deepEqual([...locked].sort(), ["a1", "a3", "a6", "mono"]);
-    return;
-  }
-  const source = readFileSync(join(root!, "styles/palettes.css"), "utf-8");
-  const lock = JSON.parse(readFileSync(join(root!, "tools/palette-lock.json"), "utf-8")) as {
-    named: Record<string, { bgLight: string; bgDark: string }>;
-  };
-  assert.equal(Object.keys(lock.named).length, 8, "palette-lock 须为八套命名色板");
-  const mismatches: string[] = [];
-  for (const family of THEME_FAMILIES) {
-    const paletteId = family.id === "mono-b" ? "mono" : family.id;
-    for (const mode of ["light", "dark"] as const) {
-      const block = [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find((match) =>
-        match[1].includes(`data-lang="${family.lang}"`) &&
-        match[1].includes(`data-palette="${paletteId}"`) &&
-        match[1].includes(`data-theme="${mode}"`),
-      );
-      assert.ok(block, `palettes.css 缺少 ${family.name}/${mode}`);
-      const sys = Object.fromEntries(
-        [...block![2].matchAll(/--sys-([\w-]+):\s*([^;]+);/g)].map((match) => [match[1], match[2].trim()]),
-      );
-      const theme = presetThemes.find((item) => item.id === family[mode]);
-      assert.ok(theme, `缺少预设主题 ${family.name}/${mode}`);
-      const expectedBg = mode === "light" ? lock.named[paletteId]?.bgLight : lock.named[paletteId]?.bgDark;
-      // 藤色 / 樱花纸色由工厂 PAPER_BIAS 派生，不再与 lock 原值逐字相等
-      const paperDerived = family.id === "a3" || family.id === "a6";
-      if (expectedBg && !paperDerived && theme!.variables["bg-base"] !== expectedBg) {
-        mismatches.push(`${family.name}/${mode} bg-base ${theme!.variables["bg-base"]} ≠ lock ${expectedBg}`);
+test("主题具有独立纸面，并保持主要文字的可读对比度", () => {
+  for (const mode of ["light", "dark"] as const) {
+    const surfaces = new Set<string>();
+    for (const family of THEME_FAMILIES) {
+      const theme = presetThemes.find((candidate) => candidate.id === family[mode]);
+      assert.ok(theme);
+      const vars = theme!.variables;
+      surfaces.add(vars["bg-surface"]);
+      for (const key of ["text-primary", "text-secondary", "text-muted"]) {
+        assert.ok(contrast(rgb(vars[key]), rgb(vars["bg-surface"])) >= 4.5, `${family.name} ${mode} ${key} 对比度不足`);
       }
-      for (const [appKey, sysKey] of Object.entries(SEMANTIC_TO_SYS)) {
-        if (appKey === "bg-base" && paperDerived) continue;
-        const tuned = TUNED[`${paletteId}-${mode}`]?.[appKey as keyof typeof SEMANTIC_TO_SYS];
-        if (tuned !== undefined) {
-          // 调优键与源值脱钩，只断言等于登记的调优值（漂移即登记缺失/笔误）
-          if (theme!.variables[appKey] !== tuned) {
-            mismatches.push(`${family.name}/${mode} ${appKey}: ${theme!.variables[appKey]} ≠ 调优登记值 ${tuned}`);
-          }
-          continue;
-        }
-        if (theme!.variables[appKey] !== sys[sysKey]) {
-          mismatches.push(`${family.name}/${mode} ${appKey}: ${theme!.variables[appKey]} ≠ --sys-${sysKey} ${sys[sysKey]}`);
-        }
+    }
+    assert.equal(surfaces.size, THEME_FAMILIES.length);
+  }
+});
+
+test("家族强调色彼此区分并保持低饱和", () => {
+  const accents = THEME_FAMILIES.map((family) =>
+    presetThemes.find((theme) => theme.id === family.light)?.variables["accent-primary"],
+  );
+  assert.deepEqual(accents, ["#4f618c", "#6f647a", "#956d77", "#50565c"]);
+  assert.equal(new Set(accents).size, THEME_FAMILIES.length);
+});
+
+test("官方主题共享圆角、间距、阴影与正文排版", () => {
+  const a = shapeLangTokens("a", "light");
+  const b = shapeLangTokens("b", "light");
+  for (const key of [
+    "radius-sm", "radius-md", "radius-lg", "radius-xl", "radius-2xl", "radius-3xl",
+    "sidebar-width", "shadow-sm", "shadow-md", "shadow-lg", "shadow-card",
+    "font-family-body", "transition-fast", "transition-normal", "transition-slow",
+  ]) {
+    assert.equal(a[key], b[key], key + " 应在结构映射间保持一致");
+  }
+  assert.equal(a["sidebar-width"], "240px");
+  assert.equal(a["font-family-body"], a["font-family"]);
+});
+
+test("所有标签墨字在对应的亮暗底色上达到 4.5:1", () => {
+  for (const family of THEME_FAMILIES) {
+    for (const mode of ["light", "dark"] as const) {
+      const theme = presetThemes.find((candidate) => candidate.id === family[mode])!;
+      for (const color of theme.variables["tag-preset-colors"].split(",")) {
+        const ink = blend(rgb(color), rgb(theme.variables["text-primary"]), 0.88);
+        const fill = blend(rgb(color), rgb(theme.variables["bg-card"]), mode === "dark" ? 0.15 : 0.09);
+        const ratio = contrast(ink, fill);
+        assert.ok(ratio >= 4.5, `${family.name} ${mode} ${color} 对比度 ${ratio.toFixed(2)}`);
       }
     }
   }
-  assert.deepEqual(mismatches, [], mismatches.join("\n"));
-});
-
-test("结构令牌与 lang/{a,b}.css、tokens.css 对应值一致", () => {
-  const root = ryuujiRoot();
-  if (!root) {
-    assert.equal(shapeLangTokens("a", "light")["radius-sm"], "6px");
-    assert.equal(shapeLangTokens("b", "light")["radius-md"], "2px");
-    return;
-  }
-  const langA = readFileSync(join(root!, "styles/lang/a.css"), "utf-8");
-  const langB = readFileSync(join(root!, "styles/lang/b.css"), "utf-8");
-  const tokens = readFileSync(join(root!, "styles/tokens.css"), "utf-8");
-  const a = shapeLangTokens("a", "light");
-  const b = shapeLangTokens("b", "light");
-  assert.equal(normalizeCssValue(a["radius-sm"]), normalizeCssValue(cssVar(langA, "sys-radius-sm")!));
-  assert.equal(normalizeCssValue(a["radius-md"]), normalizeCssValue(cssVar(langA, "sys-radius-md")!));
-  assert.equal(normalizeCssValue(a["radius-lg"]), normalizeCssValue(cssVar(langA, "sys-radius-lg")!));
-  assert.equal(normalizeCssValue(a["radius-xl"]), normalizeCssValue(cssVar(langA, "sys-radius-xl")!));
-  assert.equal(normalizeCssValue(b["radius-sm"]), normalizeCssValue(cssVar(langB, "sys-radius-sm")!));
-  assert.equal(normalizeCssValue(b["radius-md"]), normalizeCssValue(cssVar(langB, "sys-radius-md")!));
-  assert.equal(a["sidebar-width"], cssVar(tokens, "sys-sidebar-w"));
-  assert.ok(a["transition-fast"]!.startsWith(cssVar(tokens, "sys-dur-2")!));
-  assert.ok(a["transition-normal"]!.startsWith(cssVar(tokens, "sys-dur-3")!));
-  assert.ok(a["transition-slow"]!.startsWith(cssVar(tokens, "sys-dur-5")!));
-  assert.equal(normalizeCssValue(a["shadow-well"]), normalizeCssValue(cssVar(langA, "sys-shadow-paper-well")!));
-  assert.equal(normalizeCssValue(a["shadow-focus"]), normalizeCssValue(cssVar(tokens, "sys-shadow-focus")!.replace("var(--sys-primary)", "var(--accent-primary)")));
-  assert.equal(b["shadow-focus"], "none");
-});
-
-test("藤色纸色由工厂拉开，樱花发丝沾春色，素墨 accent 仍是墨阶", () => {
-  const frostLight = presetThemes.find((theme) => theme.id === THEME_FAMILIES[0].light);
-  const fujiLight = presetThemes.find((theme) => theme.id === THEME_FAMILIES[1].light);
-  const sakuraLight = presetThemes.find((theme) => theme.id === THEME_FAMILIES[2].light);
-  const inkLight = presetThemes.find((theme) => theme.id === THEME_FAMILIES[3].light);
-  assert.ok(frostLight && fujiLight && sakuraLight && inkLight);
-  assert.ok(fujiLight!.variables["bg-base"].includes("color-mix"));
-  assert.notEqual(fujiLight!.variables["bg-base"], frostLight!.variables["bg-base"]);
-  assert.ok(fujiLight!.variables["border-subtle"].includes("#8f5fc5") || fujiLight!.variables["border-subtle"].includes("8f5fc5"));
-  assert.ok(sakuraLight!.css?.includes("--line-hairline"));
-  assert.equal(inkLight!.variables["accent-primary"], "#242424");
-  assert.equal(inkLight!.variables["bg-base"], "#f5f5f5");
-});
-
-test("暗色标签胶囊与亮色同一低对比，缺省补齐仍是 9%", () => {
-  assert.equal(canonicalTheme.variables["tag-color-alpha"], "9%");
-  assert.equal(sakuraTheme.variables["tag-color-alpha"], "9%");
-  assert.equal(DEFAULT_THEME_VARIABLES["tag-color-alpha"], "9%");
-});
-
-test("已交付 CSS 含签名配方与 reduced-motion 静态化", () => {
-  assert.ok(indexCss.includes("box-shadow: var(--shadow-card)"));
-  assert.ok(indexCss.includes(".action-button-primary"));
-  assert.ok(indexCss.includes("background: var(--accent-primary)"));
-  assert.ok(indexCss.includes(".row-selected"));
-  assert.ok(indexCss.includes("background: var(--row-selected-bg)"));
-  assert.ok(indexCss.includes("var(--shadow-focus)"));
-  assert.ok(indexCss.includes("0 0 0 4px color-mix(in srgb, var(--accent-primary) 12%, transparent)"));
-  assert.ok(indexCss.includes(".tag-pill"));
-  assert.ok(indexCss.includes("color-mix(in srgb, var(--tag-color) 46%, transparent)"));
-  assert.ok(indexCss.includes("card-hover-lift"));
-  /* hover 只改描边不上移（1923cc9 起）：避免悬停整行重绘 */
-  assert.ok(indexCss.includes("transition: border-color var(--transition-fast)"));
-  assert.ok(!indexCss.includes("translateY(-1px)"));
-  assert.ok(indexCss.includes("@media (prefers-reduced-motion: reduce)"));
-  assert.ok(indexCss.includes("animation-duration: 0.01ms !important"));
-  assert.ok(indexCss.includes(".settings-field:focus-within"));
-  assert.equal(canonicalTheme.variables["shadow-focus"], "0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, transparent)");
+  assert.equal(DEFAULT_THEME_VARIABLES["tag-color-alpha"], "7%");
 });
 
 await run("themeVariables");

@@ -8,7 +8,7 @@
 
 - **主题 = 一套完整配色方案**。每套主题自带亮或暗配色，用户级「亮色/暗色」开关只作用于内置配色家族，自定义主题与 Mod 主题不受其影响。
 - **id 是唯一标识**，与显示名解耦：`name` 随意命名（可与其它主题重名），`id` 必须全局唯一，推荐直接使用 uuid。
-- **造型语言 `lang`**：`"a"`（纸面，默认）或 `"b"`（仪表），决定圆角/动效/装饰签名那一层风格，与配色无关。
+- **结构映射 `lang`**：`"a"`（默认）或 `"b"`（保留旧主题兼容），官方配色使用统一的圆角、间距与阴影；主题仍可通过 `css` 定制额外装饰。
 - 主题变量是注入到 `:root` 的 CSS 自定义属性；应用内全部组件只引用变量，不写死颜色。
 
 ## 2. 交付方式
@@ -72,7 +72,9 @@
 `card-backdrop-filter` `sidebar-backdrop-filter` `welcome-accent-gradient` `media-caption-gradient` `status-warning-bg` `status-success-bg` `scrollbar-thumb` `scrollbar-thumb-hover`
 
 **标签体系**
-`tag-preset-colors`（官方八个色位，逗号分隔；**顺序即色位契约**。编辑器只展示这 8 色，手选立刻吸附到最近位并写入 `taglauncher.color_slots`。切换官方配色家族时，已有标签/文件柜的 `color` 按色位写入新板对应 hex；自定义 / Mod 主题不批量改库内颜色）`tag-color-alpha` `tag-selected-alpha` `tag-muted-alpha` `tag-selected-border-alpha`
+`tag-preset-colors`（官方十个色位，逗号分隔；**顺序即色位契约**。编辑器展示这 10 色，手选立刻吸附到最近位并写入 `taglauncher.color_slots`。切换官方配色家族时，已有标签/文件柜的 `color` 按色位写入新板对应 hex；自定义 / Mod 主题不批量改库内颜色）`tag-color-alpha` `tag-selected-alpha` `tag-muted-alpha` `tag-selected-border-alpha`
+
+每套官方主题提供 10 个标签墨色位，顺序为蓝、紫、玫瑰、石墨、金、绿、陶土、青、赤、棕。相同色位在不同主题与亮暗模式下保持色相对应。内容区用有色文字配轻底色显示标签，侧栏用同色方形标记辅助中性文字。层级只在树与关系视图表达，项目标签独立排列并正常换行。主题分别提供协调的纸面、墨色与标签色板；上述透明度变量供自定义 CSS 使用。
 
 **布局尺寸**
 `sidebar-width` `grid-col-min`（网格卡片最小列宽）

@@ -387,7 +387,7 @@ export function ItemListView({
       onRefreshWorkspace={onRefreshWorkspace}
       containerTabIndex={activeMounted ? -1 : 0}
     >
-      {/* 全幅表格（对标资源管理器详细信息视图）：表头吸附、整行分隔线，无外层卡片 */}
+      {/* 全幅表格：表头吸附，行靠间距与悬停态区分，无外层卡片 */}
       <div>
         <div
           className="sticky top-0 z-10 grid h-9 items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4"

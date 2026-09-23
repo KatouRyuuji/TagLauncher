@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { THEME_FAMILIES } from "../themes";
+import { THEME_FAMILIES, getPresetTheme } from "../themes";
+import { parsePalette } from "../lib/tagColorSlots";
 import { useAppStore } from "../stores/appStore";
 
 const FROST = THEME_FAMILIES[0].light;
@@ -57,6 +58,8 @@ describe("useTagColorSlotSync", () => {
     });
     expect(mocks.setSetting).toHaveBeenCalledTimes(1);
     expect(mocks.setSetting.mock.calls[0]?.[0]).toBe("taglauncher.color_slots");
+    const frostPalette = parsePalette(getPresetTheme(FROST)?.variables["tag-preset-colors"] ?? "");
+    expect(mocks.recolorTagsAndCabinets.mock.calls[0]?.[0]).toEqual([{ id: 1, color: frostPalette[0] }]);
   });
 
   it("tags 为空时切主题 → 不调 IPC、不覆写设置", async () => {

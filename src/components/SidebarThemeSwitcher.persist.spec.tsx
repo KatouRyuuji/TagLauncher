@@ -56,6 +56,8 @@ function renderHomepageSidebar() {
 }
 
 async function waitForSwitcher() {
+  await waitFor(() => expect(screen.getByText("外观", { exact: true })).toBeInTheDocument());
+  await userEvent.click(screen.getByText("外观", { exact: true }));
   await waitFor(() => {
     expect(screen.getByRole("radiogroup", { name: "官方主题" })).toBeInTheDocument();
   });

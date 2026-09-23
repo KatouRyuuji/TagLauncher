@@ -23,20 +23,20 @@ describe("分类编辑器状态", () => {
     expect(screen.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
   });
 
-  it("文件柜新建标题下强调分组用途，颜色是色点阵", () => {
+  it("文件柜新建标题下强调分组用途，并列出可识别的颜色选项", () => {
     render(<TagEditor tag={null} label="文件柜" onSave={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByRole("dialog", { name: "新建文件柜" })).toBeInTheDocument();
     expect(screen.getByText("文件柜是分组，不是磁盘目录；一个对象可以进多个柜")).toBeInTheDocument();
     const group = screen.getByRole("radiogroup", { name: "分类颜色" });
-    expect(group.querySelectorAll('[role="radio"]')).toHaveLength(8);
+    expect(group.querySelectorAll('[role="radio"]')).toHaveLength(10);
     expect(screen.getByRole("radio", { name: "蔷薇" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "晴蓝" })).toHaveAttribute("aria-checked", "true");
   });
 
-  it("现有色不在主题 8 色里时立刻吸附最近位，不出现当前点", () => {
+  it("现有色不在主题色板里时立刻吸附最近位，不出现当前点", () => {
     render(<TagEditor tag={{ id: 1, name: "工作", color: "#111111" }} onSave={vi.fn()} onClose={vi.fn()} />);
     const group = screen.getByRole("radiogroup", { name: "分类颜色" });
-    expect(group.querySelectorAll('[role="radio"]')).toHaveLength(8);
+    expect(group.querySelectorAll('[role="radio"]')).toHaveLength(10);
     expect(screen.queryByRole("radio", { name: "当前" })).not.toBeInTheDocument();
     expect(screen.getByRole("radio", { checked: true })).toBeInTheDocument();
   });

@@ -727,7 +727,7 @@ Mod JS 入口内调用 `createScope(__MOD_ID__)` 获取专属作用域（`__MOD_
 | `variants` | 主题变体：每个变体可覆盖部分 `variables` 并附加 `css`（如 SkyCloud 的「静止云层」变体关闭动画） |
 | `css` | 自定义 CSS 文本；非内置主题会经消毒（去 `@import`、中和远程 `url()`、放行 asset/ipc 协议） |
 
-内置主题（`src/themes/`）为「配色家族 × 亮/暗模式」模型：4 个家族（霜靛 / 藤色 / 樱花 / 素墨）注册于 `src/themes/index.ts` 的 `THEME_FAMILIES`，每个家族声明亮、暗两个具体主题 id。**主题唯一标识为固定 uuid**，与显示名、家族、功能语义完全解耦——显示名是面向用户的自由文本（同一家族亮/暗两套同名，如「霜靛」），身份识别只认 uuid；持久化的旧字符串 id 由迁移 v010 改写为 uuid，下架家族由 v013 改写到在架主题。4 个家族共 8 套：1 套为独立文件（`src/themes/sakura.ts`），其余由 `src/themes/ryuuji.ts` 工厂按锁定色板生成。结构令牌（圆角/阴影/缓动/字体/空间/发丝边）严格取自 RyuujiDesign 造型语言层，单一来源为 `src/themes/shapeLang.ts`（A 纸面 = `lang/a.css`，B 仪表 = `lang/b.css`，共享原语 = `tokens.css`），主题文件一律展开复用、不手改；z 层级、拖拽、标签透明度、边框与面板规格等壳层共享令牌统一来自 `src/themes/chromeTokens.ts`。
+内置主题（`src/themes/`）为「配色家族 × 亮/暗模式」模型：4 个家族（霜靛 / 藤色 / 樱花 / 素墨）注册于 `src/themes/index.ts` 的 `THEME_FAMILIES`，每个家族声明亮、暗两个具体主题 id。**主题唯一标识为固定 uuid**，与显示名、家族、功能语义完全解耦；显示名是面向用户的自由文本，身份识别只认 uuid。4 个家族共 8 套：霜靛亮色保存在 `src/themes/sakura.ts`，其余由 `src/themes/ryuuji.ts` 工厂生成。每套主题定义自己的纸面冷暖、文字墨色、强调色和 10 个标签色位；同一色位跨主题保持分类色相。字号、间距、圆角、阴影和动效令牌由 `src/themes/shapeLang.ts` 提供；z 层级、拖拽、标签透明度、边框与面板规格等壳层共享令牌统一来自 `src/themes/chromeTokens.ts`。
 
 **亮/暗模式开关**：外观模式（亮色 / 暗色 / 跟随系统）独立于主题，偏好持久化于 localStorage（`taglauncher.color-mode`，单一来源 `src/lib/colorMode.ts`）；`useTheme` 监听偏好与系统亮暗变化，把当前内置家族解析到对应模式的具体主题并持久化。自定义 / Mod 主题自带固定配色方案，外观模式仅作用于内置家族（窗口栏快捷开关对内置家族以外的主题禁用）。**造型语言由主题自身声明**（`ThemeDefinition.lang`），随主题生效——`lib/theme.ts` 的 `applyShapeLang` 在每次 `applyTheme` 时按主题声明写入 `data-shape` / `data-scheme`（`index.css` 据此渲染装饰签名：A 的浮层顶唇、B 的丝印字距/切角/倒角高光/双线内框，纹样仅作点缀）。自定义主题建议以 `toExportableTheme` 导出格式为准，或直接从示例主题改起。
 

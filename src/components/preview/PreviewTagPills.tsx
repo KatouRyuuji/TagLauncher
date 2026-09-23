@@ -21,7 +21,7 @@ export function PreviewTagPills({
           type="button"
           title={`按「${tag.name}」筛选`}
           onClick={() => onTagSelect(tag.id)}
-          className="tag-pill px-2 py-0.5 text-[13px]"
+          className="tag-pill px-2.5 py-1 text-[13px]"
           style={{ "--tag-color": tag.color } as CSSProperties}
         >
           {tag.name}

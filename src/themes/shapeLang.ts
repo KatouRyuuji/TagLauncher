@@ -1,19 +1,8 @@
 // ============================================================================
-// themes/shapeLang.ts — 造型语言层结构令牌（A 纸面 / B 仪表）
+// themes/shapeLang.ts — 工作台结构令牌
 // ----------------------------------------------------------------------------
-// 结构令牌集中在此维护，随主题的语言 × 亮暗分叉：
-//   共享原语：字号阶梯 12/13/14/16/18、空间 4px 原子阶梯、时长 180/240/400、
-//     字重 400/500/600/700、侧栏宽 232
-//   A 纸面：圆角 6/10/14/18/22/28、缓动 cubic-bezier(0.2,0.72,0.2,1)、
-//           双层软影、发丝边按亮暗分叉（亮=text 13%/24% 派生；暗=border-default
-//           向 text 提亮派生，与 hairline 同色温）、
-//           签名浮层影 lift = 0 2px 4px -2px + 0 12px 28px -14px、纸面顶唇、
-//           输入静息纸槽影
-//   B 仪表：圆角 0/2/4/4、硬影 0 1px 0 0、急停缓动 cubic-bezier(0.16,1,0.3,1)、
-//           壳体双线框 --frame、正文/展示字体回 UI 无衬线（不走楷体）
-// 造型语言由主题自身声明（ThemeDefinition.lang），随主题生效。
-// 字体方案：UI = Noto Sans SC、阅读/展示 = LXGW WenKai（仅 A；OFL）、
-//   等宽 = Cascadia Code（OFL），均为本地打包字体 + 系统字体兜底。
+// 结构令牌集中维护字号、间距、圆角、阴影和动效，亮暗模式共享同一套层级。
+// UI 与长文均使用 Noto Sans SC；路径与技术信息使用 Cascadia Code。
 // ============================================================================
 
 import type { ThemeDefinition } from "../types/theme";
@@ -21,15 +10,13 @@ import type { ThemeDefinition } from "../types/theme";
 export type ShapeLang = "a" | "b";
 export type ShapeScheme = "light" | "dark";
 
-// 三角色字体（UI / 阅读 / 等宽）的本地打包形态：
+// UI 与等宽字体的本地打包形态：
 // @fontsource-variable 注册 "Noto Sans SC Variable"（可变字重），
-// lxgw-wenkai-webfont 注册 "LXGW WenKai"，@fontsource 注册 "Cascadia Code"；其后为系统字体兜底。
+// @fontsource 注册 "Cascadia Code"；其后为系统字体兜底。
 const FONT_UI = "\"Noto Sans SC Variable\", \"Noto Sans SC\", \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"MiSans\", system-ui, -apple-system, \"Segoe UI\", sans-serif";
-const FONT_READING = "\"LXGW WenKai\", \"LXGW WenKai GB\", \"Kaiti SC\", \"STKaiti\", \"KaiTi\", \"Noto Sans SC\", serif";
 const FONT_MONO = "\"Cascadia Code\", \"Cascadia Mono\", \"JetBrains Mono\", \"Fira Code\", Consolas, \"Courier New\", monospace";
 
-const EASE_A = "cubic-bezier(0.2, 0.72, 0.2, 1)"; // A 纸面平滑缓动
-const EASE_B = "cubic-bezier(0.16, 1, 0.3, 1)"; // B 仪表急停缓动
+const EASE_A = "cubic-bezier(0.2, 0.72, 0.2, 1)";
 
 /** 共享原语：字号阶梯、空间 4px 原子、侧栏 232 */
 const SHARED_TOKENS: Record<string, string> = {
@@ -53,20 +40,20 @@ const SHARED_TOKENS: Record<string, string> = {
   "spacing-md": "12px",
   "spacing-lg": "16px",
   "spacing-xl": "24px",
-  "sidebar-width": "232px",
+  "sidebar-width": "240px",
   "radius-full": "999px",
 };
 
-/** 语言分叉：圆角档、缓动、正文字体（B 回 UI 无衬线） */
+/** 主题结构映射保留类型兼容；官方主题共享一套尺寸与节奏。 */
 const LANG_TOKENS: Record<ShapeLang, Record<string, string>> = {
   a: {
-    "font-family-body": FONT_READING,
-    "radius-sm": "6px",
-    "radius-md": "10px",
-    "radius-lg": "14px",
-    "radius-xl": "18px",
-    "radius-2xl": "22px",
-    "radius-3xl": "28px",
+    "font-family-body": FONT_UI,
+    "radius-sm": "5px",
+    "radius-md": "8px",
+    "radius-lg": "12px",
+    "radius-xl": "16px",
+    "radius-2xl": "20px",
+    "radius-3xl": "24px",
     // 输入静息纸槽影（paper-well；B 机械面无槽影）
     "shadow-well": "inset 0 1px 1px rgb(26 31 36 / 0.04)",
     // 输入焦点环：tokens.css --sys-shadow-focus（控件本体）；容器外环 4px/12% 见 index.css .field
@@ -77,26 +64,21 @@ const LANG_TOKENS: Record<ShapeLang, Record<string, string>> = {
   },
   b: {
     "font-family-body": FONT_UI,
-    "radius-sm": "0px",
-    "radius-md": "2px",
-    "radius-lg": "4px",
-    "radius-xl": "4px",
-    "radius-2xl": "4px",
-    "radius-3xl": "4px",
+    "radius-sm": "5px",
+    "radius-md": "8px",
+    "radius-lg": "12px",
+    "radius-xl": "16px",
+    "radius-2xl": "20px",
+    "radius-3xl": "24px",
     "shadow-well": "none",
     "shadow-focus": "none",
-    "transition-fast": `180ms ${EASE_B}`,
-    "transition-normal": `240ms ${EASE_B}`,
-    "transition-slow": `400ms ${EASE_B}`,
+    "transition-fast": `180ms ${EASE_A}`,
+    "transition-normal": `240ms ${EASE_A}`,
+    "transition-slow": `400ms ${EASE_A}`,
   },
 };
 
-/**
- * 发丝边按亮暗分叉（A 专有）：
- * 亮色沿用 text 透明度派生（深字压出的中性灰线）；
- * 暗色改从 border-default 向 text 提亮派生——与 hairline/border-default 同家族
- * 色温，避免「染色实色线」与「白调亮度线」同屏打架（第三轮评审：深色边框线不和谐）。
- */
+/** 亮暗主题共享中性描边阶梯。 */
 const HAIRLINE_TOKENS: Record<ShapeLang, Record<ShapeScheme, Record<string, string>>> = {
   a: {
     light: {
@@ -111,62 +93,49 @@ const HAIRLINE_TOKENS: Record<ShapeLang, Record<ShapeScheme, Record<string, stri
   b: { light: {}, dark: {} },
 };
 
-/**
- * 阴影配方（A：sm 静息 / lift 签名浮层影；卡/面板 = lift + 顶唇，
- * 顶唇随亮暗换档并入 shadow-card/shadow-dropdown，消费侧无需再叠唇；
- * B：硬影体系，卡/浮层 = --frame 双线内框 + 硬影，frame 定义在 index.css
- * 的 data-shape="b" 块，此处经 var() 引用在运行时解析）。
- */
+/** 阴影随亮暗切换明度，卡片和浮层保持单层分离感。 */
 const SHADOW_TOKENS: Record<ShapeLang, Record<ShapeScheme, Record<string, string>>> = {
   a: {
     light: {
-      "shadow-sm": "0 1px 2px rgb(26 31 36 / 0.04), 0 4px 12px -4px rgb(26 31 36 / 0.05)",
-      "shadow-md": "0 2px 4px rgb(26 31 36 / 0.07), 0 12px 32px rgb(26 31 36 / 0.08)",
-      "shadow-lg": "0 2px 6px rgb(26 31 36 / 0.08), 0 16px 40px rgb(26 31 36 / 0.1)",
-      "shadow-lift":
-        "0 2px 4px -2px color-mix(in srgb, var(--text-primary) 10%, transparent), 0 12px 28px -14px color-mix(in srgb, var(--text-primary) 16%, transparent)",
-      "shadow-overlay":
-        "0 2px 4px -2px color-mix(in srgb, var(--text-primary) 10%, transparent), 0 12px 28px -14px color-mix(in srgb, var(--text-primary) 16%, transparent), inset 0 1px 0 rgb(255 255 255 / 0.86)",
-      "shadow-dropdown":
-        "0 2px 6px rgb(26 31 36 / 0.08), 0 16px 40px rgb(26 31 36 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.86)",
-      "shadow-card":
-        "0 2px 4px -2px color-mix(in srgb, var(--text-primary) 10%, transparent), 0 12px 28px -14px color-mix(in srgb, var(--text-primary) 16%, transparent), inset 0 1px 0 rgb(255 255 255 / 0.86)",
+      "shadow-sm": "0 1px 2px rgb(25 32 40 / 0.04)",
+      "shadow-md": "0 3px 10px rgb(25 32 40 / 0.07)",
+      "shadow-lg": "0 8px 24px rgb(25 32 40 / 0.1)",
+      "shadow-lift": "0 2px 8px rgb(25 32 40 / 0.08)",
+      "shadow-overlay": "0 12px 36px rgb(25 32 40 / 0.16)",
+      "shadow-dropdown": "0 6px 20px rgb(25 32 40 / 0.12)",
+      "shadow-card": "0 1px 2px rgb(25 32 40 / 0.035)",
       "shadow-glow": "none",
     },
     dark: {
-      "shadow-sm": "0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.24)",
-      "shadow-md": "0 2px 4px rgb(0 0 0 / 0.34), 0 12px 32px rgb(0 0 0 / 0.28)",
-      "shadow-lg": "0 2px 6px rgb(0 0 0 / 0.38), 0 16px 40px rgb(0 0 0 / 0.32)",
-      "shadow-lift": "0 2px 4px -2px rgb(0 0 0 / 0.25), 0 12px 28px -14px rgb(0 0 0 / 0.35)",
-      // 暗色顶唇降到 4%：与描边合并读作一层受光边，不再是描边+顶唇+投影三层亮线
-      "shadow-overlay":
-        "0 2px 4px -2px rgb(0 0 0 / 0.25), 0 12px 28px -14px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.04)",
-      "shadow-dropdown":
-        "0 2px 6px rgb(0 0 0 / 0.38), 0 16px 40px rgb(0 0 0 / 0.32), inset 0 1px 0 rgb(255 255 255 / 0.04)",
-      "shadow-card":
-        "0 2px 4px -2px rgb(0 0 0 / 0.25), 0 12px 28px -14px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.04)",
+      "shadow-sm": "0 1px 2px rgb(0 0 0 / 0.18)",
+      "shadow-md": "0 3px 10px rgb(0 0 0 / 0.22)",
+      "shadow-lg": "0 8px 24px rgb(0 0 0 / 0.28)",
+      "shadow-lift": "0 2px 8px rgb(0 0 0 / 0.22)",
+      "shadow-overlay": "0 12px 36px rgb(0 0 0 / 0.42)",
+      "shadow-dropdown": "0 6px 20px rgb(0 0 0 / 0.32)",
+      "shadow-card": "0 1px 2px rgb(0 0 0 / 0.12)",
       "shadow-glow": "none",
     },
   },
   b: {
     light: {
-      "shadow-sm": "0 1px 0 0 rgb(18 32 40 / 0.06)",
-      "shadow-md": "0 1px 0 0 rgb(18 32 40 / 0.06), 0 2px 4px -2px rgb(18 32 40 / 0.08)",
-      "shadow-lg": "0 2px 6px -2px rgb(18 32 40 / 0.1)",
-      "shadow-lift": "0 1px 0 0 rgb(18 32 40 / 0.06), 0 2px 4px -2px rgb(18 32 40 / 0.08)",
-      "shadow-overlay": "var(--frame), 0 2px 6px -2px rgb(18 32 40 / 0.1)",
-      "shadow-dropdown": "var(--frame), 0 1px 0 0 rgb(18 32 40 / 0.06), 0 2px 4px -2px rgb(18 32 40 / 0.08)",
-      "shadow-card": "var(--frame), 0 1px 0 0 rgb(18 32 40 / 0.06)",
+      "shadow-sm": "0 1px 2px rgb(25 32 40 / 0.04)",
+      "shadow-md": "0 3px 10px rgb(25 32 40 / 0.07)",
+      "shadow-lg": "0 8px 24px rgb(25 32 40 / 0.1)",
+      "shadow-lift": "0 2px 8px rgb(25 32 40 / 0.08)",
+      "shadow-overlay": "0 12px 36px rgb(25 32 40 / 0.16)",
+      "shadow-dropdown": "0 6px 20px rgb(25 32 40 / 0.12)",
+      "shadow-card": "0 1px 2px rgb(25 32 40 / 0.035)",
       "shadow-glow": "none",
     },
     dark: {
-      "shadow-sm": "0 1px 0 0 rgb(0 0 0 / 0.3)",
-      "shadow-md": "0 1px 0 0 rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.35)",
-      "shadow-lg": "0 2px 6px -2px rgb(0 0 0 / 0.4)",
-      "shadow-lift": "0 1px 0 0 rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.35)",
-      "shadow-overlay": "var(--frame), 0 2px 6px -2px rgb(0 0 0 / 0.4)",
-      "shadow-dropdown": "var(--frame), 0 1px 0 0 rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.35)",
-      "shadow-card": "var(--frame), 0 1px 0 0 rgb(0 0 0 / 0.3)",
+      "shadow-sm": "0 1px 2px rgb(0 0 0 / 0.18)",
+      "shadow-md": "0 3px 10px rgb(0 0 0 / 0.22)",
+      "shadow-lg": "0 8px 24px rgb(0 0 0 / 0.28)",
+      "shadow-lift": "0 2px 8px rgb(0 0 0 / 0.22)",
+      "shadow-overlay": "0 12px 36px rgb(0 0 0 / 0.42)",
+      "shadow-dropdown": "0 6px 20px rgb(0 0 0 / 0.32)",
+      "shadow-card": "0 1px 2px rgb(0 0 0 / 0.12)",
       "shadow-glow": "none",
     },
   },

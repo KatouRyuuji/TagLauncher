@@ -17,9 +17,9 @@ import type { ItemCardProps } from "./ItemCard";
 
 /** 表头、数据行与骨架共同消费同一列模板，避免列宽漂移。
  *  名称列下限 120px、标签列下限 96px：保证最小窗口（800px）下名称可读、表头不竖排。 */
-export const ITEM_LIST_GRID_TEMPLATE = "72px minmax(120px,1fr) minmax(96px,300px) 112px";
+export const ITEM_LIST_GRID_TEMPLATE = "28px minmax(180px,1.2fr) minmax(140px,1fr) 100px";
 /** 普通行的稳定基准高度；Mod footer 与多行标签仍由虚拟化器动态测量。 */
-export const ITEM_LIST_BASE_ROW_HEIGHT = 68;
+export const ITEM_LIST_BASE_ROW_HEIGHT = 64;
 /** 紧凑档行高：一屏行数约 +21%（11 行 → 13+ 行），信息结构不变只收留白 */
 export const ITEM_LIST_COMPACT_ROW_HEIGHT = 56;
 
@@ -101,7 +101,7 @@ function ItemRowComponent({
         data-selectable-item-id={item.id}
         role="listitem"
         style={{ minHeight: rowHeight, gridTemplateColumns: ITEM_LIST_GRID_TEMPLATE }}
-        className={`item-row-render-scope item-focus-ring group grid items-center gap-3 border-b border-[color-mix(in_srgb,var(--border-default)_88%,transparent)] px-4 ${compact ? "py-1.5" : "py-2"} ${
+        className={`item-row-render-scope item-focus-ring group grid items-center gap-3 border-b border-transparent px-4 ${compact ? "py-1.5" : "py-2"} ${
           tagDragOver
             ? "bg-[var(--accent-primary-bg-light)] shadow-[inset_3px_0_0_var(--accent-primary)]"
             : selected
@@ -127,7 +127,7 @@ function ItemRowComponent({
         </div>
 
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--surface-recessed)] ${compact ? "h-8 w-8 text-base" : "h-10 w-10 text-xl"}`}>
+          <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] bg-[var(--surface-recessed)] ${compact ? "h-8 w-8 text-base" : "h-9 w-9 text-xl"}`}>
             <ItemVisualIcon
               item={item}
               emojiClass="leading-none"
@@ -166,7 +166,7 @@ function ItemRowComponent({
           </div>
         </div>
 
-        <div className="min-w-0 max-w-[280px] overflow-hidden">
+        <div className="min-w-0 ">
           <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} compact />
         </div>
 

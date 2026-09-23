@@ -53,9 +53,9 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false }: { visibl
   );
 
   return (
-    <div data-region="scope-header" className="flex shrink-0 items-baseline gap-2 px-6 pt-4 pb-1">
-      <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">{scope.title}</h2>
-      <span className="data-readout text-[var(--text-muted)]">{pending ? "正在打开文件柜" : `${scope.count} 项`}</span>
+    <div data-region="scope-header" className="flex shrink-0 items-baseline gap-3 px-6 pt-5 pb-2">
+      <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--text-primary)]">{scope.title}</h2>
+      <span className="text-[12px] tabular-nums text-[var(--text-muted)]">{pending ? "正在打开文件柜" : `${scope.count} 项`}</span>
       {scope.qualifiers.length > 0 && (
         <span className="text-[13px] text-[var(--text-muted)]">{scope.qualifiers.join(" · ")}</span>
       )}

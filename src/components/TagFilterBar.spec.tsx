@@ -28,7 +28,7 @@ describe("TagFilterBar 右键反选", () => {
 
   it("右键标签进入反选态，再次右键取消", () => {
     render(<TagFilterBar />);
-    const chip = screen.getByTitle("设计（右键排除含此标签的项目）");
+    const chip = screen.getByRole("button", { name: "设计" });
     fireEvent.contextMenu(chip);
     expect(useAppStore.getState().excludedTagIds).toEqual([1]);
     expect(useAppStore.getState().selectedTagIds).toEqual([]);

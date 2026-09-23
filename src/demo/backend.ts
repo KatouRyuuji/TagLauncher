@@ -159,7 +159,7 @@ function detectType(path: string): Item["type"] {
 
 function withTags(item: DemoItemSeed): ItemWithTags {
   const { tagIds, ...rest } = item;
-  return { ...rest, tags: state.tags.filter((tag) => tagIds.includes(tag.id)) };
+  return { ...rest, tags: tagIds.map((id) => state.tags.find((tag) => tag.id === id)).filter((tag): tag is Tag => tag !== undefined) };
 }
 
 function sortItems(items: DemoItemSeed[]): DemoItemSeed[] {

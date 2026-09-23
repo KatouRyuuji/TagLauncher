@@ -23,13 +23,13 @@ const monoCsv = getPresetTheme(monoFamily!.light)?.variables["tag-preset-colors"
 const frost = parsePalette(frostCsv);
 const mono = parsePalette(monoCsv);
 
-test("snapToPalette 只落在 8 位主题色上", () => {
+test("snapToPalette 只落在 10 位主题色上", () => {
   const snapped = snapToPalette("#111111", frost);
   assert.ok(frost.some((hex) => hexEquals(hex, snapped)), `应吸附到霜靛板，实际 ${snapped}`);
 });
 
 test("parsePalette 不足循环补齐、多余截断", () => {
-  assert.deepEqual(parsePalette("#111111,#222222").length, 8);
+  assert.deepEqual(parsePalette("#111111,#222222").length, 10);
   assert.equal(parsePalette("#111111,#222222")[2], "#111111");
   assert.equal(parsePalette("#1,#2,#3,#4,#5,#6,#7,#8,#9")[7], "#8");
 });
@@ -77,8 +77,8 @@ test("素墨板上标签色保留彩色（用户数据不随 UI 去色）", () =
     const update = planned.updates.tags.find((item) => item.id === tag.id);
     return update?.color ?? tag.color;
   });
-  // 首位是素墨主题色（中性），其余保留彩色
-  assert.ok(oklchChroma(written[0] ?? "#ffffff") < 0.04, `首位 ${written[0]} 应是素墨主题中性色`);
+  // 第四位为各主题共享的石墨色位。
+  assert.ok(oklchChroma(written[3] ?? "#ffffff") < 0.04, `石墨位 ${written[3]} 应保持中性`);
   const chromaCount = written.filter((color) => oklchChroma(color) >= 0.04).length;
   assert.ok(chromaCount >= 4, `素墨板应保留彩色标签色，实际彩色仅 ${chromaCount} 个`);
 });
@@ -115,9 +115,24 @@ test("全部官方家族：亮板 ↔ 暗板 同槽色相一致（切亮暗只�
   }
 });
 
+test("全部官方主题的 10 个标签色位有不同名称，且家族色板不重复", () => {
+  const familyPalettes = new Set<string>();
+  for (const family of THEME_FAMILIES) {
+    for (const themeId of [family.light, family.dark]) {
+      const colors = parsePalette(getPresetTheme(themeId)?.variables["tag-preset-colors"] ?? "");
+      const names = colors.map(nameColorByHue);
+      assert.equal(new Set(names).size, 10, `${family.name} 的色位名称应一一可辨：${names.join("、")}`);
+    }
+    familyPalettes.add(getPresetTheme(family.light)?.variables["tag-preset-colors"] ?? "");
+  }
+  assert.equal(familyPalettes.size, THEME_FAMILIES.length, "每个官方家族应有独立标签色板");
+});
+
 test("自定义 hex（Tailwind #3b82f6）在霜靛板落到蓝色位", () => {
   const slot = nearestSlot(frost, "#3b82f6");
   assert.equal(nameColorByHue(frost[slot] ?? ""), "晴蓝");
+  assert.equal(nameColorByHue(frost[nearestSlot(frost, "#eab308")]), "琥珀");
+  assert.equal(nameColorByHue(frost[nearestSlot(frost, "#22c55e")]), "翠绿");
 });
 
 test("用户手改色后记录失效，重新按旧板最近", () => {
@@ -128,10 +143,16 @@ test("用户手改色后记录失效，重新按旧板最近", () => {
   assert.equal(resolveSlot(stale, stale.hex, frost, mono), 5, "hex 仍匹配时应保住原色位");
 });
 
+test("升级色板后按原颜色重定位旧记录，避免槽序变化造成换色", () => {
+  const oldRecord = { slot: 5, hex: "#3b82f6" };
+  assert.equal(resolveSlot(oldRecord, oldRecord.hex, frost, mono), nearestSlot(frost, oldRecord.hex));
+  assert.equal(nameColorByHue(frost[resolveSlot(oldRecord, oldRecord.hex, frost, mono)]), "晴蓝");
+});
+
 test("中性色在彩色板上不会抛错", () => {
   for (const hex of ["#111111", "#fafafa", "#6b7280", "#000000", "#ffffff"]) {
     const slot = nearestSlot(frost, hex);
-    assert.ok(slot >= 0 && slot < 8, `${hex} 应落到合法色位`);
+    assert.ok(slot >= 0 && slot < 10, `${hex} 应落到合法色位`);
   }
 });
 

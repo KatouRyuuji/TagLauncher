@@ -3,9 +3,8 @@
 // ============================================================================
 // 把虚构的文件路径确定性地映射为内联 SVG data URL，充当缩略图 / 图标 /
 // 专辑封面。同一路径恒生成同一图像，保证截图可复现；不依赖任何外部素材。
-// 图形语言按对象类型区分（风景/胶片/均衡器/文件夹/窗口/终端），渐变色相取自
-// 对象主标签色（颜色承载分类信息），明度与构图按路径哈希微调——
-// 同标签的卡片也必须是两张不同的画，占位图才能「以图识物」。
+// 图形语言按对象类型区分（风景/胶片/均衡器/文件夹/窗口/终端），
+// 背景只轻度借用对象主标签色；内容图形用矢量形状，避免演示占位图主导界面。
 // ============================================================================
 
 import { DEMO_ITEMS, DEMO_TAGS } from "./data";
@@ -14,8 +13,6 @@ import { DEMO_ITEMS, DEMO_TAGS } from "./data";
 export type DemoMotif = "folder" | "image" | "audio" | "video" | "app" | "script" | "file";
 
 export interface DemoVisual {
-  /** 主视觉 Emoji（知名对象的品牌化联想，如 🎧） */
-  emoji: string;
   /** 渐变起止色 */
   from: string;
   to: string;
@@ -23,51 +20,36 @@ export interface DemoVisual {
   motif: DemoMotif;
 }
 
-/** 主标签色 → 渐变（浅端混白 28%，深端混黑 10%） */
-function shade(hex: string, pct: number, toward: 0 | 255): string {
+/** 把标签色混入中性底色，保留差异但降低演示内容的饱和度。 */
+function blend(hex: string, neutral: string, neutralWeight: number): string {
   const n = parseInt(hex.slice(1), 16);
-  const mix = (c: number) => Math.round(c + (toward - c) * pct);
-  const r = mix((n >> 16) & 255);
-  const g = mix((n >> 8) & 255);
-  const b = mix(n & 255);
+  const base = parseInt(neutral.slice(1), 16);
+  const mix = (shift: number) => Math.round(((n >> shift) & 255) * (1 - neutralWeight) + ((base >> shift) & 255) * neutralWeight);
+  const r = mix(16);
+  const g = mix(8);
+  const b = mix(0);
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
 }
 
 const tagColorById = new Map(DEMO_TAGS.map((tag) => [tag.id, tag.color]));
 const itemById = new Map(DEMO_ITEMS.map((item) => [item.id, item]));
 
-/** 主标签色 → 渐变（浅端混白、深端混黑，比例按哈希微调：同标签卡片也分得开） */
+/** 主标签色 → 低饱和底色；路径哈希仅改变轻微明度。 */
 function firstTagGradient(itemId: number, h: number): { from: string; to: string } | null {
   const item = itemById.get(itemId);
   const color = item?.tagIds[0] != null ? tagColorById.get(item!.tagIds[0]) : undefined;
   if (!color) return null;
-  const lighten = 0.22 + (h % 4) * 0.05;
-  const darken = 0.06 + ((h >> 2) % 3) * 0.05;
-  return { from: shade(color, lighten, 255), to: shade(color, darken, 0) };
+  const tint = h % 2 === 0 ? "#e9ecf0" : "#e1e6eb";
+  return { from: blend(color, tint, 0.76), to: blend(color, "#aeb8c2", 0.62) };
 }
 
-/** 已知对象的 emoji（thumb-N 缓存路径 / 文件直链两条入口共用 id） */
-const EMOJI_BY_ITEM_ID: Record<number, string> = {
-  1: "📁",
-  2: "🏞️",
-  3: "🎬",
-  4: "🌅",
-  5: "🖼️",
-  6: "🎵",
-  7: "📝",
-  8: "⛩️",
-  9: "⚙️",
-  10: "🔄",
-  11: "🎥",
-};
-
 const FALLBACK_PALETTE: Array<[string, string]> = [
-  ["#93c5fd", "#3b82f6"],
-  ["#fca5a5", "#ef4444"],
-  ["#fcd34d", "#f59e0b"],
-  ["#86efac", "#22c55e"],
-  ["#67e8f9", "#06b6d4"],
-  ["#d8b4fe", "#a855f7"],
+  ["#dbe4eb", "#a9b9c8"],
+  ["#ebdfe0", "#c9acae"],
+  ["#e9e4d9", "#c5b99d"],
+  ["#dfe9e2", "#aac0b0"],
+  ["#dce8e8", "#a9c0c3"],
+  ["#e6e1e9", "#bcb0c6"],
 ];
 
 /** 简易稳定哈希（FNV-1a 32bit），保证同一路径视觉恒定 */
@@ -124,24 +106,29 @@ function lookupVisual(path: string): DemoVisual {
       const item = itemById.get(itemId);
       // 缩略图（thumb-N.png）的构图按对象类型走，不按缩略图自己的扩展名
       const motif = item ? (MOTIF_BY_TYPE[item.type] ?? "file") : "file";
-      return { emoji: EMOJI_BY_ITEM_ID[itemId] ?? "📄", motif, ...gradient };
+      return { motif, ...gradient };
     }
   }
   const [from, to] = FALLBACK_PALETTE[h % FALLBACK_PALETTE.length];
-  return { emoji: "📄", motif: motifForPath(normalized), from, to };
+  return { motif: motifForPath(normalized), from, to };
 }
 
 /** 960×640 场景：构图按母题分叉，渐变方向也随哈希变化 */
 function buildScene(visual: DemoVisual, path: string): string {
+  // 文件夹、程序与脚本使用简洁类型符号，演示内容与真实环境的无缩略图状态一致。
+  const typeSymbols: Partial<Record<DemoMotif, string>> = {
+    folder: '<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+    app: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/>',
+    script: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/>',
+  };
+  const symbol = typeSymbols[visual.motif];
+  if (symbol) return `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 32 32"><g transform="translate(4 4)" fill="none" stroke="#7c8996" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${symbol}</g></svg>`;
   const id = `g${hashPath(visual.from + visual.to).toString(36)}`;
   const h = hashPath(normalize(path));
   const defs = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="${h % 2 ? "1" : "0"}" y2="1">`
     + `<stop offset="0" stop-color="${visual.from}"/><stop offset="1" stop-color="${visual.to}"/>`
     + `</linearGradient></defs>`;
   const bg = `<rect width="960" height="640" fill="url(#${id})"/>`;
-  const emoji = (x: number, y: number, size: number, opacity = 0.9) =>
-    `<text x="${x}" y="${y}" font-size="${size}" text-anchor="middle" opacity="${opacity}">${visual.emoji}</text>`;
-
   let body: string;
   switch (visual.motif) {
     case "image": {
@@ -164,7 +151,7 @@ function buildScene(visual: DemoVisual, path: string): string {
         ],
       ][h % 3];
       body = `<circle cx="${sunCx}" cy="${sunCy}" r="${sunR}" fill="#ffe8b0"/>`
-        + waves[0] + waves[1] + emoji(480, 340, 180);
+        + waves[0] + waves[1];
       break;
     }
     case "video": {
@@ -177,7 +164,6 @@ function buildScene(visual: DemoVisual, path: string): string {
         + `<rect width="960" height="88" fill="#111827" opacity="0.55"/>`
         + `<rect y="552" width="960" height="88" fill="#111827" opacity="0.55"/>`
         + holes
-        + emoji(480, 320, 150, 0.75)
         + `<circle cx="480" cy="320" r="72" fill="#111827" opacity="0.6"/>`
         + `<polygon points="466,284 466,356 528,320" fill="#ffffff"/>`;
       break;
@@ -188,14 +174,13 @@ function buildScene(visual: DemoVisual, path: string): string {
         const bh = 110 + ((h >> (i % 8)) % 200);
         return `<rect x="${168 + i * 78}" y="${500 - bh}" width="44" height="${bh}" rx="14" fill="#ffffff" opacity="${i % 2 ? 0.5 : 0.32}"/>`;
       }).join("");
-      body = bars + emoji(480, 250, 170);
+      body = bars;
       break;
     }
     case "folder": {
       body = `<circle cx="810" cy="120" r="150" fill="#ffffff" opacity="0.10"/>`
         + `<path d="M230 210 h170 l46 54 h284 a34 34 0 0 1 34 34 v216 a34 34 0 0 1 -34 34 H230 a34 34 0 0 1 -34 -34 V244 a34 34 0 0 1 34 -34 Z" fill="#111827" opacity="0.30"/>`
-        + `<path d="M196 264 h568 v250 a34 34 0 0 1 -34 34 H230 a34 34 0 0 1 -34 -34 Z" fill="#ffffff" opacity="0.16"/>`
-        + emoji(480, 450, 150);
+        + `<path d="M196 264 h568 v250 a34 34 0 0 1 -34 34 H230 a34 34 0 0 1 -34 -34 Z" fill="#ffffff" opacity="0.16"/>`;
       break;
     }
     case "app": {
@@ -205,7 +190,9 @@ function buildScene(visual: DemoVisual, path: string): string {
         + `<circle cx="278" cy="158" r="9" fill="#ffffff" opacity="0.7"/>`
         + `<circle cx="308" cy="158" r="9" fill="#ffffff" opacity="0.7"/>`
         + `<circle cx="338" cy="158" r="9" fill="#ffffff" opacity="0.7"/>`
-        + emoji(480, 400, 160);
+        + `<rect x="292" y="262" width="290" height="32" rx="10" fill="#ffffff" opacity="0.62"/>`
+        + `<rect x="292" y="326" width="210" height="24" rx="9" fill="#ffffff" opacity="0.35"/>`
+        + `<rect x="292" y="376" width="260" height="24" rx="9" fill="#ffffff" opacity="0.35"/>`;
       break;
     }
     case "script": {
@@ -214,13 +201,12 @@ function buildScene(visual: DemoVisual, path: string): string {
         + `<circle cx="256" cy="173" r="8" fill="#f87171"/>`
         + `<circle cx="284" cy="173" r="8" fill="#fbbf24"/>`
         + `<circle cx="312" cy="173" r="8" fill="#34d399"/>`
-        + `<text x="272" y="330" font-size="110" font-family="monospace" fill="#e2e8f0" opacity="0.9">&gt;_</text>`
-        + emoji(620, 430, 130, 0.85);
+        + `<text x="272" y="330" font-size="110" font-family="monospace" fill="#e2e8f0" opacity="0.9">&gt;_</text>`;
       break;
     }
     default: {
       body = `<path d="M360 130 h180 l80 90 v290 a20 20 0 0 1 -20 20 H360 a20 20 0 0 1 -20 -20 V150 a20 20 0 0 1 20 -20 Z" fill="#ffffff" opacity="0.25"/>`
-        + emoji(480, 380, 150);
+        + `<rect x="388" y="320" width="184" height="28" rx="9" fill="#ffffff" opacity="0.52"/>`;
     }
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">${defs}${bg}${body}</svg>`;
@@ -238,14 +224,14 @@ function buildSvg(visual: DemoVisual, path: string): string {
     + `<rect width="512" height="512" rx="96" fill="url(#${id})"/>`
     + `<circle cx="396" cy="116" r="180" fill="#ffffff" opacity="0.10"/>`
     + `<circle cx="96" cy="420" r="140" fill="#000000" opacity="0.08"/>`
-    + `<text x="256" y="300" font-size="200" text-anchor="middle">${visual.emoji}</text>`
+    + `<path d="M148 176 h146 l70 70 v164 a20 20 0 0 1 -20 20 H148 a20 20 0 0 1 -20 -20 V196 a20 20 0 0 1 20 -20 Z" fill="#ffffff" opacity="0.34"/>`
     + `</svg>`;
 }
 
 /**
  * demo 版 convertFileSrc：任意路径 → 内联 SVG data URL。
  * 真实环境由 Tauri 把磁盘路径转为 asset: URL；demo 环境无磁盘文件，
- * 改为程序化生成确定性占位图，视觉上等同真实缩略图。
+ * 改为程序化生成确定性、按类型可辨的占位图。
  */
 export function demoAssetUrl(path: string): string {
   const svg = buildSvg(lookupVisual(path), path);

@@ -426,7 +426,7 @@ function App() {
         data-region="main"
         aria-labelledby="workspace-heading"
         tabIndex={-1}
-        className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-base)]"
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-surface)]"
         {...dragHandlers}
       >
         <h1 id="workspace-heading" className="sr-only">
@@ -471,9 +471,6 @@ function App() {
           onClearSelection={() => setSelectedItemIds([])}
         />
         <StatusBar
-          visibleCount={items.length}
-          selectedCount={selectedItemIds.length}
-          libraryCount={allItems.length}
           missingItems={missingItems}
           onRelocateMissing={relocateMissing}
           onRemoveMissing={removeItems}

@@ -144,7 +144,7 @@ def main() -> int:
                 if buttons.count():
                     buttons.click()
                 page.wait_for_function(
-                    f"() => document.querySelector('[data-region=\"statusbar\"]')?.textContent.includes('{args.count}')"
+                    f"() => document.querySelector('[data-region=\"scope-header\"]')?.textContent.includes('{args.count} 项')"
                 )
                 start = time.monotonic()
                 items = page.evaluate("window.__TAURI__.core.invoke('get_items', {includeVisuals:false})")
@@ -179,7 +179,7 @@ def main() -> int:
                 page.get_by_role("dialog", name="设置工作台").wait_for()
                 capture(page, sandbox / "settings.png")
                 gallery_mode_matches = page.locator(
-                    '[data-theme-family-gallery] [role="radio"][aria-checked="true"] span'
+                    '[data-theme-family-gallery] [role="radio"][aria-checked="true"] > span'
                 ).first.evaluate(
                     "el => getComputedStyle(el).backgroundColor === getComputedStyle(document.querySelector('[data-region=main]')).backgroundColor"
                 )
@@ -215,7 +215,9 @@ def main() -> int:
                 page.get_by_role("dialog", name="快速预览").wait_for()
                 capture(page, sandbox / "preview.png")
                 page.keyboard.press("Escape")
+                page.locator('[data-region="sidebar-theme"] summary').click()
                 page.get_by_role("radio", name="暗色", exact=True).click()
+                page.locator('[data-region="sidebar-theme"] summary').click()
                 page.wait_for_function("() => document.documentElement.dataset.scheme === 'dark'")
                 capture(page, sandbox / "dark.png")
                 directory = page.evaluate("window.__TAURI__.core.invoke('get_data_directory_info')")

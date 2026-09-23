@@ -2,8 +2,8 @@
 // scripts/demo-screenshots.mjs — 全功能 UI 交互测试 + 全形态截图
 // ============================================================================
 // 启动 demo 模式（浏览器内 mock 后端 + 11 个全覆盖模拟对象，见 src/demo/），
-// 用 Playwright 驱动真实 UI 交互，逐特性断言行为正确（check 计数，失败以
-// 退出码 1 结束），并在每个形态落截图。
+// 用 Playwright 驱动 UI 交互，逐特性断言行为正确（check 计数，失败以
+// 退出码 1 结束），并在主要界面状态落截图。
 //
 // 覆盖：欢迎页 / 网格 / 列表 / 大图标 / 卡片与大图标尺寸调节（状态栏缩放控件）/
 // 侧栏新建标签·文件柜编辑态 / 添加文件夹入库方式 /
@@ -67,7 +67,6 @@ async function check(name, probe) {
   }
 }
 const itemCount = (page) => page.locator('[data-region="main"] [data-selectable-item-id]').count();
-const statusText = (page) => page.locator('[data-region="statusbar"]').textContent();
 
 async function waitForServer(url, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
@@ -143,7 +142,7 @@ async function goToSettingsSection(page, chipLabel) {
   await settle(600);
 }
 
-/** 设置内的官方配色 Gallery（2×2 radio 卡；侧栏「官方主题」色点同名，须限定在此 radiogroup 内） */
+/** 设置内的官方配色 Gallery（radio 卡；限定在此 radiogroup 内）。 */
 const themeGallery = (page) =>
   page.getByRole("dialog", { name: "设置工作台" }).getByRole("radiogroup", { name: "官方配色" });
 
@@ -161,10 +160,13 @@ async function isDarkMode(page) {
 
 async function setMode(page, wantDark) {
   if ((await isDarkMode(page)) !== wantDark) {
+    const dock = page.locator('[data-region="sidebar-theme"]');
+    if (await dock.getAttribute("open") === null) await dock.locator("summary").click();
     // 明暗唯一入口：侧栏主题 Dock 的浅色/深色分段（标题栏快捷开关已移除）
     await page.locator(`#sidebar-theme-mode-${wantDark ? "dark" : "light"}`).click();
     await page.waitForFunction((mode) => document.documentElement.dataset.scheme === mode, wantDark ? "dark" : "light");
     await settle(500);
+    await dock.locator("summary").click();
   }
 }
 
@@ -204,26 +206,31 @@ async function featureTour(page) {
   await settle();
   await shot(page, "welcome-欢迎页");
   await check("欢迎页弹出", page.getByRole("button", { name: "开始使用" }).isVisible());
-  await check("欢迎页赞赏码可见", page.getByRole("img", { name: "赞赏码" }).isVisible());
+  await check("欢迎页默认收起赞赏入口", !(await page.getByRole("img", { name: "赞赏码" }).isVisible()));
+  await page.getByText("支持开发者", { exact: true }).click();
+  await check("展开赞赏入口后可见赞赏码", page.getByRole("img", { name: "赞赏码" }).isVisible());
+  await page.screenshot({ path: path.join(OUT_DIR, "01a-welcome-support-支持开发者.png") });
   await page.getByRole("button", { name: "开始使用" }).click();
   await settle();
 
   // 02 网格视图
   await shot(page, "workspace-grid-主界面-网格视图");
   await check("网格视图渲染 11 个对象", (await itemCount(page)) === 11);
-  await check("状态栏计数 11 项目", (await statusText(page))?.includes("11 项目"));
+  await check("主标题计数 11 项", (await page.locator('[data-region="scope-header"]').textContent())?.includes("11 项"));
   await check("失效对象徽标可见", page.locator("[data-selectable-item-id]").filter({ hasText: "影视收藏" }).getByText("失效", { exact: true }).isVisible());
 
-  // 02b 首页侧栏官方主题色点 + 亮/暗分段（用完后回到霜靛亮，避免污染后续巡演）
+  // 02b 首页折叠外观入口与主题模式切换（用完后回到霜靛亮）。
   const themeDock = page.locator('[data-region="sidebar-theme"]');
   await check("侧栏主题快捷切换可见", themeDock.isVisible());
+  await themeDock.locator("summary").click();
+  await page.screenshot({ path: path.join(OUT_DIR, "02a-appearance-展开外观.png") });
   const familyRadios = themeDock.getByRole("radiogroup", { name: "官方主题" }).getByRole("radio");
-  await check("官方主题色点为 4 个", (await familyRadios.count()) === 4);
+  await check("外观入口列出 4 个官方主题", (await familyRadios.count()) === 4);
   const themeIdBefore = await page.locator("html").getAttribute("data-theme-id");
   await themeDock.locator('[role="radio"][aria-checked="false"]').first().click();
   await settle(500);
   const themeIdAfterFamily = await page.locator("html").getAttribute("data-theme-id");
-  await check("点击色点后 data-theme-id 变化", Boolean(themeIdAfterFamily && themeIdAfterFamily !== themeIdBefore));
+  await check("切换主题后 data-theme-id 变化", Boolean(themeIdAfterFamily && themeIdAfterFamily !== themeIdBefore));
   const accentBeforeMode = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue("--accent-primary").trim(),
   );
@@ -239,6 +246,7 @@ async function featureTour(page) {
   await themeDock.getByRole("radio", { name: "亮色" }).click();
   await settle(500);
   await check("恢复霜靛亮色", (await page.locator("html").getAttribute("data-scheme")) === "light");
+  await themeDock.locator("summary").click();
 
   // 02c 添加文件夹：拖入目录后弹出入库方式（取消，避免污染后续巡演数据）
   await page.evaluate(() => {
@@ -307,8 +315,8 @@ async function featureTour(page) {
   await settle(500);
   await check("卡片 75%：--grid-col-min 写为 192px",
     await page.evaluate(() => document.documentElement.style.getPropertyValue("--grid-col-min") === "192px"));
-  await check("卡片 75%：缩略图写为 39px",
-    await page.evaluate(() => document.documentElement.style.getPropertyValue("--card-thumb-size") === "39px"));
+  await check("卡片 75%：缩略图写为 30px",
+    await page.evaluate(() => document.documentElement.style.getPropertyValue("--card-thumb-size") === "30px"));
   await shot(page, "card-zoom-卡片尺寸-75");
   await cardZoom.getByRole("button", { name: "重置卡片尺寸为 100%" }).click();
   await settle(500);
@@ -437,7 +445,11 @@ async function featureTour(page) {
   const scopeHeader = page.locator('[data-region="scope-header"]');
   await check("范围标题写出「娱乐 · 含下级 · 4 项」", (await scopeHeader.textContent())?.replace(/\s+/g, "").includes("娱乐4项含下级"));
   await sidebarTag(page, "娱乐");
-  await check("侧栏「娱乐」未选中时标出含下级", page.locator('[data-region="sidebar-nav"] button:has-text("娱乐")').first().getByText("含下级").isVisible());
+  await check("父标签提供下级折叠入口", page.getByRole("button", { name: "折叠 娱乐的下级标签" }).isVisible());
+  await page.getByRole("button", { name: "折叠 娱乐的下级标签" }).click();
+  await check("折叠父标签后隐藏下级行", (await page.locator('[data-tag-row-id]').filter({ hasText: "电影" }).count()) === 0);
+  await page.getByRole("button", { name: "展开 娱乐的下级标签" }).click();
+  await check("展开父标签后恢复下级行", (await page.locator('[data-tag-row-id]').filter({ hasText: "电影" }).count()) === 1);
 
   // 10 标签多选交集（开发 ∩ 自动化 = 2）
   await sidebarTag(page, "开发");
@@ -722,6 +734,10 @@ async function themeTour(page) {
   // 等上一步（失效找回）的 toast 驻留期结束，避免带入主题截图
   await page.locator(".toast-enter").first().waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
   await settle(500);
+  const filterToggle = page.getByRole("button", { name: "筛选类型与搜索范围" });
+  if (await filterToggle.getAttribute("aria-pressed") === "true") {
+    await filterToggle.click();
+  }
   await openSettings(page);
   await page.locator('nav[aria-label="设置区块导航"]').getByRole("button", { name: "主题外观", exact: true }).click();
   // 收集 Gallery 里全部官方配色家族名（radio 的 aria-label）
@@ -730,6 +746,7 @@ async function themeTour(page) {
   );
   await closeSettings(page);
   console.log(`  共 ${themeLabels.length} 套配色家族 × 亮/暗`);
+  const themeTagPalettes = new Set();
 
   for (const themeLabel of themeLabels) {
     await openSettings(page);
@@ -737,39 +754,33 @@ async function themeTour(page) {
     await closeSettings(page);
     const slug = themeLabel.replace(/[\s·]+/g, "");
     await setMode(page, false);
+    await page.mouse.move(1000, 800);
+    await page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
     await shot(page, `theme-${slug}-亮-grid-主界面`);
+    const tagPalette = await page.locator("html").evaluate((el) => getComputedStyle(el).getPropertyValue("--tag-preset-colors").trim());
+    themeTagPalettes.add(tagPalette);
+    await check(`${themeLabel} 标签板有 10 个不同色位`, new Set(tagPalette.split(",").map((color) => color.trim())).size === 10);
+    await check(`${themeLabel} 卡片标签具有不同的柔和底色`, page.locator('[data-region="main"] [data-tag-badge]').evaluateAll((els) => {
+      const fills = new Set(els.map((el) => getComputedStyle(el).backgroundColor));
+      return els.length > 0 && fills.size >= 4;
+    }));
     if (themeLabel.includes("素墨")) {
-      // 房间验收：素墨 UI 去色，但标签色是用户数据的识别维度，必须保留彩色
-      // （评审裁定：去色只作用 UI 装饰色）。读侧栏色点的实际背景色判饱和度。
-      const hasChroma = (els) =>
-        els.length > 0 && els.some((el) => {
-          const bg = getComputedStyle(el).backgroundColor;
-          let rgb = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(bg)?.slice(1, 4).map(Number);
-          if (!rgb) {
-            const m = /color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/.exec(bg);
-            if (m) rgb = m.slice(1, 4).map((v) => Math.round(Number(v) * 255));
-          }
-          if (!rgb) return false;
-          return Math.max(...rgb) - Math.min(...rgb) > 24;
+      // 侧栏以名称和树状缩进识别，颜色只保留窄标记；卡片显示文字而不重复色点。
+      const hasVisibleMarkers = (els) =>
+        els.length > 0 && els.every((el) => {
+          const box = el.getBoundingClientRect();
+          const fill = getComputedStyle(el).backgroundColor;
+          return box.width >= 10 && box.height >= 10 && fill !== "rgba(0, 0, 0, 0)";
         });
-      await check("素墨主题下侧栏标签色点保留彩色（用户数据不去色）", page.locator('[data-region="sidebar-nav"] [data-tag-color-dot]').evaluateAll(hasChroma));
-      // 卡片胶囊本体只混 9% 底色，色度应读描边（22% 标签色）；
-      // color-mix 的计算值可能是 rgba(...) 也可能是 color(srgb r g b / a)
-      const borderHasChroma = (els) =>
-        els.length > 0 && els.some((el) => {
-          const raw = getComputedStyle(el).borderColor;
-          let rgb = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(raw)?.slice(1, 4).map(Number);
-          if (!rgb) {
-            const m = /color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/.exec(raw);
-            if (m) rgb = m.slice(1, 4).map((v) => Math.round(Number(v) * 255));
-          }
-          return Boolean(rgb) && Math.max(...rgb) - Math.min(...rgb) > 24;
-        });
-      await check("素墨主题下卡片标签胶囊保留彩色", page.locator('[data-region="main"] .tag-pill').evaluateAll(borderHasChroma));
+      await check("素墨主题下侧栏颜色标记清晰且克制", page.locator('[data-region="sidebar-nav"] [data-tag-color-mark]').evaluateAll(hasVisibleMarkers));
+      await check("素墨主题下卡片标签以名称显示", page.locator('[data-region="main"] .item-tag').evaluateAll((els) => els.length > 0 && els.every((el) => el.textContent.trim().length > 0)));
+      await check("卡片不重复绘制标签色点", (await page.locator('[data-region="main"] [data-tag-color-dot]').count()) === 0);
       // 素墨 UI 语义：失效徽章仍是可辨的警示样式（描边 + ⚠ 图标，非普通胶囊）
       await check("素墨主题下失效徽章可辨", page.locator('[data-region="main"] [data-selectable-item-id]').filter({ hasText: "影视收藏" }).getByText("失效", { exact: true }).isVisible());
     }
     await setMode(page, true);
+    await page.mouse.move(1000, 800);
+    await page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
     await shot(page, `theme-${slug}-暗-grid-主界面`);
     // 霜靛（默认主题）补亮/暗列表形态
     if (themeLabel.includes("霜靛")) {
@@ -782,6 +793,7 @@ async function themeTour(page) {
       await settle();
     }
   }
+  await check("四套官方主题各有独立标签色板", themeTagPalettes.size === themeLabels.length);
   // 巡演结束后回到演示主用形态（霜靛 · 亮）
   await setMode(page, false);
   await check("主题巡演后回到霜靛亮色", !(await isDarkMode(page)));

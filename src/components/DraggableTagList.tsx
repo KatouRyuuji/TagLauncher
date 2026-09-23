@@ -126,7 +126,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact, maxVis
   return (
     <div
       data-tag-drag="true"
-      className={`flex min-w-0 ${hiddenCount > 0 ? "flex-nowrap" : "flex-wrap"} ${compact ? "gap-1" : "gap-1.5"}`}
+      className={`item-tag-list flex min-w-0 flex-wrap ${compact ? "gap-1" : "gap-1.5"}`}
     >
       {visibleTags.map((tag) => {
         const idx = item.tags.indexOf(tag);
@@ -134,18 +134,18 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact, maxVis
         <span
           key={tag.id}
           data-tag-drag="true"
+          data-tag-badge=""
           data-reorder-tag-item-id={item.id}
           data-reorder-tag-idx={idx}
           onPointerDown={(event) => handleTagPointerDown(event, idx)}
           onDoubleClick={(event) => event.stopPropagation()}
-          className={`tag-pill cursor-grab active:cursor-grabbing group/tag ${
-            compact ? "gap-1 px-2 py-0.5 text-[12px]" : "gap-1 px-2 py-1 text-[12px]"
-          } ${
+          className={`item-tag cursor-grab active:cursor-grabbing group/tag ${
             dragIdx === idx ? "opacity-40" : ""
           } ${highlightIdx === idx ? "ring-1 ring-[var(--accent-primary)]" : ""}`}
           style={{ "--tag-color": tag.color } as CSSProperties}
+          title={`标签：${tag.name}。拖动可调整顺序`}
         >
-          <SearchHighlightText text={tag.name} query={searchQuery} />
+          <span className="min-w-0 truncate"><SearchHighlightText text={tag.name} query={searchQuery} /></span>
           <button
             type="button"
             tabIndex={-1}
@@ -156,7 +156,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact, maxVis
               // 失败提示已由 onRemoveTag 链路（withErrorToast）统一弹出，吞掉 rejection 避免噪音
               void onRemoveTag(item.id, tag.id).catch(() => {});
             }}
-            className="inline-flex h-4 w-4 items-center justify-center rounded-full opacity-0 pointer-events-none group-hover/tag:opacity-100 group-hover/tag:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto hover:bg-[var(--bg-hover)] transition-opacity"
+            className="tag-remove"
           >
             <X size={12} strokeWidth={1.8} aria-hidden="true" />
           </button>
@@ -164,7 +164,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact, maxVis
         );
       })}
       {hiddenCount > 0 && (
-        <span className="tag-pill shrink-0 px-2 py-0.5 text-[12px]" title={item.tags.slice(visibleTags.length).map((tag) => tag.name).join("、")}>
+        <span className="item-tag item-tag-overflow shrink-0" title={item.tags.slice(visibleTags.length).map((tag) => tag.name).join("、")}>
           +{hiddenCount}
         </span>
       )}

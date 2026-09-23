@@ -9,8 +9,8 @@ import { gridOverscanRows, setWorkspaceGridLanes, peekPendingItemFocus, focusSel
 import type { ContextSelectionInfo } from "./ItemCard";
 import { useAppStore } from "../stores/appStore";
 
-/** 网格行间距（12px），与骨架屏的 gap-3 保持一致。 */
-const GRID_GAP = 12;
+/** 网格行间距（16px），与骨架屏保持一致。 */
+const GRID_GAP = 16;
 /** 卡片行初始估算高度（含 gap）；真实高度由 measureElement 动态校正，避免标签裁剪 */
 const GRID_ROW_EST = 200;
 const ICONS_ROW_EST = 228;
@@ -440,7 +440,7 @@ export function ItemGrid({
   return (
     <SelectionCanvas
       dataRegion="item-grid"
-      className={fewResults ? "min-h-0 flex-1 overflow-y-auto" : "min-h-0 flex-1 overflow-y-auto p-4"}
+      className={fewResults ? "min-h-0 flex-1 overflow-y-auto" : "min-h-0 flex-1 overflow-y-auto p-5"}
       itemIds={itemIds}
       selectedItemIds={selectedItemIds}
       onSelectItems={onSelectItems}
