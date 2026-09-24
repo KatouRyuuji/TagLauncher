@@ -1,6 +1,6 @@
 # TagLauncher 使用手册
 
-> 适用版本：v1.8.0 · 面向最终用户 · 开发者请见 [PROJECT_MANUAL.md](./PROJECT_MANUAL.md) 与 [TUTORIAL.md](./TUTORIAL.md)
+> 适用版本：v1.8.1-beta · 面向最终用户 · 开发者请见 [PROJECT_MANUAL.md](./PROJECT_MANUAL.md) 与 [TUTORIAL.md](./TUTORIAL.md)
 
 TagLauncher 用「标签 + 文件柜 + 收藏 + 搜索」管理你的本地文件、文件夹、程序、脚本、图片和音频。默认只做轻量索引与启动，不移动、不复制文件；只有你明确选择「删除本地文件」时，才会把源文件送进回收站。
 
