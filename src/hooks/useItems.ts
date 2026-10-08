@@ -26,6 +26,10 @@ import type { ItemWithTags } from "../types";
 /** 批量收藏请求事件（ContextMenu 多选收藏走此通道，detail: { ids, favorite }）。 */
 export const SET_FAVORITES_EVENT = "taglauncher-set-favorites";
 
+/** 单对象刷新请求事件（detail: { id }）：本 hook 之外的写入方（如 ContextMenu 打开所在
+ *  文件夹时后端按文件ID重定位并写库）通知本地缓存重新读取该对象。 */
+export const ITEM_REFRESH_EVENT = "taglauncher-item-refresh";
+
 /**
  * 写操作错误反馈包装：失败时弹出可读 toast 再向上抛出。
  * 保持原行为——本地乐观更新只在写成功后进行，失败抛出即跳过本地更新。
@@ -96,6 +100,8 @@ export function useItems() {
   // cabinetItems 当前归属的文件柜 id：切柜后新数据到达前，用它判断 cabinetItems 是否已对应
   // 当前选中柜，避免短暂显示上一个柜子的内容（竞态视觉错位）。
   const [cabinetItemsOwner, setCabinetItemsOwner] = useState<number | null>(null);
+  // 柜视图重取计数：全量加载成功且当前在柜视图时自增，驱动柜内容按同一数据版本重取
+  const [cabinetReloadTick, setCabinetReloadTick] = useState(0);
   const [loading, setLoading] = useState(true);
   // 最近一次列表加载失败的可读错误（成功后清空）：供 UI 在库为空时渲染
   // 可重试的错误面板，而不是把后端故障静默呈现为「暂无项目」。
@@ -151,6 +157,9 @@ export function useItems() {
         // 不在此失效图标缓存：getItems(false) 不触碰 icon_path，内部级联（标签写/
         // 主题换色）不应引发图标重取；手动刷新入口单独负责图标失效
         setAllItems(data);
+        if (useAppStore.getState().selectedCabinetId !== null) {
+          setCabinetReloadTick((tick) => tick + 1);
+        }
         // 全量加载 = 显式重排点：重拍冻结排序键
         frozenSortKeysRef.current = captureFrozenSortKeys(data);
         // 搜索索引闲时预热（含 pinyin-pro 懒加载分片）：首次击键不再全量构建。
@@ -278,7 +287,7 @@ export function useItems() {
     return () => {
       cancelled = true;
     };
-  }, [selectedCabinetId]);
+  }, [selectedCabinetId, cabinetReloadTick]);
 
   useEffect(() => {
     loadAll();
@@ -364,6 +373,16 @@ export function useItems() {
     );
     return item;
   }, []);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const id = (event as CustomEvent<{ id?: unknown }>).detail?.id;
+      if (typeof id !== "number") return;
+      void refreshItemById(id).catch((error: unknown) => console.error("刷新对象失败:", error));
+    };
+    window.addEventListener(ITEM_REFRESH_EVENT, handler);
+    return () => window.removeEventListener(ITEM_REFRESH_EVENT, handler);
+  }, [refreshItemById]);
 
   const removeLocalItem = useCallback((itemId: number) => {
     setAllItems((current) => removeItemFromList(current, itemId));

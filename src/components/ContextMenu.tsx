@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { SET_FAVORITES_EVENT } from "../hooks/useItems";
+import { ITEM_REFRESH_EVENT, SET_FAVORITES_EVENT } from "../hooks/useItems";
 import { BATCH_REMOVE_REQUEST_EVENT } from "../hooks/useItemRemoval";
 import { stepMenuIndex, formatPathCopy } from "../lib/itemQuery";
 import {
@@ -331,6 +331,8 @@ export function ContextMenu({
       } else {
         // 按 id 打开：后端会先按文件ID重定位到当前真实路径
         await db.openInExplorerById(item.id);
+        // 重定位可能已写入新路径与名称：刷新该对象，否则界面停留在旧名称
+        window.dispatchEvent(new CustomEvent(ITEM_REFRESH_EVENT, { detail: { id: item.id } }));
       }
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
