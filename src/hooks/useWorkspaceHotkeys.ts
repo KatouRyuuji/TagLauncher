@@ -142,6 +142,8 @@ export function useWorkspaceHotkeys({
       if (isModModalOpen()) return;
       if (isTransientMenuOpen()) return;
       if (ctx.blocked) return;
+      // 备注编辑弹窗可叠在快速预览之上：编辑期间工作台热键（含预览的方向键 / Enter）整体让路
+      if (useAppStore.getState().noteEditorItemId !== null) return;
 
       // 快速预览分支必须位于遮罩守卫与背景组合键之前：QuickPreview 自身带
       // data-workspace-overlay（会被守卫拦截），且预览打开时 Ctrl+A/C/D 应

@@ -13,6 +13,7 @@ import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
 import { useSlotContainer } from "./ItemCard";
 import { SearchHighlightText } from "./SearchHighlightText";
+import { ItemNoteIcon } from "./ItemNoteIcon";
 import type { ItemCardProps } from "./ItemCard";
 
 /** 表头、数据行与骨架共同消费同一列模板，避免列宽漂移。
@@ -139,6 +140,7 @@ function ItemRowComponent({
               <span className="truncate">
                 <SearchHighlightText text={item.name} query={searchQuery} />
               </span>
+              <ItemNoteIcon note={item.note} />
               {item.is_missing && (
                 <span
                   className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning-ink)]"

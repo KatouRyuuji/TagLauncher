@@ -302,4 +302,23 @@ test("查询编译使用最新同义词和归一化规则", () => {
   assert.deepEqual(searchWithIndex(index, "读物").map((entry) => entry.id), [91001]);
 });
 
+test("备注：全部范围子串命中、排在名称命中之后，标签范围与 @ 严格模式不查备注", () => {
+  const noted = { ...item(92001, "启动器"), note: "公司 VPN 账号在密码本第三页" };
+  const named = item(92002, "VPN 客户端");
+  const allNoteIndex = buildSearchIndex([noted, named], "all");
+  assert.deepEqual(searchWithIndex(allNoteIndex, "密码本").map((entry) => entry.id), [92001]);
+  assert.deepEqual(searchWithIndex(allNoteIndex, "vpn").map((entry) => entry.id), [92002, 92001]);
+  assert.deepEqual(searchWithIndex(allNoteIndex, "@密码本").map((entry) => entry.id), []);
+  assert.deepEqual(searchWithIndex(buildSearchIndex([noted, named], "tag"), "密码本").map((entry) => entry.id), []);
+});
+
+test("备注变化后搜索缓存失效", () => {
+  const before = { ...item(93001, "工具"), note: "旧备注" };
+  assert.deepEqual(searchWithIndex(buildSearchIndex([before], "all"), "旧备注").map((entry) => entry.id), [93001]);
+  const after = { ...before, note: "新备注" };
+  const index = buildSearchIndex([after], "all");
+  assert.deepEqual(searchWithIndex(index, "旧备注").map((entry) => entry.id), []);
+  assert.deepEqual(searchWithIndex(index, "新备注").map((entry) => entry.id), [93001]);
+});
+
 await run("search");

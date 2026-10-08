@@ -39,6 +39,7 @@ fn add_after_rename_dedups_by_identity() {
     }
     let conn = t.db.get_conn();
     let a = item_service::add_item(&conn, &orig).expect("add original");
+    item_service::set_item_note(&conn, a.id, "改名前的备注").expect("set note");
 
     // 磁盘上改名，再用新路径加入。
     let renamed = t.dir.join("after.exe");
@@ -59,6 +60,7 @@ fn add_after_rename_dedups_by_identity() {
         .unwrap();
     assert_eq!(name, "after.exe");
     assert_eq!(is_missing, 0);
+    assert_eq!(b.note.as_deref(), Some("改名前的备注"), "按身份归并后备注保留");
 }
 
 /// 去重盲区回归：先入了一条无身份记录（身份列 NULL，模拟当时取不到身份入库），
@@ -149,6 +151,7 @@ fn signature_relocation_read_and_apply_roundtrip() {
     )
     .unwrap();
     let id = conn.last_insert_rowid();
+    item_service::set_item_note(&conn, id, "跨盘前的备注").expect("set note");
 
     // 只读出"失效且有签名"的对象。
     let rows = item_service::read_missing_signatures(&conn).expect("read missing sigs");
@@ -172,6 +175,11 @@ fn signature_relocation_read_and_apply_roundtrip() {
     assert_eq!(new_path, target, "路径应更新为找回的真实路径");
     assert_eq!(missing, 0, "找回后应清除失效标记");
     assert_eq!(new_sig, Some(sig.size as i64), "签名应刷新");
+    assert_eq!(
+        item_service::get_item(&conn, id).unwrap().item.note.as_deref(),
+        Some("跨盘前的备注"),
+        "找回后备注保留"
+    );
     assert_eq!(item_service::apply_signature_relocations(&conn, &writes).unwrap(), 0, "计划重复执行保持幂等");
 }
 

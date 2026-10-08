@@ -277,6 +277,7 @@ pub fn run() {
             open_in_explorer_by_id,
             // 收藏
             toggle_favorite,
+            set_item_note,
             set_favorites,
             // 跨盘符兜底找回
             relocate_missing,

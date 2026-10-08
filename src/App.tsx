@@ -11,6 +11,7 @@ import { MigrationDialog } from "./components/MigrationDialog";
 import { InternalDragGhost, ItemDropActions } from "./components/InternalDragOverlays";
 import { BatchSelectionToolbar } from "./components/BatchSelectionToolbar";
 import { RemoveFromAppConfirmDialog } from "./components/RemoveFromAppConfirmDialog";
+import { NoteEditorDialog } from "./components/NoteEditorDialog";
 import { AddFolderImportDialog } from "./components/AddFolderImportDialog";
 import { AiTaggingModal } from "./components/AiTaggingModal";
 import { StatusBar } from "./components/StatusBar";
@@ -66,6 +67,7 @@ function App() {
     updateItemIcon,
     setItemTags,
     setManyItemTags,
+    setItemNote,
     launchItem,
     toggleFavorite,
     setFavorites,
@@ -85,6 +87,8 @@ function App() {
   const commandPaletteOpen = useAppStore((state) => state.commandPaletteOpen);
   const shortcutsHelpOpen = useAppStore((state) => state.shortcutsHelpOpen);
   const previewItemId = useAppStore((state) => state.previewItemId);
+  const noteEditorItemId = useAppStore((state) => state.noteEditorItemId);
+  const noteEditorItem = noteEditorItemId === null ? undefined : allItems.find((item) => item.id === noteEditorItemId);
   const restartOverlay = useAppStore((state) => state.restartOverlay);
   const clearWorkspaceFilters = useAppStore((state) => state.clearWorkspaceFilters);
   const cabinets = useAppStore((state) => state.cabinets);
@@ -516,6 +520,14 @@ function App() {
           />
         )}
       </Suspense>
+      {noteEditorItem && (
+        <NoteEditorDialog
+          key={noteEditorItem.id}
+          item={noteEditorItem}
+          onSave={(note) => setItemNote(noteEditorItem.id, note)}
+          onClose={() => useAppStore.getState().setNoteEditorItemId(null)}
+        />
+      )}
       <Suspense fallback={null}>
         {shortcutsHelpOpen && <ShortcutsHelp />}
       </Suspense>

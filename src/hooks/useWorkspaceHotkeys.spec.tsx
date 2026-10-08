@@ -2,15 +2,18 @@
 // src/hooks/useWorkspaceHotkeys.spec.tsx — 工作台热键测试
 // ============================================================================
 // F3 / Ctrl+F 聚焦搜索（输入中也可用）；修饰键组合（Ctrl+Shift+F3 等）不触发。
+// 备注弹窗叠在快速预览之上时，预览的方向键 / Enter 让路给输入框。
 // ============================================================================
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { fireEvent } from "@testing-library/react";
 import { useWorkspaceHotkeys } from "./useWorkspaceHotkeys";
 import { WORKSPACE_SEARCH_ID } from "../lib/workspaceChrome";
+import { useAppStore } from "../stores/appStore";
+import type { ItemWithTags } from "../types";
 
-function setup() {
+function setup(options: { items?: ItemWithTags[]; onLaunch?: (id: number) => void } = {}) {
   const input = document.createElement("input");
   input.id = WORKSPACE_SEARCH_ID;
   document.body.appendChild(input);
@@ -18,11 +21,11 @@ function setup() {
   renderHook(() =>
     useWorkspaceHotkeys({
       blocked: false,
-      items: [],
-      allItems: [],
+      items: options.items ?? [],
+      allItems: options.items ?? [],
       selectedItemIds: [],
       setSelectedItemIds: () => {},
-      onLaunch: () => {},
+      onLaunch: options.onLaunch ?? (() => {}),
       onRemoveSelected: () => {},
       onToggleSelectedFavorite: () => {},
       onToggleItemFavorite: () => {},
@@ -62,5 +65,37 @@ describe("useWorkspaceHotkeys · 搜索聚焦", () => {
     expect(document.activeElement).not.toBe(input);
     fireEvent.keyDown(window, { key: "F3", altKey: true });
     expect(document.activeElement).not.toBe(input);
+  });
+});
+
+function previewItem(id: number): ItemWithTags {
+  return { id, name: `对象${id}`, path: `D:\\对象${id}.exe`, type: "exe", created_at: "2026-10-08 00:00:00", is_favorite: false, tags: [] };
+}
+
+describe("useWorkspaceHotkeys · 快速预览上的备注弹窗", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    useAppStore.setState({ previewItemId: 1, noteEditorItemId: 1 });
+  });
+
+  it("备注弹窗打开时，方向键与 Enter 不切换预览、不启动对象", () => {
+    const onLaunch = vi.fn();
+    setup({ items: [previewItem(1), previewItem(2)], onLaunch });
+    const textarea = document.createElement("textarea");
+    document.body.appendChild(textarea);
+    textarea.focus();
+    fireEvent.keyDown(textarea, { key: "ArrowRight" });
+    fireEvent.keyDown(textarea, { key: "ArrowDown" });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(useAppStore.getState().previewItemId).toBe(1);
+    expect(onLaunch).not.toHaveBeenCalled();
+  });
+
+  it("备注弹窗关闭后，预览的 Enter 恢复启动对象", () => {
+    const onLaunch = vi.fn();
+    setup({ items: [previewItem(1), previewItem(2)], onLaunch });
+    useAppStore.setState({ noteEditorItemId: null });
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(onLaunch).toHaveBeenCalledWith(1);
   });
 });

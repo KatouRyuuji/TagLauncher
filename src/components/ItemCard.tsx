@@ -13,6 +13,7 @@ import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
 import { SearchHighlightText } from "./SearchHighlightText";
+import { ItemNoteIcon } from "./ItemNoteIcon";
 import type { Cabinet, ItemWithTags, Tag } from "../types";
 import type { ItemSlotDescriptor } from "../lib/modItemSlotRegistry";
 
@@ -284,6 +285,7 @@ function ItemCardComponent({
               <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
                 <SearchHighlightText text={item.name} query={searchQuery} />
               </h3>
+              <ItemNoteIcon note={item.note} />
               {item.is_missing && (
                 <span
                   className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning-ink)]"

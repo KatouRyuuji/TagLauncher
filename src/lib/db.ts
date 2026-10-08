@@ -317,6 +317,13 @@ export async function setFavorites(ids: number[], favorite: boolean): Promise<vo
   return invokeCmd("set_favorites", { ids, favorite });
 }
 
+// ---- 备注 ----
+
+/** 设置对象备注（后端去除首尾空白，空白存 NULL，超过 2000 字报错） */
+export async function setItemNote(id: number, note: string): Promise<void> {
+  return invokeCmd("set_item_note", { id, note });
+}
+
 // ---- 跨盘符兜底找回 ----
 
 /** 对失效对象按内容签名做跨盘找回，返回成功找回数量（扫描在后端锁外进行） */
