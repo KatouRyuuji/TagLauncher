@@ -294,6 +294,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `get_items_by_ids` | ids: Vec\<i64\>, include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 批量获取指定项目；自动图标默认开启 |
 | `get_item_visual` | id: i64 | { path, icon_path } | 获取已登记对象图标，返回对象路径供异步请求核对 |
 | `toggle_favorite` | id: i64 | bool | 切换收藏状态 |
+| `set_item_note` | id: i64, note: String | () | 设置对象备注（去首尾空白，空白存 NULL，最多 2000 字） |
 | `set_favorites` | ids: Vec\<i64\>, favorite: bool | () | 批量设置收藏状态（单事务，原子、幂等） |
 | `get_tags` | - | Vec\<Tag\> | 获取所有标签 |
 | `add_tag` | name, color | Tag | 新建标签 |
