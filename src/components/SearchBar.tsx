@@ -62,11 +62,14 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
   const setCommandPaletteOpen = useAppStore((state) => state.setCommandPaletteOpen);
   const typeFilter = useAppStore((state) => state.typeFilter);
   const setTypeFilter = useAppStore((state) => state.setTypeFilter);
+  const hideMissing = useAppStore((state) => state.hideMissing);
+  const setHideMissing = useAppStore((state) => state.setHideMissing);
   const workspaceFiltersOpen = useAppStore((state) => state.workspaceFiltersOpen);
   const setWorkspaceFiltersOpen = useAppStore((state) => state.setWorkspaceFiltersOpen);
   const [inputValue, setInputValue] = useState("");
   const queryKind = classifySearchQuery(inputValue);
-  const filtersForcedOpen = typeFilter !== "all" || searchMode !== "all";
+  const activeFilterCount = (typeFilter !== "all" ? 1 : 0) + (searchMode !== "all" ? 1 : 0) + (hideMissing ? 1 : 0);
+  const filtersForcedOpen = activeFilterCount > 0;
   const showFilterRow = hasLibraryItems && (workspaceFiltersOpen || filtersForcedOpen);
   const [modButtons, setModButtons] = useState<ToolbarButtonDescriptor[]>([]);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -386,13 +389,13 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               type="button"
               onClick={() => {
               if (filtersForcedOpen && showFilterRow) {
-                showToast("类型或搜索范围还在，筛选栏保持展开。先选「全部」再收起。", "info");
+                showToast("类型、搜索范围或隐藏失效仍在生效，筛选栏保持展开。先取消再收起。", "info");
                 return;
               }
               setWorkspaceFiltersOpen(!showFilterRow);
             }}
               className={`control-chip relative h-9 gap-1.5 border-0 px-2.5 text-[13px] ${
-                typeFilter !== "all" || searchMode !== "all"
+                filtersForcedOpen
                   ? "control-chip-active"
                   : showFilterRow ? "control-chip-active" : ""
               }`}
@@ -403,12 +406,12 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               <Filter className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
               <span>筛选</span>
               {/* 激活筛选计数外显：行收起时也能看出有筛选在作用 */}
-              {(typeFilter !== "all" || searchMode !== "all") && (
+              {activeFilterCount > 0 && (
                 <span
                   className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--bg-elevated)] px-0.5 text-[10px] font-semibold leading-none text-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]"
-                  aria-label={`${(typeFilter !== "all" ? 1 : 0) + (searchMode !== "all" ? 1 : 0)} 个筛选激活`}
+                  aria-label={`${activeFilterCount} 个筛选激活`}
                 >
-                  {(typeFilter !== "all" ? 1 : 0) + (searchMode !== "all" ? 1 : 0)}
+                  {activeFilterCount}
                 </span>
               )}
             </button>
@@ -482,7 +485,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
         </div>
       </div>
 
-      {/* 控制 + 筛选：空闲收起；类型或搜索范围不是全部时强制展开 */}
+      {/* 控制 + 筛选：空闲收起；类型、搜索范围或隐藏失效有任一生效时强制展开 */}
       {showFilterRow && <div
         data-region="filterbar"
         className="flex min-h-11 flex-wrap items-center gap-x-2.5 gap-y-1.5 bg-[var(--bg-surface)] px-4 py-1.5"
@@ -527,6 +530,19 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             ))}
           </div>
         </div>
+
+        <span className="instrument-label shrink-0 text-[var(--text-faint)]">状态</span>
+        <button
+          type="button"
+          onClick={() => setHideMissing(!hideMissing)}
+          aria-pressed={hideMissing}
+          className={`control-chip h-8 min-h-8 shrink-0 rounded-[var(--radius-sm)] px-2.5 text-[13px] font-medium ${
+            hideMissing ? "control-chip-active" : ""
+          }`}
+          title="隐藏文件已丢失或所在磁盘离线的对象；失效计数与复核入口不受影响"
+        >
+          隐藏失效
+        </button>
       </div>}
     </header>
   );

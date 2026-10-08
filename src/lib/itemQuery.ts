@@ -116,6 +116,12 @@ export function applyTypeFilter<T extends Pick<ItemWithTags, "type">>(items: T[]
   return items.filter((item) => itemMatchesType(item, filter));
 }
 
+/** 隐藏失效项：开启时剔除 is_missing 对象；关闭时返回原数组引用。 */
+export function applyMissingFilter<T extends Pick<ItemWithTags, "is_missing">>(items: T[], hideMissing: boolean): T[] {
+  if (!hideMissing) return items;
+  return items.filter((item) => !item.is_missing);
+}
+
 export interface SortKeyOverrides {
   /** id → 冻结的 last_used_at（会话内冻结排序键）：命中即用冻结值，未命中用活值。
    *  启动对象只刷新 last_used_at 不重排视图（Explorer 语义）；

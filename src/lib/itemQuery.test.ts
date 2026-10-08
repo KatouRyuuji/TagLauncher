@@ -38,6 +38,7 @@ test("冻结排序键：启动后 last_used_at 刷新不重排，收藏切换立
 });
 import {
   applyTypeFilter,
+  applyMissingFilter,
   applyWorkspaceQuery,
   compareItems,
   filterCommandsByQuery,
@@ -90,6 +91,12 @@ test("itemMatchesType：脚本合并 bat 与 ps1", () => {
 test("applyTypeFilter：all 返回原数组引用", () => {
   const items = [item({ id: 1, name: "a" })];
   assert.equal(applyTypeFilter(items, "all"), items);
+});
+
+test("applyMissingFilter：关闭返回原数组引用，开启剔除失效项", () => {
+  const items = [item({ id: 1, name: "a" }), { ...item({ id: 2, name: "b" }), is_missing: true }];
+  assert.equal(applyMissingFilter(items, false), items);
+  assert.deepEqual(applyMissingFilter(items, true).map((entry) => entry.id), [1]);
 });
 
 test("smart 排序：收藏置顶，其次最近使用，再次名称", () => {
