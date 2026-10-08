@@ -8,9 +8,20 @@
 import { pinyinSync as pinyin } from "./pinyinProvider";
 import type { ItemWithTags } from "../types";
 
-/** 工作台排序：智能（收藏→最近使用→名称）/ 名称 / 最近使用 / 添加时间 / 类型；
- *  名称与添加时间带方向变体（-desc 后缀），其余模式固定方向。 */
-export type SortMode = "smart" | "name" | "name-desc" | "recent" | "added" | "added-desc" | "type";
+/** 工作台排序：智能（收藏→最近使用→名称）/ 名称 / 最近使用 / 添加时间 / 文件创建时间 / 文件修改时间 / 类型；
+ *  名称与添加时间带方向变体（-desc 后缀），文件时间带方向变体（-asc 后缀），其余模式固定方向。 */
+export type SortMode =
+  | "smart"
+  | "name"
+  | "name-desc"
+  | "recent"
+  | "added"
+  | "added-desc"
+  | "fs-created"
+  | "fs-created-asc"
+  | "fs-modified"
+  | "fs-modified-asc"
+  | "type";
 
 /** 工作台视图：卡片网格 / 大图标 / 列表 */
 export type ViewMode = "grid" | "list" | "icons";
@@ -32,6 +43,10 @@ export const SORT_OPTIONS: { value: SortMode; label: string; hint?: string }[] =
   { value: "recent", label: "最近使用", hint: "最近打开过的在前" },
   { value: "added", label: "添加时间（新→旧）", hint: "最新加入库的在前" },
   { value: "added-desc", label: "添加时间（旧→新）", hint: "最早加入库的在前" },
+  { value: "fs-created", label: "创建时间（新→旧）", hint: "按文件创建时间，最新的在前；取不到时间的排最后" },
+  { value: "fs-created-asc", label: "创建时间（旧→新）", hint: "按文件创建时间，最早的在前；取不到时间的排最后" },
+  { value: "fs-modified", label: "修改时间（新→旧）", hint: "按文件修改时间，最新的在前；取不到时间的排最后" },
+  { value: "fs-modified-asc", label: "修改时间（旧→新）", hint: "按文件修改时间，最早的在前；取不到时间的排最后" },
   { value: "type", label: "类型", hint: "按类型分组：文件夹、图片、音频、视频、程序、脚本" },
 ];
 
@@ -64,6 +79,12 @@ export function compareNames(a: string, b: string): number {
   return nameCollator.compare(a, b);
 }
 
+/** 文件时间比较：取不到时间（null/undefined）的不论方向都排最后。 */
+function compareFileTimes(a: number | null | undefined, b: number | null | undefined, newestFirst: boolean): number {
+  if (a == null || b == null) return a == null ? (b == null ? 0 : 1) : -1;
+  return newestFirst ? b - a : a - b;
+}
+
 /** ISO 时间戳是 ASCII 字典序可比的，纯字符串比较即可，避免 localeCompare 开销。 */
 function compareTimestamps(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -81,6 +102,10 @@ export function isSortMode(value: unknown): value is SortMode {
     value === "recent" ||
     value === "added" ||
     value === "added-desc" ||
+    value === "fs-created" ||
+    value === "fs-created-asc" ||
+    value === "fs-modified" ||
+    value === "fs-modified-asc" ||
     value === "type"
   );
 }
@@ -131,7 +156,10 @@ export interface SortKeyOverrides {
   readonly lastUsedAt?: ReadonlyMap<number, string | null | undefined>;
 }
 
-type SortableItem = Pick<ItemWithTags, "id" | "name" | "type" | "is_favorite" | "last_used_at" | "created_at">;
+type SortableItem = Pick<
+  ItemWithTags,
+  "id" | "name" | "type" | "is_favorite" | "last_used_at" | "created_at" | "fs_created_at" | "fs_modified_at"
+>;
 
 export function compareItems(
   a: SortableItem,
@@ -158,6 +186,16 @@ export function compareItems(
     case "added-desc": {
       const added = compareTimestamps(a.created_at, b.created_at);
       return added || compareNames(a.name, b.name);
+    }
+    case "fs-created":
+    case "fs-created-asc": {
+      const created = compareFileTimes(a.fs_created_at, b.fs_created_at, mode === "fs-created");
+      return created || compareNames(a.name, b.name);
+    }
+    case "fs-modified":
+    case "fs-modified-asc": {
+      const modified = compareFileTimes(a.fs_modified_at, b.fs_modified_at, mode === "fs-modified");
+      return modified || compareNames(a.name, b.name);
     }
     case "type": {
       const order = (TYPE_ORDER[a.type] ?? 9) - (TYPE_ORDER[b.type] ?? 9);

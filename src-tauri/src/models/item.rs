@@ -18,6 +18,10 @@ pub struct Item {
     pub is_missing: bool,
     /// 用户备注（纯文本，未填写为 None）。
     pub note: Option<String>,
+    /// 文件系统创建时间（Unix 秒，UTC；取不到为 None）。
+    pub fs_created_at: Option<i64>,
+    /// 文件系统修改时间（Unix 秒，UTC；取不到为 None）。
+    pub fs_modified_at: Option<i64>,
 }
 
 /// 带标签的项目（用于前端展示）
