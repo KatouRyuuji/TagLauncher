@@ -9,7 +9,7 @@ use tauri::AppHandle;
 
 /// SELECT 查询中使用的列名常量
 pub const ITEM_COLS: &str =
-    "id, name, path, type, icon_path, created_at, last_used_at, is_favorite, is_missing, note";
+    "id, name, path, type, icon_path, created_at, last_used_at, is_favorite, is_missing, note, fs_created_at, fs_modified_at";
 
 /// 默认排序：收藏优先 → 最近使用 → 名称
 pub const ITEM_ORDER: &str = "is_favorite DESC, last_used_at DESC NULLS LAST, name";
@@ -29,6 +29,8 @@ pub fn item_from_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
         is_favorite: fav != 0,
         is_missing: missing != 0,
         note: row.get(9)?,
+        fs_created_at: row.get(10)?,
+        fs_modified_at: row.get(11)?,
     })
 }
 
@@ -131,6 +133,23 @@ struct AddFileMeta {
     item_type: &'static str,
     identity: Option<FileIdentity>,
     sig: Option<file_identity::FileSignature>,
+    times: FileTimes,
+}
+
+/// 文件系统（创建时间, 修改时间），Unix 秒；平台或文件系统不提供时为 None。
+type FileTimes = (Option<i64>, Option<i64>);
+
+fn unix_secs(time: std::io::Result<std::time::SystemTime>) -> Option<i64> {
+    let secs = time.ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    i64::try_from(secs).ok()
+}
+
+fn file_times(meta: &std::fs::Metadata) -> FileTimes {
+    (unix_secs(meta.created()), unix_secs(meta.modified()))
+}
+
+fn path_file_times(path: &str) -> FileTimes {
+    std::fs::metadata(path).map(|m| file_times(&m)).unwrap_or((None, None))
 }
 
 /// 采集单文件元数据（纯文件系统/FFI 访问，不触碰数据库）。
@@ -141,6 +160,7 @@ fn collect_add_meta(path: &str) -> AddFileMeta {
         item_type: detect_type(path),
         identity: file_identity::get_identity(path),
         sig: file_identity::compute_signature(path),
+        times: path_file_times(path),
     }
 }
 
@@ -289,8 +309,8 @@ fn add_one_with_meta(conn: &Connection, meta: &AddFileMeta) -> Result<(Item, boo
         None => (None, None),
     };
     conn.execute(
-        "INSERT INTO items (name, path, type, volume_serial, file_id, sig_size, sig_head, sig_tail) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO items (name, path, type, volume_serial, file_id, sig_size, sig_head, sig_tail, \
+         fs_created_at, fs_modified_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             name,
             path,
@@ -299,7 +319,9 @@ fn add_one_with_meta(conn: &Connection, meta: &AddFileMeta) -> Result<(Item, boo
             fid,
             sig.map(|s| s.size as i64),
             sig.map(|s| s.head_hash as i64),
-            sig.map(|s| s.tail_hash as i64)
+            sig.map(|s| s.tail_hash as i64),
+            meta.times.0,
+            meta.times.1
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -735,6 +757,8 @@ pub struct ReconcileRow {
     file_id: Option<String>,
     is_missing: i64,
     sig_size: Option<i64>,
+    fs_created_at: Option<i64>,
+    fs_modified_at: Option<i64>,
 }
 
 /// 计划生成时的行快照（path + is_missing）：回写时与当前行比对，不一致说明
@@ -753,15 +777,18 @@ pub enum ReconcileWrite {
     BackfillSignature { id: i64, size: i64, head: i64, tail: i64, expected: ReconcileGuard },
     /// 文件在原路径且曾失效 → 清除失效标记。
     ClearMissing { id: i64, expected: ReconcileGuard },
-    /// 按文件ID重定位到新路径并清除失效标记（new_type / new_sig 在锁外 IO 阶段预计算）。
+    /// 按文件ID重定位到新路径并清除失效标记（new_type / new_sig / new_times 在锁外 IO 阶段预计算）。
     Relocate {
         id: i64,
         new_path: String,
         new_name: String,
         new_type: &'static str,
         new_sig: Option<(i64, i64, i64)>,
+        new_times: FileTimes,
         expected: ReconcileGuard,
     },
+    /// 文件系统创建 / 修改时间与快照不一致 → 回写当前值。
+    FileTimes { id: i64, created: Option<i64>, modified: Option<i64>, expected: ReconcileGuard },
     /// 文件找不到 → 标记失效。
     MarkMissing { id: i64, expected: ReconcileGuard },
 }
@@ -779,7 +806,7 @@ pub fn read_cabinet_reconcile_snapshot(conn: &Connection, cabinet_id: i64) -> Re
 fn read_reconcile_scope(conn: &Connection, cabinet_id: Option<i64>) -> Result<Vec<ReconcileRow>, String> {
     let filter = if cabinet_id.is_some() { " WHERE id IN (SELECT item_id FROM cabinet_items WHERE cabinet_id=?1)" } else { "" };
     let mut stmt = conn
-        .prepare(&format!("SELECT id, path, volume_serial, file_id, is_missing, sig_size FROM items{filter}"))
+        .prepare(&format!("SELECT id, path, volume_serial, file_id, is_missing, sig_size, fs_created_at, fs_modified_at FROM items{filter}"))
         .map_err(|e| e.to_string())?;
     let mapped = stmt
         .query_map(rusqlite::params_from_iter(cabinet_id), |r| {
@@ -790,6 +817,8 @@ fn read_reconcile_scope(conn: &Connection, cabinet_id: Option<i64>) -> Result<Ve
                 file_id: r.get(3)?,
                 is_missing: r.get(4)?,
                 sig_size: r.get(5)?,
+                fs_created_at: r.get(6)?,
+                fs_modified_at: r.get(7)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -805,7 +834,8 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
     let mut writes = Vec::new();
     let mut resolver = file_identity::FileResolver::default();
     for row in rows {
-        let exists = Path::new(&row.path).exists();
+        // metadata() 与 exists() 同一次系统调用（exists 内部即 metadata().is_ok()），顺带取文件时间
+        let metadata = std::fs::metadata(&row.path).ok();
         let identity = row_identity(row.volume_serial, row.file_id);
         // 快照随每条写入携带，回写时比对防过期覆盖
         let expected = || ReconcileGuard {
@@ -813,7 +843,11 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
             is_missing: row.is_missing,
         };
 
-        if exists {
+        if let Some(metadata) = metadata {
+            let (created, modified) = file_times(&metadata);
+            if (created, modified) != (row.fs_created_at, row.fs_modified_at) {
+                writes.push(ReconcileWrite::FileTimes { id: row.id, created, modified, expected: expected() });
+            }
             // 口径说明（有意取舍）：路径仍在时不校验"该处文件是否已被替换成另一个文件"
             // （不比对文件身份），与 resolve_current_path 的身份校验口径不同。对账是每次
             // 列表刷新都跑的轻量路径，逐对象 FFI 身份比对太贵；被替换的误挂在启动/打开时
@@ -857,12 +891,14 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
                     // 内容可能在移动前后被编辑：签名随路径一并刷新（与 add_one 冲突路径口径一致）
                     let new_sig = file_identity::compute_signature(&new_path)
                         .map(|s| (s.size as i64, s.head_hash as i64, s.tail_hash as i64));
+                    let new_times = path_file_times(&new_path);
                     writes.push(ReconcileWrite::Relocate {
                         id: row.id,
                         new_path,
                         new_name,
                         new_type,
                         new_sig,
+                        new_times,
                         expected: expected(),
                     });
                 }
@@ -918,24 +954,33 @@ pub fn apply_reconcile(conn: &Connection, writes: &[ReconcileWrite]) -> Result<(
                     params![id, expected.path, expected.is_missing],
                 );
             }
-            ReconcileWrite::Relocate { id, new_path, new_name, new_type, new_sig, expected } => {
-                // 重定位时若已采到内容签名则一并刷新（见 plan_reconcile）
+            ReconcileWrite::Relocate { id, new_path, new_name, new_type, new_sig, new_times, expected } => {
+                // 重定位时若已采到内容签名则一并刷新（见 plan_reconcile）；文件时间随新路径更新
+                let (created, modified) = new_times;
                 let _ = match new_sig {
                     Some((size, head, tail)) => tx.execute(
                         "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0, \
-                         sig_size = ?4, sig_head = ?5, sig_tail = ?6 \
-                         WHERE id = ?7 AND path = ?8 AND is_missing = ?9",
+                         sig_size = ?4, sig_head = ?5, sig_tail = ?6, fs_created_at = ?7, fs_modified_at = ?8 \
+                         WHERE id = ?9 AND path = ?10 AND is_missing = ?11",
                         params![
-                            new_path, new_name, new_type, size, head, tail, id,
+                            new_path, new_name, new_type, size, head, tail, created, modified, id,
                             expected.path, expected.is_missing
                         ],
                     ),
                     None => tx.execute(
-                        "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0 \
-                         WHERE id = ?4 AND path = ?5 AND is_missing = ?6",
-                        params![new_path, new_name, new_type, id, expected.path, expected.is_missing],
+                        "UPDATE items SET path = ?1, name = ?2, type = ?3, is_missing = 0, \
+                         fs_created_at = ?4, fs_modified_at = ?5 \
+                         WHERE id = ?6 AND path = ?7 AND is_missing = ?8",
+                        params![new_path, new_name, new_type, created, modified, id, expected.path, expected.is_missing],
                     ),
                 };
+            }
+            ReconcileWrite::FileTimes { id, created, modified, expected } => {
+                let _ = tx.execute(
+                    "UPDATE items SET fs_created_at = ?1, fs_modified_at = ?2 \
+                     WHERE id = ?3 AND path = ?4 AND is_missing = ?5",
+                    params![created, modified, id, expected.path, expected.is_missing],
+                );
             }
             ReconcileWrite::MarkMissing { id, expected } => {
                 let _ = tx.execute(
@@ -1461,6 +1506,7 @@ mod tests {
                 file_id: 0x63,
             }),
             sig: file_identity::compute_signature(&path_b.to_string_lossy()),
+            times: (None, None),
         };
         let (item_b, created) = add_one_with_meta(&conn, &meta_b).unwrap();
         assert!(created, "克隆盘撞车应新建独立行");

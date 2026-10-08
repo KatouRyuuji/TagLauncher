@@ -1,6 +1,6 @@
 //! 集成测试：对象身份链路（真实临时文件）。
 //! 覆盖真实文件 add 去重与身份捕获、改名后按身份重定位、惰性对账标记/清除失效、
-//! 失效对象按签名找回的快照、锁外计划和受守卫保护的回写。
+//! 失效对象按签名找回的快照、锁外计划和受守卫保护的回写，以及文件系统创建/修改时间的写入与对账。
 
 mod common;
 
@@ -219,4 +219,85 @@ fn signature_plan_rejects_changed_and_deleted_candidates() {
     assert!(item_service::plan_signature_relocations(&rows, &found).is_empty());
     std::fs::remove_file(&target).unwrap();
     assert!(item_service::plan_signature_relocations(&rows, &found).is_empty());
+}
+
+fn disk_times(path: &str) -> (Option<i64>, Option<i64>) {
+    let secs = |t: std::io::Result<std::time::SystemTime>| {
+        t.ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64)
+    };
+    let meta = std::fs::metadata(path).unwrap();
+    (secs(meta.created()), secs(meta.modified()))
+}
+
+fn db_times(conn: &rusqlite::Connection, id: i64) -> (Option<i64>, Option<i64>) {
+    let item = item_service::get_item(conn, id).unwrap().item;
+    (item.fs_created_at, item.fs_modified_at)
+}
+
+fn set_mtime(path: &str, unix_secs: u64) {
+    let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+    file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix_secs)).unwrap();
+}
+
+/// 导入写入文件时间；对账回填空值、纠正变化，时间不变时不产生写入。
+#[test]
+fn fs_times_written_on_add_and_reconciled() {
+    let t = common::temp_db();
+    let path = common::write_file(&t.dir, "timed.exe", b"payload");
+    let conn = t.db.get_conn();
+    let item = item_service::add_item(&conn, &path).expect("add");
+    assert!(item.fs_modified_at.is_some(), "导入时写入修改时间");
+    assert_eq!(db_times(&conn, item.id), disk_times(&path));
+
+    // 升级后的旧对象：两列为空 → 对账回填。
+    conn.execute("UPDATE items SET fs_created_at = NULL, fs_modified_at = NULL", []).unwrap();
+    item_service::reconcile_items(&conn).expect("backfill");
+    assert_eq!(db_times(&conn, item.id), disk_times(&path));
+
+    // 修改时间变化 → 对账纠正。
+    set_mtime(&path, 1_600_000_000);
+    item_service::reconcile_items(&conn).expect("correct");
+    assert_eq!(db_times(&conn, item.id).1, Some(1_600_000_000));
+
+    // 时间一致 → 计划为空（不触发多余写入与刷新）。
+    let writes = item_service::plan_reconcile(item_service::read_reconcile_snapshot(&conn).unwrap());
+    assert!(writes.is_empty(), "时间未变时不应产生写入");
+}
+
+/// 计划生成后对象路径被改：文件时间写入受守卫保护而落空。
+#[test]
+fn fs_times_write_skipped_when_path_changed_after_plan() {
+    let t = common::temp_db();
+    let path = common::write_file(&t.dir, "guarded.exe", b"payload");
+    let conn = t.db.get_conn();
+    let item = item_service::add_item(&conn, &path).expect("add");
+    conn.execute("UPDATE items SET fs_created_at = NULL, fs_modified_at = NULL", []).unwrap();
+
+    let writes = item_service::plan_reconcile(item_service::read_reconcile_snapshot(&conn).unwrap());
+    conn.execute("UPDATE items SET path = 'D:/moved-by-user.exe' WHERE id = ?1", [item.id]).unwrap();
+    item_service::apply_reconcile(&conn, &writes).unwrap();
+    assert_eq!(db_times(&conn, item.id), (None, None), "过期计划不得覆盖");
+}
+
+/// 按文件ID重定位时，文件时间随新路径一并更新。
+#[test]
+fn relocate_updates_fs_times_from_new_path() {
+    let t = common::temp_db();
+    let orig = common::write_file(&t.dir, "old-name.exe", b"payload");
+    if file_identity::get_identity(&orig).is_none() {
+        eprintln!("skip: 临时目录文件系统不支持文件ID");
+        return;
+    }
+    let conn = t.db.get_conn();
+    let item = item_service::add_item(&conn, &orig).expect("add");
+    let renamed = t.dir.join("new-name.exe").to_string_lossy().to_string();
+    std::fs::rename(&orig, &renamed).expect("rename on disk");
+    set_mtime(&renamed, 1_500_000_000);
+
+    item_service::reconcile_items(&conn).expect("reconcile");
+    let after = item_service::get_item(&conn, item.id).unwrap().item;
+    // 按文件ID解析出的是长路径形式，临时目录可能是 8.3 短路径，按文件名比较。
+    assert!(after.path.to_lowercase().ends_with("new-name.exe"), "按文件ID重定位到新路径");
+    assert_eq!(after.fs_modified_at, Some(1_500_000_000));
+    assert_eq!((after.fs_created_at, after.fs_modified_at), disk_times(&renamed));
 }

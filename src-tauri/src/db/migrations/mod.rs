@@ -13,6 +13,7 @@ mod v012_fts_maintenance;
 mod v013_retire_theme_families;
 mod v014_watch_roots;
 mod v015_item_note;
+mod v016_item_fs_times;
 
 use rusqlite::Connection;
 
@@ -181,6 +182,7 @@ fn all_migrations() -> Vec<Box<dyn Migration>> {
         Box::new(v013_retire_theme_families::V013RetireThemeFamilies),
         Box::new(v014_watch_roots::V014WatchRoots),
         Box::new(v015_item_note::V015ItemNote),
+        Box::new(v016_item_fs_times::V016ItemFsTimes),
     ]
 }
 

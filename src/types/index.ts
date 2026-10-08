@@ -11,6 +11,9 @@
   is_missing?: boolean;
   /** 用户备注（纯文本，未填写为 null）。 */
   note?: string | null;
+  /** 文件系统创建/修改时间（Unix 秒，UTC；取不到为 null） */
+  fs_created_at?: number | null;
+  fs_modified_at?: number | null;
 }
 
 export interface Cabinet {
