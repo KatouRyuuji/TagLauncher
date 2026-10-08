@@ -140,7 +140,7 @@ export function SelectMenu({ value, onChange, ariaLabel, options, groups, classN
   let optionIndex = -1;
 
   return (
-    <div className="relative" onKeyDown={handleKeyDown}>
+    <div className="relative" onKeyDown={handleKeyDown} data-esc-local={open ? "" : undefined}>
       <button
         ref={buttonRef}
         type="button"

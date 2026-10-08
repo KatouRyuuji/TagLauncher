@@ -1,12 +1,13 @@
 // ============================================================================
 // src/components/SelectMenu.spec.tsx — 主题化下拉选择器交互测试
 // ============================================================================
-// 覆盖：点击展开/选定/外部点击关闭、键盘（展开/移动/选定/Esc）、分组渲染。
+// 覆盖：点击展开/选定/外部点击关闭、键盘（展开/移动/选定/Esc）、弹窗内 Esc 只收起列表、分组渲染。
 // ============================================================================
 
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SelectMenu } from "./SelectMenu";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 
 const OPTIONS = [
   { value: "smart", label: "智能" },
@@ -53,6 +54,22 @@ describe("SelectMenu", () => {
     fireEvent.keyDown(trigger, { key: "Escape" });
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("弹窗内展开时 Esc 只收起列表，收起后 Esc 才关闭弹窗", () => {
+    const onClose = vi.fn();
+    function Dialog() {
+      useEscapeKey(onClose);
+      return <SelectMenu value="smart" onChange={vi.fn()} ariaLabel="排序方式" options={OPTIONS} />;
+    }
+    render(<Dialog />);
+    const trigger = screen.getByRole("button", { name: "排序方式" });
+    fireEvent.click(trigger);
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("键盘：ArrowDown 展开并移动高亮，Enter 选定", () => {
