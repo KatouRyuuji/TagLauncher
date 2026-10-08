@@ -331,9 +331,12 @@ export function ContextMenu({
         await db.openInExplorer(parent);
       } else {
         // 按 id 打开：后端会先按文件ID重定位到当前真实路径
-        await db.openInExplorerById(item.id);
-        // 重定位可能已写入新路径与名称：刷新该对象，否则界面停留在旧名称
-        window.dispatchEvent(new CustomEvent(ITEM_REFRESH_EVENT, { detail: { id: item.id } }));
+        try {
+          await db.openInExplorerById(item.id);
+        } finally {
+          // 后端可能已写入新路径与名称，或在找不到文件时标记失效：无论成败都刷新该对象
+          window.dispatchEvent(new CustomEvent(ITEM_REFRESH_EVENT, { detail: { id: item.id } }));
+        }
       }
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
