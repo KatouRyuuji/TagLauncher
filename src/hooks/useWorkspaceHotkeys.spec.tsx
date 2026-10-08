@@ -3,7 +3,7 @@
 // ============================================================================
 // F3 / Ctrl+F 聚焦搜索（输入中也可用）；修饰键组合（Ctrl+Shift+F3 等）不触发。
 // 备注弹窗叠在快速预览之上时，预览的方向键 / Enter 让路给输入框。
-// F2 对单个选中项打开重命名，失效对象只提示。
+// F2 对单个选中项打开重命名，失效对象只提示；多选时打开批量重命名。
 // ============================================================================
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -108,7 +108,7 @@ describe("useWorkspaceHotkeys · F2 重命名", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     vi.mocked(showToast).mockClear();
-    useAppStore.setState({ previewItemId: null, noteEditorItemId: null, renameItemId: null });
+    useAppStore.setState({ previewItemId: null, noteEditorItemId: null, renameItemId: null, batchRenameOpen: false });
   });
 
   it("单个选中项按 F2 打开重命名", () => {
@@ -117,11 +117,18 @@ describe("useWorkspaceHotkeys · F2 重命名", () => {
     expect(useAppStore.getState().renameItemId).toBe(2);
   });
 
-  it("多选或输入中按 F2 不触发", () => {
-    const input = setup({ items: [previewItem(1), previewItem(2)], selectedItemIds: [1, 2] });
+  it("多选按 F2 打开批量重命名", () => {
+    setup({ items: [previewItem(1), previewItem(2)], selectedItemIds: [1, 2] });
     fireEvent.keyDown(window, { key: "F2" });
+    expect(useAppStore.getState().batchRenameOpen).toBe(true);
+    expect(useAppStore.getState().renameItemId).toBeNull();
+  });
+
+  it("输入中按 F2 不触发", () => {
+    const input = setup({ items: [previewItem(1), previewItem(2)], selectedItemIds: [1, 2] });
     input.focus();
     fireEvent.keyDown(input, { key: "F2" });
+    expect(useAppStore.getState().batchRenameOpen).toBe(false);
     expect(useAppStore.getState().renameItemId).toBeNull();
   });
 

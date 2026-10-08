@@ -14,6 +14,7 @@ import {
   PackageOpen,
   RefreshCw,
   RotateCcw,
+  Undo2,
   Search,
   Settings2,
   Star,
@@ -68,6 +69,8 @@ interface CommandPaletteProps {
   onRefresh: () => Promise<void>;
   onOpenSettings: () => void;
   onOpenAbout: () => void;
+  /** 有可撤销的批量重命名时传入，命令列表显示「撤销上次批量重命名」 */
+  onUndoBatchRename?: () => void;
 }
 
 export function CommandPalette({
@@ -77,6 +80,7 @@ export function CommandPalette({
   onRefresh,
   onOpenSettings,
   onOpenAbout,
+  onUndoBatchRename,
 }: CommandPaletteProps) {
   const open = useAppStore((state) => state.commandPaletteOpen);
   const setOpen = useAppStore((state) => state.setCommandPaletteOpen);
@@ -164,6 +168,9 @@ export function CommandPalette({
     { id: "recent", title: showRecent ? "退出最近使用" : "最近使用", keywords: "recent 最近 历史", icon: Clock3, run: () => setShowRecent(!showRecent) },
     { id: "clear", title: "清空筛选", keywords: "clear 重置 筛选", icon: RotateCcw, run: () => { clearWorkspaceFilters(); resetWorkspaceSearchInput(); } },
     { id: "missing-review", title: "查看失效项目", keywords: "missing 失效 丢失 找回", icon: TriangleAlert, run: () => useAppStore.getState().setMissingReviewOpen(true) },
+    ...(onUndoBatchRename
+      ? [{ id: "undo-batch-rename", title: "撤销上次批量重命名", keywords: "undo rename 撤销 重命名 改名", icon: Undo2, run: onUndoBatchRename }]
+      : []),
     ...SORT_OPTIONS.map((option) => ({
       id: `sort-${option.value}`,
       title: `排序：${option.label}`,
@@ -191,6 +198,7 @@ export function CommandPalette({
     onOpenAbout,
     onOpenSettings,
     onRefresh,
+    onUndoBatchRename,
     setShowFavorites,
     setShowRecent,
     showFavorites,

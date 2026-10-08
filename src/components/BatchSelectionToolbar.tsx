@@ -8,6 +8,7 @@ import {
   Copy,
   FolderPlus,
   LoaderCircle,
+  PencilLine,
   Star,
   Tag,
   Tags,
@@ -45,6 +46,7 @@ export function BatchSelectionToolbar({
   onRemoveFromApp,
   favoriteLabel,
   onToggleFavorite,
+  onRename,
   onCopyPaths,
   onSelectAll,
   onClearSelection,
@@ -68,6 +70,8 @@ export function BatchSelectionToolbar({
   /** 批量收藏按钮文案："收藏"（选中含未收藏项）或"取消收藏"（已全部收藏）。 */
   favoriteLabel: string;
   onToggleFavorite: () => void;
+  /** 选中 1 项打开单个重命名，2 项及以上打开批量重命名。 */
+  onRename: () => void;
   onCopyPaths: () => void;
   onSelectAll: () => void;
   onClearSelection: () => void;
@@ -238,6 +242,16 @@ export function BatchSelectionToolbar({
         >
           <Star aria-hidden="true" size={14} strokeWidth={1.8} fill={favoriteLabel === "收藏" ? "none" : "currentColor"} className="text-[var(--color-favorite)]" />
           {favoriteLabel}
+        </button>
+        <button
+          type="button"
+          onClick={onRename}
+          disabled={busy}
+          className="action-button min-h-8 shrink-0 px-2.5 text-xs"
+          title="重命名选中项目（F2）"
+        >
+          <PencilLine aria-hidden="true" size={14} strokeWidth={1.8} />
+          重命名
         </button>
         <button
           type="button"
