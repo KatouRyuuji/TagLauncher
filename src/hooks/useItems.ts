@@ -3,7 +3,7 @@ import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, filterItemsByTags, filterSearchIndex, searchWithIndex } from "../lib/search";
 import { ensurePinyin } from "../lib/pinyinProvider";
-import { applyTypeFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/itemQuery";
+import { applyMissingFilter, applyTypeFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/itemQuery";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
@@ -88,6 +88,7 @@ export function useItems() {
   const showRecent = useAppStore((state) => state.showRecent);
   const sortMode = useAppStore((state) => state.sortMode);
   const typeFilter = useAppStore((state) => state.typeFilter);
+  const hideMissing = useAppStore((state) => state.hideMissing);
   const tagRelations = useAppStore((state) => state.tagRelations);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
@@ -441,9 +442,9 @@ export function useItems() {
 
   const filtered = useMemo(() => {
     if (searchIndex) {
-      return applyTypeFilter(searchWithIndex(searchIndex, deferredSearchQuery), typeFilter);
+      return applyMissingFilter(applyTypeFilter(searchWithIndex(searchIndex, deferredSearchQuery), typeFilter), hideMissing);
     }
-    return applyWorkspaceQuery(tagFiltered, {
+    return applyWorkspaceQuery(applyMissingFilter(tagFiltered, hideMissing), {
       typeFilter,
       sortMode,
       // 冻结键只服务反瞬移场景：显式 recent 排序 / 最近使用域是活视图，启动必须立即升顶
@@ -452,7 +453,7 @@ export function useItems() {
           ? undefined
           : { lastUsedAt: frozenSortKeysRef.current ?? undefined },
     });
-  }, [searchIndex, tagFiltered, deferredSearchQuery, typeFilter, sortMode, showRecent]);
+  }, [searchIndex, tagFiltered, deferredSearchQuery, typeFilter, hideMissing, sortMode, showRecent]);
 
   const addItems = useCallback(async (paths: string[]) => {
     await withErrorToast("批量导入", async () => {

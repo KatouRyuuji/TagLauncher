@@ -105,6 +105,7 @@ interface WorkspacePrefs {
   searchMode?: SearchMode;
   sortMode?: SortMode;
   typeFilter?: TypeFilter;
+  hideMissing?: boolean;
   workspaceFiltersOpen?: boolean;
   cardSizeScale?: number;
   iconSizeScale?: number;
@@ -129,6 +130,7 @@ function loadWorkspacePrefs(): WorkspacePrefs {
         : undefined,
       sortMode: isSortMode(parsed.sortMode) ? parsed.sortMode : undefined,
       typeFilter: isTypeFilter(parsed.typeFilter) ? parsed.typeFilter : undefined,
+      hideMissing: typeof parsed.hideMissing === "boolean" ? parsed.hideMissing : undefined,
       workspaceFiltersOpen: typeof parsed.workspaceFiltersOpen === "boolean"
         ? parsed.workspaceFiltersOpen
         : undefined,
@@ -194,11 +196,13 @@ interface AppState {
   listDensity: ListDensity;
   sortMode: SortMode;
   typeFilter: TypeFilter;
+  /** 隐藏失效对象（持久化）：只影响主区列表，失效计数与复核入口不受影响 */
+  hideMissing: boolean;
   /** 卡片视图尺寸缩放（1 = 默认 256px 列宽） */
   cardSizeScale: number;
   /** 大图标视图尺寸缩放（1 = 默认 168px 列宽） */
   iconSizeScale: number;
-  /** 主界面「筛选」条是否展开（类型/搜索范围）；有生效筛选时 SearchBar 仍会显示该条 */
+  /** 主界面「筛选」条是否展开（搜索范围/类型/状态）；有生效筛选时 SearchBar 仍会显示该条 */
   workspaceFiltersOpen: boolean;
   /** 侧栏拖拽教程已关闭（持久化）；拖拽进行中的释放提示仍会显示 */
   sidebarHintDismissed: boolean;
@@ -236,6 +240,7 @@ interface AppState {
   setListDensity: (density: ListDensity) => void;
   setSortMode: (mode: SortMode) => void;
   setTypeFilter: (filter: TypeFilter) => void;
+  setHideMissing: (hide: boolean) => void;
   setCardSizeScale: (scale: number, options?: { persist?: boolean }) => void;
   setIconSizeScale: (scale: number, options?: { persist?: boolean }) => void;
   /** 立即持久化当前视图偏好（尺寸滑杆等 persist:false 写入后的显式落盘；值未变也可用） */
@@ -261,6 +266,7 @@ export const useAppStore = create<AppState>((set, get) => {
       searchMode: state.searchMode,
       sortMode: state.sortMode,
       typeFilter: state.typeFilter,
+      hideMissing: state.hideMissing,
       workspaceFiltersOpen: state.workspaceFiltersOpen,
       cardSizeScale: state.cardSizeScale,
       iconSizeScale: state.iconSizeScale,
@@ -285,6 +291,7 @@ export const useAppStore = create<AppState>((set, get) => {
   listDensity: initialPrefs.listDensity ?? "comfortable",
   sortMode: initialPrefs.sortMode ?? "smart",
   typeFilter: initialPrefs.typeFilter ?? "all",
+  hideMissing: initialPrefs.hideMissing ?? false,
   cardSizeScale: initialPrefs.cardSizeScale ?? 1,
   iconSizeScale: initialPrefs.iconSizeScale ?? 1,
   workspaceFiltersOpen: initialPrefs.workspaceFiltersOpen ?? false,
@@ -405,6 +412,11 @@ export const useAppStore = create<AppState>((set, get) => {
     set({ typeFilter: filter });
     persistNow();
   },
+  setHideMissing: (hide) => {
+    if (get().hideMissing === hide) return;
+    set({ hideMissing: hide });
+    persistNow();
+  },
   setCardSizeScale: (scale, options) => {
     const next = clampSizeScale(scale, CARD_SIZE_SCALE_RANGE);
     if (get().cardSizeScale === next) return;
@@ -463,6 +475,7 @@ export const useAppStore = create<AppState>((set, get) => {
       showFavorites: false,
       showRecent: false,
       typeFilter: "all",
+      hideMissing: false,
       searchMode: "all",
       searchQuery: "",
       searchInputValue: "",

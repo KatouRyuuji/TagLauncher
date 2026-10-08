@@ -48,6 +48,7 @@ export function WorkspaceEmptyState({
   const showFavorites = useAppStore((state) => state.showFavorites);
   const showRecent = useAppStore((state) => state.showRecent);
   const typeFilter = useAppStore((state) => state.typeFilter);
+  const hideMissing = useAppStore((state) => state.hideMissing);
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const tags = useAppStore((state) => state.tags);
@@ -87,6 +88,7 @@ export function WorkspaceEmptyState({
   // 仅剩搜索词时由旁边的「清空搜索」承载，两个同效按钮并存只会让用户猜差异
   const hasActiveFilters =
     typeFilter !== "all" ||
+    hideMissing ||
     selectedTagIds.length > 0 ||
     excludedTagIds.length > 0 ||
     selectedCabinetId !== null ||

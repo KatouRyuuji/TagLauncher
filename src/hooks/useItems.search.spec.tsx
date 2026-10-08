@@ -27,7 +27,7 @@ describe("对象搜索按需索引", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    useAppStore.setState({ searchQuery: "", searchMode: "all", selectedTagIds: [], excludedTagIds: [], selectedCabinetId: null, showFavorites: false, showRecent: false, typeFilter: "all", sortMode: "smart", tagRelations: [] });
+    useAppStore.setState({ searchQuery: "", searchMode: "all", selectedTagIds: [], excludedTagIds: [], selectedCabinetId: null, showFavorites: false, showRecent: false, typeFilter: "all", hideMissing: false, sortMode: "smart", tagRelations: [] });
   });
 
   it("并发找回共享结果，扫描错误保留为失败状态并允许重试", async () => {
@@ -74,5 +74,18 @@ describe("对象搜索按需索引", () => {
     act(() => useAppStore.setState({ searchQuery: "", typeFilter: "folder" }));
     await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([1]));
     expect(buildSearchIndex).toHaveBeenCalledTimes(2);
+  });
+
+  it("隐藏失效同时作用于浏览与搜索结果", async () => {
+    const missing: ItemWithTags = { id: 3, name: "项目备份", path: "E:/项目备份", type: "folder", created_at: "2026-01-01", is_favorite: false, is_missing: true, tags: [] };
+    vi.mocked(db.getItems).mockResolvedValueOnce([...fixtures, missing]);
+    const { result } = renderHook(useItems);
+    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([2, 3, 1]));
+    act(() => useAppStore.setState({ hideMissing: true }));
+    expect(result.current.items.map((item) => item.id)).toEqual([2, 1]);
+    act(() => useAppStore.setState({ searchQuery: "项目" }));
+    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([1]));
+    act(() => useAppStore.setState({ hideMissing: false }));
+    await waitFor(() => expect(result.current.items.map((item) => item.id).sort()).toEqual([1, 3]));
   });
 });

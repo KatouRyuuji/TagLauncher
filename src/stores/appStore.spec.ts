@@ -26,6 +26,7 @@ describe("appStore", () => {
       viewMode: "grid",
       sortMode: "smart",
       typeFilter: "all",
+      hideMissing: false,
       cardSizeScale: 1,
       iconSizeScale: 1,
       workspaceFiltersOpen: false,
@@ -170,6 +171,7 @@ describe("appStore", () => {
       showFavorites: true,
       showRecent: true,
       typeFilter: "image",
+      hideMissing: true,
       searchMode: "name",
       searchQuery: "游戏",
       searchInputValue: "游戏机",
@@ -183,6 +185,7 @@ describe("appStore", () => {
     expect(useAppStore.getState().showFavorites).toBe(false);
     expect(useAppStore.getState().showRecent).toBe(false);
     expect(useAppStore.getState().typeFilter).toBe("all");
+    expect(useAppStore.getState().hideMissing).toBe(false);
     expect(useAppStore.getState().searchMode).toBe("all");
     expect(useAppStore.getState().searchQuery).toBe("");
     expect(useAppStore.getState().searchInputValue).toBe("");
@@ -212,6 +215,15 @@ describe("appStore", () => {
     useAppStore.getState().setTypeFilter("script");
     expect(useAppStore.getState().sortMode).toBe("recent");
     expect(useAppStore.getState().typeFilter).toBe("script");
+  });
+
+  it("setHideMissing 写入 workspace_prefs，清除筛选后写回 false", () => {
+    useAppStore.getState().setHideMissing(true);
+    const readStored = () => (JSON.parse(localStorage.getItem("taglauncher.workspace_prefs") ?? "{}") as { hideMissing?: boolean }).hideMissing;
+    expect(useAppStore.getState().hideMissing).toBe(true);
+    expect(readStored()).toBe(true);
+    useAppStore.getState().clearWorkspaceFilters();
+    expect(readStored()).toBe(false);
   });
 
   it("setViewMode 支持大图标", () => {
