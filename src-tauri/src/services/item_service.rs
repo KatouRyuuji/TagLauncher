@@ -9,7 +9,7 @@ use tauri::AppHandle;
 
 /// SELECT 查询中使用的列名常量
 pub const ITEM_COLS: &str =
-    "id, name, path, type, icon_path, created_at, last_used_at, is_favorite, is_missing";
+    "id, name, path, type, icon_path, created_at, last_used_at, is_favorite, is_missing, note";
 
 /// 默认排序：收藏优先 → 最近使用 → 名称
 pub const ITEM_ORDER: &str = "is_favorite DESC, last_used_at DESC NULLS LAST, name";
@@ -28,6 +28,7 @@ pub fn item_from_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
         last_used_at: row.get(6)?,
         is_favorite: fav != 0,
         is_missing: missing != 0,
+        note: row.get(9)?,
     })
 }
 
@@ -657,6 +658,27 @@ pub fn toggle_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
         })?;
 
     Ok(new_val != 0)
+}
+
+/// 备注上限（按字符计）。
+pub const NOTE_MAX_CHARS: usize = 2000;
+
+/// 设置对象备注：首尾空白去除后为空则存 NULL；超过上限直接报错，不截断。
+pub fn set_item_note(conn: &Connection, id: i64, note: &str) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
+    let trimmed = note.trim();
+    let len = trimmed.chars().count();
+    if len > NOTE_MAX_CHARS {
+        return Err(format!("备注最多 {} 字，当前 {} 字", NOTE_MAX_CHARS, len));
+    }
+    let value = if trimmed.is_empty() { None } else { Some(trimmed) };
+    let changed = conn
+        .execute("UPDATE items SET note = ?1 WHERE id = ?2", params![value, id])
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err(format!("对象不存在（id {}），可能已被删除", id));
+    }
+    Ok(())
 }
 
 /// 批量设置收藏状态（按 IN_CHUNK 分块多条 IN 语句 + 单事务，整体原子、幂等）。

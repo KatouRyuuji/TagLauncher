@@ -12,6 +12,7 @@ interface SearchableFields {
   nameEntry: SearchableText;
   pathWithoutDrive: string;
   tagEntries: SearchableText[];
+  noteText: string;
 }
 
 interface SearchableText {
@@ -43,12 +44,13 @@ export interface SearchIndex {
 }
 
 // 拼音字段缓存：按对象 id 键控而非对象身份。loadAll 全量刷新后所有对象换新引用，
-// WeakMap 会全 miss 导致主线程全量重算拼音；按 id + 内容指纹（名称/路径/标签）校验
+// WeakMap 会全 miss 导致主线程全量重算拼音；按 id + 内容指纹（名称/路径/标签/备注）校验
 // 即可跨刷新复用。标签指纹随条目保存，内容变了自然重算。
 interface SearchFieldsCacheEntry {
   name: string;
   path: string;
   tagsKey: string;
+  note: string;
   fields: SearchableFields;
 }
 
@@ -130,8 +132,15 @@ function getTagSearchText(name: string): SearchableText {
 
 function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
   const tagsKey = item.tags.map((tag) => `${tag.id}:${tag.name}`).join("|");
+  const note = item.note ?? "";
   const cached = searchFieldsCache.get(item.id);
-  if (cached && cached.name === item.name && cached.path === item.path && cached.tagsKey === tagsKey) {
+  if (
+    cached &&
+    cached.name === item.name &&
+    cached.path === item.path &&
+    cached.tagsKey === tagsKey &&
+    cached.note === note
+  ) {
     // 命中即刷新热度（Map 按插入序迭代，重插移到最新位），超限淘汰才落在真正冷门的条目上
     searchFieldsCache.delete(item.id);
     searchFieldsCache.set(item.id, cached);
@@ -150,6 +159,7 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
     // 去盘符路径随拼音一起缓存（与 scoreName 的弱辅助匹配一致），避免每次匹配重跑正则
     pathWithoutDrive: normalize(item.path.replace(/^[a-z]:[\\/]+/i, "")),
     tagEntries,
+    noteText: normalize(note),
   };
 
   if (searchFieldsCache.size >= SEARCH_FIELDS_CACHE_LIMIT) {
@@ -161,7 +171,7 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
       evictCount -= 1;
     }
   }
-  searchFieldsCache.set(item.id, { name: item.name, path: item.path, tagsKey, fields });
+  searchFieldsCache.set(item.id, { name: item.name, path: item.path, tagsKey, note, fields });
 
   return {
     item,
@@ -553,6 +563,8 @@ function scoreTerm(entry: SearchIndexEntry, queries: string[], mode: SearchMode,
     if (!term) return 2;
     let score = mode === "tag" ? scoreTag(entry, term, strict) : scoreName(entry, term, strict);
     if (mode === "all" && score !== 2) score = Math.max(score, scoreTag(entry, term, strict)) as MatchScore;
+    // 备注只在「全部」范围参与，子串命中计弱命中，排在名称/标签命中之后
+    if (mode === "all" && score === 0 && !strict && entry.fields.noteText.includes(term)) score = 1;
     if (score === 2) return 2;
     if (score > best) best = score;
   }

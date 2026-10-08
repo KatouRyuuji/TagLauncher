@@ -199,6 +199,13 @@ pub fn toggle_favorite(db: State<Database>, id: i64) -> Result<bool, String> {
     item_service::toggle_favorite(&conn, id)
 }
 
+/// 设置对象备注（空白备注存 NULL，超长报错）
+#[tauri::command]
+pub fn set_item_note(db: State<Database>, id: i64, note: String) -> Result<(), String> {
+    let conn = db.get_conn();
+    item_service::set_item_note(&conn, id, &note)
+}
+
 /// 批量设置收藏状态（单事务，批量收藏热路径）
 #[tauri::command(async)]
 pub fn set_favorites(db: State<Database>, ids: Vec<i64>, favorite: bool) -> Result<(), String> {

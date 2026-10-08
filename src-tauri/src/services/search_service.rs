@@ -40,7 +40,7 @@ fn query_items_by_text(conn: &Connection, query: &str) -> Result<Vec<Item>, Stri
         return query_items_by_text_like(conn, query);
     }
 
-    let sql = "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
+    let sql = "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note
          FROM items i
          INNER JOIN items_fts ON i.id = items_fts.rowid
          WHERE items_fts MATCH ?1
@@ -113,7 +113,7 @@ fn tag_group_clauses(conn: &Connection, tag_ids: &[i64]) -> Result<(String, Vec<
 fn query_items_by_tags(conn: &Connection, tag_ids: &[i64]) -> Result<Vec<Item>, String> {
     let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
     let sql = format!(
-        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
+        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note
          FROM items i
          WHERE {}
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
@@ -145,7 +145,7 @@ fn query_items_by_text_and_tags(
 
     let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
     let sql = format!(
-        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
+        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note
          FROM items i
          INNER JOIN items_fts ON i.id = items_fts.rowid
          WHERE items_fts MATCH ?1
@@ -181,7 +181,7 @@ fn query_items_by_text_and_tags_like(
     let search_query = like_contains_pattern(query);
     let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
     let sql = format!(
-        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing
+        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note
          FROM items i
          WHERE (i.name LIKE ?1 ESCAPE '\\' OR i.path LIKE ?1 ESCAPE '\\')
          AND {}

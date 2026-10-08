@@ -13,6 +13,7 @@ import {
   Radar,
   Play,
   Star,
+  StickyNote,
   Tags,
   Trash2,
   TriangleAlert,
@@ -510,6 +511,16 @@ export function ContextMenu({
           accent={(multi ? !multi.favoriteTarget : item.is_favorite) ? "favorite" : undefined}
         />
         <MenuItem icon={Tags} label="管理标签" onClick={() => { onEditTags(); onClose(); }} />
+        {!multi && (
+          <MenuItem
+            icon={StickyNote}
+            label="编辑备注…"
+            onClick={() => {
+              useAppStore.getState().setNoteEditorItemId(item.id);
+              onClose();
+            }}
+          />
+        )}
         {/* 缩略图收进二级菜单：与文件柜共用同一套展开/定位/键盘机制 */}
         <div
           onMouseEnter={() => {

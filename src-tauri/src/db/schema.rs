@@ -31,7 +31,8 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             is_missing INTEGER NOT NULL DEFAULT 0,
             sig_size INTEGER,
             sig_head INTEGER,
-            sig_tail INTEGER
+            sig_tail INTEGER,
+            note TEXT
         );
 
         -- 注意: idx_items_identity（身份唯一索引）不能放在此批处理中,

@@ -40,13 +40,13 @@ interface SearchBarProps {
 }
 
 const MODES: { value: SearchMode; label: string; hint: string }[] = [
-  { value: "all", label: "全部", hint: "搜索范围：名称、路径与标签" },
+  { value: "all", label: "全部", hint: "搜索范围：名称、路径、标签与备注" },
   { value: "name", label: "名称", hint: "搜索范围：仅名称与路径" },
   { value: "tag", label: "标签", hint: "搜索范围：仅标签" },
 ];
 
 const PLACEHOLDERS: Record<SearchMode, string> = {
-  all: "搜索名称、路径或标签...",
+  all: "搜索名称、路径、标签或备注...",
   name: "搜索名称或路径...",
   tag: "搜索标签...",
 };

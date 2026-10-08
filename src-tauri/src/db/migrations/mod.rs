@@ -12,6 +12,7 @@ mod v011_video_type;
 mod v012_fts_maintenance;
 mod v013_retire_theme_families;
 mod v014_watch_roots;
+mod v015_item_note;
 
 use rusqlite::Connection;
 
@@ -179,6 +180,7 @@ fn all_migrations() -> Vec<Box<dyn Migration>> {
         Box::new(v012_fts_maintenance::V012FtsMaintenance),
         Box::new(v013_retire_theme_families::V013RetireThemeFamilies),
         Box::new(v014_watch_roots::V014WatchRoots),
+        Box::new(v015_item_note::V015ItemNote),
     ]
 }
 

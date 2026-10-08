@@ -16,6 +16,8 @@ pub struct Item {
     pub is_favorite: bool,
     /// 对象的文件当前是否丢失（删除/离线/跨盘移动且无法重定位）。
     pub is_missing: bool,
+    /// 用户备注（纯文本，未填写为 None）。
+    pub note: Option<String>,
 }
 
 /// 带标签的项目（用于前端展示）

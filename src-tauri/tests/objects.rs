@@ -148,6 +148,37 @@ fn toggle_favorite_roundtrip_and_errors_on_missing() {
     );
 }
 
+/// set_item_note：去除首尾空白后保存；空白存 NULL；超长与不存在的 id 报错且不改动原值。
+#[test]
+fn set_item_note_trims_clears_and_validates() {
+    let t = common::temp_db();
+    let conn = t.db.get_conn();
+    let item = item_service::add_item(&conn, &common::write_file(&t.dir, "note.exe", b"a")).unwrap();
+    assert_eq!(item.note, None, "新对象没有备注");
+
+    item_service::set_item_note(&conn, item.id, "  第一行\n第二行  ").unwrap();
+    let got = item_service::get_item(&conn, item.id).unwrap().item.note;
+    assert_eq!(got.as_deref(), Some("第一行\n第二行"));
+
+    let max = "字".repeat(item_service::NOTE_MAX_CHARS);
+    item_service::set_item_note(&conn, item.id, &max).expect("上限内按字符计可保存");
+    let too_long = "字".repeat(item_service::NOTE_MAX_CHARS + 1);
+    assert!(item_service::set_item_note(&conn, item.id, &too_long).is_err(), "超长应报错");
+    assert_eq!(
+        item_service::get_item(&conn, item.id).unwrap().item.note.as_deref(),
+        Some(max.as_str()),
+        "超长报错不改动原值"
+    );
+
+    item_service::set_item_note(&conn, item.id, "   ").unwrap();
+    let raw: Option<String> = conn
+        .query_row("SELECT note FROM items WHERE id=?1", [item.id], |r| r.get(0))
+        .unwrap();
+    assert_eq!(raw, None, "空白备注存 NULL");
+
+    assert!(item_service::set_item_note(&conn, 999_999, "x").is_err(), "不存在的 id 应报错");
+}
+
 /// get_items_by_ids：去重 id、按默认顺序（收藏优先）返回、且仅返回请求的子集。
 #[test]
 fn get_items_by_ids_dedups_and_orders() {

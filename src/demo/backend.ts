@@ -382,6 +382,12 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       for (const id of ids(args.ids)) requireItem(id).is_favorite = favorite;
       return null;
     }
+    case "set_item_note": {
+      const note = str(args.note).trim();
+      if ([...note].length > 2000) throw new Error(`备注最多 2000 字，当前 ${[...note].length} 字`);
+      requireItem(num(args.id)).note = note || null;
+      return null;
+    }
     case "relocate_missing":
       // 演示集中没有可找回的盘符，模拟「未找到」
       return 0;

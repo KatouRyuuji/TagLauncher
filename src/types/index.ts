@@ -9,6 +9,8 @@
   is_favorite: boolean;
   /** 对象文件当前是否丢失（删除/离线/跨盘移动且无法重定位）。path 为最近已知位置。 */
   is_missing?: boolean;
+  /** 用户备注（纯文本，未填写为 null）。 */
+  note?: string | null;
 }
 
 export interface Cabinet {

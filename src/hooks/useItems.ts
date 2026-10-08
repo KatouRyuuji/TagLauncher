@@ -591,6 +591,13 @@ export function useItems() {
     }
   }, [refreshItemById]);
 
+  const setItemNote = useCallback(async (id: number, note: string) => {
+    await withErrorToast("保存备注", async () => {
+      await db.setItemNote(id, note);
+      await refreshItemById(id);
+    });
+  }, [refreshItemById]);
+
   const toggleFavorite = useCallback(async (id: number) => {
     await withErrorToast("切换收藏", async () => {
       await db.toggleFavorite(id);
@@ -707,6 +714,7 @@ export function useItems() {
     updateItemIcon,
     setItemTags,
     setManyItemTags,
+    setItemNote,
     launchItem,
     toggleFavorite,
     setFavorites,
