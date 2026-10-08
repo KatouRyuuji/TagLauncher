@@ -77,7 +77,7 @@ git push origin main --tags
 
 ### 4.1 结构与迁移
 
-- 单文件 SQLite（WAL 模式）：`Save/taglauncher.db`；schema 版本存 `app_meta.schema_version`（当前 **v014**，含 `watch_roots`）。高于本程序支持版本的库会拒绝打开，提示先升级应用。
+- 单文件 SQLite（WAL 模式）：`Save/taglauncher.db`；schema 版本存 `app_meta.schema_version`（当前 **v016**）。高于本程序支持版本的库会拒绝打开，提示先升级应用。
 - 新增迁移：在 `src-tauri/src/db/migrations/` 加 `v00N_xxx.rs` 并在 `migrations/mod.rs` 注册；启动时自动逐版本执行，破坏性迁移前会自动落 `*.pre-vN.bak` 备份。
 - 迁移必须**非破坏 + 幂等**（`IF NOT EXISTS` / `ADD COLUMN` 风格）；破坏性重建须走「备份 → 重建 → 原子换版本号」模式（参考 v005）。
 - 导入/恢复对 schema 版本有保护：来源库版本高于当前应用支持版本时拒绝（提示用户先升级应用）。
