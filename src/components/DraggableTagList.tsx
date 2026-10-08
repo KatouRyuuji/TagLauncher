@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import type { ItemWithTags } from "../types";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
@@ -16,9 +16,11 @@ interface DraggableTagListProps {
   compact?: boolean;
   /** 放不下时只露前几枚，其余收成 +N，不把胶囊切成半个。 */
   maxVisible?: number;
+  /** 传入时在列表末尾显示「+」，点击打开该对象的管理标签。 */
+  onAdd?: () => void;
 }
 
-export function DraggableTagList({ item, onReorder, onRemoveTag, compact, maxVisible }: DraggableTagListProps) {
+export function DraggableTagList({ item, onReorder, onRemoveTag, compact, maxVisible, onAdd }: DraggableTagListProps) {
   const dragIdx = useInternalDragStore((state) =>
     state.drag?.kind === "reorder-tag" && state.drag.itemId === item.id
       ? state.drag.sourceIdx
@@ -109,7 +111,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact, maxVis
     });
   };
 
-  if (item.tags.length === 0) return null;
+  if (item.tags.length === 0 && !onAdd) return null;
 
   // 悬停高亮与实际落点一致：落点为插入槽位（左半区=目标前，右半区=目标后），
   // 落点是原位（自身前/后）时顺序不变，不高亮。
@@ -167,6 +169,23 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact, maxVis
         <span className="item-tag item-tag-overflow shrink-0" title={item.tags.slice(visibleTags.length).map((tag) => tag.name).join("、")}>
           +{hiddenCount}
         </span>
+      )}
+      {onAdd && dragIdx === null && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="添加标签"
+          title="管理标签"
+          onPointerDown={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onAdd();
+          }}
+          className="item-tag-add shrink-0"
+        >
+          <Plus size={12} strokeWidth={1.8} aria-hidden="true" />
+        </button>
       )}
       {dragIdx !== null && (
         <span

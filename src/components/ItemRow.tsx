@@ -167,7 +167,7 @@ function ItemRowComponent({
         </div>
 
         <div className="min-w-0 ">
-          <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} compact />
+          <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} compact onAdd={() => setShowTagEditor(true)} />
         </div>
 
         <div className="text-right">

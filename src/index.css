@@ -615,6 +615,22 @@ html.theme-switching * {
   .item-tag:hover {
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tag-color) 22%, transparent);
   }
+  /* 添加标签入口：虚线弱化胶囊，与标签同尺寸但不与真实标签争夺注意力 */
+  .item-tag-add {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 7px;
+    border: 1px dashed var(--border-medium);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-faint);
+    cursor: pointer;
+  }
+  .item-tag-add:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+  }
 
   .item-card-render-scope {
     box-shadow: none;

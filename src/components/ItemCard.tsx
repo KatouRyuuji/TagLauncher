@@ -262,7 +262,7 @@ function ItemCardComponent({
             {iconSizeScale >= 1.5 && (
               <>
                 <div className="mt-1.5 w-full" onClick={(event) => event.stopPropagation()}>
-                  <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} maxVisible={cardSizeScale < 0.9 ? 1 : undefined} />
+                  <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} maxVisible={cardSizeScale < 0.9 ? 1 : undefined} onAdd={() => setShowTagEditor(true)} />
                 </div>
               </>
             )}
@@ -329,7 +329,7 @@ function ItemCardComponent({
         </div>
 
         <div className="mt-2 min-h-6">
-          <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} maxVisible={cardSizeScale < 0.9 ? 1 : undefined} />
+          <DraggableTagList item={item} onReorder={onSetTags} onRemoveTag={onRemoveTagFromItem} maxVisible={cardSizeScale < 0.9 ? 1 : undefined} onAdd={() => setShowTagEditor(true)} />
         </div>
 
         {/* Mod 插槽：footer */}
