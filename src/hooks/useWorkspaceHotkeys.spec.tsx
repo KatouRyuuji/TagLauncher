@@ -3,6 +3,7 @@
 // ============================================================================
 // F3 / Ctrl+F 聚焦搜索（输入中也可用）；修饰键组合（Ctrl+Shift+F3 等）不触发。
 // 备注弹窗叠在快速预览之上时，预览的方向键 / Enter 让路给输入框。
+// F2 对单个选中项打开重命名，失效对象只提示。
 // ============================================================================
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -12,8 +13,11 @@ import { useWorkspaceHotkeys } from "./useWorkspaceHotkeys";
 import { WORKSPACE_SEARCH_ID } from "../lib/workspaceChrome";
 import { useAppStore } from "../stores/appStore";
 import type { ItemWithTags } from "../types";
+import { showToast } from "../lib/toast";
 
-function setup(options: { items?: ItemWithTags[]; onLaunch?: (id: number) => void } = {}) {
+vi.mock("../lib/toast", () => ({ showToast: vi.fn() }));
+
+function setup(options: { items?: ItemWithTags[]; selectedItemIds?: number[]; onLaunch?: (id: number) => void } = {}) {
   const input = document.createElement("input");
   input.id = WORKSPACE_SEARCH_ID;
   document.body.appendChild(input);
@@ -23,7 +27,7 @@ function setup(options: { items?: ItemWithTags[]; onLaunch?: (id: number) => voi
       blocked: false,
       items: options.items ?? [],
       allItems: options.items ?? [],
-      selectedItemIds: [],
+      selectedItemIds: options.selectedItemIds ?? [],
       setSelectedItemIds: () => {},
       onLaunch: options.onLaunch ?? (() => {}),
       onRemoveSelected: () => {},
@@ -97,5 +101,34 @@ describe("useWorkspaceHotkeys · 快速预览上的备注弹窗", () => {
     useAppStore.setState({ noteEditorItemId: null });
     fireEvent.keyDown(window, { key: "Enter" });
     expect(onLaunch).toHaveBeenCalledWith(1);
+  });
+});
+
+describe("useWorkspaceHotkeys · F2 重命名", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    vi.mocked(showToast).mockClear();
+    useAppStore.setState({ previewItemId: null, noteEditorItemId: null, renameItemId: null });
+  });
+
+  it("单个选中项按 F2 打开重命名", () => {
+    setup({ items: [previewItem(1), previewItem(2)], selectedItemIds: [2] });
+    fireEvent.keyDown(window, { key: "F2" });
+    expect(useAppStore.getState().renameItemId).toBe(2);
+  });
+
+  it("多选或输入中按 F2 不触发", () => {
+    const input = setup({ items: [previewItem(1), previewItem(2)], selectedItemIds: [1, 2] });
+    fireEvent.keyDown(window, { key: "F2" });
+    input.focus();
+    fireEvent.keyDown(input, { key: "F2" });
+    expect(useAppStore.getState().renameItemId).toBeNull();
+  });
+
+  it("失效对象按 F2 只提示不打开", () => {
+    setup({ items: [{ ...previewItem(1), is_missing: true }], selectedItemIds: [1] });
+    fireEvent.keyDown(window, { key: "F2" });
+    expect(useAppStore.getState().renameItemId).toBeNull();
+    expect(showToast).toHaveBeenCalledWith("失效对象不能重命名", "warning");
   });
 });

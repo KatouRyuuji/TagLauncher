@@ -212,6 +212,7 @@ interface AppState {
   previewItemId: number | null;
   /** 备注编辑弹窗的目标对象（右键 / 快速预览共用，由 App 统一挂载） */
   noteEditorItemId: number | null;
+  renameItemId: number | null;
   /** 状态栏 / 右键 / 命令面板共用的失效项目复核弹窗 */
   missingReviewOpen: boolean;
   /** 状态栏即时反馈：正在打开、刷新结果、键盘跳转未命中。不持久化。 */
@@ -255,6 +256,7 @@ interface AppState {
   setShortcutsHelpOpen: (open: boolean) => void;
   setPreviewItemId: (id: number | null) => void;
   setNoteEditorItemId: (id: number | null) => void;
+  setRenameItemId: (id: number | null) => void;
   setMissingReviewOpen: (open: boolean) => void;
   /** 激活重启遮罩并自动重启；重启失败时遮罩转为"请手动重启" */
   beginRestart: (message: string) => void;
@@ -304,6 +306,7 @@ export const useAppStore = create<AppState>((set, get) => {
   shortcutsHelpOpen: false,
   previewItemId: null,
   noteEditorItemId: null,
+  renameItemId: null,
   activityNotice: null,
   missingReviewOpen: false,
   restartOverlay: null,
@@ -459,6 +462,7 @@ export const useAppStore = create<AppState>((set, get) => {
   setShortcutsHelpOpen: (open) => set((state) => state.shortcutsHelpOpen === open ? state : { shortcutsHelpOpen: open }),
   setPreviewItemId: (id) => set((state) => state.previewItemId === id ? state : { previewItemId: id }),
   setNoteEditorItemId: (id) => set((state) => state.noteEditorItemId === id ? state : { noteEditorItemId: id }),
+  setRenameItemId: (id) => set((state) => state.renameItemId === id ? state : { renameItemId: id }),
   setMissingReviewOpen: (open) => set((state) => state.missingReviewOpen === open ? state : { missingReviewOpen: open }),
   beginRestart: (message) => {
     set({ restartOverlay: { message, restartFailed: false } });

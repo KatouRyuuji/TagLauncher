@@ -295,6 +295,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `get_item_visual` | id: i64 | { path, icon_path } | 获取已登记对象图标，返回对象路径供异步请求核对 |
 | `toggle_favorite` | id: i64 | bool | 切换收藏状态 |
 | `set_item_note` | id: i64, note: String | () | 设置对象备注（去首尾空白，空白存 NULL，最多 2000 字） |
+| `rename_items` | renames: Vec\<{ id, newName }\>, dry_run: bool | RenameReport { renamed, failed } | 同目录改名，磁盘与库内同步；目标已存在时拒绝且不覆盖（同一对象只改大小写除外）；文件夹改名同步更新库内子对象路径前缀；dry_run 只校验并返回计划 |
 | `set_favorites` | ids: Vec\<i64\>, favorite: bool | () | 批量设置收藏状态（单事务，原子、幂等） |
 | `get_tags` | - | Vec\<Tag\> | 获取所有标签 |
 | `add_tag` | name, color | Tag | 新建标签 |

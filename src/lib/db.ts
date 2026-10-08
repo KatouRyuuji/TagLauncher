@@ -324,6 +324,35 @@ export async function setItemNote(id: number, note: string): Promise<void> {
   return invokeCmd("set_item_note", { id, note });
 }
 
+// ---- 重命名 ----
+
+export interface RenameRequest {
+  id: number;
+  newName: string;
+}
+
+export interface RenamedItem {
+  id: number;
+  oldPath: string;
+  newPath: string;
+}
+
+export interface RenameFailure {
+  id: number;
+  error: string;
+}
+
+/** 重命名结果：dryRun 时 renamed 为可执行的计划；名称未变的对象不出现在任一列表 */
+export interface RenameReport {
+  renamed: RenamedItem[];
+  failed: RenameFailure[];
+}
+
+/** 磁盘与库内同步改名（同目录、不覆盖已存在的目标）；dryRun 只校验并返回计划 */
+export async function renameItems(renames: RenameRequest[], dryRun: boolean): Promise<RenameReport> {
+  return invokeCmd("rename_items", { renames, dryRun });
+}
+
 // ---- 跨盘符兜底找回 ----
 
 /** 对失效对象按内容签名做跨盘找回，返回成功找回数量（扫描在后端锁外进行） */

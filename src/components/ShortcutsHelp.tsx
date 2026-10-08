@@ -47,6 +47,7 @@ const GROUPS: { title: string; icon: LucideIcon; note?: string; items: ShortcutI
       { keys: ["右键已选标签", "侧栏 Alt+单击"], action: "排除 / 取消排除标签" },
       { keys: "Shift + 方向键", action: "范围选择" },
       { keys: "Shift+F10 / 菜单键", action: "打开选中项菜单" },
+      { keys: "F2", action: "重命名选中项（磁盘与库内同步）" },
       { keys: "Delete", action: "从库中移除（可改删本地文件）" },
       { keys: "Ctrl+C", action: "复制选中路径（多项换行）" },
       { keys: "Ctrl+D", action: "收藏 / 取消收藏" },

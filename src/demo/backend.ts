@@ -388,6 +388,50 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       requireItem(num(args.id)).note = note || null;
       return null;
     }
+    case "rename_items": {
+      // 演示版按后端主要规则校验（空名、非法字符、结尾空格或点、目标已存在），不触碰磁盘
+      const report: { renamed: { id: number; oldPath: string; newPath: string }[]; failed: { id: number; error: string }[] } = { renamed: [], failed: [] };
+      for (const { id, newName } of (args.renames as { id: number; newName: string }[]) ?? []) {
+        const item = state.items.find((entry) => entry.id === id);
+        const name = str(newName);
+        const parent = item ? item.path.slice(0, item.path.length - basename(item.path).length) : "";
+        const newPath = parent + name;
+        const error = !item
+          ? `对象不存在（id=${id}）`
+          : item.is_missing
+          ? "失效对象不能重命名，请先处理失效"
+          : !name.trim()
+          ? "名称不能为空"
+          : /[<>:"/\\|?*\u0000-\u001f]/.test(name)
+          ? '名称不能包含 \\ / : * ? " < > | 或控制字符'
+          : /[ .]$/.test(name)
+          ? "名称不能以空格或点结尾"
+          : state.items.some((entry) => entry.id !== id && entry.path.toLowerCase() === newPath.toLowerCase())
+          ? `「${name}」已存在`
+          : null;
+        if (error || !item) {
+          report.failed.push({ id, error: error ?? "" });
+          continue;
+        }
+        if (name === item.name) continue;
+        report.renamed.push({ id, oldPath: item.path, newPath });
+        if (args.dryRun === true) continue;
+        if (item.type === "folder") {
+          const prefix = item.path.toLowerCase();
+          for (const child of state.items) {
+            const rest = child.path.slice(item.path.length);
+            if (child.id !== id && child.path.toLowerCase().startsWith(prefix) && /^[\\/]/.test(rest)) child.path = newPath + rest;
+          }
+        } else {
+          // 与后端 classify_by_extension 一致：去掉扩展名的文件归为 exe
+          const type = detectType(newPath);
+          item.type = type === "folder" ? "exe" : type;
+        }
+        item.path = newPath;
+        item.name = name;
+      }
+      return report;
+    }
     case "relocate_missing":
       // 演示集中没有可找回的盘符，模拟「未找到」
       return 0;

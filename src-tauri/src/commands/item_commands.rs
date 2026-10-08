@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::models::{Item, ItemWithTags};
-use crate::services::item_service;
+use crate::services::{item_service, rename_service};
 use tauri::{AppHandle, State};
 
 // 拖拽导入：每个文件的 get_identity(FFI) / compute_signature(读文件) / detect_type 是重 IO，
@@ -204,6 +204,17 @@ pub fn toggle_favorite(db: State<Database>, id: i64) -> Result<bool, String> {
 pub fn set_item_note(db: State<Database>, id: i64, note: String) -> Result<(), String> {
     let conn = db.get_conn();
     item_service::set_item_note(&conn, id, &note)
+}
+
+/// 重命名对象（磁盘真实名称与库内记录一起改）；dry_run 只校验不执行。
+/// 校验含文件系统 IO，用 (async) 放到工作线程；每个对象只在改磁盘与写库这一小段持锁。
+#[tauri::command(async)]
+pub fn rename_items(
+    db: State<Database>,
+    renames: Vec<rename_service::RenameRequest>,
+    dry_run: bool,
+) -> Result<rename_service::RenameReport, String> {
+    rename_service::rename_items(&db, renames, dry_run)
 }
 
 /// 批量设置收藏状态（单事务，批量收藏热路径）
