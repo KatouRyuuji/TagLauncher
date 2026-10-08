@@ -269,6 +269,8 @@ test("isSortMode / isTypeFilter 守卫", () => {
   assert.equal(isSortMode("smart"), true);
   assert.equal(isSortMode("name-desc"), true);
   assert.equal(isSortMode("added-desc"), true);
+  assert.equal(isSortMode("fs-created"), true);
+  assert.equal(isSortMode("fs-modified-asc"), true);
   assert.equal(isSortMode("nope"), false);
   assert.equal(isTypeFilter("script"), true);
   assert.equal(isTypeFilter("video"), true);
@@ -331,6 +333,22 @@ test("名称 / 添加时间带方向变体", () => {
   assert.deepEqual(sortItemsByMode(entries, "name-desc").map((entry) => entry.id), [1, 2]);
   assert.deepEqual(sortItemsByMode(entries, "added").map((entry) => entry.id), [1, 2]);
   assert.deepEqual(sortItemsByMode(entries, "added-desc").map((entry) => entry.id), [2, 1]);
+});
+
+test("文件创建 / 修改时间：双方向，取不到时间的始终排最后，相同时按名称", () => {
+  const base = { type: "exe", is_favorite: false, last_used_at: null, created_at: "2024-01-01" };
+  const entries = [
+    { ...base, id: 1, name: "delta", fs_created_at: null, fs_modified_at: 300 },
+    { ...base, id: 2, name: "beta", fs_created_at: 100, fs_modified_at: null },
+    { ...base, id: 3, name: "gamma", fs_created_at: 200, fs_modified_at: 100 },
+    { ...base, id: 4, name: "alpha", fs_created_at: 200, fs_modified_at: 100 },
+    { ...base, id: 5, name: "epsilon" },
+  ];
+  const ids = (mode: Parameters<typeof sortItemsByMode>[1]) => sortItemsByMode(entries, mode).map((entry) => entry.id);
+  assert.deepEqual(ids("fs-created"), [4, 3, 2, 1, 5]);
+  assert.deepEqual(ids("fs-created-asc"), [2, 4, 3, 1, 5]);
+  assert.deepEqual(ids("fs-modified"), [1, 4, 3, 2, 5]);
+  assert.deepEqual(ids("fs-modified-asc"), [4, 3, 1, 2, 5]);
 });
 
 await run("itemQuery");

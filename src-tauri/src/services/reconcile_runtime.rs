@@ -64,7 +64,9 @@ fn summarize(writes: &[ReconcileWrite], elapsed: Duration) -> ReconcileSummary {
             ReconcileWrite::MarkMissing { .. } => summary.marked_missing += 1,
             ReconcileWrite::Relocate { .. } => summary.relocated += 1,
             ReconcileWrite::ClearMissing { .. } => summary.cleared += 1,
-            ReconcileWrite::BackfillIdentity { .. } | ReconcileWrite::BackfillSignature { .. } => {}
+            ReconcileWrite::BackfillIdentity { .. }
+            | ReconcileWrite::BackfillSignature { .. }
+            | ReconcileWrite::FileTimes { .. } => {}
         }
     }
     summary

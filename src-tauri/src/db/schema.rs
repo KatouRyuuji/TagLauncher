@@ -32,7 +32,9 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             sig_size INTEGER,
             sig_head INTEGER,
             sig_tail INTEGER,
-            note TEXT
+            note TEXT,
+            fs_created_at INTEGER,
+            fs_modified_at INTEGER
         );
 
         -- 注意: idx_items_identity（身份唯一索引）不能放在此批处理中,

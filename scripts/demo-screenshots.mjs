@@ -491,7 +491,7 @@ async function featureTour(page) {
   await page.locator('button[aria-label="排序方式"]').click();
   await settle(300);
   await shot(page, "sort-menu-排序下拉");
-  await check("排序下拉展开 7 个选项（智能 + 名称/添加时间双方向 + 最近 + 类型）", (await page.locator('[role="listbox"] [role="option"]').count()) === 7);
+  await check("排序下拉展开 11 个选项（智能 + 名称/添加时间/创建时间/修改时间双方向 + 最近 + 类型）", (await page.locator('[role="listbox"] [role="option"]').count()) === 11);
   await page.locator('[role="option"]', { hasText: "名称 A→Z" }).click();
   await settle(500);
   await check("按名称排序后首项是工作文档（zh-CN 排序中文在前）",
