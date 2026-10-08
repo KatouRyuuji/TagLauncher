@@ -598,6 +598,16 @@ export function useItems() {
     });
   }, [refreshItemById]);
 
+  // 文件夹改名会同步改写库内子对象路径，成功后整体重载
+  const renameItem = useCallback(async (id: number, newName: string) => {
+    await withErrorToast("重命名", async () => {
+      const report = await db.renameItems([{ id, newName }], false);
+      const failure = report.failed[0];
+      if (failure) throw new Error(failure.error);
+      if (report.renamed.length > 0) await loadAll();
+    });
+  }, [loadAll]);
+
   const toggleFavorite = useCallback(async (id: number) => {
     await withErrorToast("切换收藏", async () => {
       await db.toggleFavorite(id);
@@ -715,6 +725,7 @@ export function useItems() {
     setItemTags,
     setManyItemTags,
     setItemNote,
+    renameItem,
     launchItem,
     toggleFavorite,
     setFavorites,

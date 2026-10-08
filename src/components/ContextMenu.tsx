@@ -10,6 +10,7 @@ import {
   FolderOpen,
   ImagePlus,
   ImageOff,
+  PencilLine,
   Radar,
   Play,
   Star,
@@ -520,6 +521,16 @@ export function ContextMenu({
             label="编辑备注…"
             onClick={() => {
               useAppStore.getState().setNoteEditorItemId(item.id);
+              onClose();
+            }}
+          />
+        )}
+        {!multi && !item.is_missing && (
+          <MenuItem
+            icon={PencilLine}
+            label="重命名…"
+            onClick={() => {
+              useAppStore.getState().setRenameItemId(item.id);
               onClose();
             }}
           />

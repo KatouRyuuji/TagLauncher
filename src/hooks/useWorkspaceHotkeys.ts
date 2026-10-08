@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { copyText } from "../lib/clipboard";
+import { showToast } from "../lib/toast";
 import {
   formatPathCopy,
   isTypingTarget,
@@ -276,6 +277,16 @@ export function useWorkspaceHotkeys({
           event.preventDefault();
           openItemContextMenu(item.id);
         }
+        return;
+      }
+
+      if (!ctrl && !event.shiftKey && event.key === "F2") {
+        if (ctx.selectedItemIds.length !== 1) return;
+        const item = pickSelectedItem(ctx.items, ctx.selectedItemIds);
+        if (!item) return;
+        event.preventDefault();
+        if (item.is_missing) showToast("失效对象不能重命名", "warning");
+        else useAppStore.getState().setRenameItemId(item.id);
         return;
       }
 

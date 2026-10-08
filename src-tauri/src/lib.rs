@@ -278,6 +278,7 @@ pub fn run() {
             // 收藏
             toggle_favorite,
             set_item_note,
+            rename_items,
             set_favorites,
             // 跨盘符兜底找回
             relocate_missing,

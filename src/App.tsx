@@ -12,6 +12,7 @@ import { InternalDragGhost, ItemDropActions } from "./components/InternalDragOve
 import { BatchSelectionToolbar } from "./components/BatchSelectionToolbar";
 import { RemoveFromAppConfirmDialog } from "./components/RemoveFromAppConfirmDialog";
 import { NoteEditorDialog } from "./components/NoteEditorDialog";
+import { RenameDialog } from "./components/RenameDialog";
 import { AddFolderImportDialog } from "./components/AddFolderImportDialog";
 import { AiTaggingModal } from "./components/AiTaggingModal";
 import { StatusBar } from "./components/StatusBar";
@@ -68,6 +69,7 @@ function App() {
     setItemTags,
     setManyItemTags,
     setItemNote,
+    renameItem,
     launchItem,
     toggleFavorite,
     setFavorites,
@@ -89,6 +91,8 @@ function App() {
   const previewItemId = useAppStore((state) => state.previewItemId);
   const noteEditorItemId = useAppStore((state) => state.noteEditorItemId);
   const noteEditorItem = noteEditorItemId === null ? undefined : allItems.find((item) => item.id === noteEditorItemId);
+  const renameItemId = useAppStore((state) => state.renameItemId);
+  const renameTarget = renameItemId === null ? undefined : allItems.find((item) => item.id === renameItemId);
   const restartOverlay = useAppStore((state) => state.restartOverlay);
   const clearWorkspaceFilters = useAppStore((state) => state.clearWorkspaceFilters);
   const cabinets = useAppStore((state) => state.cabinets);
@@ -526,6 +530,14 @@ function App() {
           item={noteEditorItem}
           onSave={(note) => setItemNote(noteEditorItem.id, note)}
           onClose={() => useAppStore.getState().setNoteEditorItemId(null)}
+        />
+      )}
+      {renameTarget && (
+        <RenameDialog
+          key={renameTarget.id}
+          item={renameTarget}
+          onSave={(newName) => renameItem(renameTarget.id, newName)}
+          onClose={() => useAppStore.getState().setRenameItemId(null)}
         />
       )}
       <Suspense fallback={null}>
