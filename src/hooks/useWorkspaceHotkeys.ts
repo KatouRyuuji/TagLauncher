@@ -281,7 +281,11 @@ export function useWorkspaceHotkeys({
       }
 
       if (!ctrl && !event.shiftKey && event.key === "F2") {
-        if (ctx.selectedItemIds.length !== 1) return;
+        if (ctx.selectedItemIds.length > 1) {
+          event.preventDefault();
+          useAppStore.getState().setBatchRenameOpen(true);
+          return;
+        }
         const item = pickSelectedItem(ctx.items, ctx.selectedItemIds);
         if (!item) return;
         event.preventDefault();

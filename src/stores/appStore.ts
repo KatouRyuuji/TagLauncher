@@ -213,6 +213,10 @@ interface AppState {
   /** 备注编辑弹窗的目标对象（右键 / 快速预览共用，由 App 统一挂载） */
   noteEditorItemId: number | null;
   renameItemId: number | null;
+  /** 批量重命名弹窗是否打开（目标为打开时的选中项，由 App 按显示顺序传入） */
+  batchRenameOpen: boolean;
+  /** 最近一次批量重命名成功项的原名，供撤销使用；仅存内存，重启后清空 */
+  lastBatchRename: Array<{ id: number; oldName: string }> | null;
   /** 状态栏 / 右键 / 命令面板共用的失效项目复核弹窗 */
   missingReviewOpen: boolean;
   /** 状态栏即时反馈：正在打开、刷新结果、键盘跳转未命中。不持久化。 */
@@ -257,6 +261,8 @@ interface AppState {
   setPreviewItemId: (id: number | null) => void;
   setNoteEditorItemId: (id: number | null) => void;
   setRenameItemId: (id: number | null) => void;
+  setBatchRenameOpen: (open: boolean) => void;
+  setLastBatchRename: (entries: Array<{ id: number; oldName: string }> | null) => void;
   setMissingReviewOpen: (open: boolean) => void;
   /** 激活重启遮罩并自动重启；重启失败时遮罩转为"请手动重启" */
   beginRestart: (message: string) => void;
@@ -307,6 +313,8 @@ export const useAppStore = create<AppState>((set, get) => {
   previewItemId: null,
   noteEditorItemId: null,
   renameItemId: null,
+  batchRenameOpen: false,
+  lastBatchRename: null,
   activityNotice: null,
   missingReviewOpen: false,
   restartOverlay: null,
@@ -463,6 +471,8 @@ export const useAppStore = create<AppState>((set, get) => {
   setPreviewItemId: (id) => set((state) => state.previewItemId === id ? state : { previewItemId: id }),
   setNoteEditorItemId: (id) => set((state) => state.noteEditorItemId === id ? state : { noteEditorItemId: id }),
   setRenameItemId: (id) => set((state) => state.renameItemId === id ? state : { renameItemId: id }),
+  setBatchRenameOpen: (open) => set((state) => state.batchRenameOpen === open ? state : { batchRenameOpen: open }),
+  setLastBatchRename: (entries) => set({ lastBatchRename: entries && entries.length > 0 ? entries : null }),
   setMissingReviewOpen: (open) => set((state) => state.missingReviewOpen === open ? state : { missingReviewOpen: open }),
   beginRestart: (message) => {
     set({ restartOverlay: { message, restartFailed: false } });

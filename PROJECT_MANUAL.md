@@ -15,7 +15,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - 标签系统（图状层级，DAG）：标签是集合、可多父继承构成有向无环图；选中父标签筛选时并入其所有后代标签的对象。四类筛选（标签/文件柜/收藏夹/最近使用）互斥；标签多选取交集（正选 AND），顶部筛选条支持右键反选（灰色删除线态，排除含该标签的对象，正反选互斥，反选同样展开后代闭包）；提供关系编辑器与独立图谱视图。
 - 工作台查询：类型筛选与五种排序在 `src/lib/itemQuery.ts` 纯函数完成，搜索命中顺序不被排序打乱；视图偏好（网格/列表、搜索模式、排序、类型）写入 localStorage。全屏弹层与选中锚点见 `workspaceChrome.ts`。
 - 键盘优先：`/` 聚焦搜索，Ctrl+K 命令面板，空格预览（方向键/Home/End 切换），Enter 启动；网格方向键按列跳转；Ctrl+C 复制选中路径、Ctrl+D 收藏。
-- 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量收藏/取消收藏（与 Ctrl+D 同逻辑：有未收藏项则全部收藏）、复制路径、批量删除。框选默认正选（命中集替换选中集），Alt+框选为减选（虚线灰框，从既有选中集扣除命中项，结算纯函数 `applyMarqueeSelection`）。
+- 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量收藏/取消收藏（与 Ctrl+D 同逻辑：有未收藏项则全部收藏）、批量重命名、复制路径、批量删除。框选默认正选（命中集替换选中集），Alt+框选为减选（虚线灰框，从既有选中集扣除命中项，结算纯函数 `applyMarqueeSelection`）。
 - 失效对象可感知恢复：库内存在失效对象（文件丢失/跨盘移动）时，底部状态栏显示警示徽标，点击即手动触发按内容签名的跨盘找回扫描（含扫描中状态与「未找到」反馈）；自动兜底找回仍在刷新链路后台执行。
 - 加载与通知体验：首屏按当前视图渲染与真实布局同构的骨架屏（`WorkspaceSkeleton`，reduced-motion 下静止）；Toast 悬停暂停自动关闭、错误/警告驻留更久（7s/5s）。
 - 视图虚拟化：网格与列表视图均经 `@tanstack/react-virtual` 虚拟化（measureElement 动态测高），仅渲染可见项，大库滚动流畅、内存可控。
@@ -118,6 +118,7 @@ tag-launcher/
 │   │   ├── db.ts                 # Tauri invoke 封装层
 │   │   ├── search.ts             # 自研搜索引擎（前缀/拼音/低容错/英文缩写/同义词/表达式）
 │   │   ├── itemQuery.ts          # 排序 / 类型筛选 / 键盘选择 / 点选
+│   │   ├── batchRename.ts        # 批量重命名规则纯函数（查找替换 / 模板）
 │   │   ├── workspaceChrome.ts    # 工作台遮罩、选中锚点、网格列数
 │   │   └── synonyms.ts           # 同义词字典加载
 │   ├── components/
@@ -143,7 +144,9 @@ tag-launcher/
 │   │   ├── ItemDragHandle.tsx    # 对象拖拽手柄
 │   │   ├── FavoriteStar.tsx      # 收藏星标
 │   │   ├── SelectionCanvas.tsx   # 框选画布（几何坐标全量命中）
-│   │   ├── BatchSelectionToolbar.tsx # 批量操作工具条（打标/入柜/收藏/复制路径/移除）
+│   │   ├── BatchSelectionToolbar.tsx # 批量操作工具条（打标/入柜/收藏/重命名/复制路径/移除）
+│   │   ├── BatchRenameDialog.tsx    # 批量重命名（规则预览、dry_run、结果摘要与撤销）
+│   │   ├── RenameDialog.tsx         # 单个对象重命名弹窗
 │   │   ├── WorkspaceSkeleton.tsx # 首屏骨架屏（与真实布局同构）
 │   │   ├── WorkspaceEmptyState.tsx # 空态引导（空库/搜索无结果/筛选无结果三态）
 │   │   ├── InternalDragOverlays.tsx # 内部拖拽悬停落点提示层
@@ -295,7 +298,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `get_item_visual` | id: i64 | { path, icon_path } | 获取已登记对象图标，返回对象路径供异步请求核对 |
 | `toggle_favorite` | id: i64 | bool | 切换收藏状态 |
 | `set_item_note` | id: i64, note: String | () | 设置对象备注（去首尾空白，空白存 NULL，最多 2000 字） |
-| `rename_items` | renames: Vec\<{ id, newName }\>, dry_run: bool | RenameReport { renamed, failed } | 同目录改名，磁盘与库内同步；目标已存在时拒绝且不覆盖（同一对象只改大小写除外）；文件夹改名同步更新库内子对象路径前缀；dry_run 只校验并返回计划 |
+| `rename_items` | renames: Vec\<{ id, newName }\>, dry_run: bool | RenameReport { renamed, failed } | 同目录改名，磁盘与库内同步；目标已存在时拒绝且不覆盖（同一对象只改大小写除外）；同批目标正好是另一对象原名时按依赖顺序执行（互换、链式、成环经临时名）；文件夹改名同步更新库内子对象路径前缀；deep-first 排序；dry_run 只校验并返回计划 |
 | `set_favorites` | ids: Vec\<i64\>, favorite: bool | () | 批量设置收藏状态（单事务，原子、幂等） |
 | `get_tags` | - | Vec\<Tag\> | 获取所有标签 |
 | `add_tag` | name, color | Tag | 新建标签 |

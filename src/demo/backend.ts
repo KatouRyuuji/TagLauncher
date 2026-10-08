@@ -389,14 +389,17 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return null;
     }
     case "rename_items": {
-      // 演示版按后端主要规则校验（空名、非法字符、结尾空格或点、目标已存在），不触碰磁盘
+      // 演示版按后端主要规则校验，不触碰磁盘；目标正好是同批另一对象的原名时允许（互换、链式、成环），
+      // 内存中一次性计算所有新路径，文件夹改名时其下对象的路径前缀随之替换。
       const report: { renamed: { id: number; oldPath: string; newPath: string }[]; failed: { id: number; error: string }[] } = { renamed: [], failed: [] };
+      let planned: { item: DemoItemSeed; newPath: string; newName: string; occupied: boolean }[] = [];
+      const targets = new Set<string>();
       for (const { id, newName } of (args.renames as { id: number; newName: string }[]) ?? []) {
         const item = state.items.find((entry) => entry.id === id);
         const name = str(newName);
         const parent = item ? item.path.slice(0, item.path.length - basename(item.path).length) : "";
         const newPath = parent + name;
-        const error = !item
+        let error = !item
           ? `对象不存在（id=${id}）`
           : item.is_missing
           ? "失效对象不能重命名，请先处理失效"
@@ -406,29 +409,55 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
           ? '名称不能包含 \\ / : * ? " < > | 或控制字符'
           : /[ .]$/.test(name)
           ? "名称不能以空格或点结尾"
-          : state.items.some((entry) => entry.id !== id && entry.path.toLowerCase() === newPath.toLowerCase())
-          ? `「${name}」已存在`
           : null;
+        if (!error && item && name !== item.name) {
+          if (targets.has(newPath.toLowerCase())) error = `与同批其他对象重名：「${name}」`;
+          else targets.add(newPath.toLowerCase());
+        }
         if (error || !item) {
           report.failed.push({ id, error: error ?? "" });
           continue;
         }
         if (name === item.name) continue;
-        report.renamed.push({ id, oldPath: item.path, newPath });
-        if (args.dryRun === true) continue;
-        if (item.type === "folder") {
-          const prefix = item.path.toLowerCase();
-          for (const child of state.items) {
-            const rest = child.path.slice(item.path.length);
-            if (child.id !== id && child.path.toLowerCase().startsWith(prefix) && /^[\\/]/.test(rest)) child.path = newPath + rest;
+        const occupied = state.items.some((entry) => entry.id !== id && entry.path.toLowerCase() === newPath.toLowerCase());
+        planned.push({ item, newPath, newName: name, occupied });
+      }
+      // 目标被占用且占用者不是同批会改走的对象时判为已存在；判定会连锁，反复解析直到稳定
+      for (;;) {
+        const sources = new Set(planned.map((entry) => entry.item.path.toLowerCase()));
+        const blocked = planned.filter((entry) => entry.occupied && !sources.has(entry.newPath.toLowerCase()));
+        if (blocked.length === 0) break;
+        for (const entry of blocked) report.failed.push({ id: entry.item.id, error: `「${entry.newName}」已存在` });
+        planned = planned.filter((entry) => !blocked.includes(entry));
+      }
+      for (const entry of planned) report.renamed.push({ id: entry.item.id, oldPath: entry.item.path, newPath: entry.newPath });
+      if (args.dryRun === true) return report;
+      // 每个对象取最长的、已改名的祖先（或自身）路径前缀替换
+      const moves = planned.map((entry) => ({ from: entry.item.path, to: entry.newPath }));
+      const nextPaths = state.items.map((entry) => {
+        let path = entry.path;
+        let matched = -1;
+        for (const move of moves) {
+          const lower = entry.path.toLowerCase();
+          const prefix = move.from.toLowerCase();
+          const hit = lower === prefix || (lower.startsWith(prefix) && /^[\\/]/.test(entry.path.slice(move.from.length)));
+          if (hit && move.from.length > matched) {
+            matched = move.from.length;
+            path = move.to + entry.path.slice(move.from.length);
           }
-        } else {
-          // 与后端 classify_by_extension 一致：去掉扩展名的文件归为 exe
-          const type = detectType(newPath);
-          item.type = type === "folder" ? "exe" : type;
         }
-        item.path = newPath;
-        item.name = name;
+        return path;
+      });
+      state.items.forEach((entry, index) => {
+        entry.path = nextPaths[index];
+      });
+      for (const entry of planned) {
+        entry.item.name = entry.newName;
+        if (entry.item.type !== "folder") {
+          // 与后端 classify_by_extension 一致：去掉扩展名的文件归为 exe
+          const type = detectType(entry.newPath);
+          entry.item.type = type === "folder" ? "exe" : type;
+        }
       }
       return report;
     }

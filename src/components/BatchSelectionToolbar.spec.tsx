@@ -5,7 +5,7 @@
 // 并以 aria-busy + spinner 提供"正在执行"的可感知反馈；完成后恢复可用。
 // ============================================================================
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BatchSelectionToolbar } from "./BatchSelectionToolbar";
@@ -35,6 +35,7 @@ function renderToolbar(overrides: Partial<React.ComponentProps<typeof BatchSelec
       onRemoveFromApp={async () => {}}
       favoriteLabel="收藏"
       onToggleFavorite={() => {}}
+      onRename={() => {}}
       onCopyPaths={() => {}}
       onSelectAll={() => {}}
       onClearSelection={() => {}}
@@ -54,6 +55,15 @@ describe("BatchSelectionToolbar 覆盖层让位", () => {
     expect(screen.getByTestId("batch-toolbar")).toBeInTheDocument();
     expect(screen.getByTestId("batch-toolbar").textContent).toContain("11");
     expect(screen.getByTestId("batch-toolbar").textContent).toContain("已选中");
+  });
+});
+
+describe("BatchSelectionToolbar 重命名", () => {
+  it("点击「重命名」交给 onRename 按选中数量分流", async () => {
+    const onRename = vi.fn();
+    renderToolbar({ onRename });
+    await userEvent.click(screen.getByRole("button", { name: "重命名" }));
+    expect(onRename).toHaveBeenCalledTimes(1);
   });
 });
 

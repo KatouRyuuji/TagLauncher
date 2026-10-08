@@ -13,6 +13,7 @@ import { BatchSelectionToolbar } from "./components/BatchSelectionToolbar";
 import { RemoveFromAppConfirmDialog } from "./components/RemoveFromAppConfirmDialog";
 import { NoteEditorDialog } from "./components/NoteEditorDialog";
 import { RenameDialog } from "./components/RenameDialog";
+import { BatchRenameDialog } from "./components/BatchRenameDialog";
 import { AddFolderImportDialog } from "./components/AddFolderImportDialog";
 import { AiTaggingModal } from "./components/AiTaggingModal";
 import { StatusBar } from "./components/StatusBar";
@@ -45,6 +46,7 @@ import { initModRuntime } from "./lib/modRuntime";
 import { ToastContainer } from "./components/ToastContainer";
 import { FloatingPanels } from "./components/FloatingPanels";
 import * as db from "./lib/db";
+import { showToast } from "./lib/toast";
 
 const WELCOME_HIDE_KEY = "taglauncher.hide_welcome_modal";
 
@@ -70,6 +72,8 @@ function App() {
     setManyItemTags,
     setItemNote,
     renameItem,
+    batchRename,
+    undoBatchRename,
     launchItem,
     toggleFavorite,
     setFavorites,
@@ -93,6 +97,8 @@ function App() {
   const noteEditorItem = noteEditorItemId === null ? undefined : allItems.find((item) => item.id === noteEditorItemId);
   const renameItemId = useAppStore((state) => state.renameItemId);
   const renameTarget = renameItemId === null ? undefined : allItems.find((item) => item.id === renameItemId);
+  const batchRenameOpen = useAppStore((state) => state.batchRenameOpen);
+  const hasBatchRenameUndo = useAppStore((state) => state.lastBatchRename !== null);
   const restartOverlay = useAppStore((state) => state.restartOverlay);
   const clearWorkspaceFilters = useAppStore((state) => state.clearWorkspaceFilters);
   const cabinets = useAppStore((state) => state.cabinets);
@@ -468,6 +474,12 @@ function App() {
           onRemoveFromApp={requestBatchRemoveFromApp}
           favoriteLabel={selectedNeedsFavorite ? "收藏" : "取消收藏"}
           onToggleFavorite={handleToggleSelectedFavorite}
+          onRename={() => {
+            const store = useAppStore.getState();
+            if (selectedItems.length > 1) store.setBatchRenameOpen(true);
+            else if (selectedItems[0]?.is_missing) showToast("失效对象不能重命名", "warning");
+            else if (selectedItems[0]) store.setRenameItemId(selectedItems[0].id);
+          }}
           onCopyPaths={() => {
             const idSet = new Set(selectedItemIds);
             const payload = formatPathCopy(
@@ -513,6 +525,7 @@ function App() {
           onRefresh={handleManualRefresh}
           onOpenSettings={() => setShowSettings(true)}
           onOpenAbout={handleOpenAbout}
+          onUndoBatchRename={hasBatchRenameUndo ? () => { void undoBatchRename().catch(() => {}); } : undefined}
         />}
       </Suspense>
       <Suspense fallback={null}>
@@ -538,6 +551,14 @@ function App() {
           item={renameTarget}
           onSave={(newName) => renameItem(renameTarget.id, newName)}
           onClose={() => useAppStore.getState().setRenameItemId(null)}
+        />
+      )}
+      {batchRenameOpen && (
+        <BatchRenameDialog
+          items={selectedItems}
+          onExecute={batchRename}
+          onUndo={undoBatchRename}
+          onClose={() => useAppStore.getState().setBatchRenameOpen(false)}
         />
       )}
       <Suspense fallback={null}>

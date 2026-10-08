@@ -608,6 +608,26 @@ export function useItems() {
     });
   }, [loadAll]);
 
+  /** 批量重命名：逐项执行，返回成功与失败明细；有成功项时重新加载。 */
+  const batchRename = useCallback(async (renames: db.RenameRequest[]) => {
+    return withErrorToast("批量重命名", async () => {
+      const report = await db.renameItems(renames, false);
+      if (report.renamed.length > 0) await loadAll();
+      return report;
+    });
+  }, [loadAll]);
+
+  /** 撤销最近一次批量重命名：把成功项改回原名；未能改回的项保留在撤销记录里，可再次撤销。 */
+  const undoBatchRename = useCallback(async () => {
+    const { lastBatchRename, setLastBatchRename } = useAppStore.getState();
+    if (!lastBatchRename) return;
+    const report = await batchRename(lastBatchRename.map(({ id, oldName }) => ({ id, newName: oldName })));
+    const failedIds = new Set(report.failed.map((failure) => failure.id));
+    setLastBatchRename(lastBatchRename.filter((entry) => failedIds.has(entry.id)));
+    if (report.failed.length === 0) showToast(`已撤销批量重命名（${report.renamed.length} 项）`, "success");
+    else showToast(`撤销完成 ${report.renamed.length} 项，${report.failed.length} 项未能改回：${report.failed[0].error}`, "warning");
+  }, [batchRename]);
+
   const toggleFavorite = useCallback(async (id: number) => {
     await withErrorToast("切换收藏", async () => {
       await db.toggleFavorite(id);
@@ -726,6 +746,8 @@ export function useItems() {
     setManyItemTags,
     setItemNote,
     renameItem,
+    batchRename,
+    undoBatchRename,
     launchItem,
     toggleFavorite,
     setFavorites,

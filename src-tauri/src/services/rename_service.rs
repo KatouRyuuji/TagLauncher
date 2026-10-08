@@ -1,13 +1,18 @@
 //! 对象重命名：同时修改磁盘上的真实名称与库内记录（路径、名称、类型）。
 //!
-//! 流程：短锁读取对象 → 锁外校验名称与目标冲突（`dry_run` 到此返回）→ 逐个对象在同一段短锁内
-//! 改磁盘并写库。改磁盘用 `MoveFileExW` 且不带 `MOVEFILE_REPLACE_EXISTING`，由系统保证不覆盖已有文件；
-//! 写库失败时把磁盘名改回。改磁盘与写库处于同一段锁内，对账与监视补扫无法插入两者之间。
+//! 流程：短锁读取对象 → 锁外校验名称与目标冲突（`dry_run` 到此返回）→ 逐步在各自的短锁内改磁盘并写库。
+//! 改磁盘用 `MoveFileExW` 且不带 `MOVEFILE_REPLACE_EXISTING`，由系统保证不覆盖已有文件；写库失败时把磁盘名改回。
+//! 改磁盘与写库处于同一段锁内，对账与监视补扫无法插入两者之间。
+//!
+//! 同批内目标正好是另一对象原名时（互换、链式改名），按依赖顺序执行：链从末端起依次改名；
+//! 成环时先把其中一个对象改为同目录临时名腾出原名，其余对象依次改名后再改为最终名，
+//! 环中任一步失败则把已完成的步骤按相反顺序改回原名。各组按路径从深到浅执行，同批的子对象先于所在文件夹改名。
 
 use crate::db::Database;
 use crate::services::{file_identity, item_service};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 use std::time::Duration;
@@ -81,13 +86,36 @@ pub fn validate_file_name(name: &str) -> Result<(), String> {
 }
 
 /// 已通过校验、待执行的单个改名。
+#[derive(Clone)]
 struct Planned {
     id: i64,
     old_path: String,
     new_path: String,
     new_name: String,
-    new_type: &'static str,
+    old_type: String,
+    new_type: String,
     is_folder: bool,
+    /// 目标已被另一个对象占用；只有占用者是同批中会先改走的对象时才可执行。
+    target_occupied: bool,
+}
+
+impl Planned {
+    /// 同一对象的另一步改名（环中转的临时名、改回原名）。
+    fn step(&self, old_path: &str, new_path: &str, new_type: &str) -> Planned {
+        let new_name = split_parent(new_path).map(|(_, n)| n).unwrap_or(new_path).to_string();
+        Planned {
+            old_path: old_path.to_string(),
+            new_path: new_path.to_string(),
+            new_name,
+            new_type: new_type.to_string(),
+            target_occupied: false,
+            ..self.clone()
+        }
+    }
+
+    fn depth(&self) -> usize {
+        self.old_path.matches(['\\', '/']).count()
+    }
 }
 
 /// 对象路径去掉末尾分隔符后，拆成（父目录前缀含分隔符, 当前名称）。
@@ -121,17 +149,13 @@ fn plan_one(
     if std::fs::symlink_metadata(&old_path).is_err() {
         return Err("找不到原文件，可能已被移动或删除".to_string());
     }
-    // 目标已存在时只放行「同一个对象只改大小写」
-    if std::fs::symlink_metadata(&new_path).is_ok() {
-        let same_object = old_path.to_lowercase() == new_path.to_lowercase()
+    // 目标已存在且不是「同一个对象只改大小写」时记为被占用，由批内依赖解析决定能否执行
+    let target_occupied = std::fs::symlink_metadata(&new_path).is_ok()
+        && !(old_path.to_lowercase() == new_path.to_lowercase()
             && match (file_identity::get_identity(&old_path), file_identity::get_identity(&new_path)) {
                 (Some(a), Some(b)) => a == b,
                 _ => true,
-            };
-        if !same_object {
-            return Err(format!("「{}」已存在", new_name));
-        }
-    }
+            });
     let is_folder = item_type == "folder";
     let new_type = if is_folder {
         "folder"
@@ -144,8 +168,10 @@ fn plan_one(
         old_path,
         new_path,
         new_name: new_name.to_string(),
-        new_type,
+        old_type: item_type.to_string(),
+        new_type: new_type.to_string(),
         is_folder,
+        target_occupied,
     }))
 }
 
@@ -235,6 +261,184 @@ fn execute_one(db: &Database, p: &Planned) -> Result<(), String> {
     }
 }
 
+/// 目标被占用的对象：占用者是同批可执行对象时记下依赖（占用者须先改走），否则判为已存在。
+/// 判为已存在会让依赖它的对象失去依赖，因此反复解析直到稳定。
+fn resolve_dependencies(mut planned: Vec<Planned>, report: &mut RenameReport) -> (Vec<Planned>, Vec<Option<usize>>) {
+    loop {
+        let sources: HashMap<String, usize> =
+            planned.iter().enumerate().map(|(i, p)| (p.old_path.to_lowercase(), i)).collect();
+        let deps: Vec<Option<usize>> = planned
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                p.target_occupied
+                    .then(|| sources.get(&p.new_path.to_lowercase()).copied().filter(|&j| j != i))
+                    .flatten()
+            })
+            .collect();
+        let blocked: Vec<usize> = (0..planned.len()).filter(|&i| planned[i].target_occupied && deps[i].is_none()).collect();
+        if blocked.is_empty() {
+            return (planned, deps);
+        }
+        for i in blocked.into_iter().rev() {
+            let p = planned.remove(i);
+            report.failed.push(RenameFailure { id: p.id, error: format!("「{}」已存在", p.new_name) });
+        }
+    }
+}
+
+/// 执行分组。每个对象至多依赖一个对象、至多被一个对象依赖，依赖关系只构成互不相交的链与环。
+enum Group {
+    /// 按执行顺序排列：首个对象无依赖，其后每个对象依赖前一个。
+    Chain(Vec<usize>),
+    /// 首个对象先改为临时名，其后按执行顺序排列，最后首个对象由临时名改为最终名。
+    Cycle(Vec<usize>),
+}
+
+fn group_steps(planned: &[Planned], deps: &[Option<usize>]) -> Vec<Group> {
+    let n = planned.len();
+    let mut dependent = vec![None; n];
+    for (i, d) in deps.iter().enumerate() {
+        if let Some(j) = *d {
+            dependent[j] = Some(i);
+        }
+    }
+    let mut visited = vec![false; n];
+    let follow = |start: usize, visited: &mut Vec<bool>| {
+        let mut order = vec![start];
+        visited[start] = true;
+        let mut cur = dependent[start];
+        while let Some(i) = cur.filter(|&i| !visited[i]) {
+            visited[i] = true;
+            order.push(i);
+            cur = dependent[i];
+        }
+        order
+    };
+    let mut groups: Vec<(usize, Group)> = Vec::new();
+    for i in 0..n {
+        if deps[i].is_none() {
+            groups.push((planned[i].depth(), Group::Chain(follow(i, &mut visited))));
+        }
+    }
+    for i in 0..n {
+        if !visited[i] {
+            groups.push((planned[i].depth(), Group::Cycle(follow(i, &mut visited))));
+        }
+    }
+    groups.sort_by_key(|(depth, _)| std::cmp::Reverse(*depth));
+    groups.into_iter().map(|(_, g)| g).collect()
+}
+
+/// 环中转用的临时名：同目录下 `原名.tl-<id>.tmp`，已存在时追加序号，超长时改用 `tl-<id>.tmp`。
+fn temp_path(p: &Planned) -> Option<String> {
+    let (parent, current) = split_parent(&p.old_path)?;
+    (0..100)
+        .map(|n| {
+            let suffix = if n == 0 { String::new() } else { format!("-{}", n) };
+            let name = format!("{}.tl-{}{}.tmp", current, p.id, suffix);
+            let name = if name.encode_utf16().count() > NAME_MAX_UNITS { format!("tl-{}{}.tmp", p.id, suffix) } else { name };
+            format!("{}{}", parent, name)
+        })
+        .find(|path| std::fs::symlink_metadata(path).is_err())
+}
+
+fn push_renamed(report: &mut RenameReport, p: &Planned) {
+    report.renamed.push(RenamedItem { id: p.id, old_path: p.old_path.clone(), new_path: p.new_path.clone() });
+}
+
+fn push_failed(report: &mut RenameReport, p: &Planned, error: String) {
+    report.failed.push(RenameFailure { id: p.id, error });
+}
+
+fn execute_chain(db: &Database, planned: &[Planned], order: &[usize], report: &mut RenameReport) {
+    let mut blocked = false;
+    for &i in order {
+        let p = &planned[i];
+        if blocked {
+            push_failed(report, p, format!("「{}」被同批中改名失败的对象占用，未执行", p.new_name));
+            continue;
+        }
+        match execute_one(db, p) {
+            Ok(()) => push_renamed(report, p),
+            Err(e) => {
+                blocked = true;
+                push_failed(report, p, e);
+            }
+        }
+    }
+}
+
+fn execute_cycle(db: &Database, planned: &[Planned], order: &[usize], report: &mut RenameReport) {
+    const NOT_RUN: &str = "同批交换中的其他对象改名失败，未执行";
+    const ROLLED_BACK: &str = "同批交换中的其他对象改名失败，已改回原名";
+    let first = &planned[order[0]];
+    let rest = &order[1..];
+
+    let to_temp = match temp_path(first) {
+        Some(temp) => first.step(&first.old_path, &temp, &first.old_type),
+        None => {
+            push_failed(report, first, "无法生成交换用的临时名称".to_string());
+            rest.iter().for_each(|&i| push_failed(report, &planned[i], NOT_RUN.to_string()));
+            return;
+        }
+    };
+    if let Err(e) = execute_one(db, &to_temp) {
+        push_failed(report, first, e);
+        rest.iter().for_each(|&i| push_failed(report, &planned[i], NOT_RUN.to_string()));
+        return;
+    }
+
+    let mut done = 0;
+    let mut failure: Option<(usize, String)> = None;
+    for (k, &i) in rest.iter().enumerate() {
+        match execute_one(db, &planned[i]) {
+            Ok(()) => done += 1,
+            Err(e) => {
+                failure = Some((k, e));
+                break;
+            }
+        }
+    }
+    let first_error = if failure.is_none() {
+        match execute_one(db, &first.step(&to_temp.new_path, &first.new_path, &first.new_type)) {
+            Ok(()) => {
+                push_renamed(report, first);
+                rest.iter().for_each(|&i| push_renamed(report, &planned[i]));
+                return;
+            }
+            Err(e) => Some(e),
+        }
+    } else {
+        None
+    };
+
+    // 失败：记录失败项与未执行项，再把已完成的步骤按相反顺序改回，最后把首个对象由临时名改回原名
+    if let Some((k, e)) = failure {
+        push_failed(report, &planned[rest[k]], e);
+        rest[k + 1..].iter().for_each(|&i| push_failed(report, &planned[i], NOT_RUN.to_string()));
+    }
+    let mut restored = true;
+    for &i in rest[..done].iter().rev() {
+        let p = &planned[i];
+        if restored && execute_one(db, &p.step(&p.new_path, &p.old_path, &p.old_type)).is_ok() {
+            push_failed(report, p, ROLLED_BACK.to_string());
+        } else {
+            restored = false;
+            push_renamed(report, p);
+        }
+    }
+    let back = restored && execute_one(db, &first.step(&to_temp.new_path, &first.old_path, &first.old_type)).is_ok();
+    let reason = first_error.unwrap_or_else(|| "同批交换中的其他对象改名失败".to_string());
+    let error = if back {
+        format!("{}，已改回原名", reason)
+    } else {
+        let temp_name = split_parent(&to_temp.new_path).map(|(_, n)| n).unwrap_or_default();
+        format!("{}；对象暂留临时名「{}」，请手动改名", reason, temp_name)
+    };
+    push_failed(report, first, error);
+}
+
 /// 重命名一批对象；`dry_run` 只做校验与冲突检查，不改磁盘与数据库。
 pub fn rename_items(db: &Database, renames: Vec<RenameRequest>, dry_run: bool) -> Result<RenameReport, String> {
     if !dry_run {
@@ -259,6 +463,7 @@ pub fn rename_items(db: &Database, renames: Vec<RenameRequest>, dry_run: bool) -
     };
 
     let mut planned: Vec<Planned> = Vec::new();
+    let mut targets: HashSet<String> = HashSet::new();
     for (req, row) in rows {
         let Some((path, item_type, is_missing)) = row else {
             report.failed.push(RenameFailure { id: req.id, error: format!("对象不存在（id {}），可能已被删除", req.id) });
@@ -266,8 +471,7 @@ pub fn rename_items(db: &Database, renames: Vec<RenameRequest>, dry_run: bool) -
         };
         match plan_one(req.id, &path, &item_type, is_missing != 0, &req.new_name) {
             Ok(Some(p)) => {
-                let target = p.new_path.to_lowercase();
-                if planned.iter().any(|q| q.new_path.to_lowercase() == target) {
+                if !targets.insert(p.new_path.to_lowercase()) {
                     report.failed.push(RenameFailure { id: req.id, error: format!("与同批其他对象重名：「{}」", p.new_name) });
                 } else {
                     planned.push(p);
@@ -277,12 +481,16 @@ pub fn rename_items(db: &Database, renames: Vec<RenameRequest>, dry_run: bool) -
             Err(error) => report.failed.push(RenameFailure { id: req.id, error }),
         }
     }
+    let (planned, deps) = resolve_dependencies(planned, &mut report);
 
-    for p in planned {
-        let result = if dry_run { Ok(()) } else { execute_one(db, &p) };
-        match result {
-            Ok(()) => report.renamed.push(RenamedItem { id: p.id, old_path: p.old_path, new_path: p.new_path }),
-            Err(error) => report.failed.push(RenameFailure { id: p.id, error }),
+    if dry_run {
+        planned.iter().for_each(|p| push_renamed(&mut report, p));
+        return Ok(report);
+    }
+    for group in group_steps(&planned, &deps) {
+        match group {
+            Group::Chain(order) => execute_chain(db, &planned, &order, &mut report),
+            Group::Cycle(order) => execute_cycle(db, &planned, &order, &mut report),
         }
     }
     Ok(report)
