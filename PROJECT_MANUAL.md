@@ -72,11 +72,12 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands/  ← 95 个 Tauri 命令         │  │
+│  │  commands/  ← 107 个 Tauri 命令         │  │
 │  │             (按 item/cabinet/tag/mod/   │  │
-│  │              net/ai/data/settings/      │  │
-│  │              synonym/launch/            │  │
-│  │              object_preview/search 分模块)│  │
+│  │              net/ai/data/sync/update/   │  │
+│  │              settings/synonym/launch/   │  │
+│  │              recolor/watch/search/      │  │
+│  │              object_preview 分模块)     │  │
 │  │  db/        ← SQLite 连接/schema/迁移   │  │
 │  │  services/  ← 业务服务层                │  │
 │  │  extensions/← Mod 与主题加载            │  │
@@ -176,7 +177,7 @@ tag-launcher/
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── commands/             # Tauri 命令（按业务域分模块，93 个）
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，107 个）
 │   │   │   ├── item_commands.rs
 │   │   │   ├── cabinet_commands.rs
 │   │   │   ├── tag_commands.rs
