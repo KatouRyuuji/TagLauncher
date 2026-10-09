@@ -184,8 +184,6 @@ function PreviewBody({
 }) {
   const iconPath = useItemVisual(item);
   const [info, setInfo] = useState<db.ObjectPreviewFileInfo | null>(null);
-  const [entries, setEntries] = useState<db.ObjectDirectoryEntry[]>([]);
-  const [entryTotal, setEntryTotal] = useState(0);
   const [audio, setAudio] = useState<db.AudioPreviewInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -194,8 +192,6 @@ function PreviewBody({
     let cancelled = false;
     setError(null);
     setInfo(null);
-    setEntries([]);
-    setEntryTotal(0);
     setAudio(null);
     setLoading(true);
 
@@ -204,13 +200,7 @@ function PreviewBody({
         const fileInfo = await db.getObjectFileInfo(item.path);
         if (cancelled) return;
         setInfo(fileInfo);
-        if (item.type === "folder") {
-          const listed = await db.listObjectDirectory(item.path);
-          if (!cancelled) {
-            setEntries(listed.slice(0, 48));
-            setEntryTotal(listed.length);
-          }
-        } else if (item.type === "audio") {
+        if (item.type === "audio") {
           const preview = await db.getAudioPreview(item.path);
           if (!cancelled) setAudio(preview);
         }
@@ -262,8 +252,6 @@ function PreviewBody({
           key={item.id}
           item={item}
           info={info}
-          entries={entries}
-          entryTotal={entryTotal}
           onTagSelect={onTagSelect}
           onAddItems={onAddItems}
         />

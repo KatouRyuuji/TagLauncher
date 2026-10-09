@@ -466,6 +466,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return 0;
     case "open_in_explorer":
     case "open_in_explorer_by_id":
+    case "open_object_path":
       return null;
 
     // ---- 对象预览 ----

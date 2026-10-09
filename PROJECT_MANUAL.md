@@ -309,6 +309,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `search_items` | query, tag_ids | Vec\<ItemWithTags\> | 后端辅助搜索（FTS5 + LIKE 回退）；前端主搜索使用自研 search.ts，不经过此命令 |
 | `launch_item` | id: i64 | () | 启动项目（`ShellExecuteW` "open" 动词，不经 cmd.exe，防 shell 元字符注入） |
 | `open_in_explorer` | path: String | () | 在资源管理器中打开 |
+| `open_object_path` | path: String | () | 用默认程序打开文件夹预览中的文件（`ShellExecuteW`）；路径须位于库内文件夹对象之下，含 `.` / `..` 段一律拒绝 |
 | `read_synonyms` | - | Vec\<Vec\<String\>\> | 读取同义词字典 |
 | `get_cabinets` | - | Vec\<Cabinet\> | 获取所有文件柜 |
 | `add_cabinet` | name, color | Cabinet | 新建文件柜 |

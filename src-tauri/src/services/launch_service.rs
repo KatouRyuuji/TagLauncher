@@ -32,6 +32,18 @@ fn shell_open(path: &str) -> Result<(), String> {
     }
 }
 
+/// 用关联程序打开任意路径（调用方负责先校验路径属于库内对象）。
+pub fn open_path(path: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    return shell_open(path);
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        Err("当前平台暂不支持打开文件".to_string())
+    }
+}
+
 /// 启动项目
 pub fn launch_item(conn: &Connection, id: i64) -> Result<(), String> {
     // 路径可能已因重命名/移动失效：先按文件ID重定位到当前真实路径（并持久化）。
