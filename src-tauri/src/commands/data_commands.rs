@@ -296,6 +296,9 @@ impl Drop for StagedFile {
 /// 重启应用（数据目录切换 / 导入完成后调用）。
 #[tauri::command]
 pub fn restart_app(app: tauri::AppHandle) {
+    // 主线程上的 restart 不经过 RunEvent::Exit，单实例锁不会自动释放；
+    // 先释放，否则新进程会被当作第二个实例直接退出
+    tauri_plugin_single_instance::destroy(&app);
     app.restart();
 }
 

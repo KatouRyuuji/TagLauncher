@@ -583,6 +583,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src
 | crate | 版本 | 用途 |
 |-------|------|------|
 | tauri | 2.x | 应用框架 |
+| tauri-plugin-single-instance | 2.x | 单实例：再次启动只把已有主窗口唤到前台；`restart_app` 重启前先释放实例锁 |
 | rusqlite | 0.31 | SQLite 驱动（`bundled` + `backup` feature：Online Backup 用于导入/导出/备份） |
 | ureq | 2.x | 阻塞式 HTTP（Mod `net_fetch`、AI 打标、WebDAV 云同步、更新检查） |
 | clap | 4.x | tl CLI 参数解析（derive） |
