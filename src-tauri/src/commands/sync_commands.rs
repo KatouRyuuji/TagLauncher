@@ -35,10 +35,15 @@ const REMOTE_KEEP_COUNT: usize = 10;
 const MAX_DOWNLOAD_BYTES: u64 = 1024 * 1_048_576;
 /// 控制类请求超时（PROPFIND/MKCOL/DELETE）
 const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
-/// 传输类请求超时（PUT/GET）。ureq 的 timeout 是整个请求的总限时、没有按传输进展
+/// 传输类请求超时（PUT/GET/MOVE）。ureq 的 timeout 是整个请求的总限时、没有按传输进展
 /// 重置的空闲超时；大库 + 慢速 NAS（如机械硬盘群晖）下 600s 可能不够，放宽到 1 小时
 /// 覆盖极端场景——真正的异常卡死由下载大小上限与用户重试兜底。
 const TRANSFER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3600);
+/// 瞬时错误（网络错误、408/429/502/503/504）的重试间隔；共尝试 1 + 2 次
+const RETRY_DELAYS: [std::time::Duration; 2] = [
+    std::time::Duration::from_secs(1),
+    std::time::Duration::from_secs(2),
+];
 
 // ---------------------------------------------------------------------------
 // 配置
@@ -168,9 +173,7 @@ pub fn sync_backup_now(db: State<Database>) -> Result<String, String> {
 
         // 3. 上传
         let file_name = format!("taglauncher_{}.db", data_commands::utc_timestamp_compact());
-        let file = std::fs::File::open(&temp).map_err(|e| format!("读取快照失败: {}", e))?;
-        let size = file.metadata().map(|m| m.len()).unwrap_or(0);
-        dav_put(&ctx, &file_name, file, size)?;
+        upload_backup(&ctx, &file_name, &temp)?;
 
         // 4. 清理旧份（尽力而为，失败不影响本次备份结果）
         if let Ok(list) = list_remote_backups(&ctx) {
@@ -416,23 +419,109 @@ fn ensure_remote_dir(ctx: &DavContext) -> Result<(), String> {
     Ok(())
 }
 
+/// 上传备份：先 PUT 到 `<file_name>.part`，传完再 MOVE 为终名，远端列表与恢复
+/// 只认 `.db` 终名，中断的上传不会被当成可用备份。服务器不支持 MOVE（405/501）时
+/// 改为直接 PUT 终名。未落位的 `.part` 尽力删除。
+fn upload_backup(ctx: &DavContext, file_name: &str, source: &Path) -> Result<(), String> {
+    let part = format!("{file_name}.part");
+    let mut moved = false;
+    let result = (|| {
+        put_file_with_retry(ctx, &part, source)?;
+        match with_retry(|| dav_move(ctx, &part, file_name)) {
+            Ok(()) => {
+                moved = true;
+                Ok(())
+            }
+            Err(ureq::Error::Status(405 | 501, _)) => put_file_with_retry(ctx, file_name, source),
+            Err(e) => {
+                // 网络中断时 MOVE 可能已在服务端完成：终名已存在即视为成功
+                let landed = list_remote_backups(ctx)
+                    .is_ok_and(|list| list.iter().any(|b| b.name == file_name));
+                moved = landed;
+                if landed {
+                    Ok(())
+                } else {
+                    Err(map_dav_error(e))
+                }
+            }
+        }
+    })();
+    if !moved {
+        let _ = dav_delete(ctx, &part);
+    }
+    result
+}
+
+/// 带瞬时错误重试的文件上传；每次尝试重新打开文件，从头发送。
+fn put_file_with_retry(ctx: &DavContext, file_name: &str, source: &Path) -> Result<(), String> {
+    let opened = with_retry(|| {
+        let file = match std::fs::File::open(source) {
+            Ok(file) => file,
+            Err(e) => return Ok(Err(e)),
+        };
+        let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+        dav_put(ctx, file_name, file, size).map(Ok)
+    })
+    .map_err(map_dav_error)?;
+    opened.map_err(|e| format!("读取快照失败: {}", e))
+}
+
+/// 执行请求；遇到瞬时错误按 RETRY_DELAYS 退避重试，其余错误立即返回。
+fn with_retry<T>(mut op: impl FnMut() -> Result<T, ureq::Error>) -> Result<T, ureq::Error> {
+    let mut attempt = 0;
+    loop {
+        match op() {
+            Err(e) if is_transient(&e) && attempt < RETRY_DELAYS.len() => {
+                std::thread::sleep(RETRY_DELAYS[attempt]);
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
+/// 网络错误与 408/429/502/503/504 视为瞬时错误，其余 4xx/5xx 不重试。
+fn is_transient(e: &ureq::Error) -> bool {
+    match e {
+        ureq::Error::Transport(_) => true,
+        ureq::Error::Status(code, _) => matches!(code, 408 | 429 | 502 | 503 | 504),
+    }
+}
+
 fn dav_put(
     ctx: &DavContext,
     file_name: &str,
     reader: impl Read + Send + 'static,
     size: u64,
-) -> Result<(), String> {
+) -> Result<(), ureq::Error> {
     let resp = dav_request(ctx, "PUT", file_name)
         .set("Content-Type", "application/octet-stream")
         .set("Content-Length", &size.to_string())
         .timeout(TRANSFER_TIMEOUT)
-        .send(reader);
-    match resp {
-        // ureq 会把 301/302/303 的非 GET 请求改写为 GET 跟随：Ok 不代表 PUT 成功，
-        // 必须校验最终状态确为 2xx，否则"上传成功"可能只是跟随重定向后的 GET 成功。
-        Ok(r) if (200..300).contains(&r.status()) => Ok(()),
-        Ok(r) => Err(map_dav_error(ureq::Error::Status(r.status(), r))),
-        Err(e) => Err(map_dav_error(e)),
+        .send(reader)?;
+    // ureq 会把 301/302/303 的非 GET 请求改写为 GET 跟随：Ok 不代表 PUT 成功，
+    // 必须校验最终状态确为 2xx，否则"上传成功"可能只是跟随重定向后的 GET 成功。
+    if (200..300).contains(&resp.status()) {
+        Ok(())
+    } else {
+        Err(ureq::Error::Status(resp.status(), resp))
+    }
+}
+
+/// WebDAV MOVE（同目录改名）；Overwrite: F 防止覆盖同名文件。
+fn dav_move(ctx: &DavContext, from: &str, to: &str) -> Result<(), ureq::Error> {
+    let resp = dav_request(ctx, "MOVE", from)
+        .set(
+            "Destination",
+            &build_url(&ctx.base_url, &ctx.remote_dir, to),
+        )
+        .set("Overwrite", "F")
+        .timeout(TRANSFER_TIMEOUT)
+        .call()?;
+    if (200..300).contains(&resp.status()) {
+        Ok(())
+    } else {
+        Err(ureq::Error::Status(resp.status(), resp))
     }
 }
 
@@ -901,5 +990,111 @@ mod tests {
         assert_eq!(theme_cnt, 1, "非敏感键应保留");
         drop(conn);
         let _ = std::fs::remove_file(&p);
+    }
+
+    /// 按脚本依次应答的最小 HTTP 服务；返回地址与「方法 路径 Destination Overwrite」记录。
+    fn fake_dav(statuses: Vec<u16>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let handle = std::thread::spawn(move || {
+            let mut log = Vec::new();
+            for status in statuses {
+                let (stream, _) = listener.accept().unwrap();
+                let mut reader = BufReader::new(stream);
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                let mut parts = line.split_whitespace();
+                let mut entry = format!("{} {}", parts.next().unwrap(), parts.next().unwrap());
+                let mut len = 0usize;
+                loop {
+                    let mut header = String::new();
+                    reader.read_line(&mut header).unwrap();
+                    let header = header.trim_end();
+                    if header.is_empty() {
+                        break;
+                    }
+                    let (name, value) = header.split_once(':').unwrap();
+                    match name.to_ascii_lowercase().as_str() {
+                        "content-length" => len = value.trim().parse().unwrap(),
+                        "destination" | "overwrite" => entry.push_str(&format!(" {}", value.trim())),
+                        _ => {}
+                    }
+                }
+                let mut body = vec![0u8; len];
+                reader.read_exact(&mut body).unwrap();
+                write!(
+                    reader.get_mut(),
+                    "HTTP/1.1 {} X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    status
+                )
+                .unwrap();
+                log.push(entry);
+            }
+            log
+        });
+        (base, handle)
+    }
+
+    fn upload_with(statuses: Vec<u16>) -> (Result<(), String>, Vec<String>, String) {
+        let (base, server) = fake_dav(statuses);
+        let source = std::env::temp_dir().join(format!(
+            "taglauncher_upload_test_{}_{}.db",
+            std::process::id(),
+            base.rsplit(':').next().unwrap()
+        ));
+        std::fs::write(&source, b"snapshot").unwrap();
+        let ctx = DavContext {
+            base_url: base.clone(),
+            auth_header: None,
+            remote_dir: "TL".into(),
+        };
+        let result = upload_backup(&ctx, "taglauncher_1.db", &source);
+        let _ = std::fs::remove_file(&source);
+        (result, server.join().unwrap(), base)
+    }
+
+    #[test]
+    fn upload_puts_part_then_moves() {
+        let (result, log, base) = upload_with(vec![201, 201]);
+        assert!(result.is_ok());
+        assert_eq!(
+            log,
+            vec![
+                "PUT /TL/taglauncher_1.db.part".to_string(),
+                format!("MOVE /TL/taglauncher_1.db.part {}/TL/taglauncher_1.db F", base),
+            ]
+        );
+    }
+
+    #[test]
+    fn upload_retries_transient_errors() {
+        let (result, log, _) = upload_with(vec![503, 201, 502, 201]);
+        assert!(result.is_ok());
+        let methods: Vec<&str> = log.iter().map(|l| l.split(' ').next().unwrap()).collect();
+        assert_eq!(methods, ["PUT", "PUT", "MOVE", "MOVE"]);
+    }
+
+    #[test]
+    fn upload_falls_back_to_direct_put_without_move() {
+        let (result, log, _) = upload_with(vec![201, 405, 201, 204]);
+        assert!(result.is_ok());
+        let expected = [
+            "PUT /TL/taglauncher_1.db.part",
+            "MOVE /TL/taglauncher_1.db.part",
+            "PUT /TL/taglauncher_1.db",
+            "DELETE /TL/taglauncher_1.db.part",
+        ];
+        assert_eq!(log.len(), expected.len());
+        for (line, prefix) in log.iter().zip(expected) {
+            assert!(line.starts_with(prefix), "{line}");
+        }
+    }
+
+    #[test]
+    fn upload_does_not_retry_client_errors_and_cleans_part() {
+        let (result, log, _) = upload_with(vec![403, 204]);
+        assert!(result.is_err());
+        assert_eq!(log, ["PUT /TL/taglauncher_1.db.part", "DELETE /TL/taglauncher_1.db.part"]);
     }
 }
