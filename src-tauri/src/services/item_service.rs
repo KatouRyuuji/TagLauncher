@@ -40,7 +40,7 @@ pub(crate) fn skip_err_with_log<T>(ctx: &str) -> impl Fn(rusqlite::Result<T>) ->
     move |r| match r {
         Ok(v) => Some(v),
         Err(e) => {
-            eprintln!("[{}] 行读取失败，已跳过: {}", ctx, e);
+            log::warn!("[{}] 行读取失败，已跳过: {}", ctx, e);
             None
         }
     }
@@ -938,7 +938,7 @@ pub fn apply_reconcile(conn: &Connection, writes: &[ReconcileWrite]) -> Result<(
                      WHERE id = ?3 AND path = ?4 AND is_missing = ?5",
                     params![volume_serial, file_id, id, expected.path, expected.is_missing],
                 ) {
-                    eprintln!("[reconcile] 回填 file_id 失败 (item {}): {}", id, e);
+                    log::warn!("[reconcile] 回填 file_id 失败 (item {}): {}", id, e);
                 }
             }
             ReconcileWrite::BackfillSignature { id, size, head, tail, expected } => {
@@ -1253,7 +1253,7 @@ pub fn apply_signature_relocations(
             ],
         ) {
             Ok(affected) => count += affected,
-            Err(e) => eprintln!("[relocate] 回写对象 {} 失败(可能身份冲突): {}", expected.id, e),
+            Err(e) => log::warn!("[relocate] 回写对象 {} 失败(可能身份冲突): {}", expected.id, e),
         }
     }
     tx.commit().map_err(|e| e.to_string())?;

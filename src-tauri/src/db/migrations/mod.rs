@@ -90,7 +90,7 @@ fn backup_before_breaking(conn: &Connection, version: u32) -> Option<String> {
     match conn.execute_batch(&sql) {
         Ok(_) => Some(backup_path),
         Err(e) => {
-            eprintln!(
+            log::warn!(
                 "[migrations] 破坏性迁移 v{} 前备份失败(已忽略, 继续升级): {}",
                 version, e
             );
@@ -151,7 +151,7 @@ fn prune_old_breaking_backups(conn: &Connection, keep: &[String]) {
     historical.sort_by_key(|(t, _)| *t);
     for (_, path) in historical.iter().take(historical.len() - 1) {
         if let Err(e) = std::fs::remove_file(path) {
-            eprintln!("[migrations] 清理旧破坏性备份失败 {:?}: {}", path, e);
+            log::warn!("[migrations] 清理旧破坏性备份失败 {:?}: {}", path, e);
         }
     }
 }

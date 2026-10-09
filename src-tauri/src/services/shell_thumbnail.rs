@@ -120,7 +120,7 @@ fn save_shell_image_png(
             match std::fs::remove_file(&pending) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => eprintln!("[icons] 清理临时图像失败: {error}"),
+                Err(error) => log::warn!("[icons] 清理临时图像失败: {error}"),
             }
         }
         result

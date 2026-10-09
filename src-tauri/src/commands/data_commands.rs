@@ -205,7 +205,7 @@ pub fn run_auto_backup(db: &Database, backups_dir: &Path) -> Result<Option<PathB
     for (prefix, keep) in BACKUP_RETENTION {
         for old in backup_files(backups_dir, prefix).into_iter().skip(keep) {
             if let Err(e) = std::fs::remove_file(&old) {
-                eprintln!("[backup] 清理旧备份 {:?} 失败: {}", old, e);
+                log::warn!("[backup] 清理旧备份 {:?} 失败: {}", old, e);
             }
         }
     }
@@ -293,7 +293,7 @@ pub fn import_data(
             && std::fs::copy(&side, format!("{}{}", staged_str, suffix)).is_err()
         {
             // WAL 暂存失败 = 来源最近提交可能缺失：留痕，不静默
-            eprintln!("[import] 来源旁文件 {:?} 暂存失败，导入内容可能缺少最近提交", side);
+            log::warn!("[import] 来源旁文件 {:?} 暂存失败，导入内容可能缺少最近提交", side);
         }
     }
     let source_version = validate_importable_db(&staged)?;

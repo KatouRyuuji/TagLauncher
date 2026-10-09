@@ -46,7 +46,7 @@ fn migrate_legacy_db(src: &std::path::Path, dst: &std::path::Path) -> Result<(),
         Err(e) => {
             // 回退：只读打开/VACUUM 失败（如旧库带未 checkpoint 的 -wal，只读无法回放）
             // 时退回普通打开 + VACUUM；再不行用旧的 fs::copy 兜底（只需读权限）。
-            eprintln!("[migrate] 只读 VACUUM INTO 失败({})，尝试读写打开后重试", e);
+            log::warn!("[migrate] 只读 VACUUM INTO 失败({})，尝试读写打开后重试", e);
             let retry = rusqlite::Connection::open(src).and_then(|src_conn| {
                 let target = dst_str.replace('\'', "''");
                 src_conn.execute_batch(&format!("VACUUM INTO '{}'", target))
@@ -54,7 +54,7 @@ fn migrate_legacy_db(src: &std::path::Path, dst: &std::path::Path) -> Result<(),
             match retry {
                 Ok(_) => Ok(()),
                 Err(e2) => {
-                    eprintln!("[migrate] VACUUM INTO 仍失败({})，回退 fs::copy", e2);
+                    log::warn!("[migrate] VACUUM INTO 仍失败({})，回退 fs::copy", e2);
                     std::fs::copy(src, dst)
                         .map(|_| ())
                         .map_err(|e3| format!("迁移旧数据库失败 {:?} -> {:?}: {}", src, dst, e3))
@@ -76,6 +76,16 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        // 日志写入系统应用日志目录（Windows：%LOCALAPPDATA%\com.taglauncher.app\logs），
+        // 单文件 5 MB，除当前文件外保留最近 5 份
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .max_file_size(5_000_000)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(5))
+                .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+                .build(),
+        )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -254,7 +264,7 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(10));
                     let db = auto.state::<Database>();
                     if let Err(e) = commands::data_commands::run_auto_backup(&db, &backups_dir) {
-                        eprintln!("[backup] 自动备份失败: {e}");
+                        log::error!("[backup] 自动备份失败: {e}");
                     }
                 });
             }
@@ -403,6 +413,11 @@ fn install_startup_failure_dialog() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         default_hook(info);
+        let location = info
+            .location()
+            .map(|l| format!(" ({}:{})", l.file(), l.line()))
+            .unwrap_or_default();
+        log::error!("[panic] {}{}", panic_reason(info.payload()), location);
         if STARTUP_DONE.load(Ordering::SeqCst) {
             return;
         }
@@ -495,7 +510,7 @@ fn migrate_backups(src_save_dir: &std::path::Path, dst_save_dir: &std::path::Pat
     };
     let dst_backups = dst_save_dir.join("Backups");
     if let Err(e) = std::fs::create_dir_all(&dst_backups) {
-        eprintln!("[migrate] 创建备份目录 {:?} 失败({})，跳过历史备份迁移", dst_backups, e);
+        log::warn!("[migrate] 创建备份目录 {:?} 失败({})，跳过历史备份迁移", dst_backups, e);
         return;
     }
     for entry in entries.flatten() {
@@ -508,7 +523,7 @@ fn migrate_backups(src_save_dir: &std::path::Path, dst_save_dir: &std::path::Pat
             continue;
         }
         if let Err(e) = std::fs::copy(&from, &to) {
-            eprintln!("[migrate] 历史备份 {:?} 复制失败: {}", from, e);
+            log::warn!("[migrate] 历史备份 {:?} 复制失败: {}", from, e);
         }
     }
 }

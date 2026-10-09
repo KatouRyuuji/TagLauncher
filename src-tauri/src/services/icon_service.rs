@@ -76,7 +76,7 @@ fn auto_visual_path(app: &AppHandle, item: &Item) -> Option<String> {
                 let _ = std::fs::write(none_marker, []);
             }
             Err(error) => {
-                eprintln!("[icons] 系统图标读取失败 ({}): {}", item.path, error);
+                log::warn!("[icons] 系统图标读取失败 ({}): {}", item.path, error);
                 let _ = std::fs::write(none_marker, []);
             }
         }

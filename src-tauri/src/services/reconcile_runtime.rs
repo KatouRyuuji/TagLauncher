@@ -159,7 +159,7 @@ pub fn request_reconcile(app: &AppHandle, force: bool) -> bool {
                         let _ = handle.emit("items-reconciled", summary);
                     }
                 }
-                Err(error) => eprintln!("[reconcile] 后台对账失败: {error}"),
+                Err(error) => log::error!("[reconcile] 后台对账失败: {error}"),
             }
             let _gate = scheduler
                 .gate
