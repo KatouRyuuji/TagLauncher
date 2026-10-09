@@ -18,6 +18,16 @@ use tauri::State;
 
 const DB_FILE_NAME: &str = "taglauncher.db";
 const BACKUPS_DIR_NAME: &str = "Backups";
+/// 自动备份文件名前缀；写入时先用 `.tmp` 后缀，完成后改名，避免半成品被自愈选中
+const AUTO_BACKUP_PREFIX: &str = "taglauncher_auto_";
+/// 自动备份间隔
+const AUTO_BACKUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+/// 各类备份的保留数量；手动备份（taglauncher_backup_）不自动清理
+const BACKUP_RETENTION: [(&str, usize); 3] = [
+    (AUTO_BACKUP_PREFIX, 7),
+    ("taglauncher_pre_import_", 5),
+    ("taglauncher_pre_restore_", 5),
+];
 /// 迁移中的临时文件名（同目录先写临时名再 rename 为终名，保证迁移原子性）
 const MIGRATING_FILE_NAME: &str = "taglauncher.db.migrating";
 
@@ -157,6 +167,66 @@ pub fn backup_data(app: tauri::AppHandle, db: State<Database>) -> Result<String,
     let target = backups_dir.join(format!("taglauncher_backup_{}.db", utc_timestamp_compact()));
     snapshot_live_db(&db, &target)?;
     Ok(target.to_string_lossy().to_string())
+}
+
+/// 自动本地备份：最新自动备份不存在或已满 24h 时快照一份，然后按 BACKUP_RETENTION 清理旧备份。
+/// 写入冻结（切换目录 / 导入 / 恢复后待重启）时不做任何事。返回新写入的备份路径。
+pub fn run_auto_backup(db: &Database, backups_dir: &Path) -> Result<Option<PathBuf>, String> {
+    if crate::db::writes_frozen() {
+        return Ok(None);
+    }
+    std::fs::create_dir_all(backups_dir).map_err(|e| format!("无法创建备份目录: {}", e))?;
+    let due = match backup_files(backups_dir, AUTO_BACKUP_PREFIX).first() {
+        // 时钟回拨导致修改时间在未来时按到期处理，宁可多备份一次
+        Some(latest) => std::fs::metadata(latest)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .map_or(true, |age| age >= AUTO_BACKUP_INTERVAL),
+        None => true,
+    };
+    let created = if due {
+        let target = backups_dir.join(format!(
+            "{AUTO_BACKUP_PREFIX}{}.db",
+            utc_timestamp_compact()
+        ));
+        let temp = target.with_extension("db.tmp");
+        let result = snapshot_live_db(db, &temp).and_then(|()| {
+            std::fs::rename(&temp, &target).map_err(|e| format!("自动备份落位失败: {}", e))
+        });
+        if let Err(e) = result {
+            let _ = std::fs::remove_file(&temp);
+            return Err(e);
+        }
+        Some(target)
+    } else {
+        None
+    };
+    for (prefix, keep) in BACKUP_RETENTION {
+        for old in backup_files(backups_dir, prefix).into_iter().skip(keep) {
+            if let Err(e) = std::fs::remove_file(&old) {
+                eprintln!("[backup] 清理旧备份 {:?} 失败: {}", old, e);
+            }
+        }
+    }
+    Ok(created)
+}
+
+/// 列出备份目录中某一前缀的 `.db` 备份，按文件名（含 UTC 时间戳）从新到旧排序。
+fn backup_files(backups_dir: &Path, prefix: &str) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(backups_dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with(prefix) && n.ends_with(".db"))
+        })
+        .collect();
+    files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+    files
 }
 
 /// 导出数据：把当前库快照到用户指定的 .db 文件（副本剔除敏感键，供安全分享）。
@@ -510,5 +580,81 @@ mod tests {
         assert_eq!(theme_cnt, 1, "非敏感键应保留");
         drop(conn);
         let _ = std::fs::remove_file(&p);
+    }
+    fn count_prefix(dir: &Path, prefix: &str) -> usize {
+        backup_files(dir, prefix).len()
+    }
+
+    #[test]
+    fn auto_backup_runs_daily_and_prunes_by_kind() {
+        let base = std::env::temp_dir().join(format!("tl_auto_backup_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let db = Database::new(&base.join(DB_FILE_NAME)).unwrap();
+        let backups = base.join(BACKUPS_DIR_NAME);
+
+        let first = run_auto_backup(&db, &backups)
+            .unwrap()
+            .expect("首次应写入自动备份");
+        assert!(validate_importable_db(&first).is_ok());
+        assert!(
+            run_auto_backup(&db, &backups).unwrap().is_none(),
+            "24h 内不重复备份"
+        );
+
+        for i in 0..8 {
+            std::fs::write(
+                backups.join(format!("taglauncher_auto_2020010{i}_000000_000.db")),
+                b"",
+            )
+            .unwrap();
+        }
+        for prefix in ["taglauncher_pre_import_", "taglauncher_pre_restore_"] {
+            for i in 0..6 {
+                std::fs::write(
+                    backups.join(format!("{prefix}2020010{i}_000000_000.db")),
+                    b"",
+                )
+                .unwrap();
+            }
+        }
+        for i in 0..3 {
+            std::fs::write(
+                backups.join(format!("taglauncher_backup_2020010{i}_000000_000.db")),
+                b"",
+            )
+            .unwrap();
+        }
+        run_auto_backup(&db, &backups).unwrap();
+        assert_eq!(count_prefix(&backups, AUTO_BACKUP_PREFIX), 7);
+        assert!(first.exists(), "最新的自动备份应保留");
+        assert_eq!(count_prefix(&backups, "taglauncher_pre_import_"), 5);
+        assert_eq!(count_prefix(&backups, "taglauncher_pre_restore_"), 5);
+        assert_eq!(
+            count_prefix(&backups, "taglauncher_backup_"),
+            3,
+            "手动备份不清理"
+        );
+
+        let day_ago = std::time::SystemTime::now() - AUTO_BACKUP_INTERVAL;
+        std::fs::File::options()
+            .write(true)
+            .open(&first)
+            .unwrap()
+            .set_modified(day_ago)
+            .unwrap();
+        let second = run_auto_backup(&db, &backups)
+            .unwrap()
+            .expect("满 24h 应再次备份");
+        assert_ne!(second, first);
+        assert!(!backups
+            .join(format!(
+                "{}.tmp",
+                second.file_name().unwrap().to_string_lossy()
+            ))
+            .exists());
+
+        drop(db);
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

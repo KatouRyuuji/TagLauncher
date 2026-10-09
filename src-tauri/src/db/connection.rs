@@ -92,32 +92,39 @@ fn is_lock_error(e: &rusqlite::Error) -> bool {
 /// 备份目录名（与 data_commands::BACKUPS_DIR_NAME 保持一致）。
 const BACKUPS_DIR_NAME: &str = "Backups";
 
-/// 用 Backups/ 里最新的导入/恢复前安全备份文件级覆盖实库。
+/// 可用于自愈的备份文件名前缀：自动、导入前、云端恢复前、手动备份。
+const RECOVERY_BACKUP_PREFIXES: [&str; 4] = [
+    "taglauncher_auto_",
+    "taglauncher_pre_import_",
+    "taglauncher_pre_restore_",
+    "taglauncher_backup_",
+];
+
+/// 在备份目录中按文件名里的 UTC 时间戳选出最新的可自愈备份。
+fn latest_recovery_backup(backups_dir: &Path) -> Option<std::path::PathBuf> {
+    std::fs::read_dir(backups_dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_str()?.to_string();
+            let stamp = RECOVERY_BACKUP_PREFIXES
+                .iter()
+                .find_map(|prefix| name.strip_prefix(prefix))?
+                .strip_suffix(".db")?
+                .to_string();
+            Some((stamp, e.path()))
+        })
+        .max()
+        .map(|(_, path)| path)
+}
+
+/// 用 Backups/ 里最新的备份文件级覆盖实库。
 /// 损坏原文件改名留存为 .corrupt-<epoch> 供人工排查；无可用备份时保持原状，
 /// 让后续打开按原样报错（行为与不自愈一致）。
 fn recover_from_safety_backup(path: &Path) {
     let Some(dir) = path.parent() else { return };
-    let backups_dir = dir.join(BACKUPS_DIR_NAME);
-    // 备份文件名含 UTC 时间戳，字典序最大即最新
-    let latest = std::fs::read_dir(&backups_dir)
-        .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| {
-                    (n.starts_with("taglauncher_pre_import_")
-                        || n.starts_with("taglauncher_pre_restore_"))
-                        && n.ends_with(".db")
-                })
-                .unwrap_or(false)
-        })
-        .max();
-    let Some(backup) = latest else {
-        eprintln!("[db] 实库 {:?} 打开/完整性校验失败，且无安全备份可自愈", path);
+    let Some(backup) = latest_recovery_backup(&dir.join(BACKUPS_DIR_NAME)) else {
+        eprintln!("[db] 实库 {:?} 打开/完整性校验失败，且无备份可自愈", path);
         return;
     };
 
@@ -210,7 +217,7 @@ mod tests {
     }
 
     /// 启动自愈路径：实库损坏（quick_check 不过）时，用 Backups/ 内最新
-    /// pre_import/pre_restore 安全备份文件级恢复，损坏原文件改名留存为 .corrupt-*。
+    /// 备份文件级恢复，损坏原文件改名留存为 .corrupt-*。
     #[test]
     fn database_new_recovers_corrupt_db_from_safety_backup() {
         let base = std::env::temp_dir().join(format!("tl_recover_{}", std::process::id()));
@@ -321,5 +328,30 @@ mod tests {
         assert!(!renamed, "锁冲突不应触发自愈");
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn latest_recovery_backup_compares_timestamps_across_kinds() {
+        let dir = std::env::temp_dir().join(format!("tl_latest_backup_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in [
+            "taglauncher_pre_restore_20260301_000000_000.db",
+            "taglauncher_auto_20260105_000000_000.db",
+            "taglauncher_backup_20260302_000000_000.db",
+            "taglauncher_pre_import_20260201_000000_000.db",
+            "taglauncher_auto_20260401_000000_000.db.tmp",
+            "taglauncher_20260501_000000_000.db",
+        ] {
+            std::fs::write(dir.join(name), b"").unwrap();
+        }
+
+        let latest = latest_recovery_backup(&dir).unwrap();
+        assert_eq!(
+            latest.file_name().unwrap(),
+            "taglauncher_backup_20260302_000000_000.db"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
