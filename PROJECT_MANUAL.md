@@ -499,7 +499,7 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 | `sync_clear_password` | - | () | 显式清除已存密码 |
 | `sync_test_connection` | - | String | PROPFIND 根验证凭据 → 逐级 MKCOL 确保远端目录 |
 | `sync_list_backups` | - | Vec\<RemoteBackup\> | PROPFIND Depth:1 列出远端 `taglauncher_*.db`（新到旧） |
-| `sync_backup_now` | - | String | 快照 → 剔除敏感配置 → PUT 上传 → 清理旧份（保留 10）→ 记录时间 |
+| `sync_backup_now` | - | String | 快照 → 剔除敏感配置 → PUT 到 `.part` 后 MOVE 为终名（不支持 MOVE 时直接 PUT，瞬时错误退避重试）→ 清理旧份（保留 10）→ 记录时间 |
 | `sync_restore` | file_name | String | GET 下载 → 校验 schema → 本地安全备份 → 覆盖（失败自动回滚）→ 回填本机凭据 |
 
 设计要点：

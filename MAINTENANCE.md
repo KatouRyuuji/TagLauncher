@@ -110,8 +110,10 @@ git push origin main --tags
 
 - 实现在 `src-tauri/src/commands/sync_commands.rs`：纯 `ureq` 阻塞 HTTP + 手写 PROPFIND multistatus 解析（无第三方 XML 依赖）。
 - 配置存 `app_meta`（键前缀 `sync.`）；密码不下发前端；恢复流程会保留本机 `ai.*`/`sync.*` 键（本机凭据优先于云端副本内嵌值）。
-- 兼容性按 WebDAV 规范实现（PROPFIND/MKCOL/PUT/GET/DELETE），已覆盖 Apache/Nextcloud/坚果云三种 multistatus 形态的解析测试；新服务器不兼容时优先检查其 PROPFIND 响应格式。
-- 远端保留份数常量 `REMOTE_KEEP_COUNT = 10`、下载上限 1 GiB、传输超时 600s，均在该文件顶部集中定义。
+- 兼容性按 WebDAV 规范实现（PROPFIND/MKCOL/PUT/MOVE/GET/DELETE），已覆盖 Apache/Nextcloud/坚果云三种 multistatus 形态的解析测试；新服务器不兼容时优先检查其 PROPFIND 响应格式。
+- 上传先写 `taglauncher_<时间戳>.db.part`，传完再 MOVE 为终名；远端列表、清理与恢复只认 `.db` 终名，中断的上传不会被当成可用备份。服务器不支持 MOVE（405/501）时直接 PUT 终名；未落位的 `.part` 尽力删除，删除失败的残留可在云端手动清理。
+- 网络错误与 408/429/502/503/504 按 1s、2s 退避重试，其余错误立即报告。
+- 远端保留份数常量 `REMOTE_KEEP_COUNT = 10`、下载上限 1 GiB、传输超时 3600s、重试间隔 `RETRY_DELAYS`，均在该文件顶部集中定义。
 - 允许 `http://`（局域网 NAS 场景）；这是与 AI 配置（强制 https）不同的刻意决策，UI 已作明文风险提示。
 
 ## 6. 测试体系
