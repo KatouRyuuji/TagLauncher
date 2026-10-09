@@ -84,6 +84,6 @@ fn tick(app: &AppHandle, item_id: i64) {
             );
         }
         Ok(_) => {}
-        Err(error) => eprintln!("[folder-watch] 根 {item_id} 补扫失败: {error}"),
+        Err(error) => log::warn!("[folder-watch] 根 {item_id} 补扫失败: {error}"),
     }
 }

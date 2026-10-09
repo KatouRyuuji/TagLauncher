@@ -584,6 +584,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src
 |-------|------|------|
 | tauri | 2.x | 应用框架 |
 | tauri-plugin-single-instance | 2.x | 单实例：再次启动只把已有主窗口唤到前台；`restart_app` 重启前先释放实例锁 |
+| tauri-plugin-log / log | 2.x / 0.4 | 后端诊断与 panic 写入系统应用日志目录 `logs/TagLauncher.log`（Info 级，5 MB 轮转，另留 5 份）；`tl` 将同一日志打印到 stderr |
 | rusqlite | 0.31 | SQLite 驱动（`bundled` + `backup` feature：Online Backup 用于导入/导出/备份） |
 | ureq | 2.x | 阻塞式 HTTP（Mod `net_fetch`、AI 打标、WebDAV 云同步、更新检查） |
 | clap | 4.x | tl CLI 参数解析（derive） |

@@ -126,7 +126,7 @@ fn latest_recovery_backup(backups_dir: &Path) -> Option<std::path::PathBuf> {
 fn recover_from_safety_backup(path: &Path) {
     let Some(dir) = path.parent() else { return };
     let Some(backup) = latest_recovery_backup(&dir.join(BACKUPS_DIR_NAME)) else {
-        eprintln!("[db] 实库 {:?} 打开/完整性校验失败，且无备份可自愈", path);
+        log::error!("[db] 实库 {:?} 打开/完整性校验失败，且无备份可自愈", path);
         return;
     };
 
@@ -144,7 +144,7 @@ fn recover_from_safety_backup(path: &Path) {
     // 一并改名留存（而非删除），既防恢复后被错误回放，也保住现场供人工排查。
     let path_str = path.to_string_lossy().to_string();
     if let Err(e) = std::fs::rename(path, &corrupt) {
-        eprintln!("[db] 损坏实库改名留存失败({})，放弃自愈", e);
+        log::error!("[db] 损坏实库改名留存失败({})，放弃自愈", e);
         return;
     }
     let corrupt_str = corrupt.to_string_lossy().to_string();
@@ -158,12 +158,12 @@ fn recover_from_safety_backup(path: &Path) {
         }
     }
     match std::fs::copy(&backup, path) {
-        Ok(_) => eprintln!(
+        Ok(_) => log::warn!(
             "[db] 实库损坏，已用安全备份 {:?} 自愈恢复；损坏文件留存为 {:?}",
             backup, corrupt
         ),
         Err(e) => {
-            eprintln!("[db] 从安全备份 {:?} 恢复失败: {}", backup, e);
+            log::error!("[db] 从安全备份 {:?} 恢复失败: {}", backup, e);
             // 尽力把损坏文件放回原位，保持故障现场可人工处理
             let _ = std::fs::rename(&corrupt, path);
         }

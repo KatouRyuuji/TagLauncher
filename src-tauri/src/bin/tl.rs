@@ -86,7 +86,27 @@ enum CabinetCmd {
     Items { id: i64 },
 }
 
+/// 把共享代码里的 log 记录原样打印到 stderr（GUI 由 tauri-plugin-log 写日志文件）。
+struct StderrLogger;
+
+impl log::Log for StderrLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::Level::Info
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            eprintln!("{}", record.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
 fn main() {
+    if log::set_logger(&StderrLogger).is_ok() {
+        log::set_max_level(log::LevelFilter::Info);
+    }
     let args = CliArgs::parse();
     if let Err(e) = run(args) {
         eprintln!("错误: {e}");
