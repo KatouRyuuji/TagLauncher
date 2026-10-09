@@ -56,22 +56,19 @@ impl Database {
     }
 }
 
-/// 打开实库；打开失败或 quick_check 不过时，先用 Backups/ 内最新安全备份做文件级
+/// 打开实库；quick_check 判定库已损坏时，先用 Backups/ 内最新安全备份做文件级
 /// 自愈恢复再打开。导入/云端恢复的实库覆盖只走 SQLite 逻辑层（Backup API），进程崩溃
 /// /断电可能留下打不开的实库——逻辑回滚救不了这种情况，自愈是最后防线。
+/// 权限、磁盘读写、锁冲突等非损坏错误原样报错，不动实库。
 fn open_or_recover(path: &Path) -> Result<Connection, rusqlite::Error> {
-    if let Ok(conn) = Connection::open(path) {
-        conn.busy_timeout(BUSY_TIMEOUT)?;
-        // quick_check 通过时恰返回单行 "ok"；损坏库报错或返回问题描述行。
-        // 等锁超时说明库正被另一进程（GUI 与 tl 共用实库）长时间占用，不是损坏，原样报错。
-        match conn.query_row("PRAGMA quick_check", [], |r| r.get::<_, String>(0)) {
-            Ok(first) if first == "ok" => return Ok(conn),
-            Err(e) if is_lock_error(&e) => return Err(e),
-            _ => {}
-        }
-        // 先释放句柄，Windows 下才能改名/覆盖损坏文件
-        drop(conn);
+    let conn = Connection::open(path)?;
+    conn.busy_timeout(BUSY_TIMEOUT)?;
+    let check = conn.query_row("PRAGMA quick_check", [], |r| r.get::<_, String>(0));
+    if !is_corruption(&check) {
+        return check.map(|_| conn);
     }
+    // 先释放句柄，Windows 下才能改名/覆盖损坏文件
+    drop(conn);
     recover_from_safety_backup(path);
     let conn = Connection::open(path)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
@@ -82,11 +79,16 @@ fn open_or_recover(path: &Path) -> Result<Connection, rusqlite::Error> {
 /// "database is locked"。
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
-fn is_lock_error(e: &rusqlite::Error) -> bool {
-    matches!(
-        e.sqlite_error_code(),
-        Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
-    )
+/// quick_check 结果是否表明库已损坏：返回问题描述行（通过时恰为单行 "ok"），
+/// 或 SQLite 报 CORRUPT / NOTADB。
+fn is_corruption(check: &Result<String, rusqlite::Error>) -> bool {
+    match check {
+        Ok(first) => first != "ok",
+        Err(e) => matches!(
+            e.sqlite_error_code(),
+            Some(rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase)
+        ),
+    }
 }
 
 /// 备份目录名（与 data_commands::BACKUPS_DIR_NAME 保持一致）。
@@ -256,6 +258,31 @@ mod tests {
         assert!(leftover, "损坏原文件应改名留存为 .corrupt-*");
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    fn is_lock_error(e: &rusqlite::Error) -> bool {
+        matches!(
+            e.sqlite_error_code(),
+            Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+        )
+    }
+
+    #[test]
+    fn only_corruption_triggers_recovery() {
+        use rusqlite::ffi;
+        let sqlite_err = |code| Err(rusqlite::Error::SqliteFailure(ffi::Error::new(code), None));
+        assert!(!is_corruption(&Ok("ok".to_string())));
+        assert!(is_corruption(&Ok("*** in database main ***".to_string())));
+        assert!(is_corruption(&sqlite_err(ffi::SQLITE_CORRUPT)));
+        assert!(is_corruption(&sqlite_err(ffi::SQLITE_NOTADB)));
+        for code in [
+            ffi::SQLITE_IOERR,
+            ffi::SQLITE_CANTOPEN,
+            ffi::SQLITE_BUSY,
+            ffi::SQLITE_READONLY,
+        ] {
+            assert!(!is_corruption(&sqlite_err(code)), "code {code}");
+        }
     }
 
     /// 在独立线程用排它锁占住实库 hold 时长后释放；返回加锁完成后的 join 句柄。
