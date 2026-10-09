@@ -87,6 +87,7 @@ git push origin main --tags
 | 类型 | 位置 | 触发 | 是否含密钥 |
 |---|---|---|---|
 | 本机一键备份 | `Save/Backups/taglauncher_backup_*.db` | 用户手动 | 含（本机灾备，支持完整恢复） |
+| 自动本机备份 | `Save/Backups/taglauncher_auto_*.db` | 启动 10s 后，距上次自动备份满 24h 时 | 含 |
 | 导入前安全备份 | `Save/Backups/taglauncher_pre_import_*.db` | 导入数据时自动 | 含 |
 | 恢复前安全备份 | `Save/Backups/taglauncher_pre_restore_*.db` | 云端恢复时自动 | 含 |
 | 破坏性迁移备份 | `Save/*.pre-vN.bak` | 迁移时自动 | 含 |
@@ -94,6 +95,8 @@ git push origin main --tags
 | 云端备份 | WebDAV `远端目录/taglauncher_*.db` | 手动或自动（24h） | **不含**（剔除 `ai.*` 与 `sync.*`） |
 
 > 破坏性迁移备份保留策略：历史（非本轮）备份**仅保留最新一份、按 mtime 判定**，本轮新建的一律保留（多破坏性迁移连跳会产生多份，最早一份是「升级前原始态」）。因此 `*.pre-vN.bak` 不适合作为长期存档——想长期保留某份迁移前备份的用户，请在升级后尽快把它复制到 `Save/` 以外的位置。
+
+本机备份保留策略：自动备份保留最近 7 份，导入前、恢复前安全备份各保留最近 5 份，由启动时的自动备份流程清理；一键备份不自动删除。启动时实库打不开或 `quick_check` 不通过，`open_or_recover` 用上述四类备份中文件名时间戳最新的一份恢复，损坏文件改名留存为 `.corrupt-*`。
 
 所有快照统一走 SQLite Online Backup API（页级一致，不受 WAL 未 checkpoint 影响），带 15s 忙等超时防死锁。
 
@@ -135,7 +138,7 @@ cd src-tauri; cargo test --test sync_update   # 仅云同步/更新集成测试
 | Release 工作流失败 | 检查三处版本号是否一致；rust-cache 偶发损坏可在 Actions 里清缓存重跑 |
 | 用户报「检查更新失败」 | GitHub API 限流（未认证 60 次/小时/IP）；确认 Release 已 Publish（草稿不可见） |
 | 用户报云同步 401/403 | 让用户确认账号密码/应用密码；坚果云等第三方需专用授权码 |
-| 用户数据损坏 | 引导用 `Save/Backups/` 最近备份手工恢复（见 §4.3）；应用启动时对损坏库有 legacy 扫描自愈 |
+| 用户数据损坏 | 引导用 `Save/Backups/` 最近备份手工恢复（见 §4.3）；应用启动时对损坏库自动用 `Save/Backups/` 最新备份自愈 |
 | 更新后启动异常 | 检查迁移日志（stderr）；`*.pre-vN.bak` 可手工回滚到升级前 |
 
 ## 8. 依赖升级策略

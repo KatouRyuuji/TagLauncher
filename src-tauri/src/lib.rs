@@ -106,8 +106,8 @@ pub fn run() {
                         migrate_legacy_db(&src, &db_path).map_err(|e| {
                             std::io::Error::new(std::io::ErrorKind::Other, e)
                         })?;
-                        // 历史安全备份随数据迁移：open_or_recover 自愈只认
-                        // 当前数据目录 Backups/ 下的 pre_import/pre_restore 备份
+                        // 历史备份随数据迁移：open_or_recover 自愈只认
+                        // 当前数据目录 Backups/ 下的备份
                         if let (Some(src_save), Some(dst_save)) = (src.parent(), db_path.parent()) {
                             migrate_backups(src_save, dst_save);
                         }
@@ -244,6 +244,19 @@ pub fn run() {
                     services::reconcile_runtime::request_reconcile(&first, true);
                 });
                 services::reconcile_runtime::spawn_periodic(&app.handle());
+            }
+
+            // 自动本地备份：启动 10s 后检查，距上次自动备份满 24h 才写入，并按上限清理旧备份
+            {
+                let auto = app.handle().clone();
+                let backups_dir = app_paths.save_dir.join("Backups");
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(10));
+                    let db = auto.state::<Database>();
+                    if let Err(e) = commands::data_commands::run_auto_backup(&db, &backups_dir) {
+                        eprintln!("[backup] 自动备份失败: {e}");
+                    }
+                });
             }
 
             STARTUP_DONE.store(true, Ordering::SeqCst);
