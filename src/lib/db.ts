@@ -301,6 +301,11 @@ export async function listObjectDirectory(path: string): Promise<ObjectDirectory
   return invokeCmd("list_object_directory", { path });
 }
 
+/** 用关联程序打开库内文件夹对象之下的文件（后端校验路径归属） */
+export async function openObjectPath(path: string): Promise<void> {
+  return invokeCmd("open_object_path", { path });
+}
+
 export async function getAudioPreview(path: string): Promise<AudioPreviewInfo> {
   return invokeCmd("get_audio_preview", { path });
 }

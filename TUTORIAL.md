@@ -120,7 +120,7 @@ src-tauri/src/
 - 数据管理：`get_data_directory_info` / `set_data_directory` / `reset_data_directory` / `backup_data` / `export_data` / `import_data` / `restart_app`
 - 云同步：`sync_get_config` / `sync_set_config` / `sync_clear_password` / `sync_test_connection` / `sync_list_backups` / `sync_backup_now` / `sync_restore`
 - 在线更新：`update_check`
-- 对象预览：`get_object_file_info` / `list_object_directory` / `get_audio_preview`
+- 对象预览：`get_object_file_info` / `list_object_directory` / `open_object_path` / `get_audio_preview`
 
 ### 4.2.1 关键修复说明
 

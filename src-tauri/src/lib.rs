@@ -258,6 +258,7 @@ pub fn run() {
             get_items_by_ids,
             get_object_file_info,
             list_object_directory,
+            open_object_path,
             get_audio_preview,
             // 标签管理
             get_tags,

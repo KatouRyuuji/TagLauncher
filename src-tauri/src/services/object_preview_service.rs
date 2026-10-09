@@ -76,9 +76,10 @@ pub fn list_object_directory(path: &str) -> Result<Vec<ObjectDirectoryEntry>, St
         if entries.len() >= MAX_DIR_ENTRIES {
             break; // 目录项数上限：超大目录只返回前 N 项，避免内存/IPC 膨胀
         }
-        let entry = entry.map_err(|e| e.to_string())?;
+        // 单项读不到（无权限、枚举期间被删除等）只跳过该项，不让整个目录列表失败
+        let Ok(entry) = entry else { continue };
         let path_buf = entry.path();
-        let meta = entry.metadata().map_err(|e| e.to_string())?;
+        let Ok(meta) = entry.metadata() else { continue };
         // 跳过符号链接/重解析点（如系统 junction）：它们在列表中既非文件也非目录，
         // 点击导航无意义，且可能指向用户预期之外的系统目录
         if meta.file_type().is_symlink() {

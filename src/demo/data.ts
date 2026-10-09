@@ -124,11 +124,19 @@ export const DEMO_DIR_LISTINGS: Record<string, DemoDirEntry[]> = {
     { name: "会议纪要", item_type: "folder", is_file: false, is_dir: true, size: null },
     { name: "合同扫描件", item_type: "folder", is_file: false, is_dir: true, size: null },
   ],
+  "C:\\Users\\Ryu\\Documents\\工作文档\\会议纪要": [
+    { name: "周例会 0915.docx", item_type: "exe", is_file: true, is_dir: false, size: 41_984 },
+    { name: "项目启动会.docx", item_type: "exe", is_file: true, is_dir: false, size: 56_320 },
+  ],
   "D:\\Photos\\旅行照片": [
     { name: "青海湖", item_type: "folder", is_file: false, is_dir: true, size: null },
     { name: "京都红叶", item_type: "folder", is_file: false, is_dir: true, size: null },
     { name: "海边日出.jpg", item_type: "image", is_file: true, is_dir: false, size: 5_767_424 },
     { name: "山顶星空.jpg", item_type: "image", is_file: true, is_dir: false, size: 6_340_608 },
+  ],
+  "D:\\Photos\\旅行照片\\青海湖": [
+    { name: "湖边.jpg", item_type: "image", is_file: true, is_dir: false, size: 4_915_200 },
+    { name: "茶卡盐湖.jpg", item_type: "image", is_file: true, is_dir: false, size: 5_242_880 },
   ],
   "E:\\Media\\影视收藏": [],
 };
