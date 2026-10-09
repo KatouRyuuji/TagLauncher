@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::path::Path;
+
 use rusqlite::Connection;
 use serde::Serialize;
 
@@ -5,6 +8,11 @@ use crate::services::item_service::{AddItemFailure, AddItemsResult};
 use crate::services::settings_service;
 
 pub const MASTER_KEY: &str = "folder_watch_master";
+
+/// 单个监视根全量补扫的文件数上限（手动导入另有 FOLDER_IMPORT_FILE_CAP）。
+pub const WATCH_SCAN_CAP: usize = 50_000;
+/// 全量补扫每批交给 add_items 的路径数。
+const SCAN_ADD_CHUNK: usize = 500;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -122,24 +130,133 @@ fn empty_add_result() -> AddItemsResult {
     }
 }
 
-/// 对单个监视根做一次有上限补扫，复用 expand_folder_import 跳过规则与 add_items 去重。
+fn path_key(path: &str) -> String {
+    path.replace('/', "\\").to_lowercase()
+}
+
+/// 库里路径位于 root 下的对象（按 Windows 不区分大小写比较），用于补扫时只采集新文件。
+fn known_paths_under(conn: &Connection, root: &str) -> Result<HashSet<String>, String> {
+    let mut prefix = path_key(root);
+    if !prefix.ends_with('\\') {
+        prefix.push('\\');
+    }
+    let mut stmt = conn.prepare("SELECT path FROM items").map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    let mut out = HashSet::new();
+    for row in rows {
+        let key = path_key(&row.map_err(|e| e.to_string())?);
+        if key.starts_with(&prefix) {
+            out.insert(key);
+        }
+    }
+    Ok(out)
+}
+
+fn active_root_path(db: &crate::db::Database, item_id: i64) -> Result<Option<String>, String> {
+    let conn = db.get_conn();
+    if !root_is_active(&conn, item_id) {
+        return Ok(None);
+    }
+    conn.query_row("SELECT path FROM items WHERE id = ?1", [item_id], |r| r.get(0))
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+/// 对单个监视根做一次全量补扫：遍历（上限 WATCH_SCAN_CAP）后只把库里没有的路径交给 add_items。
+/// 根目录不存在（盘离线）时直接返回空结果，不报错。
 pub fn scan_root(db: &crate::db::Database, item_id: i64) -> Result<AddItemsResult, String> {
     crate::db::ensure_writes_allowed()?;
-    let path = {
-        let conn = db.get_conn();
-        if !root_is_active(&conn, item_id) {
-            return Ok(empty_add_result());
-        }
-        conn.query_row("SELECT path FROM items WHERE id = ?1", [item_id], |r| r.get(0))
-            .map_err(|e| e.to_string())?
+    let Some(root) = active_root_path(db, item_id)? else {
+        return Ok(empty_add_result());
     };
-    let expanded = crate::services::import_paths::expand_folder_import(vec![path]);
-    let result = crate::services::item_service::add_items(db, expanded.paths);
+    if !Path::new(&root).is_dir() {
+        return Ok(empty_add_result());
+    }
+    let (files, truncated) =
+        crate::services::import_paths::walk_folder_files(Path::new(&root), WATCH_SCAN_CAP);
+    if truncated {
+        log::warn!("[folder-watch] 根 {item_id} 超过 {WATCH_SCAN_CAP} 个文件，超出部分未同步");
+    }
+    let known = {
+        let conn = db.get_conn();
+        known_paths_under(&conn, &root)?
+    };
+    let fresh: Vec<String> = files
+        .into_iter()
+        .filter(|path| !known.contains(&path_key(path)))
+        .collect();
+    // 分批入库：首次绑定大目录时避免单个事务长时间独占数据库锁
+    let mut result = empty_add_result();
+    for chunk in fresh.chunks(SCAN_ADD_CHUNK) {
+        let part = crate::services::item_service::add_items(db, chunk.to_vec());
+        result.created_count += part.created_count;
+        result.items.extend(part.items);
+        result.failed.extend(part.failed);
+    }
     {
         let conn = db.get_conn();
         mark_scanned(&conn, item_id);
     }
     Ok(result)
+}
+
+/// 把变更通知里的新增/移入路径展开为待入库文件：须位于 root 下，自 root 起每一级都不被跳过规则排除；
+/// 文件夹整体移入时只遍历该文件夹。
+pub fn expand_event_paths(root: &Path, paths: &[std::path::PathBuf]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for path in paths {
+        let Ok(relative) = path.strip_prefix(root) else {
+            continue;
+        };
+        if relative.as_os_str().is_empty() {
+            continue;
+        }
+        let mut current = root.to_path_buf();
+        let mut skipped = false;
+        for component in relative.components() {
+            current.push(component);
+            if crate::services::import_paths::is_skipped_entry(&current) {
+                skipped = true;
+                break;
+            }
+        }
+        if skipped {
+            continue;
+        }
+        let candidates = if path.is_dir() {
+            crate::services::import_paths::walk_folder_files(path, WATCH_SCAN_CAP).0
+        } else if path.is_file() {
+            vec![path.to_string_lossy().to_string()]
+        } else {
+            Vec::new()
+        };
+        for candidate in candidates {
+            if seen.insert(path_key(&candidate)) {
+                out.push(candidate);
+            }
+        }
+    }
+    out
+}
+
+/// 变更通知触发的增量入库：根须仍处于监视中，路径经 expand_event_paths 过滤。
+pub fn import_event_paths(
+    db: &crate::db::Database,
+    item_id: i64,
+    paths: &[std::path::PathBuf],
+) -> Result<AddItemsResult, String> {
+    crate::db::ensure_writes_allowed()?;
+    let Some(root) = active_root_path(db, item_id)? else {
+        return Ok(empty_add_result());
+    };
+    let files = expand_event_paths(Path::new(&root), paths);
+    if files.is_empty() {
+        return Ok(empty_add_result());
+    }
+    Ok(crate::services::item_service::add_items(db, files))
 }
 
 #[cfg(test)]
