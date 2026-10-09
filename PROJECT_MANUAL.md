@@ -320,8 +320,8 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `get_cabinet_items` | cabinet_id: i64, include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 获取文件柜项目；自动图标默认开启 |
 | `get_cabinet_item_counts` | - | Vec\<(i64, i64)\> | 各文件柜成员计数（单次 GROUP BY 查询，侧栏徽标用，不做对账与图标补齐） |
 | `get_folder_watch_status` | - | FolderWatchStatus | 总闸、实际监视数、已勾选对象 id |
-| `set_folder_watch_master` | enabled | FolderWatchStatus | 总闸；关则全部根停止补扫，对象勾选保留 |
-| `set_folder_watch` | item_id, enabled | FolderWatchStatus | 仅 `folder` 且未失效可开；打开后立刻补扫并开始有界轮询 |
+| `set_folder_watch_master` | enabled | FolderWatchStatus | 总闸；关则全部根停止监视，对象勾选保留 |
+| `set_folder_watch` | item_id, enabled | FolderWatchStatus | 仅 `folder` 且未失效可开；打开后立刻全量补扫并挂上系统变更通知 |
 
 ---
 
@@ -585,6 +585,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src
 | tauri | 2.x | 应用框架 |
 | tauri-plugin-single-instance | 2.x | 单实例：再次启动只把已有主窗口唤到前台；`restart_app` 重启前先释放实例锁 |
 | tauri-plugin-log / log | 2.x / 0.4 | 后端诊断与 panic 写入系统应用日志目录 `logs/TagLauncher.log`（Info 级，5 MB 轮转，另留 5 份）；`tl` 将同一日志打印到 stderr |
+| notify-debouncer-full | 0.7 | 文件夹监视：系统变更通知（经其导出的 notify 8.2，Windows 底层 ReadDirectoryChangesW）与防抖 |
 | rusqlite | 0.31 | SQLite 驱动（`bundled` + `backup` feature：Online Backup 用于导入/导出/备份） |
 | ureq | 2.x | 阻塞式 HTTP（Mod `net_fetch`、AI 打标、WebDAV 云同步、更新检查） |
 | clap | 4.x | tl CLI 参数解析（derive） |

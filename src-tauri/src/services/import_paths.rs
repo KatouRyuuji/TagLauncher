@@ -74,6 +74,29 @@ pub fn expand_folder_import(paths: Vec<String>) -> ExpandFolderImportResult {
     }
 }
 
+/// 递归收集文件夹内文件，跳过规则与 expand_folder_import 一致。返回 (路径, 是否因 cap 截断)。
+pub fn walk_folder_files(root: &Path, cap: usize) -> (Vec<String>, bool) {
+    let mut out = Vec::new();
+    let mut budget = cap;
+    let complete = walk_files(root, &mut out, &mut budget);
+    (out, !complete)
+}
+
+/// 单个路径是否会被遍历跳过：名称规则、符号链接、隐藏/系统属性。
+pub fn is_skipped_entry(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if should_skip_name(&name) {
+        return true;
+    }
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata.file_type().is_symlink() || is_hidden_or_system(&metadata),
+        Err(_) => true,
+    }
+}
+
 fn walk_files(root: &Path, out: &mut Vec<String>, budget: &mut usize) -> bool {
     let entries = match std::fs::read_dir(root) {
         Ok(entries) => entries,
