@@ -16,6 +16,8 @@ use extensions::mod_registry::ModRegistry;
 use services::path_service;
 use services::settings_service;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 use tauri::Manager;
 
 /// 将旧版数据库以一致快照方式迁移到新位置。
@@ -64,6 +66,7 @@ fn migrate_legacy_db(src: &std::path::Path, dst: &std::path::Path) -> Result<(),
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_startup_failure_dialog();
     tauri::Builder::default()
         // 须为首个插件：第二个实例在初始化其余部分前即退出，只把已有主窗口唤到前台
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -82,6 +85,7 @@ pub fn run() {
                 .unwrap_or_else(|_| PathBuf::from("."));
             std::fs::create_dir_all(&app_dir).ok();
             let app_paths = path_service::resolve_app_paths(app.handle());
+            let _ = STARTUP_SAVE_DIR.set(app_paths.save_dir.clone());
             app_paths.ensure_dirs().map_err(|e| {
                 std::io::Error::new(std::io::ErrorKind::Other, e)
             })?;
@@ -242,6 +246,7 @@ pub fn run() {
                 services::reconcile_runtime::spawn_periodic(&app.handle());
             }
 
+            STARTUP_DONE.store(true, Ordering::SeqCst);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -374,6 +379,65 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+/// setup 走完前置为 true；此前的 panic（setup 返回错误、WebView2 缺失等）视为启动失败。
+static STARTUP_DONE: AtomicBool = AtomicBool::new(false);
+/// 启动失败弹窗里展示的数据目录，setup 解析出路径后写入。
+static STARTUP_SAVE_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// 发布版无控制台，启动失败的 panic 只写 stderr 时用户只会看到「点了没反应」。
+/// 在默认 panic 输出之后，用系统原生对话框展示原因与数据目录；启动完成后的 panic 不弹窗。
+fn install_startup_failure_dialog() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        default_hook(info);
+        if STARTUP_DONE.load(Ordering::SeqCst) {
+            return;
+        }
+        show_fatal_dialog(&startup_failure_text(
+            &panic_reason(info.payload()),
+            STARTUP_SAVE_DIR.get(),
+        ));
+    }));
+}
+
+fn panic_reason(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "未知错误".to_string())
+}
+
+fn startup_failure_text(reason: &str, save_dir: Option<&PathBuf>) -> String {
+    let mut text = format!("TagLauncher 启动失败：\n\n{reason}");
+    if let Some(dir) = save_dir {
+        text.push_str(&format!("\n\n数据目录：{}", dir.display()));
+    }
+    text
+}
+
+#[cfg(windows)]
+fn show_fatal_dialog(text: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+    let wide = |s: &str| {
+        s.encode_utf16()
+            .chain(std::iter::once(0))
+            .collect::<Vec<u16>>()
+    };
+    let (text, title) = (wide(text), wide("TagLauncher"));
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn show_fatal_dialog(_text: &str) {}
+
 /// 扫描所有可能存放旧版本数据库的位置，返回最近修改的**健康**库。
 /// 涵盖：exe 同级 Save/（v1.0~1.7.4 的默认位置）、老 AppData roaming 位置、
 /// MSI per-machine 安装位置（Program Files / Program Files (x86)）。
@@ -487,6 +551,25 @@ fn probe_db(db_path: &std::path::Path) -> DbState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn panic_reason_reads_str_and_string_payloads() {
+        let s: Box<dyn std::any::Any + Send> = Box::new("Failed to setup app: x");
+        assert_eq!(panic_reason(s.as_ref()), "Failed to setup app: x");
+        let owned: Box<dyn std::any::Any + Send> = Box::new(String::from("boom"));
+        assert_eq!(panic_reason(owned.as_ref()), "boom");
+        let other: Box<dyn std::any::Any + Send> = Box::new(42u8);
+        assert_eq!(panic_reason(other.as_ref()), "未知错误");
+    }
+
+    #[test]
+    fn startup_failure_text_includes_save_dir_when_known() {
+        let dir = PathBuf::from(r"C:\Data\Save");
+        let text = startup_failure_text("db error", Some(&dir));
+        assert!(text.contains("db error"));
+        assert!(text.contains(r"C:\Data\Save"));
+        assert!(!startup_failure_text("db error", None).contains("数据目录"));
+    }
     use std::path::Path;
 
     fn seed_healthy_db(path: &Path) {
