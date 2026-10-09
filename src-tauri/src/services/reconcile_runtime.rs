@@ -81,7 +81,10 @@ const APPLY_CHUNK_SIZE: usize = 500;
 pub fn run_sweep(app: &AppHandle) -> Result<ReconcileSummary, String> {
     let started = Instant::now();
     let scheduler = app.state::<ReconcileScheduler>();
-    let _sweep = scheduler.sweep_lock.lock().unwrap();
+    let _sweep = scheduler
+        .sweep_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let db = app.state::<crate::db::Database>();
     let snapshot = {
         let conn = db.get_conn();
@@ -119,7 +122,10 @@ pub fn run_sweep(app: &AppHandle) -> Result<ReconcileSummary, String> {
 pub fn request_reconcile(app: &AppHandle, force: bool) -> bool {
     let scheduler = app.state::<ReconcileScheduler>();
     {
-        let _gate = scheduler.gate.lock().unwrap();
+        let _gate = scheduler
+            .gate
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if scheduler.in_flight.swap(true, Ordering::SeqCst) {
             if force {
                 scheduler.pending_force.store(true, Ordering::SeqCst);
@@ -128,7 +134,10 @@ pub fn request_reconcile(app: &AppHandle, force: bool) -> bool {
         }
     }
     {
-        let mut last = scheduler.last_run.lock().unwrap();
+        let mut last = scheduler
+            .last_run
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if !force {
             if let Some(prev) = *last {
                 if prev.elapsed() < THROTTLE {
@@ -141,6 +150,8 @@ pub fn request_reconcile(app: &AppHandle, force: bool) -> bool {
     }
     let handle = app.clone();
     std::thread::spawn(move || {
+        let scheduler = handle.state::<ReconcileScheduler>();
+        let _reset = ResetOnPanic(&scheduler.in_flight);
         loop {
             match run_sweep(&handle) {
                 Ok(summary) => {
@@ -150,8 +161,10 @@ pub fn request_reconcile(app: &AppHandle, force: bool) -> bool {
                 }
                 Err(error) => eprintln!("[reconcile] 后台对账失败: {error}"),
             }
-            let scheduler = handle.state::<ReconcileScheduler>();
-            let _gate = scheduler.gate.lock().unwrap();
+            let _gate = scheduler
+                .gate
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             // 在跑期间登记的强制请求：in_flight 保持 true，立即补一轮
             if scheduler.pending_force.swap(false, Ordering::SeqCst) {
                 continue;
@@ -163,6 +176,18 @@ pub fn request_reconcile(app: &AppHandle, force: bool) -> bool {
     true
 }
 
+/// 对账线程 panic 时释放 in_flight，避免后续对账请求被永久拒绝。
+/// 正常退出由循环在 gate 内释放，这里不重复写入。
+struct ResetOnPanic<'a>(&'a AtomicBool);
+
+impl Drop for ResetOnPanic<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0.store(false, Ordering::SeqCst);
+        }
+    }
+}
+
 /// 60s 周期源：应用生命周期内常驻，节流窗口内自动跳过。
 pub fn spawn_periodic(app: &AppHandle) {
     let handle = app.clone();
@@ -170,4 +195,25 @@ pub fn spawn_periodic(app: &AppHandle) {
         std::thread::sleep(THROTTLE);
         request_reconcile(&handle, false);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reset_on_panic_releases_flag_only_when_panicking() {
+        let flag = AtomicBool::new(true);
+        {
+            let _reset = ResetOnPanic(&flag);
+        }
+        assert!(flag.load(Ordering::SeqCst));
+
+        let result = std::panic::catch_unwind(|| {
+            let _reset = ResetOnPanic(&flag);
+            panic!("sweep failed");
+        });
+        assert!(result.is_err());
+        assert!(!flag.load(Ordering::SeqCst));
+    }
 }
