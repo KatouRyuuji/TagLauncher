@@ -785,7 +785,7 @@ npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页�
 
 - **分发**：`tl.exe` 以 Tauri `externalBin` sidecar 形式打进安装包并落入主程序同级目录；便携版 zip 同样附带。sidecar 构建由 `scripts/prepare-cli-bin.mjs` 完成（pack/CI 已接线）；`scripts/ensure-cli-placeholder.mjs` 在首次编译前创建占位文件（tauri-build 会校验 externalBin 存在，全新克隆缺它会编译失败，dev.bat/setup.bat/CI 已接线）。
 - **数据库定位**：与 GUI 同一套解析——exe 旁 `datapath.json` 重定向优先，否则 `%LOCALAPPDATA%\TagLauncher\Save\taglauncher.db`（`src-tauri/src/cli/mod.rs`）。数据库不存在时拒绝静默新建并提示先运行主程序。
-- **并发**：WAL 模式下与 GUI 并发安全；CLI 的写操作 GUI 需刷新后可见。
+- **并发**：WAL 模式下与 GUI 并发安全；两边同时写时后到者最多排队等待 5 秒，超时报「database is locked」且不触发损坏自愈；CLI 的写操作 GUI 需刷新后可见。
 - **命令面**：`search` / `list` / `get` / `add` / `remove` / `launch`（id 或搜索词首命中）/ `tag list|add|set|clear` / `fav [--off]` / `cabinet list|items` / `stats` / `mcp` / `tui`。全局 `--json` 输出机器可读 JSON（脚本与 AI 消费）。实现：`src-tauri/src/bin/tl.rs`（clap derive）。
 
 ### 17.2 tl tui 终端界面

@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use super::migrations;
 use super::schema;
@@ -60,19 +61,32 @@ impl Database {
 /// /断电可能留下打不开的实库——逻辑回滚救不了这种情况，自愈是最后防线。
 fn open_or_recover(path: &Path) -> Result<Connection, rusqlite::Error> {
     if let Ok(conn) = Connection::open(path) {
-        // quick_check 通过时恰返回单行 "ok"；损坏库报错或返回问题描述行
-        let healthy = conn
-            .query_row("PRAGMA quick_check", [], |r| r.get::<_, String>(0))
-            .map(|first| first == "ok")
-            .unwrap_or(false);
-        if healthy {
-            return Ok(conn);
+        conn.busy_timeout(BUSY_TIMEOUT)?;
+        // quick_check 通过时恰返回单行 "ok"；损坏库报错或返回问题描述行。
+        // 等锁超时说明库正被另一进程（GUI 与 tl 共用实库）长时间占用，不是损坏，原样报错。
+        match conn.query_row("PRAGMA quick_check", [], |r| r.get::<_, String>(0)) {
+            Ok(first) if first == "ok" => return Ok(conn),
+            Err(e) if is_lock_error(&e) => return Err(e),
+            _ => {}
         }
         // 先释放句柄，Windows 下才能改名/覆盖损坏文件
         drop(conn);
     }
     recover_from_safety_backup(path);
-    Connection::open(path)
+    let conn = Connection::open(path)?;
+    conn.busy_timeout(BUSY_TIMEOUT)?;
+    Ok(conn)
+}
+
+/// 遇到其它连接持锁时的最长等待：GUI 与 tl/MCP 跨进程共用实库，写冲突排队而非立即报
+/// "database is locked"。
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn is_lock_error(e: &rusqlite::Error) -> bool {
+    matches!(
+        e.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+    )
 }
 
 /// 备份目录名（与 data_commands::BACKUPS_DIR_NAME 保持一致）。
@@ -233,6 +247,78 @@ mod tests {
                     .starts_with("taglauncher.db.corrupt-")
             });
         assert!(leftover, "损坏原文件应改名留存为 .corrupt-*");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 在独立线程用排它锁占住实库 hold 时长后释放；返回加锁完成后的 join 句柄。
+    fn hold_exclusive_lock(path: &Path, hold: Duration) -> std::thread::JoinHandle<()> {
+        let path = path.to_path_buf();
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE;")
+                .unwrap();
+            locked_tx.send(()).unwrap();
+            std::thread::sleep(hold);
+            conn.execute_batch("COMMIT").unwrap();
+        });
+        locked_rx.recv().unwrap();
+        handle
+    }
+
+    fn seeded_db(dir_name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let base = std::env::temp_dir().join(format!("{dir_name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let live = base.join("taglauncher.db");
+        Database::new(&live).expect("seed live db");
+        (base, live)
+    }
+
+    /// 另一连接短暂持锁时，打开与写入排队等待，锁释放后成功。
+    #[test]
+    fn database_new_waits_for_short_lock() {
+        let (base, live) = seeded_db("tl_busy_wait");
+        let holder = hold_exclusive_lock(&live, Duration::from_millis(500));
+
+        let db = Database::new(&live).expect("锁释放后应正常打开");
+        db.get_conn()
+            .execute(
+                "INSERT INTO items (name, path, type) VALUES ('w', 'D:\\w.exe', 'exe')",
+                [],
+            )
+            .expect("锁释放后应能写入");
+        holder.join().unwrap();
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 等锁超时按锁错误原样报错：不改名留存、不从安全备份覆盖实库。
+    #[test]
+    fn database_new_reports_lock_timeout_without_recovery() {
+        let (base, live) = seeded_db("tl_busy_timeout");
+        let backups = base.join(BACKUPS_DIR_NAME);
+        std::fs::create_dir_all(&backups).unwrap();
+        std::fs::copy(
+            &live,
+            backups.join("taglauncher_pre_import_20260101_000000_000.db"),
+        )
+        .unwrap();
+        let holder = hold_exclusive_lock(&live, BUSY_TIMEOUT + Duration::from_secs(2));
+
+        let err = match Database::new(&live) {
+            Ok(_) => panic!("持锁超过等待上限时应报错"),
+            Err(e) => e,
+        };
+        assert!(is_lock_error(&err), "应为锁错误: {err}");
+        holder.join().unwrap();
+        let renamed = std::fs::read_dir(&base).unwrap().flatten().any(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("taglauncher.db.corrupt-")
+        });
+        assert!(!renamed, "锁冲突不应触发自愈");
 
         let _ = std::fs::remove_dir_all(&base);
     }
