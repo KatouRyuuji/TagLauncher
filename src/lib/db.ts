@@ -412,6 +412,11 @@ export async function removeCabinet(id: number): Promise<void> {
   return invokeCmd("remove_cabinet", { id });
 }
 
+/** 关联或解除文件柜的磁盘文件夹（folder 为 null 时解除，当前成员保留为普通文件柜） */
+export async function setCabinetFolder(id: number, folder: string | null): Promise<void> {
+  return invokeCmd("set_cabinet_folder", { id, folder });
+}
+
 /** 添加项目到文件柜（重复添加会被忽略） */
 export async function addItemToCabinet(cabinetId: number, itemId: number): Promise<void> {
   return invokeCmd("add_item_to_cabinet", { cabinetId, itemId });
