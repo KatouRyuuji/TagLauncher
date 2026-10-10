@@ -40,6 +40,26 @@ export function useCabinets() {
     loadCabinets();
   }, [loadCabinets]);
 
+  // 关联文件夹的状态（离线 / 不存在 / 超出上限）随后台同步与对账变化，事件到达时重读
+  useEffect(() => {
+    let cancelled = false;
+    const stops: Array<() => void> = [];
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) => Promise.all([
+        listen("folder-watch-imported", () => { if (!cancelled) void loadCabinets(); }),
+        listen("items-reconciled", () => { if (!cancelled) void loadCabinets(); }),
+      ]))
+      .then((handles) => {
+        if (cancelled) handles.forEach((stop) => stop());
+        else stops.push(...handles);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      stops.forEach((stop) => stop());
+    };
+  }, [loadCabinets]);
+
   /** 新建文件柜 */
   const addCabinet = useCallback(async (name: string, color: string) => {
     const cab = await db.addCabinet(name, color);
@@ -80,5 +100,11 @@ export function useCabinets() {
     }
   }, [setCabinets]);
 
-  return { refresh: loadCabinets, addCabinet, updateCabinet, removeCabinet };
+  /** 关联或解除磁盘文件夹，随后重读文件柜（含关联状态） */
+  const setCabinetFolder = useCallback(async (id: number, folder: string | null) => {
+    await db.setCabinetFolder(id, folder);
+    await loadCabinets();
+  }, [loadCabinets]);
+
+  return { refresh: loadCabinets, addCabinet, updateCabinet, removeCabinet, setCabinetFolder };
 }

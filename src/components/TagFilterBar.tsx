@@ -16,10 +16,9 @@ export function TagFilterBar() {
   const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
   const toggleTagExclusion = useAppStore((state) => state.toggleTagExclusion);
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
-  const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const showFavorites = useAppStore((state) => state.showFavorites);
   const showRecent = useAppStore((state) => state.showRecent);
-  const tagFilterAvailable = selectedCabinetId === null && !showFavorites && !showRecent;
+  const tagFilterAvailable = !showFavorites && !showRecent;
   const activeTags = tags.filter((tag) => selectedTagIds.includes(tag.id) || excludedTagIds.includes(tag.id));
   const scrollRef = useRef<HTMLDivElement>(null);
 

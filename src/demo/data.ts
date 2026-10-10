@@ -96,8 +96,8 @@ export const DEMO_ITEMS: DemoItemSeed[] = [
 // ---- 文件柜 ----
 
 export const DEMO_CABINETS: Cabinet[] = [
-  { id: 1, name: "工作必备", color: "#3b82f6", created_at: "2025-03-01T09:00:00Z" },
-  { id: 2, name: "娱乐休闲", color: "#ec4899", created_at: "2025-03-01T09:01:00Z" },
+  { id: 1, name: "工作必备", color: "#3b82f6", created_at: "2025-03-01T09:00:00Z", folder_path: null, folder_truncated: false },
+  { id: 2, name: "娱乐休闲", color: "#ec4899", created_at: "2025-03-01T09:01:00Z", folder_path: null, folder_truncated: false },
 ];
 
 /** 文件柜成员：cabinetId → itemIds */

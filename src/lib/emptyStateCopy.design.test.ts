@@ -78,4 +78,11 @@ test("超长搜索词在标题中截断，避免撑破空态面板", () => {
   assert.equal(truncateQueryForDisplay("  游戏  "), "游戏");
 });
 
+test("关联柜空目录不提示拖入", () => {
+  const copy = emptyStateCopy("cabinet", "", { linkedCabinet: true });
+  assert.ok(copy.title.includes("文件夹"));
+  assert.ok(!copy.description.includes("拖进来"));
+  assert.ok(copy.description.includes("Backspace"));
+});
+
 await run("emptyStateCopy");

@@ -37,6 +37,8 @@ interface UseItemRemovalParams {
 export interface RemoveRequestOptions {
   forceDialog?: boolean;
   preferDeleteFiles?: boolean;
+  /** 批量移除的目标；缺省为当前选中对象 */
+  itemIds?: number[];
 }
 
 export interface RemoveConfirmDialogProps {
@@ -53,7 +55,7 @@ export interface RemoveConfirmDialogProps {
 export interface UseItemRemovalResult {
   /** 请求移除单个对象（可能直接删除或弹确认）。 */
   requestRemoveFromApp: (itemId: number, options?: RemoveRequestOptions) => Promise<void>;
-  /** 请求批量移除当前选中对象（可能直接删除或弹确认）。 */
+  /** 请求批量移除对象（缺省为当前选中对象；可能直接删除或弹确认）。 */
   requestBatchRemoveFromApp: (options?: RemoveRequestOptions) => Promise<void>;
   /** 直接展开给 RemoveFromAppConfirmDialog 的 props。 */
   removeDialog: RemoveConfirmDialogProps;
@@ -103,17 +105,18 @@ export function useItemRemoval({
   );
 
   const requestBatchRemoveFromApp = useCallback(async (options?: RemoveRequestOptions) => {
-    if (selectedItemIds.length === 0) return;
+    const itemIds = options?.itemIds ?? selectedItemIds;
+    if (itemIds.length === 0) return;
 
     const skipConfirm = !options?.forceDialog && !options?.preferDeleteFiles && readSkipConfirm();
     if (skipConfirm) {
-      await commitRemove(selectedItemIds, false);
+      await commitRemove(itemIds, false);
       return;
     }
 
     setSkipRemoveItemConfirm(false);
     setPreferDeleteFiles(options?.preferDeleteFiles === true);
-    setPendingBatchRemoveItemIds(selectedItemIds);
+    setPendingBatchRemoveItemIds(itemIds);
   }, [commitRemove, selectedItemIds]);
 
   const handleConfirmRemoveFromApp = useCallback(async (mode: RemoveFromAppMode) => {

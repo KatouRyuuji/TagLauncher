@@ -1,5 +1,6 @@
 import { beginInternalPointerDrag, findClosestNumberDataAttribute } from "../lib/internalPointerDrag";
 import { showToast } from "../lib/toast";
+import { useAppStore } from "../stores/appStore";
 import type { Cabinet, ItemWithTags } from "../types";
 
 export interface ItemDragStartOptions {
@@ -95,6 +96,10 @@ export function useItemDragStart({
           return;
         }
         if (target?.kind === "item-cabinet") {
+          if (useAppStore.getState().cabinets.some((cabinet) => cabinet.id === target.cabinetId && cabinet.folder_path)) {
+            showToast("关联文件夹的文件柜内容由文件夹决定，不能拖入", "warning");
+            return;
+          }
           // 前端可确定的重复（单拖到当前所在柜）直接提示，不发请求
           if (itemIds.length === 1 && target.cabinetId === currentCabinetId) {
             showToast(`「${item.name}」已在此文件柜中`, "info");

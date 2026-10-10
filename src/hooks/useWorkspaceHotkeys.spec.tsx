@@ -4,6 +4,7 @@
 // F3 / Ctrl+F 聚焦搜索（输入中也可用）；修饰键组合（Ctrl+Shift+F3 等）不触发。
 // 备注弹窗叠在快速预览之上时，预览的方向键 / Enter 让路给输入框。
 // F2 对单个选中项打开重命名，失效对象只提示；多选时打开批量重命名。
+// Backspace 交给 onNavigateUp 返回上一级目录，输入框内不触发。
 // ============================================================================
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -17,7 +18,7 @@ import { showToast } from "../lib/toast";
 
 vi.mock("../lib/toast", () => ({ showToast: vi.fn() }));
 
-function setup(options: { items?: ItemWithTags[]; selectedItemIds?: number[]; onLaunch?: (id: number) => void } = {}) {
+function setup(options: { items?: ItemWithTags[]; selectedItemIds?: number[]; onLaunch?: (id: number) => void; onNavigateUp?: () => boolean } = {}) {
   const input = document.createElement("input");
   input.id = WORKSPACE_SEARCH_ID;
   document.body.appendChild(input);
@@ -34,6 +35,7 @@ function setup(options: { items?: ItemWithTags[]; selectedItemIds?: number[]; on
       onToggleSelectedFavorite: () => {},
       onToggleItemFavorite: () => {},
       onOpenSettings: () => {},
+      onNavigateUp: options.onNavigateUp,
     }),
   );
   return input;
@@ -137,5 +139,28 @@ describe("useWorkspaceHotkeys · F2 重命名", () => {
     fireEvent.keyDown(window, { key: "F2" });
     expect(useAppStore.getState().renameItemId).toBeNull();
     expect(showToast).toHaveBeenCalledWith("失效对象不能重命名", "warning");
+  });
+});
+
+describe("useWorkspaceHotkeys · Backspace 返回上一级", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("工作台内按 Backspace 调用 onNavigateUp，处理时阻止默认行为", () => {
+    const onNavigateUp = vi.fn(() => true);
+    setup({ onNavigateUp });
+    const event = new KeyboardEvent("keydown", { key: "Backspace", cancelable: true });
+    window.dispatchEvent(event);
+    expect(onNavigateUp).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("搜索框内的 Backspace 只删字，不返回上一级", () => {
+    const onNavigateUp = vi.fn(() => true);
+    const input = setup({ onNavigateUp });
+    input.focus();
+    fireEvent.keyDown(input, { key: "Backspace" });
+    expect(onNavigateUp).not.toHaveBeenCalled();
   });
 });

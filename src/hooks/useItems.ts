@@ -5,6 +5,7 @@ import { buildSearchIndex, filterItemsByTags, filterSearchIndex, searchWithIndex
 import { ensurePinyin } from "../lib/pinyinProvider";
 import { applyMissingFilter, applyTypeFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/itemQuery";
 import { buildDescendantsMap } from "../lib/tagGraph";
+import { currentBrowseDir, itemsInDir } from "../lib/cabinetBrowse";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
 import { TAGS_WRITTEN_EVENT } from "./useTags";
@@ -81,6 +82,7 @@ function removeItemFromList(items: ItemWithTags[], id: number): ItemWithTags[] {
 
 /** 稳定的空数组引用：切柜期间 cabinetItems 尚未归属新柜时回退，避免闪现旧柜内容。 */
 const EMPTY_ITEMS: ItemWithTags[] = [];
+const EMPTY_IDS: number[] = [];
 
 export function useItems() {
   const searchQuery = useAppStore((state) => state.searchQuery);
@@ -88,6 +90,14 @@ export function useItems() {
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
+  // 选中柜的关联文件夹：关联 / 解除后成员集合整体改变，需重新拉取柜内对象
+  const linkedFolder = useAppStore((state) =>
+    state.selectedCabinetId === null
+      ? null
+      : state.cabinets.find((cabinet) => cabinet.id === state.selectedCabinetId)?.folder_path ?? null,
+  );
+  const cabinetDir = useAppStore((state) => state.cabinetDir);
+  const cabinetFlat = useAppStore((state) => state.cabinetFlat);
   const showFavorites = useAppStore((state) => state.showFavorites);
   const showRecent = useAppStore((state) => state.showRecent);
   const sortMode = useAppStore((state) => state.sortMode);
@@ -288,7 +298,7 @@ export function useItems() {
     return () => {
       cancelled = true;
     };
-  }, [selectedCabinetId, cabinetReloadTick]);
+  }, [selectedCabinetId, linkedFolder, cabinetReloadTick]);
 
   useEffect(() => {
     loadAll();
@@ -429,6 +439,11 @@ export function useItems() {
   );
 
   const hasSearchQuery = deferredSearchQuery.trim().length > 0;
+  // 关联柜按目录浏览：只显示当前目录这一层；搜索或标签筛选时在整个关联文件夹内查找
+  const browseDir =
+    linkedFolder !== null && !cabinetFlat && !hasSearchQuery && selectedTagIds.length === 0 && excludedTagIds.length === 0
+      ? currentBrowseDir(linkedFolder, cabinetDir)
+      : null;
   // 浏览和筛选直接使用对象数据；输入搜索词时才构建拼音等派生字段。
   const sourceSearchIndex = useMemo(
     () => hasSearchQuery ? buildSearchIndex(source, searchMode) : null,
@@ -463,7 +478,8 @@ export function useItems() {
     if (searchIndex) {
       return applyMissingFilter(applyTypeFilter(searchWithIndex(searchIndex, deferredSearchQuery), typeFilter), hideMissing);
     }
-    return applyWorkspaceQuery(applyMissingFilter(tagFiltered, hideMissing), {
+    const scoped = browseDir !== null ? itemsInDir(tagFiltered, browseDir) : tagFiltered;
+    return applyWorkspaceQuery(applyMissingFilter(scoped, hideMissing), {
       typeFilter,
       sortMode,
       // 冻结键只服务反瞬移场景：显式 recent 排序 / 最近使用域是活视图，启动必须立即升顶
@@ -472,7 +488,13 @@ export function useItems() {
           ? undefined
           : { lastUsedAt: frozenSortKeysRef.current ?? undefined },
     });
-  }, [searchIndex, tagFiltered, deferredSearchQuery, typeFilter, hideMissing, sortMode, showRecent]);
+  }, [searchIndex, tagFiltered, browseDir, deferredSearchQuery, typeFilter, hideMissing, sortMode, showRecent]);
+
+  // 关联柜内的失效对象（「清理失效」用）：取整个关联文件夹，不受当前目录与筛选影响
+  const linkedMissingIds = useMemo(
+    () => linkedFolder !== null && cabinetReady ? source.filter((item) => item.is_missing).map((item) => item.id) : EMPTY_IDS,
+    [linkedFolder, cabinetReady, source],
+  );
 
   const addItems = useCallback(async (paths: string[]) => {
     await withErrorToast("批量导入", async () => {
@@ -734,6 +756,8 @@ export function useItems() {
     items: filtered,
     allItems,
     loading,
+    browseDir,
+    linkedMissingIds,
     cabinetPending: selectedCabinetId !== null && !showFavorites && !showRecent && cabinetItemsOwner !== selectedCabinetId,
     loadError,
     refresh,

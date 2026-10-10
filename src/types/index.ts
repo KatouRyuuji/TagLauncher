@@ -21,6 +21,12 @@ export interface Cabinet {
   name: string;
   color: string;
   created_at: string;
+  /** 关联的磁盘文件夹；有值时成员由该文件夹内容决定 */
+  folder_path: string | null;
+  /** 关联文件夹超过同步上限（50000 项），只同步了一部分 */
+  folder_truncated: boolean;
+  /** 关联文件夹当前状态：ok / offline（所在磁盘未接入）/ missing（文件夹不存在） */
+  folder_state?: "ok" | "offline" | "missing" | null;
 }
 
 export interface Tag {

@@ -112,7 +112,7 @@ tag-launcher/
 │   ├── hooks/
 │   │   ├── useItems.ts           # 项目数据管理 + 客户端搜索
 │   │   ├── useTags.ts            # 标签 CRUD
-│   │   ├── useCabinets.ts        # 文件柜 CRUD
+│   │   ├── useCabinets.ts        # 文件柜 CRUD + 关联文件夹（随监视事件刷新状态）
 │   │   ├── useSearch.ts          # 搜索防抖（清空立即生效）
 │   │   └── useWorkspaceHotkeys.ts # 键盘优先（IME/弹层让路）
 │   ├── lib/
@@ -120,6 +120,7 @@ tag-launcher/
 │   │   ├── search.ts             # 自研搜索引擎（前缀/拼音/低容错/英文缩写/同义词/表达式）
 │   │   ├── itemQuery.ts          # 排序 / 类型筛选 / 键盘选择 / 点选
 │   │   ├── batchRename.ts        # 批量重命名规则纯函数（查找替换 / 模板）
+│   │   ├── cabinetBrowse.ts      # 关联柜按目录浏览（当前层过滤、上一级、面包屑）
 │   │   ├── workspaceChrome.ts    # 工作台遮罩、选中锚点、网格列数
 │   │   └── synonyms.ts           # 同义词字典加载
 │   ├── components/
@@ -127,7 +128,7 @@ tag-launcher/
 │   │   ├── AppErrorBoundary.tsx  # 顶层错误边界（崩溃时强制显示窗口 + 可复制错误详情）
 │   │   ├── Sidebar.tsx           # 左侧导航（标签/文件柜/最近使用）
 │   │   ├── SearchBar.tsx         # 搜索框 + 控制/筛选合并行（搜索范围/排序/视图/类型筛选/导入）
-│   │   ├── WorkspaceScopeHeader.tsx # 主区范围标题（全部 / 收藏 / 柜 / 已筛）
+│   │   ├── WorkspaceScopeHeader.tsx # 主区范围标题（全部 / 收藏 / 柜 / 已筛）；关联柜附面包屑、状态提示、清理失效、平铺开关
 │   │   ├── TagFilterBar.tsx      # 主视图顶部标签筛选条（默认展开；芯片间写「且 / 且非」）
 │   │   ├── ThemeFamilyGallery.tsx # 设置里官方四族主选择器
 │   │   ├── SearchHighlightText.tsx # 搜索关键词高亮渲染
@@ -410,9 +411,9 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 使用 Zustand 管理全局状态，核心设计：
 
 ```typescript
-// 三种筛选模式互斥
-toggleTagSelection(id)    → 清空 selectedCabinetId 和 showFavorites
-setSelectedCabinetId(id)  → 清空 selectedTagIds 和 showFavorites
+// 标签可叠加在文件柜之上，收藏 / 最近使用与其余互斥
+toggleTagSelection(id)    → 保留 selectedCabinetId，清空 showFavorites / showRecent
+setSelectedCabinetId(id)  → 清空 selectedTagIds、showFavorites、showRecent，cabinetDir 归零
 setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 ```
 

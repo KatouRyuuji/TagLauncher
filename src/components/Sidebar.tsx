@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Clock,
   Folder,
+  FolderSync,
   GitFork,
   Info,
 
@@ -50,6 +51,8 @@ interface SidebarProps {
   onAddCabinet: (name: string, color: string) => Promise<unknown>;
   onUpdateCabinet: (id: number, name: string, color: string) => Promise<void>;
   onRemoveCabinet: (id: number) => Promise<void>;
+  /** 关联 / 解除文件柜的磁盘文件夹 */
+  onSetCabinetFolder?: (id: number, folder: string | null) => Promise<void>;
   onAddTagToItem: (itemId: number, tagId: number) => Promise<void>;
   onAddTagRelation: (parentId: number, childId: number) => Promise<void>;
   onRemoveTagRelation: (parentId: number, childId: number) => Promise<void>;
@@ -71,6 +74,7 @@ export function Sidebar({
   onAddCabinet,
   onUpdateCabinet,
   onRemoveCabinet,
+  onSetCabinetFolder,
   onAddTagToItem,
   onAddTagRelation,
   onRemoveTagRelation,
@@ -545,6 +549,7 @@ export function Sidebar({
                         aria-hidden="true"
                       />
                       <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{cabinet.name}</span>
+                      {cabinet.folder_path && <LinkedFolderMark cabinet={cabinet} />}
                       <NavCount value={itemCountByCabinet.get(cabinet.id) ?? 0} />
                     </button>
                   );
@@ -634,11 +639,21 @@ export function Sidebar({
         <TagEditor
           tag={editingCabinet ? { id: editingCabinet.id, name: editingCabinet.name, color: editingCabinet.color } : null}
           label="文件柜"
-          onSave={async (name, color) => {
+          folderPath={onSetCabinetFolder ? editingCabinet?.folder_path ?? null : undefined}
+          onSave={async (name, color, folder) => {
             if (editingCabinet) {
               await onUpdateCabinet(editingCabinet.id, name, color);
+              if (folder !== editingCabinet.folder_path) {
+                await onSetCabinetFolder?.(editingCabinet.id, folder);
+              }
             } else {
-              await onAddCabinet(name, color);
+              const created = await onAddCabinet(name, color) as Cabinet;
+              if (folder !== null) {
+                // 柜已建成：关联失败只提示，不让用户重复提交造成重名
+                await onSetCabinetFolder?.(created.id, folder).catch((err: unknown) =>
+                  showToast(`文件柜已创建，但关联文件夹失败：${err instanceof Error ? err.message : String(err)}`, "error"),
+                );
+              }
             }
             setEditingCabinet(null);
             setShowAddCabinet(false);
@@ -869,5 +884,19 @@ function SidebarPanelSlot({ panel }: { panel: PanelDescriptor }) {
         style={{ fontSize: "var(--font-size-sm)", display: collapsed ? "none" : undefined }}
       />
     </div>
+  );
+}
+
+/** 关联文件夹的文件柜标记：悬停显示路径；磁盘未接入或文件夹不存在时附状态字样 */
+function LinkedFolderMark({ cabinet }: { cabinet: Cabinet }) {
+  const state = cabinet.folder_state === "offline" ? "离线" : cabinet.folder_state === "missing" ? "不存在" : null;
+  const title = [`关联文件夹：${cabinet.folder_path}`, state && `（${state}）`, cabinet.folder_truncated && "（超过 50000 项，只同步了一部分）"]
+    .filter(Boolean)
+    .join("");
+  return (
+    <span title={title} className="flex shrink-0 items-center gap-1 text-[var(--text-faint)]">
+      <FolderSync aria-label={title} size={13} strokeWidth={1.8} />
+      {state && <span className="text-[11px] text-[var(--color-warning-ink)]">{state}</span>}
+    </span>
   );
 }

@@ -46,7 +46,10 @@ function sameCabinets(a: Cabinet[], b: Cabinet[]): boolean {
     cabinet.id === b[index].id &&
     cabinet.name === b[index].name &&
     cabinet.color === b[index].color &&
-    cabinet.created_at === b[index].created_at,
+    cabinet.created_at === b[index].created_at &&
+    cabinet.folder_path === b[index].folder_path &&
+    cabinet.folder_truncated === b[index].folder_truncated &&
+    cabinet.folder_state === b[index].folder_state,
   );
 }
 
@@ -173,7 +176,7 @@ interface AppState {
   tagRelations: TagRelation[];
   cabinets: Cabinet[];
 
-  // ---- 筛选状态（四者互斥） ----
+  // ---- 筛选状态（标签 / 文件柜可叠加，收藏、最近使用与其余互斥） ----
   /** 正选标签：结果须同时包含全部已选标签（AND） */
   selectedTagIds: number[];
   /** 反选标签：结果排除包含任一已反选标签的对象；与正选不重叠 */
@@ -181,6 +184,10 @@ interface AppState {
   selectedCabinetId: number | null;
   showFavorites: boolean;
   showRecent: boolean;
+  /** 关联文件夹的文件柜当前浏览的子目录；null 表示关联文件夹本身，切换文件柜时归零 */
+  cabinetDir: string | null;
+  /** 关联文件夹的文件柜平铺显示全部层级（关闭时按目录逐层浏览） */
+  cabinetFlat: boolean;
 
   // ---- UI 状态 ----
   sidebarTab: SidebarTab;
@@ -237,6 +244,8 @@ interface AppState {
   /** 右键标签的反选切换：反选与正选互斥，加入反选时从正选移除 */
   toggleTagExclusion: (id: number) => void;
   setSelectedCabinetId: (id: number | null) => void;
+  setCabinetDir: (dir: string | null) => void;
+  setCabinetFlat: (flat: boolean) => void;
   setSidebarTab: (tab: SidebarTab) => void;
   setShowFavorites: (v: boolean) => void;
   setShowRecent: (v: boolean) => void;
@@ -292,6 +301,8 @@ export const useAppStore = create<AppState>((set, get) => {
   selectedTagIds: [],
   excludedTagIds: [],
   selectedCabinetId: null,
+  cabinetDir: null,
+  cabinetFlat: false,
   sidebarTab: "tags",
   showFavorites: false,
   showRecent: false,
@@ -327,14 +338,14 @@ export const useAppStore = create<AppState>((set, get) => {
     const nextExcluded = ids.length === 0
       ? []
       : state.excludedTagIds.filter((id) => !ids.includes(id));
+    // 标签筛选可叠加在文件柜之上（柜内再按标签收窄），与收藏 / 最近使用互斥
     const unchanged = sameNumberArray(state.selectedTagIds, ids) &&
       sameNumberArray(state.excludedTagIds, nextExcluded) &&
-      state.selectedCabinetId === null &&
       !state.showFavorites &&
       !state.showRecent;
     return unchanged
       ? state
-      : { selectedTagIds: ids, excludedTagIds: nextExcluded, selectedCabinetId: null, showFavorites: false, showRecent: false };
+      : { selectedTagIds: ids, excludedTagIds: nextExcluded, showFavorites: false, showRecent: false };
   }),
 
   toggleTagSelection: (id) =>
@@ -344,7 +355,6 @@ export const useAppStore = create<AppState>((set, get) => {
         : [...state.selectedTagIds, id],
       // 正选与反选互斥：点选即撤销该标签的反选
       excludedTagIds: state.excludedTagIds.filter((i) => i !== id),
-      selectedCabinetId: null,
       showFavorites: false,
       showRecent: false,
     })),
@@ -356,7 +366,6 @@ export const useAppStore = create<AppState>((set, get) => {
         : [...state.excludedTagIds, id],
       // 反选与正选互斥：加入反选时从正选移除
       selectedTagIds: state.selectedTagIds.filter((i) => i !== id),
-      selectedCabinetId: null,
       showFavorites: false,
       showRecent: false,
     })),
@@ -368,8 +377,11 @@ export const useAppStore = create<AppState>((set, get) => {
     !state.showFavorites &&
     !state.showRecent
       ? state
-      : { selectedCabinetId: id, selectedTagIds: [], excludedTagIds: [], showFavorites: false, showRecent: false },
+      : { selectedCabinetId: id, selectedTagIds: [], excludedTagIds: [], showFavorites: false, showRecent: false, cabinetDir: null },
   ),
+
+  setCabinetDir: (dir) => set((state) => (state.cabinetDir === dir ? state : { cabinetDir: dir })),
+  setCabinetFlat: (flat) => set((state) => (state.cabinetFlat === flat ? state : { cabinetFlat: flat })),
 
   setSidebarTab: (tab) =>
     set((state) => (state.sidebarTab === tab ? state : { sidebarTab: tab })),
@@ -491,6 +503,7 @@ export const useAppStore = create<AppState>((set, get) => {
       selectedTagIds: [],
       excludedTagIds: [],
       selectedCabinetId: null,
+      cabinetDir: null,
       showFavorites: false,
       showRecent: false,
       typeFilter: "all",
