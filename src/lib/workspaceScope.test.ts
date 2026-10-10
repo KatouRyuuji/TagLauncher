@@ -86,4 +86,10 @@ test("类型+搜索组合", () => {
   assert.equal(scope.count, 1);
 });
 
+test("文件柜内叠加标签筛选：标题为柜名，标签条件为限定语", () => {
+  const scope = resolveWorkspaceScope(base({ selectedCabinetId: 1, selectedTagIds: [20], excludedTagIds: [10] }));
+  assert.equal(scope.title, "工作必备");
+  assert.deepEqual(scope.qualifiers, ["开发 且非 娱乐"]);
+});
+
 await run("workspaceScope");

@@ -184,6 +184,14 @@ function requireTag(id: number): Tag {
   return tag;
 }
 
+/** 关联柜成员：路径位于文件夹之下（不含文件夹本身，大小写不敏感） */
+function linkedMembers(folder: string): number[] {
+  const prefix = `${folder.toLowerCase()}\\`;
+  return state.items
+    .filter((item) => item.path.replace(/\//g, "\\").toLowerCase().startsWith(prefix))
+    .map((item) => item.id);
+}
+
 function requireCabinet(id: number): Cabinet {
   const cabinet = state.cabinets.find((entry) => entry.id === id);
   if (!cabinet) throw new Error(`文件柜不存在（id=${id}）`);
@@ -620,6 +628,8 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         name: str(args.name),
         color: str(args.color),
         created_at: new Date().toISOString(),
+        folder_path: null,
+        folder_truncated: false,
       };
       state.cabinets.push(cabinet);
       state.cabinetItems.set(cabinet.id, new Set());
@@ -637,10 +647,28 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       state.cabinetItems.delete(id);
       return null;
     }
+    case "set_cabinet_folder": {
+      const cabinet = requireCabinet(num(args.id));
+      const folder = args.folder == null ? null : str(args.folder).replace(/\//g, "\\").replace(/\\+$/, "");
+      if (folder === null) {
+        if (cabinet.folder_path !== null) state.cabinetItems.set(cabinet.id, new Set(linkedMembers(cabinet.folder_path)));
+        cabinet.folder_path = null;
+        cabinet.folder_state = null;
+        return null;
+      }
+      if (state.cabinets.some((entry) => entry.id !== cabinet.id && entry.folder_path?.toLowerCase() === folder.toLowerCase())) {
+        throw new Error("该文件夹已关联到其他文件柜");
+      }
+      cabinet.folder_path = folder;
+      cabinet.folder_truncated = false;
+      cabinet.folder_state = "ok";
+      state.cabinetItems.set(cabinet.id, new Set());
+      return null;
+    }
     case "add_item_to_cabinet":
     case "add_items_to_cabinet": {
       const cabinetId = num(args.cabinetId);
-      requireCabinet(cabinetId);
+      if (requireCabinet(cabinetId).folder_path !== null) throw new Error("关联文件夹的文件柜内容由文件夹决定");
       const members = state.cabinetItems.get(cabinetId)!;
       const itemIds = cmd === "add_item_to_cabinet" ? [num(args.itemId)] : ids(args.itemIds);
       for (const id of itemIds) {
@@ -652,18 +680,25 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "remove_item_from_cabinet":
     case "remove_items_from_cabinet": {
       const cabinetId = num(args.cabinetId);
+      if (requireCabinet(cabinetId).folder_path !== null) throw new Error("关联文件夹的文件柜内容由文件夹决定");
       const members = state.cabinetItems.get(cabinetId);
       const itemIds = cmd === "remove_item_from_cabinet" ? [num(args.itemId)] : ids(args.itemIds);
       for (const id of itemIds) members?.delete(id);
       return null;
     }
     case "get_cabinet_items": {
-      const members = state.cabinetItems.get(num(args.cabinetId)) ?? new Set<number>();
+      const folder = state.cabinets.find((entry) => entry.id === num(args.cabinetId))?.folder_path;
+      const members = folder ? new Set(linkedMembers(folder)) : state.cabinetItems.get(num(args.cabinetId)) ?? new Set<number>();
       return sortItems(state.items.filter((item) => members.has(item.id))).map(withTags);
     }
     case "get_cabinet_item_counts": {
       const pairs: [number, number][] = [];
-      for (const [cabinetId, members] of state.cabinetItems) pairs.push([cabinetId, members.size]);
+      for (const cabinet of state.cabinets) {
+        const size = cabinet.folder_path
+          ? linkedMembers(cabinet.folder_path).length
+          : state.cabinetItems.get(cabinet.id)?.size ?? 0;
+        pairs.push([cabinet.id, size]);
+      }
       return pairs;
     }
 

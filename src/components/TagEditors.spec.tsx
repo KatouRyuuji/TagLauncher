@@ -26,7 +26,7 @@ describe("分类编辑器状态", () => {
   it("文件柜新建标题下强调分组用途，并列出可识别的颜色选项", () => {
     render(<TagEditor tag={null} label="文件柜" onSave={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByRole("dialog", { name: "新建文件柜" })).toBeInTheDocument();
-    expect(screen.getByText("文件柜是分组，不是磁盘目录；一个对象可以进多个柜")).toBeInTheDocument();
+    expect(screen.getByText("文件柜是分组，一个对象可以进多个柜；也可以关联一个磁盘文件夹，柜内容随文件夹同步")).toBeInTheDocument();
     const group = screen.getByRole("radiogroup", { name: "分类颜色" });
     expect(group.querySelectorAll('[role="radio"]')).toHaveLength(10);
     expect(screen.getByRole("radio", { name: "蔷薇" })).toBeInTheDocument();

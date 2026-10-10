@@ -54,13 +54,15 @@ export function WorkspaceEmptyState({
   const tags = useAppStore((state) => state.tags);
   const cabinets = useAppStore((state) => state.cabinets);
   const variant = resolveEmptyStateVariant(kind, searchQuery, {
-    cabinet: selectedCabinetId !== null,
+    // 文件柜与标签筛选可叠加：有标签条件时无命中按筛选文案说明
+    cabinet: selectedCabinetId !== null && selectedTagIds.length === 0 && excludedTagIds.length === 0,
     favorites: showFavorites,
     recent: showRecent,
   });
   const copy = emptyStateCopy(variant, searchQuery, {
     hasTags: tags.length > 0,
     hasCabinets: cabinets.length > 0,
+    linkedCabinet: cabinets.some((cabinet) => cabinet.id === selectedCabinetId && cabinet.folder_path !== null),
   });
   const EmptyIcon = variant === "library" ? LibraryBig : variant === "search" ? SearchX : FilterX;
 

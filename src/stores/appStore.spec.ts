@@ -18,6 +18,8 @@ describe("appStore", () => {
       selectedTagIds: [],
       excludedTagIds: [],
       selectedCabinetId: null,
+      cabinetDir: null,
+      cabinetFlat: false,
       showFavorites: false,
       showRecent: false,
       searchQuery: "",
@@ -38,24 +40,33 @@ describe("appStore", () => {
     });
   });
 
-  it("setSelectedTagIds 会清空文件柜与收藏筛选", () => {
+  it("setSelectedTagIds 保留文件柜、清空收藏筛选", () => {
     useAppStore.setState({ selectedCabinetId: 1, showFavorites: true });
 
     useAppStore.getState().setSelectedTagIds([10, 20]);
 
     expect(useAppStore.getState().selectedTagIds).toEqual([10, 20]);
-    expect(useAppStore.getState().selectedCabinetId).toBeNull();
+    expect(useAppStore.getState().selectedCabinetId).toBe(1);
     expect(useAppStore.getState().showFavorites).toBe(false);
+  });
+
+  it("切换文件柜时子目录归零，平铺开关保持", () => {
+    useAppStore.setState({ selectedCabinetId: 1, cabinetDir: "D:\\Photos\\2024", cabinetFlat: true });
+
+    useAppStore.getState().setSelectedCabinetId(2);
+
+    expect(useAppStore.getState().cabinetDir).toBeNull();
+    expect(useAppStore.getState().cabinetFlat).toBe(true);
   });
 
   it("toggleTagExclusion 反选标签，与正选互斥", () => {
     useAppStore.setState({ selectedTagIds: [10], selectedCabinetId: 2, showFavorites: true });
 
-    // 正选中的标签被反选：从正选移除、加入反选，并清空文件柜/收藏
+    // 正选中的标签被反选：从正选移除、加入反选，保留文件柜、清空收藏
     useAppStore.getState().toggleTagExclusion(10);
     expect(useAppStore.getState().excludedTagIds).toEqual([10]);
     expect(useAppStore.getState().selectedTagIds).toEqual([]);
-    expect(useAppStore.getState().selectedCabinetId).toBeNull();
+    expect(useAppStore.getState().selectedCabinetId).toBe(2);
     expect(useAppStore.getState().showFavorites).toBe(false);
 
     // 再次反选 = 取消

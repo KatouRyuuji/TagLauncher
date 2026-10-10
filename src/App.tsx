@@ -41,6 +41,7 @@ import { useVersionCheck } from "./hooks/useVersionCheck";
 import { useStartupMaintenance } from "./hooks/useStartupMaintenance";
 import { useWorkspaceHotkeys } from "./hooks/useWorkspaceHotkeys";
 import { resetWorkspaceSearchInput } from "./lib/workspaceChrome";
+import { isUnderDir, parentBrowseDir } from "./lib/cabinetBrowse";
 import { initModApi, notifySelectionChanged, onModWrite } from "./lib/modApi";
 import { initModRuntime } from "./lib/modRuntime";
 import { ToastContainer } from "./components/ToastContainer";
@@ -84,9 +85,11 @@ function App() {
     findItemById,
     refresh,
     relocateMissing,
+    browseDir,
+    linkedMissingIds,
   } = useItems();
   const { tags, addTag, updateTag, removeTag, refresh: refreshTags } = useTags();
-  const { addCabinet, updateCabinet, removeCabinet, refresh: refreshCabinets } = useCabinets();
+  const { addCabinet, updateCabinet, removeCabinet, setCabinetFolder, refresh: refreshCabinets } = useCabinets();
   const { addRelation: addTagRelation, removeRelation: removeTagRelation } = useTagRelations();
   const viewMode = useAppStore((state) => state.viewMode);
   const tagGraphOpen = useAppStore((state) => state.tagGraphOpen);
@@ -103,6 +106,9 @@ function App() {
   const clearWorkspaceFilters = useAppStore((state) => state.clearWorkspaceFilters);
   const cabinets = useAppStore((state) => state.cabinets);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
+  const selectedCabinetLinked = useAppStore((state) =>
+    state.cabinets.some((cabinet) => cabinet.id === state.selectedCabinetId && cabinet.folder_path !== null),
+  );
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const isDraggingItem = useInternalDragStore((state) => state.drag?.kind === "item");
 
@@ -246,6 +252,42 @@ function App() {
     [findItemById, launchItem],
   );
 
+  // 关联柜内双击 / Enter 文件夹 = 进入该子目录（切回按目录浏览，并清掉会让目录视图失效的搜索与标签筛选）；
+  // 其余对象照常启动。
+  const handleOpenItem = useCallback(
+    async (itemId: number) => {
+      const state = useAppStore.getState();
+      const root = state.cabinets.find((cabinet) => cabinet.id === state.selectedCabinetId)?.folder_path;
+      const item = findItemById(itemId);
+      if (root && item && item.type === "folder" && !item.is_missing && isUnderDir(item.path, root)) {
+        if (state.searchQuery || state.searchInputValue) {
+          state.setSearchQuery("");
+          resetWorkspaceSearchInput();
+        }
+        if (state.selectedTagIds.length > 0 || state.excludedTagIds.length > 0) {
+          useAppStore.setState({ selectedTagIds: [], excludedTagIds: [] });
+        }
+        state.setCabinetFlat(false);
+        state.setCabinetDir(item.path);
+        setSelectedItemIds([]);
+        return;
+      }
+      await handleLaunchItem(itemId);
+    },
+    [findItemById, handleLaunchItem, setSelectedItemIds],
+  );
+
+  const handleNavigateUp = useCallback(() => {
+    const state = useAppStore.getState();
+    const root = state.cabinets.find((cabinet) => cabinet.id === state.selectedCabinetId)?.folder_path;
+    if (!root || browseDir === null) return false;
+    const parent = parentBrowseDir(root, state.cabinetDir);
+    if (parent === undefined) return false;
+    state.setCabinetDir(parent);
+    setSelectedItemIds([]);
+    return true;
+  }, [browseDir, setSelectedItemIds]);
+
   // 手动刷新（刷新按钮/命令面板「刷新」）：显式触发对账 + 图标重取；
   // 内部级联仍走 refresh() 无参形态（纯读 + 图标失效）
   const handleManualRefresh = useCallback(() => refresh({ reconcile: true }), [refresh]);
@@ -345,7 +387,8 @@ function App() {
     allItems,
     selectedItemIds,
     setSelectedItemIds,
-    onLaunch: (id) => { void handleLaunchItem(id); },
+    onLaunch: (id) => { void handleOpenItem(id); },
+    onNavigateUp: handleNavigateUp,
     onRemoveSelected: () => { void requestBatchRemoveFromApp(); },
     onToggleSelectedFavorite: handleToggleSelectedFavorite,
     onToggleItemFavorite: (id: number) => { void toggleFavorite(id); },
@@ -367,8 +410,9 @@ function App() {
     tags,
     cabinets,
     loading: loading || cabinetPending,
-    currentCabinetId: selectedCabinetId,
-    onLaunch: handleLaunchItem,
+    // 关联柜的成员由文件夹决定：不提供「移出当前文件柜」类操作
+    currentCabinetId: selectedCabinetLinked ? null : selectedCabinetId,
+    onLaunch: handleOpenItem,
     onSetTags: setItemTags,
     onSetManyTags: setManyItemTags,
     onRemoveTagFromItem: removeTagFromItem,
@@ -429,6 +473,7 @@ function App() {
         onAddCabinet={addCabinet}
         onUpdateCabinet={updateCabinet}
         onRemoveCabinet={removeCabinet}
+        onSetCabinetFolder={setCabinetFolder}
         onAddTagToItem={addTagToItem}
         onAddTagRelation={addTagRelation}
         onRemoveTagRelation={removeTagRelation}
@@ -448,7 +493,13 @@ function App() {
         </h1>
         <SearchBar onAddItems={requestAddPaths} onRefresh={handleManualRefresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} hasLibraryItems={allItems.length > 0} />
         {allItems.length > 0 && <TagFilterBar />}
-        {allItems.length > 0 && <WorkspaceScopeHeader visibleCount={items.length} pending={cabinetPending} />}
+        {allItems.length > 0 && <WorkspaceScopeHeader
+            visibleCount={items.length}
+            pending={cabinetPending}
+            browseDir={browseDir}
+            missingIds={linkedMissingIds}
+            onCleanMissing={(ids) => { void requestBatchRemoveFromApp({ itemIds: ids, forceDialog: true }); }}
+          />}
         {/* 加载失败且本地无任何缓存时渲染可重试的错误面板；有缓存时保留旧列表，
             失败已由 toast 提示，避免把可用数据替换成错误页。 */}
         {loadError && !loading && allItems.length === 0 ? (

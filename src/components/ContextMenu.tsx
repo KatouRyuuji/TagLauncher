@@ -84,6 +84,8 @@ export function ContextMenu({
   // 二级菜单同时只开一个：文件柜 / 缩略图共用同一套定位、悬停延时与键盘机制
   const [openSubmenu, setOpenSubmenu] = useState<"cabinet" | "thumbnail" | null>(null);
   const showCabinetSub = openSubmenu === "cabinet";
+  // 关联文件夹的文件柜成员由文件夹决定，不出现在「添加到文件柜」里
+  const manualCabinets = cabinets.filter((cabinet) => !cabinet.folder_path);
   const showThumbnailSub = openSubmenu === "thumbnail";
   const [submenuToLeft, setSubmenuToLeft] = useState(false);
   const menuRef = useFocusTrap<HTMLDivElement>({ active: true });
@@ -181,7 +183,7 @@ export function ContextMenu({
     // 与父项顶部对齐，横向重叠 3px，避免子菜单像掉在网格里的便利贴。
     const overlap = 3;
     const fallbackWidth = 220;
-    const fallbackHeight = kind === "cabinet" ? Math.min(320, cabinets.length * 40 + 20) : 100;
+    const fallbackHeight = kind === "cabinet" ? Math.min(320, manualCabinets.length * 40 + 20) : 100;
     const rect = triggerEl.getBoundingClientRect();
     const panelEl = kind === "cabinet" ? submenuRef.current : thumbnailSubmenuRef.current;
     const panelWidth = panelEl?.offsetWidth ?? fallbackWidth;
@@ -207,7 +209,7 @@ export function ContextMenu({
       top,
       zIndex: "var(--z-context-submenu)",
     });
-  }, [cabinets.length]);
+  }, [manualCabinets.length]);
 
   useEffect(() => {
     setStyle({
@@ -567,14 +569,14 @@ export function ContextMenu({
           </button>
         </div>
 
-        {(cabinets.length > 0 || currentCabinetId !== null) && (
+        {(manualCabinets.length > 0 || currentCabinetId !== null) && (
           <>
             <MenuDivider />
             <MenuGroupLabel>文件柜</MenuGroupLabel>
           </>
         )}
 
-        {cabinets.length > 0 && (
+        {manualCabinets.length > 0 && (
           <div
             onMouseEnter={() => {
               openSubmenuNow("cabinet");
@@ -644,7 +646,7 @@ export function ContextMenu({
           onMouseLeave={scheduleCloseSubmenu}
           className="modal-surface w-[220px] max-h-[60vh] max-w-[72vw] overflow-y-auto p-1.5"
         >
-          {cabinets.map((cabinet) => (
+          {manualCabinets.map((cabinet) => (
             <button
               key={cabinet.id}
               type="button"

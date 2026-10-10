@@ -5,7 +5,7 @@
 //   library   — 库里一个项目都没有：引导导入；若仍有标签/文件柜，补一句承认它们还在。
 //   search    — 搜索词无命中；
 //   filter    — 标签/类型筛选无命中；
-//   cabinet   — 当前文件柜没有项目；
+//   cabinet   — 当前文件柜（关联柜为当前目录）没有项目；
 //   favorites — 收藏夹为空；
 //   recent    — 还没有打开过项目。
 // ============================================================================
@@ -55,6 +55,8 @@ export function truncateQueryForDisplay(query: string): string {
 export interface EmptyStateCopyContext {
   hasTags?: boolean;
   hasCabinets?: boolean;
+  /** 当前文件柜关联了磁盘文件夹：内容随文件夹同步，不能拖入 */
+  linkedCabinet?: boolean;
 }
 
 function libraryRemainingHint(context?: EmptyStateCopyContext): string {
@@ -91,6 +93,14 @@ export function emptyStateCopy(
         showClearFilters: true,
       };
     case "cabinet":
+      if (context?.linkedCabinet) {
+        return {
+          title: "这个文件夹里没有项目",
+          description: "关联文件夹的内容会自动同步到这里。按 Backspace 返回上一级，或退出当前文件柜查看全部项目。",
+          showClearSearch: false,
+          showClearFilters: true,
+        };
+      }
       return {
         title: "这个文件柜还是空的",
         description: "文件柜是标签式分组，不会移动磁盘上的文件。把项目拖进来，或退出当前文件柜查看全部项目。",

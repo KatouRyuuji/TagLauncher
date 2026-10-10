@@ -63,6 +63,11 @@ function resolveTitle(input: WorkspaceScopeInput): string {
 export function resolveWorkspaceScope(input: WorkspaceScopeInput): WorkspaceScope {
   const qualifiers: string[] = [];
 
+  // 文件柜内再按标签收窄时，标题保持柜名，标签条件作为限定语
+  if (input.selectedCabinetId !== null && !input.showFavorites && !input.showRecent) {
+    const tagTitle = resolveTagTitle(input);
+    if (tagTitle) qualifiers.push(tagTitle);
+  }
   if (input.selectedTagIds.length === 1) {
     const children = buildChildrenMap(input.tagRelations).get(input.selectedTagIds[0]);
     if (children && children.length > 0) qualifiers.push("含下级");

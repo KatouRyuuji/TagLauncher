@@ -38,6 +38,8 @@ interface WorkspaceHotkeysOptions {
   onToggleSelectedFavorite: () => void;
   onToggleItemFavorite: (id: number) => void;
   onOpenSettings: () => void;
+  /** Backspace 返回上一级目录（关联文件夹的文件柜）；已在顶层或不适用时返回 false */
+  onNavigateUp?: () => boolean;
 }
 
 export function useWorkspaceHotkeys({
@@ -51,6 +53,7 @@ export function useWorkspaceHotkeys({
   onToggleItemFavorite,
   onToggleSelectedFavorite,
   onOpenSettings,
+  onNavigateUp,
 }: WorkspaceHotkeysOptions): void {
   const commandPaletteOpen = useAppStore((state) => state.commandPaletteOpen);
   const setCommandPaletteOpen = useAppStore((state) => state.setCommandPaletteOpen);
@@ -71,6 +74,7 @@ export function useWorkspaceHotkeys({
     commandPaletteOpen,
     items,
     onLaunch,
+    onNavigateUp,
     onOpenSettings,
     onRemoveSelected,
     onToggleItemFavorite,
@@ -96,6 +100,7 @@ export function useWorkspaceHotkeys({
       commandPaletteOpen,
       items,
       onLaunch,
+      onNavigateUp,
       onOpenSettings,
       onRemoveSelected,
       onToggleItemFavorite,
@@ -303,6 +308,11 @@ export function useWorkspaceHotkeys({
       if (event.key === "?") {
         event.preventDefault();
         ctx.setShortcutsHelpOpen(true);
+        return;
+      }
+
+      if (event.key === "Backspace" && !ctrl && !event.shiftKey) {
+        if (ctx.onNavigateUp?.()) event.preventDefault();
         return;
       }
 

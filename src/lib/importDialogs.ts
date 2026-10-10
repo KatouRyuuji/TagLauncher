@@ -20,3 +20,8 @@ export async function pickFoldersToAdd(): Promise<string[] | null> {
   if (!selected) return null;
   return Array.isArray(selected) ? selected : [selected];
 }
+
+export async function pickFolderToLink(): Promise<string | null> {
+  const selected = await open({ directory: true, multiple: false });
+  return typeof selected === "string" ? selected : null;
+}
