@@ -155,6 +155,16 @@ export async function setFolderWatchMaster(enabled: boolean): Promise<FolderWatc
   return invokeCmd("set_folder_watch_master", { enabled });
 }
 
+/** 忽略名单（不再追踪的路径）；给定 under 时只列该监视目录之下的项。 */
+export async function listIgnoredPaths(under?: string): Promise<string[]> {
+  return invokeCmd("list_ignored_paths", { under: under ?? null });
+}
+
+/** 恢复追踪：移出忽略名单，随后补扫重新导入。 */
+export async function restoreIgnoredPaths(paths: string[]): Promise<void> {
+  return invokeCmd("restore_ignored_paths", { paths });
+}
+
 /** 在文件夹对象上打开或关闭监视（默认关）。 */
 export async function setFolderWatch(itemId: number, enabled: boolean): Promise<FolderWatchStatus> {
   return invokeCmd("set_folder_watch", { itemId, enabled });

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { open as dialogOpen, save } from "@tauri-apps/plugin-dialog";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import * as db from "../lib/db";
+import { IgnoredPathsButton } from "./IgnoredPathsButton";
 import type { DataDirectoryInfo } from "../lib/db";
 import { formatBytes } from "../lib/itemQuery";
 import { showToast } from "../lib/toast";
@@ -190,6 +191,7 @@ export function DataSettingsSection() {
                   });
               }}
             />
+            <IgnoredPathsButton className="action-button mt-2 gap-1.5 px-3 text-xs" />
           </div>
         </div>
 

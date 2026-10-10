@@ -3,12 +3,13 @@
 // ============================================================================
 // 空库由 App 用 allItems.length > 0 守卫（等同 libraryEmpty）；筛选后 0 项仍渲染，
 // 空态面板在下方。状态从 store 派生，不写回。
-// 选中关联文件夹的文件柜时多一行：面包屑、目录 / 平铺切换、「清理失效」与文件夹状态提示。
+// 选中关联文件夹的文件柜时多一行：面包屑、目录 / 平铺切换、「清理失效」「已忽略」与文件夹状态提示。
 // ============================================================================
 
 import { Fragment, useMemo } from "react";
 import { ChevronRight, Eraser, FolderTree, Rows3 } from "lucide-react";
 import { browseCrumbs } from "../lib/cabinetBrowse";
+import { IgnoredPathsButton } from "./IgnoredPathsButton";
 import { resolveWorkspaceScope } from "../lib/workspaceScope";
 import { useAppStore } from "../stores/appStore";
 import type { Cabinet } from "../types";
@@ -148,6 +149,7 @@ function LinkedCabinetBar({
           清理失效（{missingIds.length}）
         </button>
       )}
+      {root && <IgnoredPathsButton under={root} />}
       <button
         type="button"
         aria-pressed={cabinetFlat}

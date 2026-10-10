@@ -281,6 +281,8 @@ pub fn run() {
             get_folder_watch_status,
             set_folder_watch_master,
             set_folder_watch,
+            list_ignored_paths,
+            restore_ignored_paths,
             remove_item,
             remove_items,
             remove_items_and_files,

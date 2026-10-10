@@ -15,6 +15,7 @@ mod v014_watch_roots;
 mod v015_item_note;
 mod v016_item_fs_times;
 mod v017_cabinet_folder;
+mod v018_ignored_paths;
 
 use rusqlite::Connection;
 
@@ -185,6 +186,7 @@ fn all_migrations() -> Vec<Box<dyn Migration>> {
         Box::new(v015_item_note::V015ItemNote),
         Box::new(v016_item_fs_times::V016ItemFsTimes),
         Box::new(v017_cabinet_folder::V017CabinetFolder),
+        Box::new(v018_ignored_paths::V018IgnoredPaths),
     ]
 }
 
