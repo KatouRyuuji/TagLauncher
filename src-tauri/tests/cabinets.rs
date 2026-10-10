@@ -143,3 +143,85 @@ fn deleting_item_removes_it_from_cabinets() {
         "删除对象应自动从柜内移除"
     );
 }
+
+/// 关联文件夹：成员按路径计算（含子文件夹、不含根本身、`_` 不作通配），手动增删被拒，
+/// 同一文件夹不能关联两个柜，解除后成员固化为普通柜。
+#[test]
+fn linked_cabinet_members_follow_folder() {
+    use tag_launcher_lib::services::watch_service::{self, RootKey};
+    let t = common::temp_db();
+    let root = common::make_dir(&t.dir, "lib_a");
+    common::write_file(&t.dir, "lib_a/top.txt", b"t");
+    common::write_file(&t.dir, "lib_a/sub/inner.txt", b"i");
+    common::write_file(&t.dir, "lib_a/.hidden/skip.txt", b"h");
+    let sibling = common::write_file(&t.dir, "libXa/look-alike.txt", b"x");
+    let (cab, other, outside) = {
+        let conn = t.db.get_conn();
+        let cab = cabinet_service::add_cabinet(&conn, "Linked", "#fff").unwrap();
+        let other = cabinet_service::add_cabinet(&conn, "Other", "#000").unwrap();
+        let outside = item_service::add_item(&conn, &sibling).unwrap();
+        cabinet_service::add_item_to_cabinet(&conn, cab.id, outside.id).unwrap();
+        cabinet_service::set_cabinet_folder(&conn, cab.id, Some(&format!("{root}\\"))).unwrap();
+        (cab, other, outside)
+    };
+    let scanned = watch_service::scan_root(&t.db, RootKey::Cabinet(cab.id)).unwrap();
+    assert_eq!(scanned.created_count, 3, "top.txt、sub、sub/inner.txt");
+
+    let conn = t.db.get_conn();
+    let cabinets = cabinet_service::get_cabinets(&conn).unwrap();
+    let linked = cabinets.iter().find(|c| c.id == cab.id).unwrap();
+    assert_eq!(linked.folder_path.as_deref(), Some(root.as_str()), "末尾分隔符被规范化去掉");
+    assert!(!linked.folder_truncated);
+    let items = cabinet_service::get_cabinet_items(&conn, cab.id).unwrap();
+    let mut names: Vec<_> = items.iter().map(|i| i.item.name.clone()).collect();
+    names.sort();
+    assert_eq!(names.len(), 3, "{names:?}");
+    assert!(items.iter().any(|i| i.item.item_type == "folder"));
+    assert!(items.iter().all(|i| i.item.id != outside.id), "关联时清空手动成员，形似路径不算成员");
+    let counts: std::collections::HashMap<i64, i64> =
+        cabinet_service::get_cabinet_item_counts(&conn).unwrap().into_iter().collect();
+    assert_eq!(counts.get(&cab.id), Some(&3));
+
+    let err = cabinet_service::add_item_to_cabinet(&conn, cab.id, outside.id).unwrap_err();
+    assert_eq!(err, "关联文件夹的文件柜内容由文件夹决定");
+    assert!(cabinet_service::remove_items_from_cabinet(&conn, cab.id, &[outside.id]).is_err());
+    let dup = cabinet_service::set_cabinet_folder(&conn, other.id, Some(&root.to_uppercase()))
+        .unwrap_err();
+    assert_eq!(dup, "该文件夹已关联到其他文件柜");
+
+    cabinet_service::set_cabinet_folder(&conn, cab.id, None).unwrap();
+    cabinet_service::set_cabinet_folder(&conn, cab.id, None).unwrap();
+    let after = cabinet_service::get_cabinets(&conn).unwrap();
+    assert!(after.iter().all(|c| c.folder_path.is_none()));
+    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id).unwrap().len(), 3, "解除后成员固化");
+    cabinet_service::add_item_to_cabinet(&conn, cab.id, outside.id).unwrap();
+    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id).unwrap().len(), 4);
+}
+
+#[test]
+fn linked_cabinet_rejects_missing_folder_and_reports_state() {
+    let t = common::temp_db();
+    let gone = t.dir.join("not-there").to_string_lossy().to_string();
+    let conn = t.db.get_conn();
+    let cab = cabinet_service::add_cabinet(&conn, "Linked", "#fff").unwrap();
+    assert!(cabinet_service::set_cabinet_folder(&conn, cab.id, Some(&gone)).is_err());
+    assert!(cabinet_service::set_cabinet_folder(&conn, 999, Some(&gone)).is_err());
+    assert_eq!(cabinet_service::folder_state(&gone), "missing");
+    assert_eq!(cabinet_service::folder_state(&t.dir.path.to_string_lossy()), "ok");
+}
+
+/// 关联柜所在盘离线时其前缀被列入对账跳过名单，盘在（文件夹被删）时不跳过。
+#[test]
+fn offline_drive_prefix_is_skipped_by_reconcile() {
+    let absent = ('Q'..='Y').find(|d| !std::path::Path::new(&format!("{d}:\\")).exists());
+    let Some(drive) = absent else {
+        return;
+    };
+    let t = common::temp_db();
+    let gone = t.dir.join("deleted").to_string_lossy().to_string();
+    let bound = vec![(1, format!("{drive}:\\Media")), (2, gone)];
+    let prefixes = cabinet_service::offline_folder_prefixes(&bound);
+    assert_eq!(prefixes, vec![format!("{drive}:\\Media\\")]);
+    assert!(cabinet_service::path_under(&format!("{}:/media/a.mp4", drive.to_ascii_lowercase()), &prefixes[0]));
+    assert!(!cabinet_service::path_under(&format!("{drive}:\\Media2\\a.mp4"), &prefixes[0]));
+}

@@ -13,6 +13,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::services::cabinet_service;
 use crate::services::item_service::{self, ReconcileWrite};
 
 const THROTTLE: Duration = Duration::from_secs(60);
@@ -86,10 +87,22 @@ pub fn run_sweep(app: &AppHandle) -> Result<ReconcileSummary, String> {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let db = app.state::<crate::db::Database>();
-    let snapshot = {
+    let (mut snapshot, bound) = {
         let conn = db.get_conn();
-        item_service::read_reconcile_snapshot(&conn)?
+        (
+            item_service::read_reconcile_snapshot(&conn)?,
+            cabinet_service::bound_folders(&conn)?,
+        )
     };
+    // 关联柜所在盘离线：暂停核对其下对象，避免整柜被标失效；盘恢复后下一遍自动核对
+    let offline = cabinet_service::offline_folder_prefixes(&bound);
+    if !offline.is_empty() {
+        snapshot.retain(|row| {
+            !offline
+                .iter()
+                .any(|prefix| cabinet_service::path_under(row.path(), prefix))
+        });
+    }
     let writes = item_service::plan_reconcile(snapshot);
     let mut applied = 0usize;
     for chunk in writes.chunks(APPLY_CHUNK_SIZE) {

@@ -38,7 +38,7 @@ pub fn set_folder_watch(
         watch_service::set_item_watch(&conn, item_id, enabled)?;
     }
     if enabled {
-        let _ = watch_service::scan_root(&db, item_id);
+        let _ = watch_service::scan_root(&db, watch_service::RootKey::Item(item_id));
     }
     app.state::<FolderWatchHub>().reload(&app);
     let conn = db.get_conn();

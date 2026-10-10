@@ -6,7 +6,7 @@ mod common;
 use tag_launcher_lib::services::item_service;
 use std::path::PathBuf;
 
-use tag_launcher_lib::services::watch_service;
+use tag_launcher_lib::services::watch_service::{self, RootKey};
 
 #[test]
 fn new_folder_is_not_watched_until_enabled() {
@@ -18,14 +18,14 @@ fn new_folder_is_not_watched_until_enabled() {
         item_service::add_item(&conn, &root).unwrap()
     };
     common::write_file(&t.dir, "media/new.mp4", b"fresh-bytes");
-    let before = watch_service::scan_root(&t.db, folder.id).unwrap();
+    let before = watch_service::scan_root(&t.db, RootKey::Item(folder.id)).unwrap();
     assert_eq!(before.created_count, 0, "未打开监视时补扫不得入库");
 
     {
         let conn = t.db.get_conn();
         watch_service::set_item_watch(&conn, folder.id, true).unwrap();
     }
-    let added = watch_service::scan_root(&t.db, folder.id).unwrap();
+    let added = watch_service::scan_root(&t.db, RootKey::Item(folder.id)).unwrap();
     assert!(added.created_count >= 1, "打开监视后应收入新文件");
 
     common::write_file(&t.dir, "media/later.mp4", b"later");
@@ -33,7 +33,7 @@ fn new_folder_is_not_watched_until_enabled() {
         let conn = t.db.get_conn();
         watch_service::set_item_watch(&conn, folder.id, false).unwrap();
     }
-    let after_off = watch_service::scan_root(&t.db, folder.id).unwrap();
+    let after_off = watch_service::scan_root(&t.db, RootKey::Item(folder.id)).unwrap();
     assert_eq!(after_off.created_count, 0, "关掉监视后再补扫不得入库");
 }
 
@@ -49,7 +49,7 @@ fn master_off_pauses_even_if_object_enabled() {
         item
     };
     common::write_file(&t.dir, "clip/a.mp4", b"aaa");
-    let result = watch_service::scan_root(&t.db, folder.id).unwrap();
+    let result = watch_service::scan_root(&t.db, RootKey::Item(folder.id)).unwrap();
     assert_eq!(result.created_count, 0);
     let status = {
         let conn = t.db.get_conn();
@@ -114,16 +114,16 @@ fn rescan_collects_only_paths_not_in_library() {
         watch_service::set_item_watch(&conn, item.id, true).unwrap();
         item
     };
-    let first = watch_service::scan_root(&t.db, folder.id).unwrap();
+    let first = watch_service::scan_root(&t.db, RootKey::Item(folder.id)).unwrap();
     assert_eq!(first.created_count, 2);
 
     common::write_file(&t.dir, "lib/sub/c.mp3", b"ccc");
-    let second = watch_service::scan_root(&t.db, folder.id).unwrap();
+    let second = watch_service::scan_root(&t.db, RootKey::Item(folder.id)).unwrap();
     assert_eq!(second.created_count, 1);
     assert_eq!(second.items.len(), 1, "已在库的路径不得再采集");
     assert!(second.items[0].path.ends_with("c.mp3"));
 
-    let third = watch_service::scan_root(&t.db, folder.id).unwrap();
+    let third = watch_service::scan_root(&t.db, RootKey::Item(folder.id)).unwrap();
     assert_eq!(third.created_count, 0);
     assert!(third.items.is_empty());
 }
@@ -151,6 +151,7 @@ fn event_paths_follow_root_and_skip_rules() {
             PathBuf::from(&new_file),
             PathBuf::from(&root),
         ],
+        false,
     );
     assert_eq!(files.len(), 3, "{files:?}");
     assert!(files.iter().any(|p| p.ends_with("new.mp4")));
@@ -167,13 +168,13 @@ fn event_import_requires_active_watch() {
         let conn = t.db.get_conn();
         item_service::add_item(&conn, &root).unwrap()
     };
-    let off = watch_service::import_event_paths(&t.db, folder.id, &[PathBuf::from(&file)]).unwrap();
+    let off = watch_service::import_event_paths(&t.db, RootKey::Item(folder.id), &[PathBuf::from(&file)]).unwrap();
     assert_eq!(off.created_count, 0, "未打开监视时事件不得入库");
     {
         let conn = t.db.get_conn();
         watch_service::set_item_watch(&conn, folder.id, true).unwrap();
     }
-    let on = watch_service::import_event_paths(&t.db, folder.id, &[PathBuf::from(&file)]).unwrap();
+    let on = watch_service::import_event_paths(&t.db, RootKey::Item(folder.id), &[PathBuf::from(&file)]).unwrap();
     assert_eq!(on.created_count, 1);
 }
 
@@ -188,7 +189,41 @@ fn offline_root_scans_without_error() {
         item
     };
     std::fs::remove_dir_all(&root).unwrap();
-    let result = watch_service::scan_root(&t.db, folder.id).unwrap();
+    let result = watch_service::scan_root(&t.db, RootKey::Item(folder.id)).unwrap();
     assert_eq!(result.created_count, 0);
     assert!(result.failed.is_empty());
+}
+
+/// 关联柜作为监视根：总闸控制；补扫与通知都收子文件夹；超上限时记录截断标记。
+#[test]
+fn cabinet_root_includes_folders_and_follows_master() {
+    use tag_launcher_lib::services::cabinet_service;
+    let t = common::temp_db();
+    let root = common::make_dir(&t.dir, "shelf");
+    common::write_file(&t.dir, "shelf/a.txt", b"a");
+    let cab = {
+        let conn = t.db.get_conn();
+        let cab = cabinet_service::add_cabinet(&conn, "Shelf", "#fff").unwrap();
+        cabinet_service::set_cabinet_folder(&conn, cab.id, Some(&root)).unwrap();
+        assert!(watch_service::list_active_roots(&conn)
+            .unwrap()
+            .contains(&(RootKey::Cabinet(cab.id), root.clone())));
+        watch_service::set_master_enabled(&conn, false).unwrap();
+        cab
+    };
+    assert_eq!(watch_service::scan_root(&t.db, RootKey::Cabinet(cab.id)).unwrap().created_count, 0);
+    {
+        let conn = t.db.get_conn();
+        watch_service::set_master_enabled(&conn, true).unwrap();
+    }
+    assert_eq!(watch_service::scan_root(&t.db, RootKey::Cabinet(cab.id)).unwrap().created_count, 1);
+
+    let moved = common::make_dir(&t.dir, "shelf/pack");
+    common::write_file(&t.dir, "shelf/pack/deep/b.txt", b"b");
+    let added =
+        watch_service::import_event_paths(&t.db, RootKey::Cabinet(cab.id), &[PathBuf::from(&moved)])
+            .unwrap();
+    assert_eq!(added.created_count, 3, "pack、deep、b.txt");
+    let conn = t.db.get_conn();
+    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id).unwrap().len(), 4);
 }

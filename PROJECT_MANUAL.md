@@ -234,7 +234,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | is_favorite | INTEGER | 是否收藏（0/1） |
 | volume_serial | INTEGER | NTFS 卷序列号（对象特征，可空） |
 | file_id | TEXT | NTFS 文件ID 十六进制（对象特征，可空）；`(volume_serial, file_id)` 为身份唯一索引 |
-| is_missing | INTEGER | 文件是否丢失（0/1，删除/离线/跨盘移动且无法重定位） |
+| is_missing | INTEGER | 文件是否丢失（0/1，删除/离线/跨盘移动且无法重定位；关联柜所在盘离线时暂停核对其下对象，盘恢复后自动重新核对） |
 | sig_size | INTEGER | 内容签名：文件字节大小（仅文件，可空） |
 | sig_head | INTEGER | 内容签名：首 16KB 的 FNV-1a 哈希（可空） |
 | sig_tail | INTEGER | 内容签名：尾 16KB 的 FNV-1a 哈希（可空） |
@@ -273,6 +273,8 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | name | TEXT UNIQUE NOT NULL | 文件柜名 |
 | color | TEXT | 颜色 hex 值 |
 | created_at | DATETIME | 创建时间 |
+| folder_path | TEXT | 关联的磁盘文件夹；非空时柜内成员为库内路径位于该文件夹下的全部对象（不读 cabinet_items）。部分唯一索引 `idx_cabinets_folder`（NOCASE）保证同一文件夹只关联一个柜 |
+| folder_truncated | INTEGER | 最近一次同步因单柜 50000 项上限截断 |
 
 #### cabinet_items（文件柜-项目关联表）
 | 列名 | 类型 | 说明 |
@@ -312,16 +314,17 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `open_in_explorer` | path: String | () | 在资源管理器中打开 |
 | `open_object_path` | path: String | () | 用默认程序打开文件夹预览中的文件（`ShellExecuteW`）；路径须位于库内文件夹对象之下，含 `.` / `..` 段一律拒绝 |
 | `read_synonyms` | - | Vec\<Vec\<String\>\> | 读取同义词字典 |
-| `get_cabinets` | - | Vec\<Cabinet\> | 获取所有文件柜 |
+| `get_cabinets` | - | Vec\<Cabinet\> | 获取所有文件柜；关联柜附 `folder_state`（`ok` / `offline` 所在盘不可用 / `missing` 文件夹不存在），在锁外探测 |
 | `add_cabinet` | name, color | Cabinet | 新建文件柜 |
 | `update_cabinet` | id, name, color | () | 更新文件柜 |
-| `remove_cabinet` | id: i64 | () | 删除文件柜 |
-| `add_item_to_cabinet` | cabinet_id, item_id | () | 添加项目到文件柜 |
-| `remove_item_from_cabinet` | cabinet_id, item_id | () | 从文件柜移除项目 |
-| `get_cabinet_items` | cabinet_id: i64, include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 获取文件柜项目；自动图标默认开启 |
-| `get_cabinet_item_counts` | - | Vec\<(i64, i64)\> | 各文件柜成员计数（单次 GROUP BY 查询，侧栏徽标用，不做对账与图标补齐） |
+| `remove_cabinet` | id: i64 | () | 删除文件柜（磁盘不受影响） |
+| `set_cabinet_folder` | id, folder: Option\<String\> | () | 关联文件夹：清空手动成员，成员改由路径决定，随后后台同步（总闸控制，文件与子文件夹都入库）；传 null 解除：当前成员固化进 cabinet_items，柜恢复为普通柜 |
+| `add_item_to_cabinet` | cabinet_id, item_id | () | 添加项目到文件柜；关联柜拒绝 |
+| `remove_item_from_cabinet` | cabinet_id, item_id | () | 从文件柜移除项目；关联柜拒绝 |
+| `get_cabinet_items` | cabinet_id: i64, include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 获取文件柜项目（关联柜按路径前缀取，不含文件夹本身）；自动图标默认开启 |
+| `get_cabinet_item_counts` | - | Vec\<(i64, i64)\> | 各文件柜成员计数（普通柜单次 GROUP BY，关联柜各一次路径前缀计数；侧栏徽标用，不做对账与图标补齐） |
 | `get_folder_watch_status` | - | FolderWatchStatus | 总闸、实际监视数、已勾选对象 id |
-| `set_folder_watch_master` | enabled | FolderWatchStatus | 总闸；关则全部根停止监视，对象勾选保留 |
+| `set_folder_watch_master` | enabled | FolderWatchStatus | 总闸；关则全部根（文件夹对象与关联柜）停止监视，对象勾选保留 |
 | `set_folder_watch` | item_id, enabled | FolderWatchStatus | 仅 `folder` 且未失效可开；打开后立刻全量补扫并挂上系统变更通知 |
 
 ---

@@ -54,7 +54,7 @@ pub fn expand_folder_import(paths: Vec<String>) -> ExpandFolderImportResult {
         }
         let location = Path::new(trimmed);
         if location.is_dir() {
-            if !walk_files(location, &mut out, &mut budget) {
+            if !walk_files(location, &mut out, &mut budget, false) {
                 truncated = true;
                 break;
             }
@@ -74,11 +74,12 @@ pub fn expand_folder_import(paths: Vec<String>) -> ExpandFolderImportResult {
     }
 }
 
-/// 递归收集文件夹内文件，跳过规则与 expand_folder_import 一致。返回 (路径, 是否因 cap 截断)。
-pub fn walk_folder_files(root: &Path, cap: usize) -> (Vec<String>, bool) {
+/// 递归收集文件夹内条目，跳过规则与 expand_folder_import 一致；include_dirs 时子文件夹也计入
+/// （占用同一 cap）。返回 (路径, 是否因 cap 截断)。
+pub fn walk_folder_entries(root: &Path, cap: usize, include_dirs: bool) -> (Vec<String>, bool) {
     let mut out = Vec::new();
     let mut budget = cap;
-    let complete = walk_files(root, &mut out, &mut budget);
+    let complete = walk_files(root, &mut out, &mut budget, include_dirs);
     (out, !complete)
 }
 
@@ -97,7 +98,7 @@ pub fn is_skipped_entry(path: &Path) -> bool {
     }
 }
 
-fn walk_files(root: &Path, out: &mut Vec<String>, budget: &mut usize) -> bool {
+fn walk_files(root: &Path, out: &mut Vec<String>, budget: &mut usize, include_dirs: bool) -> bool {
     let entries = match std::fs::read_dir(root) {
         Ok(entries) => entries,
         Err(_) => return true,
@@ -125,6 +126,10 @@ fn walk_files(root: &Path, out: &mut Vec<String>, budget: &mut usize) -> bool {
             continue;
         }
         if metadata.is_dir() {
+            if include_dirs {
+                out.push(path.to_string_lossy().to_string());
+                *budget = budget.saturating_sub(1);
+            }
             dirs.push(path);
             continue;
         }
@@ -138,7 +143,7 @@ fn walk_files(root: &Path, out: &mut Vec<String>, budget: &mut usize) -> bool {
         if *budget == 0 {
             return false;
         }
-        if !walk_files(&dir, out, budget) {
+        if !walk_files(&dir, out, budget, include_dirs) {
             return false;
         }
     }
