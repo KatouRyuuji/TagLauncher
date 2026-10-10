@@ -6,9 +6,14 @@
 // 并把被删 id 从选中集清除。单个与批量统一走 removeItems 原子批量命令，
 // 不再单删/批量两条路径落到不同后端命令。
 // 「下次不再确认」只作用于从库中移除；删除本地文件始终弹确认。
+// 目标位于监视 / 关联文件夹之下时「从库中移除」即「不再追踪」：始终弹确认，
+// 被忽略文件夹之下的已入库对象一并移出（见 lib/untrack）。
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import * as db from "../lib/db";
+import { notifyIgnoredPathsChanged, planUntrack, watchRootPaths, type UntrackPlan } from "../lib/untrack";
+import { useAppStore } from "../stores/appStore";
 
 const SKIP_REMOVE_ITEM_CONFIRM_KEY = "taglauncher.skip_remove_item_confirm";
 
@@ -47,6 +52,7 @@ export interface RemoveConfirmDialogProps {
   busyLabel?: string | null;
   skipNextTime: boolean;
   preferDeleteFiles: boolean;
+  untrack: UntrackPlan;
   onSkipNextTimeChange: (v: boolean) => void;
   onConfirm: (mode: RemoveFromAppMode) => Promise<void>;
   onCancel: () => void;
@@ -60,6 +66,8 @@ export interface UseItemRemovalResult {
   /** 直接展开给 RemoveFromAppConfirmDialog 的 props。 */
   removeDialog: RemoveConfirmDialogProps;
 }
+
+const NO_UNTRACK: UntrackPlan = { untrackedCount: 0, extraIds: [] };
 
 function readSkipConfirm(): boolean {
   try {
@@ -80,18 +88,31 @@ export function useItemRemoval({
   const [skipRemoveItemConfirm, setSkipRemoveItemConfirm] = useState(false);
   const [removeBusyLabel, setRemoveBusyLabel] = useState<string | null>(null);
   const [preferDeleteFiles, setPreferDeleteFiles] = useState(false);
+  const [untrack, setUntrack] = useState<UntrackPlan>(NO_UNTRACK);
 
   const commitRemove = useCallback(
-    async (itemIds: number[], deleteFiles: boolean) => {
-      await removeItems(itemIds, { deleteFiles });
-      setSelectedItemIds((current) => current.filter((id) => !itemIds.includes(id)));
+    async (itemIds: number[], deleteFiles: boolean, plan: UntrackPlan = NO_UNTRACK) => {
+      const untracking = !deleteFiles && plan.untrackedCount > 0;
+      const removing = untracking ? [...itemIds, ...plan.extraIds] : itemIds;
+      await removeItems(removing, { deleteFiles });
+      setSelectedItemIds((current) => current.filter((id) => !removing.includes(id)));
+      if (untracking) notifyIgnoredPathsChanged();
     },
     [removeItems, setSelectedItemIds],
   );
 
+  const resolveUntrack = useCallback(
+    async (itemIds: number[]): Promise<UntrackPlan> => {
+      const watchedItemIds = await db.getFolderWatchStatus().then((status) => status.watchedItemIds, () => []);
+      return planUntrack(itemIds, items, watchRootPaths(items, watchedItemIds, useAppStore.getState().cabinets));
+    },
+    [items],
+  );
+
   const requestRemoveFromApp = useCallback(
     async (itemId: number, options?: RemoveRequestOptions) => {
-      const skipConfirm = !options?.forceDialog && !options?.preferDeleteFiles && readSkipConfirm();
+      const plan = await resolveUntrack([itemId]);
+      const skipConfirm = !options?.forceDialog && !options?.preferDeleteFiles && plan.untrackedCount === 0 && readSkipConfirm();
       if (skipConfirm) {
         await commitRemove([itemId], false);
         return;
@@ -99,16 +120,18 @@ export function useItemRemoval({
 
       setSkipRemoveItemConfirm(false);
       setPreferDeleteFiles(options?.preferDeleteFiles === true);
+      setUntrack(plan);
       setPendingRemoveItemId(itemId);
     },
-    [commitRemove],
+    [commitRemove, resolveUntrack],
   );
 
   const requestBatchRemoveFromApp = useCallback(async (options?: RemoveRequestOptions) => {
     const itemIds = options?.itemIds ?? selectedItemIds;
     if (itemIds.length === 0) return;
 
-    const skipConfirm = !options?.forceDialog && !options?.preferDeleteFiles && readSkipConfirm();
+    const plan = await resolveUntrack(itemIds);
+    const skipConfirm = !options?.forceDialog && !options?.preferDeleteFiles && plan.untrackedCount === 0 && readSkipConfirm();
     if (skipConfirm) {
       await commitRemove(itemIds, false);
       return;
@@ -116,8 +139,9 @@ export function useItemRemoval({
 
     setSkipRemoveItemConfirm(false);
     setPreferDeleteFiles(options?.preferDeleteFiles === true);
+    setUntrack(plan);
     setPendingBatchRemoveItemIds(itemIds);
-  }, [commitRemove, selectedItemIds]);
+  }, [commitRemove, resolveUntrack, selectedItemIds]);
 
   const handleConfirmRemoveFromApp = useCallback(async (mode: RemoveFromAppMode) => {
     const itemIds = pendingBatchRemoveItemIds ?? (pendingRemoveItemId === null ? [] : [pendingRemoveItemId]);
@@ -126,7 +150,7 @@ export function useItemRemoval({
     const deleteFiles = mode === "files";
     setRemoveBusyLabel(deleteFiles ? "正在移到回收站…" : "正在从库中移除…");
     try {
-      await commitRemove(itemIds, deleteFiles);
+      await commitRemove(itemIds, deleteFiles, untrack);
     } catch {
       setRemoveBusyLabel(null);
       setSkipRemoveItemConfirm(false);
@@ -138,7 +162,7 @@ export function useItemRemoval({
     setPendingBatchRemoveItemIds(null);
 
     try {
-      if (skipRemoveItemConfirm && !deleteFiles) {
+      if (skipRemoveItemConfirm && !deleteFiles && untrack.untrackedCount === 0) {
         localStorage.setItem(SKIP_REMOVE_ITEM_CONFIRM_KEY, "1");
       }
     } catch {
@@ -147,13 +171,15 @@ export function useItemRemoval({
 
     setSkipRemoveItemConfirm(false);
     setPreferDeleteFiles(false);
-  }, [commitRemove, pendingBatchRemoveItemIds, pendingRemoveItemId, skipRemoveItemConfirm]);
+    setUntrack(NO_UNTRACK);
+  }, [commitRemove, pendingBatchRemoveItemIds, pendingRemoveItemId, skipRemoveItemConfirm, untrack]);
 
   const handleCancelRemoveFromApp = useCallback(() => {
     setPendingRemoveItemId(null);
     setPendingBatchRemoveItemIds(null);
     setSkipRemoveItemConfirm(false);
     setPreferDeleteFiles(false);
+    setUntrack(NO_UNTRACK);
   }, []);
 
   useEffect(() => {
@@ -186,6 +212,7 @@ export function useItemRemoval({
       items: pendingItems,
       skipNextTime: skipRemoveItemConfirm,
       preferDeleteFiles,
+      untrack,
       busyLabel: removeBusyLabel,
       onSkipNextTimeChange: setSkipRemoveItemConfirm,
       onConfirm: handleConfirmRemoveFromApp,

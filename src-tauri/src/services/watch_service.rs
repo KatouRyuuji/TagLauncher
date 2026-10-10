@@ -194,6 +194,157 @@ fn known_paths_under(conn: &Connection, root: &str) -> Result<HashSet<String>, S
     Ok(out)
 }
 
+/// 已配置的监视目录（打开了监视的文件夹对象与关联柜的文件夹，不看总闸），用于判断移出库时是否记入忽略名单。
+fn configured_root_keys(conn: &Connection) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT i.path FROM watch_roots w JOIN items i ON i.id = w.item_id WHERE w.enabled = 1
+             UNION ALL
+             SELECT folder_path FROM cabinets WHERE folder_path IS NOT NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    rows.map(|row| row.map(|path| path_key(&path)).map_err(|e| e.to_string()))
+        .collect()
+}
+
+/// key 等于 prefix 或位于 prefix 之下。
+fn key_within(key: &str, prefix: &str) -> bool {
+    key == prefix
+        || (key.starts_with(prefix)
+            && (prefix.ends_with('\\') || key.as_bytes().get(prefix.len()) == Some(&b'\\')))
+}
+
+/// 把即将移出库的对象中位于监视目录之下（不含监视目录本身）的路径记入忽略名单；须与删除处于同一事务。
+/// 返回被忽略文件夹之下其余已入库对象的 id，调用方一并移出库。
+pub fn ignore_removed_items(conn: &Connection, ids: &[i64]) -> Result<Vec<i64>, String> {
+    let roots = configured_root_keys(conn)?;
+    if roots.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut select = conn
+        .prepare("SELECT path, type FROM items WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+    let mut insert = conn
+        .prepare("INSERT OR IGNORE INTO ignored_paths (path_key, path) VALUES (?1, ?2)")
+        .map_err(|e| e.to_string())?;
+    let mut folders = Vec::new();
+    for id in ids {
+        let Ok((path, item_type)) =
+            select.query_row([id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        else {
+            continue;
+        };
+        let key = path_key(&path);
+        if roots.iter().any(|root| key != *root && key_within(&key, root)) {
+            insert
+                .execute(rusqlite::params![key, path])
+                .map_err(|e| e.to_string())?;
+            if item_type == "folder" {
+                folders.push(key);
+            }
+        }
+    }
+    if folders.is_empty() {
+        return Ok(Vec::new());
+    }
+    let requested: HashSet<i64> = ids.iter().copied().collect();
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM items")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?;
+    let mut descendants = Vec::new();
+    for row in rows {
+        let (id, path) = row.map_err(|e| e.to_string())?;
+        let key = path_key(&path);
+        if !requested.contains(&id)
+            && folders.iter().any(|folder| key != *folder && key_within(&key, folder))
+        {
+            descendants.push(id);
+        }
+    }
+    Ok(descendants)
+}
+
+/// 手动加入库的路径不再被忽略：删除等于该路径或位于其下的忽略项。
+pub fn unignore_path(conn: &Connection, path: &str) -> Result<(), String> {
+    let key = path_key(path);
+    let removed = ignored_keys(conn)?
+        .into_iter()
+        .filter(|ignored| key_within(ignored, &key));
+    for ignored in removed {
+        conn.execute("DELETE FROM ignored_paths WHERE path_key = ?1", [ignored])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn ignored_keys(conn: &Connection) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT path_key FROM ignored_paths")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+fn is_ignored(path: &str, ignored: &[String]) -> bool {
+    let key = path_key(path);
+    ignored.iter().any(|prefix| key_within(&key, prefix))
+}
+
+/// 忽略名单（按路径排序）；给定 under 时只列该目录之下的项。
+pub fn list_ignored_paths(conn: &Connection, under: Option<&str>) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT path_key, path FROM ignored_paths ORDER BY path COLLATE NOCASE")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?;
+    let under = under.map(path_key);
+    let mut out = Vec::new();
+    for row in rows {
+        let (key, path) = row.map_err(|e| e.to_string())?;
+        if under.as_deref().map_or(true, |root| key != root && key_within(&key, root)) {
+            out.push(path);
+        }
+    }
+    Ok(out)
+}
+
+/// 恢复追踪：从忽略名单删除这些路径（整批一个事务）。
+pub fn restore_ignored_paths(conn: &Connection, paths: &[String]) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    for path in paths {
+        tx.execute("DELETE FROM ignored_paths WHERE path_key = ?1", [path_key(path)])
+            .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())
+}
+
+/// 清理 root 之下磁盘上已不存在的忽略项（只在 root 在线时调用）。存在性检查在锁外进行。
+fn prune_ignored_under(db: &crate::db::Database, root: &str) -> Result<(), String> {
+    let candidates = {
+        let conn = db.get_conn();
+        list_ignored_paths(&conn, Some(root))?
+    };
+    let gone: Vec<String> = candidates
+        .into_iter()
+        .filter(|path| !Path::new(path).exists())
+        .collect();
+    if gone.is_empty() {
+        return Ok(());
+    }
+    let conn = db.get_conn();
+    restore_ignored_paths(&conn, &gone)
+}
+
 fn active_root_path(db: &crate::db::Database, key: RootKey) -> Option<String> {
     let conn = db.get_conn();
     active_root_path_conn(&conn, key)
@@ -217,13 +368,14 @@ pub fn scan_root(db: &crate::db::Database, key: RootKey) -> Result<AddItemsResul
     if truncated {
         log::warn!("[folder-watch] {key} 超过 {WATCH_SCAN_CAP} 项，超出部分未同步");
     }
-    let known = {
+    prune_ignored_under(db, &root)?;
+    let (known, ignored) = {
         let conn = db.get_conn();
-        known_paths_under(&conn, &root)?
+        (known_paths_under(&conn, &root)?, ignored_keys(&conn)?)
     };
     let fresh: Vec<String> = files
         .into_iter()
-        .filter(|path| !known.contains(&path_key(path)))
+        .filter(|path| !known.contains(&path_key(path)) && !is_ignored(path, &ignored))
         .collect();
     // 分批入库：首次绑定大目录时避免单个事务长时间独占数据库锁
     let mut result = empty_add_result();
@@ -302,7 +454,14 @@ pub fn import_event_paths(
     let Some(root) = active_root_path(db, key) else {
         return Ok(empty_add_result());
     };
-    let files = expand_event_paths(Path::new(&root), paths, key.include_dirs());
+    let ignored = {
+        let conn = db.get_conn();
+        ignored_keys(&conn)?
+    };
+    let files: Vec<String> = expand_event_paths(Path::new(&root), paths, key.include_dirs())
+        .into_iter()
+        .filter(|path| !is_ignored(path, &ignored))
+        .collect();
     if files.is_empty() {
         return Ok(empty_add_result());
     }

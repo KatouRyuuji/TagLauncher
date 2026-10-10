@@ -72,7 +72,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands/  ← 108 个 Tauri 命令         │  │
+│  │  commands/  ← 110 个 Tauri 命令         │  │
 │  │             (按 item/cabinet/tag/mod/   │  │
 │  │              net/ai/data/sync/update/   │  │
 │  │              settings/synonym/launch/   │  │
@@ -121,6 +121,7 @@ tag-launcher/
 │   │   ├── itemQuery.ts          # 排序 / 类型筛选 / 键盘选择 / 点选
 │   │   ├── batchRename.ts        # 批量重命名规则纯函数（查找替换 / 模板）
 │   │   ├── cabinetBrowse.ts      # 关联柜按目录浏览（当前层过滤、上一级、面包屑）
+│   │   ├── untrack.ts            # 移除时判断哪些对象将不再追踪及连带移出项
 │   │   ├── workspaceChrome.ts    # 工作台遮罩、选中锚点、网格列数
 │   │   └── synonyms.ts           # 同义词字典加载
 │   ├── components/
@@ -128,7 +129,7 @@ tag-launcher/
 │   │   ├── AppErrorBoundary.tsx  # 顶层错误边界（崩溃时强制显示窗口 + 可复制错误详情）
 │   │   ├── Sidebar.tsx           # 左侧导航（标签/文件柜/最近使用）
 │   │   ├── SearchBar.tsx         # 搜索框 + 控制/筛选合并行（搜索范围/排序/视图/类型筛选/导入）
-│   │   ├── WorkspaceScopeHeader.tsx # 主区范围标题（全部 / 收藏 / 柜 / 已筛）；关联柜附面包屑、状态提示、清理失效、平铺开关
+│   │   ├── WorkspaceScopeHeader.tsx # 主区范围标题（全部 / 收藏 / 柜 / 已筛）；关联柜附面包屑、状态提示、已忽略、清理失效、平铺开关
 │   │   ├── TagFilterBar.tsx      # 主视图顶部标签筛选条（默认展开；芯片间写「且 / 且非」）
 │   │   ├── ThemeFamilyGallery.tsx # 设置里官方四族主选择器
 │   │   ├── SearchHighlightText.tsx # 搜索关键词高亮渲染
@@ -168,7 +169,8 @@ tag-launcher/
 │   │   ├── FloatingPanels.tsx    # Mod 浮动面板宿主
 │   │   ├── ToastContainer.tsx    # Toast 通知容器
 │   │   ├── MigrationDialog.tsx   # 版本迁移提示弹窗
-│   │   ├── RemoveFromAppConfirmDialog.tsx # 移除对象确认弹窗
+│   │   ├── RemoveFromAppConfirmDialog.tsx # 移除对象确认弹窗（监视 / 关联文件夹内为「不再追踪」）
+│   │   ├── IgnoredPathsButton.tsx # 「已忽略 N 项」入口与恢复追踪弹窗
 │   │   ├── WelcomeModal.tsx      # 首次欢迎弹窗
 │   │   └── ThemeProvider.tsx     # 主题加载与 FOUC 门控
 │   └── data/
@@ -178,7 +180,7 @@ tag-launcher/
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── commands/             # Tauri 命令（按业务域分模块，108 个）
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，110 个）
 │   │   │   ├── item_commands.rs
 │   │   │   ├── cabinet_commands.rs
 │   │   │   ├── tag_commands.rs
@@ -296,7 +298,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | 命令名 | 参数 | 返回值 | 说明 |
 |--------|------|--------|------|
 | `add_item` | path: String | Item | 添加项目，自动检测类型 |
-| `remove_item` | id: i64 | () | 删除项目 |
+| `remove_item` | id: i64 | () | 删除项目；位于监视或关联文件夹内的路径记入忽略列表（`ignored_paths`），文件夹连同其下对象一起移出 |
 | `get_items` | include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 获取所有项目及标签；自动图标默认开启，工作台传 false 后按可见项目加载 |
 | `get_items_by_ids` | ids: Vec\<i64\>, include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 批量获取指定项目；自动图标默认开启 |
 | `get_item_visual` | id: i64 | { path, icon_path } | 获取已登记对象图标，返回对象路径供异步请求核对 |
@@ -327,6 +329,8 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `get_folder_watch_status` | - | FolderWatchStatus | 总闸、实际监视数、已勾选对象 id |
 | `set_folder_watch_master` | enabled | FolderWatchStatus | 总闸；关则全部根（文件夹对象与关联柜）停止监视，对象勾选保留 |
 | `set_folder_watch` | item_id, enabled | FolderWatchStatus | 仅 `folder` 且未失效可开；打开后立刻全量补扫并挂上系统变更通知 |
+| `list_ignored_paths` | under: Option\<String\> | Vec\<String\> | 不再追踪的路径；传 under 只列其下 |
+| `restore_ignored_paths` | paths | () | 移出忽略列表并立即补扫 |
 
 ---
 

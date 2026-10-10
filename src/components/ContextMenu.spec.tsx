@@ -8,7 +8,11 @@ import type { ItemWithTags } from "../types";
 import * as db from "../lib/db";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
-vi.mock("../lib/db", () => ({ openInExplorer: vi.fn(), openInExplorerById: vi.fn() }));
+vi.mock("../lib/db", () => ({
+  openInExplorer: vi.fn(async () => {}),
+  openInExplorerById: vi.fn(),
+  getFolderWatchStatus: vi.fn(async () => ({ masterEnabled: true, activeCount: 0, watchedItemIds: [] })),
+}));
 vi.mock("../lib/toast", () => ({ showToast: vi.fn() }));
 
 // jsdom 不提供 ResizeObserver：菜单滚动提示只需能订阅
@@ -82,3 +86,23 @@ describe("右键「重命名…」", () => {
     expect(screen.queryByRole("menuitem", { name: /重命名/ })).not.toBeInTheDocument();
   });
 });
+
+describe("关联柜内的文件夹", () => {
+  const folder: ItemWithTags = { id: 8, name: "Sub", path: "D:\\Photos\\Sub", type: "folder", created_at: "2026-01-01", is_favorite: false, tags: [] };
+
+  beforeEach(() => {
+    useAppStore.setState({
+      cabinets: [{ id: 1, name: "照片", color: "#fff", created_at: "2026-10-10", folder_path: "D:\\Photos", folder_truncated: false, folder_state: "ok" }],
+      selectedCabinetId: 1,
+    });
+  });
+  afterEach(() => useAppStore.setState({ cabinets: [], selectedCabinetId: null }));
+
+  it("「打开」改为进入此文件夹，另可在资源管理器中打开", async () => {
+    renderMenu(vi.fn(), folder);
+    expect(screen.getByRole("menuitem", { name: /进入此文件夹/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("menuitem", { name: /在资源管理器中打开/ }));
+    expect(db.openInExplorer).toHaveBeenCalledWith("D:\\Photos\\Sub");
+  });
+});
+

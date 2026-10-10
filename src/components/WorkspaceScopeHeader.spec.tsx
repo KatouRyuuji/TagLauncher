@@ -5,11 +5,15 @@
 // ============================================================================
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { WorkspaceScopeHeader } from "./WorkspaceScopeHeader";
 import { useAppStore } from "../stores/appStore";
 import type { Cabinet } from "../types";
+import * as db from "../lib/db";
+
+vi.mock("../lib/db", () => ({ listIgnoredPaths: vi.fn(async () => []), restoreIgnoredPaths: vi.fn(async () => {}) }));
+vi.mock("../lib/toast", () => ({ showToast: vi.fn() }));
 
 function linked(overrides: Partial<Cabinet> = {}): Cabinet {
   return {
@@ -72,5 +76,17 @@ describe("WorkspaceScopeHeader · 关联文件夹的文件柜", () => {
     useAppStore.setState({ cabinets: [linked({ folder_path: null, folder_state: null })] });
     render(<WorkspaceScopeHeader visibleCount={0} />);
     expect(screen.queryByRole("navigation", { name: "文件夹路径" })).toBeNull();
+  });
+
+  it("有忽略项时显示「已忽略 N 项」，勾选后恢复追踪", async () => {
+    vi.mocked(db.listIgnoredPaths).mockResolvedValue(["D:\\Photos\\a.jpg", "D:\\Photos\\Sub"]);
+    render(<WorkspaceScopeHeader visibleCount={3} browseDir="D:\Photos" />);
+    await userEvent.click(await screen.findByRole("button", { name: /已忽略 2 项/ }));
+    expect(db.listIgnoredPaths).toHaveBeenCalledWith("D:\\Photos");
+    const dialog = screen.getByRole("dialog", { name: "已忽略的对象" });
+    expect(dialog).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox", { name: /Sub/ }));
+    await userEvent.click(screen.getByRole("button", { name: "恢复追踪（1）" }));
+    await waitFor(() => expect(db.restoreIgnoredPaths).toHaveBeenCalledWith(["D:\\Photos\\Sub"]));
   });
 });

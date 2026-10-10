@@ -38,6 +38,7 @@ import { showToast } from "../lib/toast";
 import { copyText } from "../lib/clipboard";
 import { useOverlayGate } from "../lib/overlayGate";
 import { useAppStore } from "../stores/appStore";
+import { isUnderDir } from "../lib/cabinetBrowse";
 import type { Cabinet, ItemWithTags } from "../types";
 import type { ContextSelectionInfo } from "./ItemCard";
 
@@ -81,6 +82,11 @@ export function ContextMenu({
 }: ContextMenuProps) {
   useOverlayGate();
   const [folderWatched, setFolderWatched] = useState(false);
+  // 关联柜内的文件夹：「打开」改为进入子目录（App.handleOpenItem），另给出在资源管理器中打开
+  const entersLinkedFolder = useAppStore((state) => {
+    const root = state.cabinets.find((cabinet) => cabinet.id === state.selectedCabinetId)?.folder_path;
+    return !contextSelection && item.type === "folder" && !item.is_missing && !!root && isUnderDir(item.path, root);
+  });
   // 二级菜单同时只开一个：文件柜 / 缩略图共用同一套定位、悬停延时与键盘机制
   const [openSubmenu, setOpenSubmenu] = useState<"cabinet" | "thumbnail" | null>(null);
   const showCabinetSub = openSubmenu === "cabinet";
@@ -455,9 +461,21 @@ export function ContextMenu({
         <MenuGroupLabel>操作</MenuGroupLabel>
         <MenuItem
           icon={item.type === "folder" ? FolderOpen : Play}
-          label={openMenuLabel(item.type, multi ? multi.ids.length : 1)}
+          label={entersLinkedFolder ? "进入此文件夹" : openMenuLabel(item.type, multi ? multi.ids.length : 1)}
           onClick={() => { onLaunch(); onClose(); }}
         />
+        {entersLinkedFolder && (
+          <MenuItem
+            icon={FolderOpen}
+            label="在资源管理器中打开"
+            onClick={() => {
+              onClose();
+              void db.openInExplorer(item.path).catch((error) => {
+                showToast(`打开失败：${error instanceof Error ? error.message : String(error)}`, "error");
+              });
+            }}
+          />
+        )}
         {/* 快速预览只服务单个对象：多选语义下隐藏，避免误以为可批量预览 */}
         {onPreview && !multi && <MenuItem icon={Eye} label="快速预览" onClick={() => { onPreview(); onClose(); }} />}
         <MenuItem icon={FolderOpen} label={revealMenuLabel(item.type)} onClick={() => void handleOpenFolder()} />

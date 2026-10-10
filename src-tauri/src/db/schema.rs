@@ -114,6 +114,13 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             last_scan_at DATETIME
         );
 
+        -- ========== 不再追踪的路径（监视 / 关联文件夹内被移出库的对象） ==========
+        CREATE TABLE IF NOT EXISTS ignored_paths (
+            path_key TEXT PRIMARY KEY,
+            path TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
         -- ========== 应用元数据表 ==========
         CREATE TABLE IF NOT EXISTS app_meta (
             key TEXT PRIMARY KEY,

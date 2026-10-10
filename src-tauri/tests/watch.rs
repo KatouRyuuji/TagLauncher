@@ -227,3 +227,103 @@ fn cabinet_root_includes_folders_and_follows_master() {
     let conn = t.db.get_conn();
     assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id).unwrap().len(), 4);
 }
+
+/// 不再追踪：监视目录下移出库的对象记入忽略名单，补扫与通知都跳过；文件夹连同其下对象出库；
+/// 移到回收站不记名单；手动加回解除忽略；恢复追踪后补扫重新导入；磁盘上已消失的忽略项被清理。
+#[test]
+fn removed_items_under_watch_root_stay_untracked() {
+    use tag_launcher_lib::services::cabinet_service;
+    let t = common::temp_db();
+    let root = common::make_dir(&t.dir, "track");
+    let keep = common::write_file(&t.dir, "track/keep.txt", b"k");
+    let drop = common::write_file(&t.dir, "track/drop.txt", b"d");
+    let sub = common::make_dir(&t.dir, "track/sub");
+    let inner = common::write_file(&t.dir, "track/sub/inner.txt", b"i");
+    let gone = common::write_file(&t.dir, "track/gone.txt", b"g");
+    let cab = {
+        let conn = t.db.get_conn();
+        let cab = cabinet_service::add_cabinet(&conn, "Track", "#fff").unwrap();
+        cabinet_service::set_cabinet_folder(&conn, cab.id, Some(&root)).unwrap();
+        cab
+    };
+    let key = RootKey::Cabinet(cab.id);
+    assert_eq!(watch_service::scan_root(&t.db, key).unwrap().created_count, 5);
+
+    let id_of = |path: &str| -> i64 {
+        let conn = t.db.get_conn();
+        conn.query_row(
+            "SELECT id FROM items WHERE replace(path, '/', '\\') = ?1",
+            [path.replace('/', "\\")],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    let count = || -> i64 {
+        let conn = t.db.get_conn();
+        conn.query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0)).unwrap()
+    };
+    let (drop_id, sub_id, gone_id) = (id_of(&drop), id_of(&sub), id_of(&gone));
+    {
+        let conn = t.db.get_conn();
+        item_service::remove_items(&conn, &[drop_id, sub_id, gone_id]).unwrap();
+        let ignored = watch_service::list_ignored_paths(&conn, Some(&root)).unwrap();
+        assert_eq!(ignored.len(), 3, "{ignored:?}");
+        assert!(watch_service::list_ignored_paths(&conn, None).unwrap().len() == 3);
+    }
+    assert_eq!(count(), 1, "只剩 keep.txt；sub 之下的 inner.txt 一并出库");
+    assert!(id_of(&keep) > 0);
+
+    assert_eq!(watch_service::scan_root(&t.db, key).unwrap().created_count, 0, "补扫跳过忽略项");
+    let ev = watch_service::import_event_paths(
+        &t.db,
+        key,
+        &[PathBuf::from(&drop), PathBuf::from(&inner)],
+    )
+    .unwrap();
+    assert_eq!(ev.created_count, 0, "通知也跳过忽略项及被忽略文件夹之下的路径");
+
+    std::fs::remove_file(&gone).unwrap();
+    watch_service::scan_root(&t.db, key).unwrap();
+    {
+        let conn = t.db.get_conn();
+        let ignored = watch_service::list_ignored_paths(&conn, Some(&root)).unwrap();
+        assert_eq!(ignored.len(), 2, "已从磁盘消失的忽略项被清理：{ignored:?}");
+    }
+
+    let manual = item_service::add_items(&t.db, vec![drop.clone()]);
+    assert_eq!(manual.created_count, 1);
+    {
+        let conn = t.db.get_conn();
+        let ignored = watch_service::list_ignored_paths(&conn, None).unwrap();
+        assert_eq!(ignored.len(), 1, "手动加回解除忽略：{ignored:?}");
+        watch_service::restore_ignored_paths(&conn, &ignored).unwrap();
+        assert!(watch_service::list_ignored_paths(&conn, None).unwrap().is_empty());
+    }
+    assert_eq!(watch_service::scan_root(&t.db, key).unwrap().created_count, 2, "恢复后 sub 与 inner.txt 重新入库");
+
+    let inner_id = id_of(&inner);
+    {
+        let conn = t.db.get_conn();
+        let result = item_service::remove_items_and_files(&conn, &[inner_id]).unwrap();
+        assert_eq!(result.removed_ids, vec![inner_id]);
+        assert!(
+            watch_service::list_ignored_paths(&conn, None).unwrap().is_empty(),
+            "移到回收站不记入忽略名单"
+        );
+    }
+}
+
+/// 不在监视目录下（或监视目录本身）的对象移出库时不记入忽略名单。
+#[test]
+fn removal_outside_watch_roots_is_not_ignored() {
+    let t = common::temp_db();
+    let root = common::make_dir(&t.dir, "plain");
+    let file = common::write_file(&t.dir, "plain/a.txt", b"a");
+    let conn = t.db.get_conn();
+    let folder = item_service::add_item(&conn, &root).unwrap();
+    let loose = item_service::add_item(&conn, &file).unwrap();
+    item_service::remove_items(&conn, &[loose.id]).unwrap();
+    watch_service::set_item_watch(&conn, folder.id, true).unwrap();
+    item_service::remove_items(&conn, &[folder.id]).unwrap();
+    assert!(watch_service::list_ignored_paths(&conn, None).unwrap().is_empty());
+}

@@ -14,6 +14,8 @@ import type { ModInfo } from "../types/mod";
 import type { ThemeDefinition } from "../types/theme";
 import pkg from "../../package.json";
 import { demoAlbumCover } from "./assets";
+import { isUnderDir } from "../lib/cabinetBrowse";
+import { planUntrack, watchRootPaths } from "../lib/untrack";
 import {
   DEMO_AUDIO_META,
   DEMO_CABINET_ITEMS,
@@ -65,6 +67,7 @@ interface DemoState {
   nextCabinetId: number;
   folderWatchMaster: boolean;
   watchedFolderIds: Set<number>;
+  ignoredPaths: string[];
 }
 
 function seedState(): DemoState {
@@ -134,6 +137,7 @@ function seedState(): DemoState {
     nextCabinetId: 100,
     folderWatchMaster: true,
     watchedFolderIds: new Set<number>(),
+    ignoredPaths: [],
   };
 }
 
@@ -315,6 +319,16 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "remove_items":
     case "remove_items_and_files": {
       const removing = new Set(cmd === "remove_item" ? [num(args.id)] : ids(args.ids));
+      if (cmd !== "remove_items_and_files") {
+        const roots = watchRootPaths(state.items, [...state.watchedFolderIds], state.cabinets);
+        const untracked = planUntrack([...removing], state.items, roots);
+        for (const item of state.items) {
+          if (removing.has(item.id) && roots.some((root) => isUnderDir(item.path, root)) && !state.ignoredPaths.includes(item.path)) {
+            state.ignoredPaths.push(item.path);
+          }
+        }
+        for (const id of untracked.extraIds) removing.add(id);
+      }
       state.items = state.items.filter((item) => !removing.has(item.id));
       for (const members of state.cabinetItems.values()) {
         for (const id of removing) members.delete(id);
@@ -333,6 +347,15 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         else files.push(path);
       }
       return { files, folders };
+    }
+    case "list_ignored_paths": {
+      const under = args.under ? String(args.under) : null;
+      return state.ignoredPaths.filter((path) => under === null || isUnderDir(path, under)).sort();
+    }
+    case "restore_ignored_paths": {
+      const restoring = new Set((args.paths as string[]) ?? []);
+      state.ignoredPaths = state.ignoredPaths.filter((path) => !restoring.has(path));
+      return null;
     }
     case "get_folder_watch_status":
       return {

@@ -413,7 +413,9 @@ pub fn add_items(db: &crate::db::Database, paths: Vec<String>) -> AddItemsResult
 
     let mut created_count = 0usize;
     for meta in &metas {
-        match add_one_with_meta(&tx, meta) {
+        match add_one_with_meta(&tx, meta)
+            .and_then(|added| crate::services::watch_service::unignore_path(&tx, &meta.path).map(|_| added))
+        {
             Ok((item, created)) => {
                 if created {
                     created_count += 1;
@@ -455,13 +457,22 @@ pub fn add_items(db: &crate::db::Database, paths: Vec<String>) -> AddItemsResult
 pub(crate) const IN_CHUNK: usize = 500;
 
 /// 批量删除项目：按 IN_CHUNK 分块，多块包在单事务里保持整体原子。
+/// 位于监视目录下的对象同时记入忽略名单，之后补扫不再把它导回库里；被忽略文件夹之下的已入库对象一并移出。
 pub fn remove_items(conn: &Connection, ids: &[i64]) -> Result<(), String> {
+    delete_items(conn, ids, true)
+}
+
+fn delete_items(conn: &Connection, ids: &[i64], ignore_watched: bool) -> Result<(), String> {
     crate::db::ensure_writes_allowed()?;
     if ids.is_empty() {
         return Ok(());
     }
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    for chunk in ids.chunks(IN_CHUNK) {
+    let mut all_ids = ids.to_vec();
+    if ignore_watched {
+        all_ids.extend(crate::services::watch_service::ignore_removed_items(&tx, ids)?);
+    }
+    for chunk in all_ids.chunks(IN_CHUNK) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!("DELETE FROM items WHERE id IN ({})", placeholders);
         let params = chunk
@@ -477,10 +488,7 @@ pub fn remove_items(conn: &Connection, ids: &[i64]) -> Result<(), String> {
 
 /// 删除项目
 pub fn remove_item(conn: &Connection, id: i64) -> Result<(), String> {
-    crate::db::ensure_writes_allowed()?;
-    conn.execute("DELETE FROM items WHERE id = ?1", [id])
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    remove_items(conn, &[id])
 }
 
 #[derive(Serialize)]
@@ -535,7 +543,7 @@ pub fn remove_items_and_files(conn: &Connection, ids: &[i64]) -> Result<RemoveIt
     }
 
     if !removed_ids.is_empty() {
-        remove_items(conn, &removed_ids)?;
+        delete_items(conn, &removed_ids, false)?;
     }
 
     Ok(RemoveItemsAndFilesResult { removed_ids, failed })
