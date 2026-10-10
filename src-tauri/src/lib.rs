@@ -324,6 +324,7 @@ pub fn run() {
             add_cabinet,
             update_cabinet,
             remove_cabinet,
+            set_cabinet_folder,
             add_item_to_cabinet,
             remove_item_from_cabinet,
             add_items_to_cabinet,

@@ -58,39 +58,73 @@ pub fn set_item_watch(conn: &Connection, item_id: i64, enabled: bool) -> Result<
     Ok(())
 }
 
-pub fn list_active_roots(conn: &Connection) -> Result<Vec<(i64, String)>, String> {
+/// 监视根：文件夹对象（只收文件）或关联了文件夹的文件柜（文件与子文件夹都收）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootKey {
+    Item(i64),
+    Cabinet(i64),
+}
+
+impl RootKey {
+    fn include_dirs(self) -> bool {
+        matches!(self, RootKey::Cabinet(_))
+    }
+}
+
+impl std::fmt::Display for RootKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RootKey::Item(id) => write!(f, "对象 {id}"),
+            RootKey::Cabinet(id) => write!(f, "文件柜 {id}"),
+        }
+    }
+}
+
+const ACTIVE_ITEM_ROOTS: &str = "SELECT i.id, i.path FROM watch_roots w
+     JOIN items i ON i.id = w.item_id
+     WHERE w.enabled = 1 AND i.type = 'folder' AND i.is_missing = 0";
+const ACTIVE_CABINET_ROOTS: &str =
+    "SELECT id, folder_path FROM cabinets WHERE folder_path IS NOT NULL";
+
+/// 总闸开启时的全部监视根（总闸同时暂停文件夹对象与关联柜的同步）。
+pub fn list_active_roots(conn: &Connection) -> Result<Vec<(RootKey, String)>, String> {
     if !master_enabled(conn) {
         return Ok(Vec::new());
     }
-    let mut stmt = conn
-        .prepare(
-            "SELECT i.id, i.path FROM watch_roots w
-             JOIN items i ON i.id = w.item_id
-             WHERE w.enabled = 1 AND i.type = 'folder' AND i.is_missing = 0",
-        )
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-        .map_err(|e| e.to_string())?;
     let mut out = Vec::new();
-    for row in rows {
-        out.push(row.map_err(|e| e.to_string())?);
+    for (sql, make) in [
+        (ACTIVE_ITEM_ROOTS, RootKey::Item as fn(i64) -> RootKey),
+        (ACTIVE_CABINET_ROOTS, RootKey::Cabinet as fn(i64) -> RootKey),
+    ] {
+        let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (id, path) = row.map_err(|e| e.to_string())?;
+            out.push((make(id), path));
+        }
     }
     Ok(out)
 }
 
-pub fn root_is_active(conn: &Connection, item_id: i64) -> bool {
+/// 根仍处于监视中时返回其路径。
+fn active_root_path_conn(conn: &Connection, key: RootKey) -> Option<String> {
     if !master_enabled(conn) {
-        return false;
+        return None;
     }
-    conn.query_row(
-        "SELECT 1 FROM watch_roots w
-         JOIN items i ON i.id = w.item_id
-         WHERE w.item_id = ?1 AND w.enabled = 1 AND i.type = 'folder' AND i.is_missing = 0",
-        [item_id],
-        |_| Ok(true),
-    )
-    .unwrap_or(false)
+    match key {
+        RootKey::Item(id) => conn
+            .query_row(&format!("{ACTIVE_ITEM_ROOTS} AND i.id = ?1"), [id], |r| r.get(1))
+            .ok(),
+        RootKey::Cabinet(id) => conn
+            .query_row(&format!("{ACTIVE_CABINET_ROOTS} AND id = ?1"), [id], |r| r.get(1))
+            .ok(),
+    }
+}
+
+pub fn root_is_active(conn: &Connection, key: RootKey) -> bool {
+    active_root_path_conn(conn, key).is_some()
 }
 
 pub fn status(conn: &Connection) -> Result<FolderWatchStatus, String> {
@@ -115,11 +149,17 @@ pub fn status(conn: &Connection) -> Result<FolderWatchStatus, String> {
     })
 }
 
-fn mark_scanned(conn: &Connection, item_id: i64) {
-    let _ = conn.execute(
-        "UPDATE watch_roots SET last_scan_at = CURRENT_TIMESTAMP WHERE item_id = ?1",
-        [item_id],
-    );
+fn mark_scanned(conn: &Connection, key: RootKey, truncated: bool) {
+    let _ = match key {
+        RootKey::Item(id) => conn.execute(
+            "UPDATE watch_roots SET last_scan_at = CURRENT_TIMESTAMP WHERE item_id = ?1",
+            [id],
+        ),
+        RootKey::Cabinet(id) => conn.execute(
+            "UPDATE cabinets SET folder_truncated = ?2 WHERE id = ?1",
+            rusqlite::params![id, truncated],
+        ),
+    };
 }
 
 fn empty_add_result() -> AddItemsResult {
@@ -154,30 +194,28 @@ fn known_paths_under(conn: &Connection, root: &str) -> Result<HashSet<String>, S
     Ok(out)
 }
 
-fn active_root_path(db: &crate::db::Database, item_id: i64) -> Result<Option<String>, String> {
+fn active_root_path(db: &crate::db::Database, key: RootKey) -> Option<String> {
     let conn = db.get_conn();
-    if !root_is_active(&conn, item_id) {
-        return Ok(None);
-    }
-    conn.query_row("SELECT path FROM items WHERE id = ?1", [item_id], |r| r.get(0))
-        .map(Some)
-        .map_err(|e| e.to_string())
+    active_root_path_conn(&conn, key)
 }
 
 /// 对单个监视根做一次全量补扫：遍历（上限 WATCH_SCAN_CAP）后只把库里没有的路径交给 add_items。
 /// 根目录不存在（盘离线）时直接返回空结果，不报错。
-pub fn scan_root(db: &crate::db::Database, item_id: i64) -> Result<AddItemsResult, String> {
+pub fn scan_root(db: &crate::db::Database, key: RootKey) -> Result<AddItemsResult, String> {
     crate::db::ensure_writes_allowed()?;
-    let Some(root) = active_root_path(db, item_id)? else {
+    let Some(root) = active_root_path(db, key) else {
         return Ok(empty_add_result());
     };
     if !Path::new(&root).is_dir() {
         return Ok(empty_add_result());
     }
-    let (files, truncated) =
-        crate::services::import_paths::walk_folder_files(Path::new(&root), WATCH_SCAN_CAP);
+    let (files, truncated) = crate::services::import_paths::walk_folder_entries(
+        Path::new(&root),
+        WATCH_SCAN_CAP,
+        key.include_dirs(),
+    );
     if truncated {
-        log::warn!("[folder-watch] 根 {item_id} 超过 {WATCH_SCAN_CAP} 个文件，超出部分未同步");
+        log::warn!("[folder-watch] {key} 超过 {WATCH_SCAN_CAP} 项，超出部分未同步");
     }
     let known = {
         let conn = db.get_conn();
@@ -197,14 +235,18 @@ pub fn scan_root(db: &crate::db::Database, item_id: i64) -> Result<AddItemsResul
     }
     {
         let conn = db.get_conn();
-        mark_scanned(&conn, item_id);
+        mark_scanned(&conn, key, truncated);
     }
     Ok(result)
 }
 
-/// 把变更通知里的新增/移入路径展开为待入库文件：须位于 root 下，自 root 起每一级都不被跳过规则排除；
-/// 文件夹整体移入时只遍历该文件夹。
-pub fn expand_event_paths(root: &Path, paths: &[std::path::PathBuf]) -> Vec<String> {
+/// 把变更通知里的新增/移入路径展开为待入库条目：须位于 root 下，自 root 起每一级都不被跳过规则排除；
+/// 文件夹整体移入时只遍历该文件夹（include_dirs 时文件夹本身与其子文件夹也入库）。
+pub fn expand_event_paths(
+    root: &Path,
+    paths: &[std::path::PathBuf],
+    include_dirs: bool,
+) -> Vec<String> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
     for path in paths {
@@ -227,7 +269,15 @@ pub fn expand_event_paths(root: &Path, paths: &[std::path::PathBuf]) -> Vec<Stri
             continue;
         }
         let candidates = if path.is_dir() {
-            crate::services::import_paths::walk_folder_files(path, WATCH_SCAN_CAP).0
+            let (mut entries, _) = crate::services::import_paths::walk_folder_entries(
+                path,
+                WATCH_SCAN_CAP,
+                include_dirs,
+            );
+            if include_dirs {
+                entries.insert(0, path.to_string_lossy().to_string());
+            }
+            entries
         } else if path.is_file() {
             vec![path.to_string_lossy().to_string()]
         } else {
@@ -245,14 +295,14 @@ pub fn expand_event_paths(root: &Path, paths: &[std::path::PathBuf]) -> Vec<Stri
 /// 变更通知触发的增量入库：根须仍处于监视中，路径经 expand_event_paths 过滤。
 pub fn import_event_paths(
     db: &crate::db::Database,
-    item_id: i64,
+    key: RootKey,
     paths: &[std::path::PathBuf],
 ) -> Result<AddItemsResult, String> {
     crate::db::ensure_writes_allowed()?;
-    let Some(root) = active_root_path(db, item_id)? else {
+    let Some(root) = active_root_path(db, key) else {
         return Ok(empty_add_result());
     };
-    let files = expand_event_paths(Path::new(&root), paths);
+    let files = expand_event_paths(Path::new(&root), paths, key.include_dirs());
     if files.is_empty() {
         return Ok(empty_add_result());
     }

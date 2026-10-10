@@ -2,12 +2,38 @@ use crate::db::Database;
 use crate::models::{Cabinet, ItemWithTags};
 use crate::services::cabinet_service;
 use crate::services::item_service;
-use tauri::{AppHandle, State};
+use crate::services::watch_runtime::FolderWatchHub;
+use tauri::{AppHandle, Manager, State};
 
-#[tauri::command]
+/// 关联柜的文件夹状态在锁外探测（离线盘可能较慢）。
+#[tauri::command(async)]
 pub fn get_cabinets(db: State<Database>) -> Result<Vec<Cabinet>, String> {
-    let conn = db.get_conn();
-    cabinet_service::get_cabinets(&conn)
+    let mut cabinets = {
+        let conn = db.get_conn();
+        cabinet_service::get_cabinets(&conn)?
+    };
+    for cabinet in &mut cabinets {
+        if let Some(folder) = &cabinet.folder_path {
+            cabinet.folder_state = Some(cabinet_service::folder_state(folder).to_string());
+        }
+    }
+    Ok(cabinets)
+}
+
+/// 关联（folder 为路径）或解除（folder 为 null）文件夹，随后重载监视：关联后立即后台同步。
+#[tauri::command(async)]
+pub fn set_cabinet_folder(
+    app: AppHandle,
+    db: State<Database>,
+    id: i64,
+    folder: Option<String>,
+) -> Result<(), String> {
+    {
+        let conn = db.get_conn();
+        cabinet_service::set_cabinet_folder(&conn, id, folder.as_deref())?;
+    }
+    app.state::<FolderWatchHub>().reload(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -28,9 +54,19 @@ pub fn update_cabinet(
 }
 
 #[tauri::command]
-pub fn remove_cabinet(db: State<Database>, id: i64) -> Result<(), String> {
-    let conn = db.get_conn();
-    cabinet_service::remove_cabinet(&conn, id)
+pub fn remove_cabinet(app: AppHandle, db: State<Database>, id: i64) -> Result<(), String> {
+    let was_linked = {
+        let conn = db.get_conn();
+        let was_linked = cabinet_service::bound_folders(&conn)?
+            .iter()
+            .any(|(cabinet_id, _)| *cabinet_id == id);
+        cabinet_service::remove_cabinet(&conn, id)?;
+        was_linked
+    };
+    if was_linked {
+        app.state::<FolderWatchHub>().reload(&app);
+    }
+    Ok(())
 }
 
 #[tauri::command]

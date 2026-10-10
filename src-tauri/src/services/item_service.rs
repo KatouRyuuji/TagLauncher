@@ -761,6 +761,12 @@ pub struct ReconcileRow {
     fs_modified_at: Option<i64>,
 }
 
+impl ReconcileRow {
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+}
+
 /// 计划生成时的行快照（path + is_missing）：回写时与当前行比对，不一致说明
 /// 用户在对账窗口内重新拖入/移动过该对象，跳过本条过期写入（防止旧计划覆盖新状态）。
 #[derive(Clone)]

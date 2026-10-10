@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::db::Database;
 
+use super::watch_service::RootKey;
 use super::{reconcile_runtime, watch_service};
 
 /// 变更通知防抖窗口：合并改名两段事件与连续写入。
@@ -49,10 +50,10 @@ impl FolderWatchHub {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
+        // 只发停止信号不等待：旧线程可能正在做大目录补扫，等它会卡住调用方命令；
+        // 它在当前批次后自行退出，与新线程短暂重叠时入库按路径幂等。
         inner.stop.store(true, Ordering::SeqCst);
-        if let Some(handle) = inner.worker.take() {
-            let _ = handle.join();
-        }
+        inner.worker.take();
         let stop = Arc::new(AtomicBool::new(false));
         inner.stop = stop.clone();
 
@@ -72,7 +73,7 @@ impl FolderWatchHub {
 type RootDebouncer = Debouncer<RecommendedWatcher, RecommendedCache>;
 
 struct RootState {
-    item_id: i64,
+    key: RootKey,
     path: PathBuf,
     debouncer: Option<RootDebouncer>,
     next_scan: Instant,
@@ -122,15 +123,15 @@ fn attach(state: &mut RootState, index: usize, tx: &Sender<(usize, DebounceEvent
     }) {
         Ok(debouncer) => debouncer,
         Err(error) => {
-            log::warn!("[folder-watch] 根 {} 创建监视失败: {error}", state.item_id);
+            log::warn!("[folder-watch] {} 创建监视失败: {error}", state.key);
             return;
         }
     };
     match debouncer.watch(&state.path, RecursiveMode::Recursive) {
         Ok(()) => state.debouncer = Some(debouncer),
         Err(error) => log::warn!(
-            "[folder-watch] 根 {} 挂载变更通知失败，退回 {}s 轮询: {error}",
-            state.item_id,
+            "[folder-watch] {} 挂载变更通知失败，退回 {}s 轮询: {error}",
+            state.key,
             POLL_INTERVAL.as_secs()
         ),
     }
@@ -166,19 +167,19 @@ fn full_scan(
         return;
     }
     let db = app.state::<Database>();
-    match watch_service::scan_root(&db, state.item_id) {
+    match watch_service::scan_root(&db, state.key) {
         Ok(result) => emit_imported(app, result.created_count),
-        Err(error) => log::warn!("[folder-watch] 根 {} 补扫失败: {error}", state.item_id),
+        Err(error) => log::warn!("[folder-watch] {} 补扫失败: {error}", state.key),
     }
 }
 
-fn worker_loop(app: AppHandle, roots: Vec<(i64, String)>, stop: Arc<AtomicBool>) {
+fn worker_loop(app: AppHandle, roots: Vec<(RootKey, String)>, stop: Arc<AtomicBool>) {
     let (tx, rx): (Sender<(usize, DebounceEventResult)>, Receiver<_>) = mpsc::channel();
     let now = Instant::now();
     let mut states: Vec<RootState> = roots
         .into_iter()
-        .map(|(item_id, path)| RootState {
-            item_id,
+        .map(|(key, path)| RootState {
+            key,
             path: PathBuf::from(path),
             debouncer: None,
             next_scan: now,
@@ -205,17 +206,17 @@ fn worker_loop(app: AppHandle, roots: Vec<(i64, String)>, stop: Arc<AtomicBool>)
         let plan = plan_events(result);
         if plan.rescan {
             log::warn!(
-                "[folder-watch] 根 {} 变更通知溢出或报错，安排全量补扫",
-                state.item_id
+                "[folder-watch] {} 变更通知溢出或报错，安排全量补扫",
+                state.key
             );
             state.next_scan = Instant::now();
         }
         if !plan.import.is_empty() {
             let db = app.state::<Database>();
-            match watch_service::import_event_paths(&db, state.item_id, &plan.import) {
+            match watch_service::import_event_paths(&db, state.key, &plan.import) {
                 Ok(result) => emit_imported(&app, result.created_count),
                 Err(error) => {
-                    log::warn!("[folder-watch] 根 {} 增量入库失败: {error}", state.item_id)
+                    log::warn!("[folder-watch] {} 增量入库失败: {error}", state.key)
                 }
             }
         }
@@ -297,7 +298,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let (tx, rx) = mpsc::channel();
         let mut state = RootState {
-            item_id: 1,
+            key: RootKey::Item(1),
             path: root.clone(),
             debouncer: None,
             next_scan: Instant::now(),
