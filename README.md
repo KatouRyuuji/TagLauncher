@@ -146,8 +146,7 @@ npm run pack:portable  # 打便携版 zip(单 exe;build.bat 会在构建后自�
 | [使用手册](./USER_GUIDE.md) | 面向用户的完整功能说明 |
 | [开发手册](./PROJECT_MANUAL.md) | 架构、模块与开发要点 |
 | [Mod 开发指南](./MOD_GUIDE.md) | Mod 清单、权限与 JS API 完整参考 |
-| [主题开发指南](./THEME_GUIDE.md) | 主题 JSON 字段与 112 键变量契约 |
-| [源码开发指南](./TUTORIAL.md) | 从源码开始的开发教学 |
+| [主题开发指南](./THEME_GUIDE.md) | 主题 JSON 字段与 132 键变量契约 |
 | [维护手册](./MAINTENANCE.md) | 测试、发版与维护流程 |
 | [版本对比](./版本对比.md) | 1.0.0 → 1.8.1-beta 代际升级记录 |
 

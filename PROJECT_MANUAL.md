@@ -13,7 +13,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - 对象类型：`folder` / `image` / `audio` / `video` / `exe` / `bat` / `ps1`，未知文件按可启动对象归入 `exe`。
 - 对象身份：以「NTFS 卷序列号 + 文件ID」为唯一标识，跨重命名/同盘移动稳定；`path` 降级为可更新的「最近已知位置」。跨盘符移动（卷序列号变化）时，以内容签名（文件大小 + 首/尾 16KB 的 FNV-1a 哈希）兜底重定位自动找回，详见 `file_identity.rs`。
 - 标签系统（图状层级，DAG）：标签是集合、可多父继承构成有向无环图；选中父标签筛选时并入其所有后代标签的对象。四类筛选（标签/文件柜/收藏夹/最近使用）互斥；标签多选取交集（正选 AND），顶部筛选条支持右键反选（灰色删除线态，排除含该标签的对象，正反选互斥，反选同样展开后代闭包）；提供关系编辑器与独立图谱视图。
-- 工作台查询：类型筛选与五种排序在 `src/lib/itemQuery.ts` 纯函数完成，搜索命中顺序不被排序打乱；视图偏好（网格/列表、搜索模式、排序、类型）写入 localStorage。全屏弹层与选中锚点见 `workspaceChrome.ts`。
+- 工作台查询：类型筛选与 11 种排序（`SortMode`）在 `src/lib/itemQuery.ts` 纯函数完成，搜索命中顺序不被排序打乱；视图偏好（网格/列表/大图标、搜索模式、排序、类型）写入 localStorage 键 `taglauncher.workspace_prefs`。全屏弹层与选中锚点见 `workspaceChrome.ts`。
 - 键盘优先：`/` 聚焦搜索，Ctrl+K 命令面板，空格预览（方向键/Home/End 切换），Enter 启动；网格方向键按列跳转；Ctrl+C 复制选中路径、Ctrl+D 收藏。
 - 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量收藏/取消收藏（与 Ctrl+D 同逻辑：有未收藏项则全部收藏）、批量重命名、复制路径、批量删除。框选默认正选（命中集替换选中集），Alt+框选为减选（虚线灰框，从既有选中集扣除命中项，结算纯函数 `applyMarqueeSelection`）。
 - 失效对象可感知恢复：库内存在失效对象（文件丢失/跨盘移动）时，底部状态栏显示警示徽标，点击即手动触发按内容签名的跨盘找回扫描（含扫描中状态与「未找到」反馈）；自动兜底找回仍在刷新链路后台执行。
@@ -194,7 +194,9 @@ tag-launcher/
 │   │   │   ├── synonym_commands.rs
 │   │   │   ├── launch_commands.rs
 │   │   │   ├── object_preview_commands.rs
-│   │   │   └── search_commands.rs
+│   │   │   ├── recolor_commands.rs
+│   │   │   ├── search_commands.rs
+│   │   │   └── watch_commands.rs
 │   │   ├── db/                   # SQLite 连接、schema、建表与迁移
 │   │   ├── services/             # 业务服务层
 │   │   ├── extensions/           # Mod 与主题加载
@@ -398,7 +400,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | 项目卡片/行的拖拽手柄 | 侧边栏收藏夹 | `internalDragStore` + `beginInternalPointerDrag()` | 将项目加入收藏 |
 | 项目卡片/行的拖拽手柄 | 侧边栏文件柜 | `internalDragStore` + `beginInternalPointerDrag()` | 添加项目到文件柜 |
 | 项目卡片/行的拖拽手柄 | 主视图底部左侧操作区 | `internalDragStore` + `beginInternalPointerDrag()` | 移除当前 active 标签，或移出当前文件柜 |
-| 项目卡片/行的拖拽手柄 | 主视图底部右侧操作区 | `internalDragStore` + `beginInternalPointerDrag()` | 从应用管理中移除项目，不删除本地文件 |
+| 项目卡片/行的拖拽手柄 | 主视图底部右侧操作区 | `internalDragStore` + `beginInternalPointerDrag()` | 打开移除确认：从库中移除，或删除本地文件（进回收站） |
 | 项目内标签 | 同项目其他标签位置 | `internalDragStore` + `beginInternalPointerDrag()` | 标签排序 |
 | 项目内标签 | "拖拽到此移除"区域 | `internalDragStore` + `beginInternalPointerDrag()` | 移除标签 |
 | 外部文件 | 应用窗口 | DOM `DragEvent` + Tauri `onDragDropEvent()` | 添加新项目 |
@@ -408,8 +410,8 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 - 内部拖拽不再依赖 HTML5 `dataTransfer`，避免在 WebView2 / Tauri 下与外部文件拖拽互相干扰。
 - `src/stores/internalDragStore.ts` 负责保存当前拖拽态与 hover 目标。
 - `src/lib/internalPointerDrag.ts` 负责统一处理拖拽阈值、全局指针监听、落点判定与清理逻辑。
-- 主视图底部右侧移除项会弹出确认框，文案为“这会使得对象在应用内被移除（不删除本地文件），是否确认？”，按钮为 `yes/no`。
-- 确认框中的“下次不再确认”使用 `localStorage` 键 `taglauncher.skip_remove_item_confirm`。
+- 移除确认框为 `RemoveFromAppConfirmDialog.tsx`：可仅从库中移除（监视或关联文件夹内的对象为「不再追踪」），或把本地文件移到回收站。
+- 「从库中移除时不再询问」使用 `localStorage` 键 `taglauncher.skip_remove_item_confirm`；删除本地文件始终逐次确认。
 
 ---
 
@@ -548,8 +550,8 @@ npm run tauri dev    # 启动 Tauri 开发窗口
 
 ### 生产构建
 ```bash
-npm run pack           # 一键：tauri build + 便携 zip（x64）
-npm run tauri build    # 仅编译 + 打包 NSIS 安装包（x64）
+npm run pack           # 一键：构建 tl 命令行 + tauri build + 便携 zip（本机架构）
+npm run tauri build    # 仅编译 + 打包 NSIS 安装包（本机架构）
 npm run pack:portable  # 仅便携版 zip（单 exe；--target aarch64-pc-windows-msvc 打 ARM64）
 ```
 
@@ -560,6 +562,20 @@ npm run pack:portable  # 仅便携版 zip（单 exe；--target aarch64-pc-window
 `build.bat` 在 `tauri build` 成功后自动调用 `pack:portable`（含可选 target 透传），一次产出安装包 + 便携 zip；便携版由 `scripts/build-portable.mjs` 实现（PowerShell `Compress-Archive`，无新增 npm 依赖）。
 
 ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src-tauri/target/aarch64-pc-windows-msvc/release/bundle/` 下的 `..._arm64-setup.exe` 与 `..._arm64-portable.zip`。
+
+### 测试
+
+```bash
+npm test                  # tsc + 前端纯逻辑测试 + vitest
+npm run test:all          # 再加 cargo 单元与集成测试（CI 同款）
+npm run test:unit         # 仅 vitest
+npm run demo:shots        # 演示模式 UI 交互断言 + 截图（见 §十六）
+npm run verify:candidate  # 候选提交复验，证据写入 .tmp-test/evidence/
+npm run test:native       # 真实 exe 的 WebView2 冒烟（隔离数据目录）
+npm run test:migrate      # 真实 exe 的数据目录迁移与自愈场景
+```
+
+`src/lib/contract.test.ts` 校验前端 `db.ts` 调用与 `lib.rs` 注册命令双向一致、演示后端覆盖全部命令、版本号三处一致。需要真机验证的项目见 `测试计划.md`。
 
 ### CI 与发版
 
@@ -626,7 +642,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src
 - **索引维护**：正常初始化复用已存在的完整路径索引。全文索引跟随对象 id、名称和路径的实际变更更新；schema v012 升级时重建全文索引一次。
 - **文件扫描**：按大小和首尾签名分组匹配，确认歧义的签名退出扫描索引；达到遍历上限时返回扫描未完成。唯一候选在锁外复核并生成计划，回写同时校验原路径、签名和失效状态。每轮文件身份对账复用卷句柄。
 - 其余重 IO 命令同样以 async 工作线程执行：跨盘找回 `relocate_missing`、数据 `backup_data` / `export_data` / `import_data` / `set_data_directory`、AI `ai_test_connection` / `ai_suggest_tags`、Mod `net_fetch`。
-- **前端排序热点用缓存 Collator**：`localeCompare` 每次调用隐式构造 `Intl.Collator`，大库排序（工作台五种排序、upsert 后重排、标签/文件柜列表）是可测热点；`itemQuery.compareNames` 模块级缓存一份 zh-CN Collator（`numeric: true` 自然数字排序，file2 < file10）供全应用复用，ISO 时间戳降级为纯字符串比较。
+- **前端排序热点用缓存 Collator**：`localeCompare` 每次调用隐式构造 `Intl.Collator`，大库排序（工作台排序、upsert 后重排、标签/文件柜列表）是可测热点；`itemQuery.compareNames` 模块级缓存一份 zh-CN Collator（`numeric: true` 自然数字排序，file2 < file10）供全应用复用，ISO 时间戳降级为纯字符串比较。
 
 ---
 
@@ -816,4 +832,36 @@ npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页�
 
 ### 17.5 IM 平台集成（可选扩展）
 
-可行性调研与桥接架构见 `plan/IM集成-可行性与架构.md`：桥接进程经官方机器人通道接入 IM，回调调用 `tl --json` / MCP 工具。飞书/钉钉可行，微信/QQ/网易popo 无合规官方通道不投入。
+桥接进程经官方机器人通道接入 IM，回调调用 `tl --json` / MCP 工具。飞书/钉钉可行，微信/QQ/网易popo 无合规官方通道不投入。
+
+---
+
+## 十八、常见开发任务
+
+### 18.1 新增对象类型
+
+1. 后端类型识别：`services/item_service.rs` 的 `detect_type`。
+2. 数据库约束：新增迁移重建 `items.type` 的 CHECK（参照 `v011_video_type`）。
+3. 前端类型映射：类型名、图标、筛选项。
+4. 同步本手册与 `USER_GUIDE.md`。
+
+### 18.2 调整搜索权重
+
+入口在 `src/lib/search.ts`：匹配强度 `MatchScore` 2 为强命中（前缀 / 拼音 / 英文容错 / CJK 子串 / 严格），1 为弱命中（英文首字母缩写 / 连写子序列）；`searchWithIndex` 按收藏置顶、同组内强命中先于弱命中分桶输出。调整后手测中文、拼音、英文容错与同义词检索。
+
+### 18.3 欢迎弹窗
+
+- 组件 `src/components/WelcomeModal.tsx`：上手步骤 `STEPS`、赞助二维码 `src/assets/QRCode.png`、B 站链接 `BILIBILI_URL`，版本号经 `getAppVersion()` 获取。
+- 「下次不再显示」由 `App.tsx` 写入 `localStorage` 键 `taglauncher.hide_welcome_modal`。
+
+### 18.4 工作台排序、筛选与快捷键
+
+- 纯函数 `src/lib/itemQuery.ts`（排序、类型筛选、键盘步进、点选/右键选择、路径复制格式、IME 判断），单测 `itemQuery.test.ts`。
+- 状态在 `appStore`：`sortMode` / `typeFilter` / `showRecent`。
+- 快捷键入口 `src/hooks/useWorkspaceHotkeys.ts`：IME 组字（`isComposing` / `Process`）跳过；Delete 不含 Backspace；Enter / 空格需已选中。
+- 遮罩与层级 `src/lib/workspaceChrome.ts`：全屏弹层带 `data-workspace-overlay`，Mod 模态带 `data-mod-modal`；空格预览 `--z-quick-preview: 160`，不得盖住 Mod 模态。新增 z-index 变量不写入 Rust `REQUIRED_VARIABLES`，以免旧自定义主题校验失败。
+- 选择 `SelectionCanvas.tsx`：单击替换、Ctrl 加选、Shift 范围；可见列表变化时修剪已选 id。
+
+### 18.5 回归覆盖建议
+
+自动化测试之外，改动涉及以下流程时建议手测：对象新增/删除/启动；标签与文件柜增删改及拖动排序；拖拽打标、归档、移出当前筛选与从库移除；搜索（中文、拼音、英文容错、同义词，输入法组字不误筛）；快捷键（方向键 / Home / End、Ctrl+C、Ctrl+D，Mod 模态下不穿透）；点选与右键菜单键盘操作；缩略图设置与回退；云同步备份与恢复（需真实 WebDAV 端点）及检查更新。
