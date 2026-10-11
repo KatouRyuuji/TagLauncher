@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Import } from "lucide-react";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { Sidebar } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
 import { SearchBar } from "./components/SearchBar";
@@ -78,6 +79,7 @@ function App() {
     launchItem,
     toggleFavorite,
     setFavorites,
+    clearRecent,
     addItemToCabinet,
     addItemsToCabinet,
     removeItemFromCabinet,
@@ -499,6 +501,11 @@ function App() {
             browseDir={browseDir}
             missingIds={linkedMissingIds}
             onCleanMissing={(ids) => { void requestBatchRemoveFromApp({ itemIds: ids, forceDialog: true }); }}
+            onClearRecent={() => {
+              void ask("清除全部对象的最近使用记录？默认排序将不再参考使用时间。", { title: "清除最近使用", kind: "warning" })
+                .then((confirmed) => (confirmed ? clearRecent() : undefined))
+                .catch(() => {});
+            }}
           />}
         {/* 加载失败且本地无任何缓存时渲染可重试的错误面板；有缓存时保留旧列表，
             失败已由 toast 提示，避免把可用数据替换成错误页。 */}

@@ -72,7 +72,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands/  ← 110 个 Tauri 命令         │  │
+│  │  commands/  ← 111 个 Tauri 命令         │  │
 │  │             (按 item/cabinet/tag/mod/   │  │
 │  │              net/ai/data/sync/update/   │  │
 │  │              settings/synonym/launch/   │  │
@@ -180,7 +180,7 @@ tag-launcher/
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── commands/             # Tauri 命令（按业务域分模块，110 个）
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，111 个）
 │   │   │   ├── item_commands.rs
 │   │   │   ├── cabinet_commands.rs
 │   │   │   ├── tag_commands.rs
@@ -306,6 +306,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `set_item_note` | id: i64, note: String | () | 设置对象备注（去首尾空白，空白存 NULL，最多 2000 字） |
 | `rename_items` | renames: Vec\<{ id, newName }\>, dry_run: bool | RenameReport { renamed, failed } | 同目录改名，磁盘与库内同步；目标已存在时拒绝且不覆盖（同一对象只改大小写除外）；同批目标正好是另一对象原名时按依赖顺序执行（互换、链式、成环经临时名）；文件夹改名同步更新库内子对象路径前缀；deep-first 排序；dry_run 只校验并返回计划 |
 | `set_favorites` | ids: Vec\<i64\>, favorite: bool | () | 批量设置收藏状态（单事务，原子、幂等） |
+| `clear_recent_items` | - | usize | 清除全部对象的最近使用时间，返回清除条数；设置 `recent.clear_on_exit` 为 "1" 时应用正常退出也会执行 |
 | `get_tags` | - | Vec\<Tag\> | 获取所有标签 |
 | `add_tag` | name, color | Tag | 新建标签 |
 | `update_tag` | id, name, color | () | 更新标签 |

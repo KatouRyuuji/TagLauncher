@@ -1,6 +1,6 @@
 //! 集成测试：对象管理链路（真实文件库 + 跨模块）。
 //! 覆盖 add_items 单项失败隔离、真实文件去重、get_items、remove_items 分块、
-//! toggle_favorite、detect_type 全类型（真实文件系统对象）、get_items_by_ids 排序去重。
+//! toggle_favorite、clear_recent、detect_type 全类型（真实文件系统对象）、get_items_by_ids 排序去重。
 
 mod common;
 
@@ -217,6 +217,27 @@ fn set_favorites_batch_and_idempotent() {
     assert_eq!(got[0].item.id, b.id, "仅 b 仍收藏排最前");
 
     item_service::set_favorites(&conn, &[], true).expect("empty is no-op");
+}
+
+/// clear_recent：清空全部最近使用时间并返回条数，重复执行为 0。
+#[test]
+fn clear_recent_resets_last_used_and_is_idempotent() {
+    let t = common::temp_db();
+    let conn = t.db.get_conn();
+    let a = item_service::add_item(&conn, &common::write_file(&t.dir, "cr-a.exe", b"a")).unwrap();
+    let b = item_service::add_item(&conn, &common::write_file(&t.dir, "cr-b.exe", b"b")).unwrap();
+    conn.execute(
+        "UPDATE items SET last_used_at = '2026-10-10 08:00:00' WHERE id IN (?1, ?2)",
+        [a.id, b.id],
+    )
+    .unwrap();
+
+    assert_eq!(item_service::clear_recent(&conn).unwrap(), 2);
+    let used: i64 = conn
+        .query_row("SELECT COUNT(*) FROM items WHERE last_used_at IS NOT NULL", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(used, 0, "全部清空");
+    assert_eq!(item_service::clear_recent(&conn).unwrap(), 0, "重复执行无记录可清");
 }
 
 /// 展开文件夹：收入嵌套文件，不把文件夹本身加入结果。

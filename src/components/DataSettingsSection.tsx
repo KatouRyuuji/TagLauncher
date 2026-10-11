@@ -23,6 +23,7 @@ export function DataSettingsSection() {
   // 后端报错文案引导的选择在前端不存在。
   const [pendingAdoptDir, setPendingAdoptDir] = useState<string | null>(null);
   const [watchMaster, setWatchMaster] = useState(true);
+  const [clearRecentOnExit, setClearRecentOnExit] = useState(false);
 
   const refresh = () => {
     void db
@@ -36,6 +37,9 @@ export function DataSettingsSection() {
   useEffect(() => {
     void db.getFolderWatchStatus()
       .then((status) => setWatchMaster(status.masterEnabled))
+      .catch(() => {});
+    void db.getSetting(db.CLEAR_RECENT_ON_EXIT_KEY)
+      .then((value) => setClearRecentOnExit(value === "1"))
       .catch(() => {});
   }, []);
 
@@ -192,6 +196,24 @@ export function DataSettingsSection() {
               }}
             />
             <IgnoredPathsButton className="action-button mt-2 gap-1.5 px-3 text-xs" />
+          </div>
+        </div>
+
+        <div className="rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3">
+          <h4 className="text-xs font-semibold text-[var(--text-muted)]">最近使用</h4>
+          <div className="mt-2">
+            <SettingsToggle
+              checked={clearRecentOnExit}
+              title="退出时清除最近使用"
+              description="默认关。开启后每次退出应用都清空最近使用记录；也可在「最近使用」视图里随时手动清除。"
+              onChange={(enabled) => {
+                void db.setSetting(db.CLEAR_RECENT_ON_EXIT_KEY, enabled ? "1" : "0")
+                  .then(() => setClearRecentOnExit(enabled))
+                  .catch((error) => {
+                    showToast(`保存设置失败：${error instanceof Error ? error.message : String(error)}`, "error");
+                  });
+              }}
+            />
           </div>
         </div>
 

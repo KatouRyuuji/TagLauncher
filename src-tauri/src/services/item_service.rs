@@ -711,6 +711,19 @@ pub fn set_item_note(conn: &Connection, id: i64, note: &str) -> Result<(), Strin
     Ok(())
 }
 
+/// 设置键：值为 "1" 时应用正常退出时清除最近使用。
+pub const CLEAR_RECENT_ON_EXIT_KEY: &str = "recent.clear_on_exit";
+
+/// 清除全部对象的最近使用时间，返回清除条数。
+pub fn clear_recent(conn: &Connection) -> Result<usize, String> {
+    crate::db::ensure_writes_allowed()?;
+    conn.execute(
+        "UPDATE items SET last_used_at = NULL WHERE last_used_at IS NOT NULL",
+        [],
+    )
+    .map_err(|e| e.to_string())
+}
+
 /// 批量设置收藏状态（按 IN_CHUNK 分块多条 IN 语句 + 单事务，整体原子、幂等）。
 /// 批量收藏的热路径：避免逐项 toggle 的 2M 次 IPC 往返。
 pub fn set_favorites(conn: &Connection, ids: &[i64], favorite: bool) -> Result<(), String> {
