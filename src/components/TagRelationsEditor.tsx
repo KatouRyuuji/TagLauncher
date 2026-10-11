@@ -1,3 +1,4 @@
+import { compareSortOrder } from "../lib/sidebarOrder";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { Tag, ItemWithTags } from "../types";
@@ -25,7 +26,7 @@ interface TagRelationsEditorProps {
  */
 export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRelation, onClose }: TagRelationsEditorProps) {
   const relations = useAppStore((s) => s.tagRelations);
-  const tagRows = useMemo(() => flattenTagTree(tags, relations, (a, b) => compareNames(a.name, b.name)), [tags, relations]);
+  const tagRows = useMemo(() => flattenTagTree(tags, relations, (a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name)), [tags, relations]);
   const [focusedId, setFocusedId] = useState<number | null>(tags[0]?.id ?? null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

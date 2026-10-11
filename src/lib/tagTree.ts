@@ -13,12 +13,14 @@ export interface TagTreeRow<T extends { id: number }> {
   tag: T;
   depth: 0 | 1 | 2;
   hasChildren: boolean;
+  /** 本行所在的父标签；根为 null */
+  parentId: number | null;
 }
 
 /**
  * 把标签 DAG 展平成侧栏行序：根（无父）按 order 排，子紧跟父后面缩进一级，最多两级（更深的压到 depth 2）。
  * 多父标签只在**首个遇到的父**下出现一次（侧栏不重复列行）；环（不应存在）用 visited 防死循环。
- * 同一层内仍用调用方给的 order（侧栏现在是按计数降序）。
+ * 同一层内用调用方给的 order（侧栏为手动顺序，再按计数降序、名称）。
  */
 export function flattenTagTree<T extends { id: number }>(
   tags: T[],
@@ -60,24 +62,24 @@ export function flattenTagTree<T extends { id: number }>(
   const visited = new Set<number>();
   const rows: TagTreeRow<T>[] = [];
 
-  const walk = (tag: T, depth: 0 | 1 | 2): void => {
+  const walk = (tag: T, depth: 0 | 1 | 2, parentId: number | null): void => {
     if (visited.has(tag.id)) return;
     visited.add(tag.id);
-    rows.push({ tag, depth, hasChildren: hasChildren(tag.id) });
+    rows.push({ tag, depth, hasChildren: hasChildren(tag.id), parentId });
     const nextDepth: 0 | 1 | 2 = depth === 0 ? 1 : 2;
     for (const child of visibleChildren(tag.id)) {
-      walk(child, nextDepth);
+      walk(child, nextDepth, tag.id);
     }
   };
 
   for (const tag of tags.filter(isRoot).sort(order)) {
-    walk(tag, 0);
+    walk(tag, 0, null);
   }
 
   // 环或异常数据可能没有「无父根」；剩余节点仍按 order 以根列出，避免侧栏丢行
   if (visited.size < tags.length) {
     for (const tag of [...tags].sort(order)) {
-      if (!visited.has(tag.id)) walk(tag, 0);
+      if (!visited.has(tag.id)) walk(tag, 0, null);
     }
   }
 

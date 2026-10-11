@@ -43,6 +43,12 @@ pub fn add_cabinet(db: State<Database>, name: String, color: String) -> Result<C
 }
 
 #[tauri::command]
+pub fn reorder_cabinets(db: State<Database>, ids: Vec<i64>) -> Result<(), String> {
+    let conn = db.get_conn();
+    cabinet_service::reorder_cabinets(&conn, &ids)
+}
+
+#[tauri::command]
 pub fn update_cabinet(
     db: State<Database>,
     id: i64,

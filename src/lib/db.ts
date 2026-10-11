@@ -217,6 +217,11 @@ export async function removeTag(id: number): Promise<void> {
   return invokeCmd("remove_tag", { id });
 }
 
+/** 按给定顺序写入标签的侧栏手动顺序 */
+export async function reorderTags(ids: number[]): Promise<void> {
+  return invokeCmd("reorder_tags", { ids });
+}
+
 /** 设置项目的标签列表（全量替换：先删除所有旧标签，再插入新标签） */
 export async function setItemTags(itemId: number, tagIds: number[]): Promise<void> {
   return invokeCmd("set_item_tags", { itemId, tagIds });
@@ -428,6 +433,11 @@ export async function updateCabinet(id: number, name: string, color: string): Pr
 /** 删除文件柜 */
 export async function removeCabinet(id: number): Promise<void> {
   return invokeCmd("remove_cabinet", { id });
+}
+
+/** 按给定顺序写入文件柜的侧栏手动顺序 */
+export async function reorderCabinets(ids: number[]): Promise<void> {
+  return invokeCmd("reorder_cabinets", { ids });
 }
 
 /** 关联或解除文件柜的磁盘文件夹（folder 为 null 时解除，当前成员保留为普通文件柜） */

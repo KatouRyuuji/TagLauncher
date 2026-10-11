@@ -202,3 +202,23 @@ fn deleting_tag_cascades_relations_and_item_links() {
         .unwrap();
     assert_eq!(links, 0, "删除标签应级联删除对象-标签关联");
 }
+
+/// 手动顺序：新建排末尾，reorder_tags 按给定顺序写入并决定 get_tags 返回顺序，重复写入幂等。
+#[test]
+fn tag_reorder_persists_and_new_tags_go_last() {
+    let t = common::temp_db();
+    let conn = t.db.get_conn();
+    let a = tag_service::add_tag(&conn, "a", "#fff").unwrap();
+    let b = tag_service::add_tag(&conn, "b", "#fff").unwrap();
+    let c = tag_service::add_tag(&conn, "c", "#fff").unwrap();
+    assert!(a.sort_order < b.sort_order && b.sort_order < c.sort_order);
+
+    let order = [c.id, a.id, b.id];
+    tag_service::reorder_tags(&conn, &order).unwrap();
+    tag_service::reorder_tags(&conn, &order).unwrap();
+    let ids: Vec<i64> = tag_service::get_tags(&conn).unwrap().iter().map(|t| t.id).collect();
+    assert_eq!(ids, order);
+
+    let d = tag_service::add_tag(&conn, "0-新", "#fff").unwrap();
+    assert_eq!(tag_service::get_tags(&conn).unwrap().last().unwrap().id, d.id, "新建排末尾");
+}

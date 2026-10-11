@@ -16,6 +16,7 @@ import pkg from "../../package.json";
 import { demoAlbumCover } from "./assets";
 import { isUnderDir } from "../lib/cabinetBrowse";
 import { planUntrack, watchRootPaths } from "../lib/untrack";
+import { applySortOrder, compareSortOrder } from "../lib/sidebarOrder";
 import {
   DEMO_AUDIO_META,
   DEMO_CABINET_ITEMS,
@@ -256,6 +257,9 @@ type Args = Record<string, unknown>;
 const num = (value: unknown): number => Number(value);
 const str = (value: unknown): string => String(value);
 const ids = (value: unknown): number[] => (value as number[]).map(Number);
+/** 新建排末尾，与后端 MAX(sort_order) + 1 一致 */
+const nextSortOrder = (list: Array<{ sort_order?: number }>): number =>
+  list.reduce((max, entry) => Math.max(max, entry.sort_order ?? 0), 0) + 1;
 
 /** 模拟 IPC 往返延迟（毫秒）：默认 50ms 让加载态在演示中可感知；
  *  URL 加 ?demo-latency=<ms> 可拉大窗口（截图巡检捕获首屏骨架屏用），不改动任何命令契约 */
@@ -551,12 +555,15 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
 
     // ---- 标签 ----
     case "get_tags":
-      return [...state.tags].sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
+      return [...state.tags].sort((a, b) => compareSortOrder(a, b) || a.name.localeCompare(b.name, "zh-Hans-CN"));
     case "add_tag": {
-      const tag: Tag = { id: state.nextTagId++, name: str(args.name), color: str(args.color) };
+      const tag: Tag = { id: state.nextTagId++, name: str(args.name), color: str(args.color), sort_order: nextSortOrder(state.tags) };
       state.tags.push(tag);
       return tag;
     }
+    case "reorder_tags":
+      state.tags = applySortOrder(state.tags, ids(args.ids));
+      return null;
     case "update_tag": {
       const tag = requireTag(num(args.id));
       tag.name = str(args.name);
@@ -654,7 +661,10 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
 
     // ---- 文件柜 ----
     case "get_cabinets":
-      return state.cabinets;
+      return [...state.cabinets].sort((a, b) => compareSortOrder(a, b) || a.name.localeCompare(b.name, "zh-Hans-CN"));
+    case "reorder_cabinets":
+      state.cabinets = applySortOrder(state.cabinets, ids(args.ids));
+      return null;
     case "add_cabinet": {
       const cabinet: Cabinet = {
         id: state.nextCabinetId++,
@@ -663,6 +673,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         created_at: new Date().toISOString(),
         folder_path: null,
         folder_truncated: false,
+        sort_order: nextSortOrder(state.cabinets),
       };
       state.cabinets.push(cabinet);
       state.cabinetItems.set(cabinet.id, new Set());

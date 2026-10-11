@@ -193,6 +193,19 @@ async function clickMenu(page, label) {
   await settle();
 }
 
+/** 侧栏行拖到目标行上半区（插到其前），途中截一张插入线 */
+async function dragRowBefore(page, source, target, shotName) {
+  const from = await source.boundingBox();
+  const to = await target.boundingBox();
+  await page.mouse.move(from.x + 20, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 20, to.y + 3, { steps: 10 });
+  await settle(200);
+  await shot(page, shotName);
+  await page.mouse.up();
+  await settle(400);
+}
+
 async function sidebarTag(page, name) {
   await page.locator(`[data-region="sidebar-nav"] button:has-text("${name}")`).first().click();
   await settle(400);
@@ -484,8 +497,23 @@ async function featureTour(page) {
   await shot(page, "filter-cabinet-文件柜视图");
   await check("文件柜「工作必备」3 项", (await itemCount(page)) === 3);
   await page.locator('[data-drop-item-cabinet-id="1"]').click();
+  await settle(300);
+
+  // 13b 侧栏拖动排序：末位文件柜拖到首位
+  const cabinetRows = page.locator("[data-drop-item-cabinet-id]");
+  const lastCabinetId = await cabinetRows.last().getAttribute("data-drop-item-cabinet-id");
+  await dragRowBefore(page, cabinetRows.last(), cabinetRows.first(), "sidebar-cabinet-reorder-文件柜拖动排序");
+  await check("文件柜拖动后末位移到首位", (await cabinetRows.first().getAttribute("data-drop-item-cabinet-id")) === lastCabinetId);
+  await check("拖动排序不触发筛选", (await itemCount(page)) > 3);
+
   await page.locator('[data-region="sidebar"] button:has-text("标签")').first().click();
   await settle(300);
+
+  // 13c 侧栏拖动排序：末位根标签拖到首位（只在同级内）
+  const rootTags = page.locator('[data-tag-row-id][data-tag-parent-id=""]');
+  const lastRootId = await rootTags.last().getAttribute("data-tag-row-id");
+  await dragRowBefore(page, rootTags.last(), rootTags.first(), "sidebar-tag-reorder-标签拖动排序");
+  await check("根标签拖动后末位移到首位", (await rootTags.first().getAttribute("data-tag-row-id")) === lastRootId);
 
   // 14 排序下拉（自绘 SelectMenu）
   await page.locator('button[aria-label="排序方式"]').click();

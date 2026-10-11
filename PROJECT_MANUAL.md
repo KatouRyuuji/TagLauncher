@@ -72,7 +72,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands/  ← 111 个 Tauri 命令         │  │
+│  │  commands/  ← 113 个 Tauri 命令         │  │
 │  │             (按 item/cabinet/tag/mod/   │  │
 │  │              net/ai/data/sync/update/   │  │
 │  │              settings/synonym/launch/   │  │
@@ -180,7 +180,7 @@ tag-launcher/
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── commands/             # Tauri 命令（按业务域分模块，111 个）
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，113 个）
 │   │   │   ├── item_commands.rs
 │   │   │   ├── cabinet_commands.rs
 │   │   │   ├── tag_commands.rs
@@ -311,6 +311,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `add_tag` | name, color | Tag | 新建标签 |
 | `update_tag` | id, name, color | () | 更新标签 |
 | `remove_tag` | id: i64 | () | 删除标签 |
+| `reorder_tags` | ids: Vec\<i64\> | () | 按给定顺序写回全部标签的 `sort_order`（单事务）；新建标签排在末尾 |
 | `set_item_tags` | item_id, tag_ids | () | 设置项目的标签列表 |
 | `recolor_tags_and_cabinets` | tags, cabinets | () | 切官方家族时按色位批量写回 `tags.color` / `cabinets.color`（单事务） |
 | `search_items` | query, tag_ids | Vec\<ItemWithTags\> | 后端辅助搜索（FTS5 + LIKE 回退）；前端主搜索使用自研 search.ts，不经过此命令 |
@@ -322,6 +323,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `add_cabinet` | name, color | Cabinet | 新建文件柜 |
 | `update_cabinet` | id, name, color | () | 更新文件柜 |
 | `remove_cabinet` | id: i64 | () | 删除文件柜（磁盘不受影响） |
+| `reorder_cabinets` | ids: Vec\<i64\> | () | 按给定顺序写回全部文件柜的 `sort_order`（单事务）；新建文件柜排在末尾 |
 | `set_cabinet_folder` | id, folder: Option\<String\> | () | 关联文件夹：清空手动成员，成员改由路径决定，随后后台同步（总闸控制，文件与子文件夹都入库）；传 null 解除：当前成员固化进 cabinet_items，柜恢复为普通柜 |
 | `add_item_to_cabinet` | cabinet_id, item_id | () | 添加项目到文件柜；关联柜拒绝 |
 | `remove_item_from_cabinet` | cabinet_id, item_id | () | 从文件柜移除项目；关联柜拒绝 |

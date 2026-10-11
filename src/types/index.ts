@@ -27,12 +27,16 @@ export interface Cabinet {
   folder_truncated: boolean;
   /** 关联文件夹当前状态：ok / offline（所在磁盘未接入）/ missing（文件夹不存在） */
   folder_state?: "ok" | "offline" | "missing" | null;
+  /** 侧栏手动顺序，升序；相同值按名称排 */
+  sort_order?: number;
 }
 
 export interface Tag {
   id: number;
   name: string;
   color: string;
+  /** 侧栏手动顺序，升序；相同值按界面默认规则排 */
+  sort_order?: number;
 }
 
 /** 标签父子关系边（DAG，多继承）：parent 是 child 的超集。 */

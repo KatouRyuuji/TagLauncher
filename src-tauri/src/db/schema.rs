@@ -45,7 +45,8 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE TABLE IF NOT EXISTS tags (
             id INTEGER PRIMARY KEY,
             name TEXT UNIQUE NOT NULL,
-            color TEXT DEFAULT '#3b82f6'
+            color TEXT DEFAULT '#3b82f6',
+            sort_order INTEGER NOT NULL DEFAULT 0
         );
 
         -- ========== 项目-标签关联表 ==========
@@ -93,7 +94,8 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             color TEXT DEFAULT '#6366f1',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             folder_path TEXT,
-            folder_truncated INTEGER NOT NULL DEFAULT 0
+            folder_truncated INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0
         );
 
         -- ========== 文件柜-项目关联表 ==========

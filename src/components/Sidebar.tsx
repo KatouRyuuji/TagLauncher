@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -23,6 +23,8 @@ import { SidebarThemeSwitcher } from "./SidebarThemeSwitcher";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { flattenTagTree } from "../lib/tagTree";
+import { compareSortOrder, moveBeside } from "../lib/sidebarOrder";
+import { compareNames } from "../lib/itemQuery";
 import { onCabinetItemsChanged } from "../lib/modApi";
 import { useImeComposition } from "../hooks/useImeComposition";
 import * as db from "../lib/db";
@@ -51,6 +53,9 @@ interface SidebarProps {
   onAddCabinet: (name: string, color: string) => Promise<unknown>;
   onUpdateCabinet: (id: number, name: string, color: string) => Promise<void>;
   onRemoveCabinet: (id: number) => Promise<void>;
+  /** 按给定 id 顺序写入侧栏手动顺序 */
+  onReorderTags: (ids: number[]) => Promise<void>;
+  onReorderCabinets: (ids: number[]) => Promise<void>;
   /** 关联 / 解除文件柜的磁盘文件夹 */
   onSetCabinetFolder?: (id: number, folder: string | null) => Promise<void>;
   onAddTagToItem: (itemId: number, tagId: number) => Promise<void>;
@@ -74,6 +79,8 @@ export function Sidebar({
   onAddCabinet,
   onUpdateCabinet,
   onRemoveCabinet,
+  onReorderTags,
+  onReorderCabinets,
   onSetCabinetFolder,
   onAddTagToItem,
   onAddTagRelation,
@@ -106,6 +113,12 @@ export function Sidebar({
   );
   const hoveredFavorites = useInternalDragStore((state) =>
     state.drag?.kind === "item" && state.hoverTarget?.kind === "item-favorites",
+  );
+  const tagInsert = useInternalDragStore((state) =>
+    state.hoverTarget?.kind === "sidebar-tag" ? state.hoverTarget : null,
+  );
+  const cabinetInsert = useInternalDragStore((state) =>
+    state.hoverTarget?.kind === "sidebar-cabinet" ? state.hoverTarget : null,
   );
 
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
@@ -150,14 +163,17 @@ export function Sidebar({
     return counts;
   }, [allItems, tags, tagRelations]);
 
+  // 同级先按手动顺序，未拖动过的（同为 0）按计数降序、再按名称
+  const compareTagRows = useCallback(
+    (a: Tag, b: Tag) =>
+      compareSortOrder(a, b) ||
+      (itemCountByTag.get(b.id) ?? 0) - (itemCountByTag.get(a.id) ?? 0) ||
+      compareNames(a.name, b.name),
+    [itemCountByTag],
+  );
   const tagRows = useMemo(
-    () =>
-      flattenTagTree(
-        tags,
-        tagRelations,
-        (a, b) => (itemCountByTag.get(b.id) ?? 0) - (itemCountByTag.get(a.id) ?? 0),
-      ),
-    [tags, tagRelations, itemCountByTag],
+    () => flattenTagTree(tags, tagRelations, compareTagRows),
+    [tags, tagRelations, compareTagRows],
   );
 
   // 标签迷你过滤（标签多时不靠滚动找）；命中行保留原缩进以不丢层级语境。
@@ -236,7 +252,17 @@ export function Sidebar({
     };
   }, [cabinets, allItems.length]);
 
-  const handleTagPointerDown = (event: React.PointerEvent<HTMLElement>, tag: Tag) => {
+  // 拖动排序失败时提示；成功由列表本身反映
+  const reorderWithToast = async (write: () => Promise<void>) => {
+    try {
+      await write();
+    } catch (err) {
+      showToast(`排序失败：${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  };
+
+  // 标签拖到对象上为打标签；拖到同一父级下的另一标签行为排序
+  const handleTagPointerDown = (event: React.PointerEvent<HTMLElement>, tag: Tag, parentId: number | null) => {
     beginInternalPointerDrag({
       event,
       payload: {
@@ -252,12 +278,46 @@ export function Sidebar({
           "[data-drop-tag-item-id]",
           "dropTagItemId",
         );
-        return itemId === null ? null : { kind: "tag-item", itemId };
+        if (itemId !== null) return { kind: "tag-item", itemId };
+        const row = sidebarRowAt(pointerEvent, "[data-tag-row-id]");
+        if (!row) return null;
+        const targetId = Number(row.element.dataset.tagRowId);
+        const targetParent = row.element.dataset.tagParentId ?? "";
+        if (targetId === tag.id || targetParent !== String(parentId ?? "")) return null;
+        return { kind: "sidebar-tag", tagId: targetId, after: row.after };
       },
       onDrop: async (target) => {
         if (target?.kind === "tag-item") {
           await onAddTagToItem(target.itemId, tag.id);
+        } else if (target?.kind === "sidebar-tag") {
+          const current = [...tags].sort(compareTagRows).map((entry) => entry.id);
+          const next = moveBeside(current, tag.id, target.tagId, target.after);
+          if (next) await reorderWithToast(() => onReorderTags(next));
         }
+      },
+    });
+  };
+
+  const handleCabinetPointerDown = (event: React.PointerEvent<HTMLElement>, cabinet: Cabinet) => {
+    beginInternalPointerDrag({
+      event,
+      payload: {
+        kind: "cabinet",
+        cabinetId: cabinet.id,
+        label: cabinet.name,
+        color: cabinet.color,
+      },
+      findHoverTarget: (pointerEvent) => {
+        const row = sidebarRowAt(pointerEvent, "[data-drop-item-cabinet-id]");
+        if (!row) return null;
+        const targetId = Number(row.element.dataset.dropItemCabinetId);
+        if (targetId === cabinet.id) return null;
+        return { kind: "sidebar-cabinet", cabinetId: targetId, after: row.after };
+      },
+      onDrop: async (target) => {
+        if (target?.kind !== "sidebar-cabinet") return;
+        const next = moveBeside(cabinets.map((entry) => entry.id), cabinet.id, target.cabinetId, target.after);
+        if (next) await reorderWithToast(() => onReorderCabinets(next));
       },
     });
   };
@@ -402,7 +462,7 @@ export function Sidebar({
                 />
               )}
               <div className="mt-1 space-y-0.5">
-                {visibleTagRows.map(({ tag, depth, hasChildren }) => {
+                {visibleTagRows.map(({ tag, depth, hasChildren, parentId }) => {
                   const active = selectedTagIds.includes(tag.id);
                   const excluded = excludedTagIds.includes(tag.id);
                   const collapsed = collapsedTagIds.has(tag.id);
@@ -416,8 +476,9 @@ export function Sidebar({
                   return (
                     <div
                       key={tag.id}
-                      className={`flex h-8 min-w-0 items-center gap-0.5 ${depth === 1 ? "ml-3" : depth === 2 ? "ml-6" : ""}`}
+                      className={`relative flex h-8 min-w-0 items-center gap-0.5 ${depth === 1 ? "ml-3" : depth === 2 ? "ml-6" : ""}`}
                     >
+                      {tagInsert?.tagId === tag.id && <InsertLine after={tagInsert.after} />}
                       {canCollapse ? (
                         <button
                           type="button"
@@ -441,10 +502,11 @@ export function Sidebar({
                       <button
                         type="button"
                         data-tag-row-id={tag.id}
+                        data-tag-parent-id={parentId ?? ""}
                         aria-pressed={active}
                         aria-label={excluded ? `${tag.name}（已排除）` : undefined}
                         style={activeTagStyle}
-                        onPointerDown={(event) => handleTagPointerDown(event, tag)}
+                        onPointerDown={(event) => handleTagPointerDown(event, tag, parentId)}
                         onClick={(event) => handleTagClick(event, tag.id)}
                         title={hasChildren ? "单击筛选并包含下级标签；Alt+单击排除" : "单击筛选；Alt+单击排除"}
                         onKeyDown={(event) => {
@@ -523,6 +585,7 @@ export function Sidebar({
                       data-drop-item-cabinet-id={cabinet.id}
                       aria-pressed={active}
                       style={activeCabinetStyle}
+                      onPointerDown={(event) => handleCabinetPointerDown(event, cabinet)}
                       onClick={() => handleCabinetClick(cabinet.id)}
                       onContextMenu={(event) => {
                         event.preventDefault();
@@ -535,7 +598,7 @@ export function Sidebar({
                           setEditingCabinet(cabinet);
                         }
                       }}
-                      className={`flex h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors ${
+                      className={`relative flex h-8 w-full cursor-grab items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors active:cursor-grabbing ${
                         hovered
                           ? "border-transparent bg-[var(--accent-primary-bg-light)] text-[var(--accent-primary-ink)]"
                           : active
@@ -550,6 +613,7 @@ export function Sidebar({
                       />
                       <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{cabinet.name}</span>
                       {cabinet.folder_path && <LinkedFolderMark cabinet={cabinet} />}
+                      {cabinetInsert?.cabinetId === cabinet.id && <InsertLine after={cabinetInsert.after} />}
                       <NavCount value={itemCountByCabinet.get(cabinet.id) ?? 0} />
                     </button>
                   );
@@ -898,5 +962,25 @@ function LinkedFolderMark({ cabinet }: { cabinet: Cabinet }) {
       <FolderSync aria-label={title} size={13} strokeWidth={1.8} />
       {state && <span className="text-[11px] text-[var(--color-warning-ink)]">{state}</span>}
     </span>
+  );
+}
+
+/** 指针下最近的侧栏行，after 表示落在该行下半区 */
+function sidebarRowAt(event: PointerEvent, selector: string): { element: HTMLElement; after: boolean } | null {
+  const hit = document.elementFromPoint(event.clientX, event.clientY);
+  const element = hit instanceof HTMLElement ? hit.closest<HTMLElement>(selector) : null;
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  return { element, after: event.clientY > rect.top + rect.height / 2 };
+}
+
+/** 拖动排序的插入位置线 */
+function InsertLine({ after }: { after: boolean }) {
+  return (
+    <span
+      data-sidebar-insert-line={after ? "after" : "before"}
+      aria-hidden="true"
+      className={`pointer-events-none absolute inset-x-1 h-0.5 rounded-full bg-[var(--accent-primary)] ${after ? "-bottom-px" : "-top-px"}`}
+    />
   );
 }

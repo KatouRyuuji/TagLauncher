@@ -16,6 +16,12 @@ pub fn add_tag(db: State<Database>, name: String, color: String) -> Result<Tag, 
 }
 
 #[tauri::command]
+pub fn reorder_tags(db: State<Database>, ids: Vec<i64>) -> Result<(), String> {
+    let conn = db.get_conn();
+    tag_service::reorder_tags(&conn, &ids)
+}
+
+#[tauri::command]
 pub fn update_tag(db: State<Database>, id: i64, name: String, color: String) -> Result<(), String> {
     let conn = db.get_conn();
     tag_service::update_tag(&conn, id, &name, &color)

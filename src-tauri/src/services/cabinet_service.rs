@@ -7,8 +7,8 @@ use rusqlite::{params, Connection};
 pub fn get_cabinets(conn: &Connection) -> Result<Vec<Cabinet>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, color, created_at, folder_path, folder_truncated
-             FROM cabinets ORDER BY name",
+            "SELECT id, name, color, created_at, folder_path, folder_truncated, sort_order
+             FROM cabinets ORDER BY sort_order, name",
         )
         .map_err(|e| e.to_string())?;
 
@@ -21,6 +21,7 @@ pub fn get_cabinets(conn: &Connection) -> Result<Vec<Cabinet>, String> {
                 created_at: row.get(3)?,
                 folder_path: row.get(4)?,
                 folder_truncated: row.get(5)?,
+                sort_order: row.get(6)?,
                 folder_state: None,
             })
         })
@@ -50,9 +51,13 @@ pub fn add_cabinet(conn: &Connection, name: &str, color: &str) -> Result<Cabinet
     if name.is_empty() {
         return Err("文件柜名称不能为空".to_string());
     }
+    // 新建排在末尾
+    let sort_order: i64 = conn
+        .query_row("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cabinets", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO cabinets (name, color) VALUES (?1, ?2)",
-        params![name, color],
+        "INSERT INTO cabinets (name, color, sort_order) VALUES (?1, ?2, ?3)",
+        params![name, color, sort_order],
     )
     .map_err(friendly_name_err)?;
 
@@ -70,8 +75,14 @@ pub fn add_cabinet(conn: &Connection, name: &str, color: &str) -> Result<Cabinet
         created_at,
         folder_path: None,
         folder_truncated: false,
+        sort_order,
         folder_state: None,
     })
+}
+
+/// 按给定 id 顺序写入文件柜的手动顺序（1 起），单事务；不在列表中的柜不变。
+pub fn reorder_cabinets(conn: &Connection, ids: &[i64]) -> Result<(), String> {
+    tag_service::write_sort_order(conn, "cabinets", ids)
 }
 
 /// 更新文件柜

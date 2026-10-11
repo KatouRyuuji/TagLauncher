@@ -9,12 +9,16 @@ export type InternalDragHoverTarget =
   // targetIdx 为悬停的标签下标；after 表示指针落在该标签右半区（插入到其后）
   | { kind: "reorder-tag"; itemId: number; targetIdx: number; after: boolean }
   | { kind: "reorder-remove"; itemId: number }
+  // 侧栏排序：落在该行的上半区插到其前，下半区（after）插到其后
+  | { kind: "sidebar-tag"; tagId: number; after: boolean }
+  | { kind: "sidebar-cabinet"; cabinetId: number; after: boolean }
   | null;
 
 export type InternalDragPayload =
   | { kind: "tag"; tagId: number; label: string; color: string }
   // itemIds：整组拖时为整个选中集（缺省语义 = [itemId]）
   | { kind: "item"; itemId: number; label: string; itemIds?: number[] }
+  | { kind: "cabinet"; cabinetId: number; label: string; color: string }
   | {
       kind: "reorder-tag";
       itemId: number;
@@ -58,6 +62,10 @@ function sameHoverTarget(a: InternalDragHoverTarget, b: InternalDragHoverTarget)
       );
     case "reorder-remove":
       return b.kind === "reorder-remove" && a.itemId === b.itemId;
+    case "sidebar-tag":
+      return b.kind === "sidebar-tag" && a.tagId === b.tagId && a.after === b.after;
+    case "sidebar-cabinet":
+      return b.kind === "sidebar-cabinet" && a.cabinetId === b.cabinetId && a.after === b.after;
   }
 }
 

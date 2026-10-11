@@ -10,13 +10,14 @@ import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { notifyCabinetsChanged } from "../lib/modApi";
 import { compareNames } from "../lib/itemQuery";
+import { applySortOrder, compareSortOrder } from "../lib/sidebarOrder";
 import { persistPickedThemeColor } from "../lib/persistThemeColor";
 import { showToast } from "../lib/toast";
 import type { Cabinet } from "../types";
 
-/** 按名称排序，保持与后端 get_cabinets 的返回顺序一致 */
+/** 手动顺序在前、名称次之，与后端 get_cabinets 的返回顺序一致 */
 function sortCabinets(list: Cabinet[]): Cabinet[] {
-  return [...list].sort((a, b) => compareNames(a.name, b.name));
+  return [...list].sort((a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name));
 }
 
 export function useCabinets() {
@@ -68,7 +69,7 @@ export function useCabinets() {
     if (snapped !== cab.color) {
       await db.updateCabinet(cab.id, cab.name, snapped);
     }
-    // 局部更新：把后端返回的文件柜追加进 store 并按名称排序
+    // 局部更新：把后端返回的文件柜追加进 store 并重排
     const next = sortCabinets([...useAppStore.getState().cabinets, stored]);
     setCabinets(next);
     notifyCabinetsChanged(next);
@@ -106,5 +107,13 @@ export function useCabinets() {
     await loadCabinets();
   }, [loadCabinets]);
 
-  return { refresh: loadCabinets, addCabinet, updateCabinet, removeCabinet, setCabinetFolder };
+  /** 按给定 id 顺序写入侧栏手动顺序 */
+  const reorderCabinets = useCallback(async (ids: number[]) => {
+    await db.reorderCabinets(ids);
+    const next = applySortOrder(useAppStore.getState().cabinets, ids);
+    setCabinets(next);
+    notifyCabinetsChanged(next);
+  }, [setCabinets]);
+
+  return { refresh: loadCabinets, addCabinet, updateCabinet, removeCabinet, setCabinetFolder, reorderCabinets };
 }

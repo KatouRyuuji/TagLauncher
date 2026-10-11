@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 pub fn get_item_tags(conn: &Connection, item_id: i64) -> Result<Vec<Tag>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT t.id, t.name, t.color FROM tags t
+            "SELECT t.id, t.name, t.color, t.sort_order FROM tags t
              INNER JOIN item_tags it ON t.id = it.tag_id
              WHERE it.item_id = ?1
              ORDER BY it.position, t.name",
@@ -20,6 +20,7 @@ pub fn get_item_tags(conn: &Connection, item_id: i64) -> Result<Vec<Tag>, String
                 id: row.get(0)?,
                 name: row.get(1)?,
                 color: row.get(2)?,
+                sort_order: row.get(3)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -61,7 +62,7 @@ fn get_tags_for_items(
     for chunk in item_ids.chunks(crate::services::item_service::IN_CHUNK) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
-            "SELECT it.item_id, t.id, t.name, t.color
+            "SELECT it.item_id, t.id, t.name, t.color, t.sort_order
              FROM item_tags it
              INNER JOIN tags t ON t.id = it.tag_id
              WHERE it.item_id IN ({})
@@ -81,6 +82,7 @@ fn get_tags_for_items(
                         id: row.get(1)?,
                         name: row.get(2)?,
                         color: row.get(3)?,
+                        sort_order: row.get(4)?,
                     },
                 ))
             })
@@ -98,7 +100,7 @@ fn get_tags_for_items(
 /// 获取所有标签
 pub fn get_tags(conn: &Connection) -> Result<Vec<Tag>, String> {
     let mut stmt = conn
-        .prepare("SELECT id, name, color FROM tags ORDER BY name")
+        .prepare("SELECT id, name, color, sort_order FROM tags ORDER BY sort_order, name")
         .map_err(|e| e.to_string())?;
 
     let tags = stmt
@@ -107,6 +109,7 @@ pub fn get_tags(conn: &Connection) -> Result<Vec<Tag>, String> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 color: row.get(2)?,
+                sort_order: row.get(3)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -136,9 +139,13 @@ pub fn add_tag(conn: &Connection, name: &str, color: &str) -> Result<Tag, String
     if name.is_empty() {
         return Err("标签名称不能为空".to_string());
     }
+    // 新建排在末尾
+    let sort_order: i64 = conn
+        .query_row("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tags", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO tags (name, color) VALUES (?1, ?2)",
-        params![name, color],
+        "INSERT INTO tags (name, color, sort_order) VALUES (?1, ?2, ?3)",
+        params![name, color, sort_order],
     )
     .map_err(friendly_name_err)?;
 
@@ -147,7 +154,30 @@ pub fn add_tag(conn: &Connection, name: &str, color: &str) -> Result<Tag, String
         id,
         name: name.to_string(),
         color: color.to_string(),
+        sort_order,
     })
+}
+
+/// 按给定 id 顺序写入标签的手动顺序（1 起），单事务；不在列表中的标签不变。
+pub fn reorder_tags(conn: &Connection, ids: &[i64]) -> Result<(), String> {
+    write_sort_order(conn, "tags", ids)
+}
+
+/// 侧栏排序共用：`table` 只接受 tags / cabinets。
+pub(crate) fn write_sort_order(conn: &Connection, table: &str, ids: &[i64]) -> Result<(), String> {
+    debug_assert!(table == "tags" || table == "cabinets");
+    crate::db::ensure_writes_allowed()?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    {
+        let mut stmt = tx
+            .prepare(&format!("UPDATE {table} SET sort_order = ?1 WHERE id = ?2"))
+            .map_err(|e| e.to_string())?;
+        for (idx, id) in ids.iter().enumerate() {
+            stmt.execute(params![idx as i64 + 1, id])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())
 }
 
 /// 更新标签

@@ -225,3 +225,19 @@ fn offline_drive_prefix_is_skipped_by_reconcile() {
     assert!(cabinet_service::path_under(&format!("{}:/media/a.mp4", drive.to_ascii_lowercase()), &prefixes[0]));
     assert!(!cabinet_service::path_under(&format!("{drive}:\\Media2\\a.mp4"), &prefixes[0]));
 }
+
+/// 手动顺序：新建排末尾，reorder_cabinets 按给定顺序写入并决定 get_cabinets 返回顺序。
+#[test]
+fn cabinet_reorder_persists_and_new_cabinets_go_last() {
+    let t = common::temp_db();
+    let conn = t.db.get_conn();
+    let a = cabinet_service::add_cabinet(&conn, "a", "#fff").unwrap();
+    let b = cabinet_service::add_cabinet(&conn, "b", "#fff").unwrap();
+
+    cabinet_service::reorder_cabinets(&conn, &[b.id, a.id]).unwrap();
+    let ids: Vec<i64> = cabinet_service::get_cabinets(&conn).unwrap().iter().map(|c| c.id).collect();
+    assert_eq!(ids, [b.id, a.id]);
+
+    let c = cabinet_service::add_cabinet(&conn, "0-新", "#fff").unwrap();
+    assert_eq!(cabinet_service::get_cabinets(&conn).unwrap().last().unwrap().id, c.id, "新建排末尾");
+}
