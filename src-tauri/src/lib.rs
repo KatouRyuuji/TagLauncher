@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use tauri::Manager;
+use tauri_plugin_window_state::{StateFlags, WindowExt};
 
 /// 将旧版数据库以一致快照方式迁移到新位置。
 ///
@@ -64,6 +65,11 @@ fn migrate_legacy_db(src: &std::path::Path, dst: &std::path::Path) -> Result<(),
     }
 }
 
+/// 主窗口记住的状态：大小、位置与最大化
+pub(crate) const WINDOW_STATE_FLAGS: StateFlags = StateFlags::SIZE
+    .union(StateFlags::POSITION)
+    .union(StateFlags::MAXIMIZED);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     install_startup_failure_dialog();
@@ -86,9 +92,21 @@ pub fn run() {
                 .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
                 .build(),
         )
+        // 记住主窗口大小、位置与最大化（存于应用配置目录）；所在显示器已断开时由系统摆放。
+        // 主窗口启动时隐藏，跳过插件的自动恢复：大小与位置在 setup 里恢复，
+        // 最大化须等前端主题就绪后再恢复，否则 Windows 会提前显示窗口
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(WINDOW_STATE_FLAGS)
+                .skip_initial_state("main")
+                .build(),
+        )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.restore_state(StateFlags::SIZE | StateFlags::POSITION);
+            }
             let app_dir = app
                 .path()
                 .app_data_dir()

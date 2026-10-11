@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => ({
             "@tauri-apps/api/webview": r("./src/demo/tauri/webview.ts"),
             "@tauri-apps/plugin-dialog": r("./src/demo/tauri/dialog.ts"),
             "@tauri-apps/plugin-shell": r("./src/demo/tauri/shell.ts"),
+            "@tauri-apps/plugin-window-state": r("./src/demo/tauri/windowState.ts"),
           },
         }
       : undefined,

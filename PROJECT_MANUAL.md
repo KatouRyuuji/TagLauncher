@@ -593,6 +593,7 @@ ARM64 构建：`build-arm64.bat`（`aarch64-pc-windows-msvc`），产物为 `src
 |-------|------|------|
 | tauri | 2.x | 应用框架 |
 | tauri-plugin-single-instance | 2.x | 单实例：再次启动只把已有主窗口唤到前台；`restart_app` 重启前先释放实例锁 |
+| tauri-plugin-window-state | 2.4 | 记住主窗口大小、位置与最大化；主窗口启动时隐藏，大小与位置在 setup 恢复，最大化在前端主题就绪显示窗口时恢复；`restart_app` 重启前先落盘 |
 | tauri-plugin-log / log | 2.x / 0.4 | 后端诊断与 panic 写入系统应用日志目录 `logs/TagLauncher.log`（Info 级，5 MB 轮转，另留 5 份）；`tl` 将同一日志打印到 stderr |
 | notify-debouncer-full | 0.7 | 文件夹监视：系统变更通知（经其导出的 notify 8.2，Windows 底层 ReadDirectoryChangesW）与防抖 |
 | rusqlite | 0.31 | SQLite 驱动（`bundled` + `backup` feature：Online Backup 用于导入/导出/备份） |

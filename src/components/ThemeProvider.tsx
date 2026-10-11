@@ -1,5 +1,6 @@
 import { createContext, useContext, useLayoutEffect, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { restoreStateCurrent, StateFlags } from "@tauri-apps/plugin-window-state";
 import type {
   ThemeDefinition,
   ThemeDirectoryInfo,
@@ -50,7 +51,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (!loading) {
       document.documentElement.removeAttribute("data-app-preparing");
       requestAnimationFrame(() => {
-        void getCurrentWindow().show().catch(() => {});
+        // 上次最大化时，恢复会直接以最大化显示窗口；否则只是显示
+        void restoreStateCurrent(StateFlags.MAXIMIZED)
+          .catch(() => {})
+          .then(() => getCurrentWindow().show())
+          .catch(() => {});
       });
     }
   }, [loading]);
