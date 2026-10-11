@@ -42,7 +42,7 @@ export function isModModalOpen(): boolean {
   return Boolean(document.querySelector("[data-mod-modal]"));
 }
 
-export function isContextMenuOpen(): boolean {
+function isContextMenuOpen(): boolean {
   return Boolean(document.querySelector("[data-context-menu]"));
 }
 

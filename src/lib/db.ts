@@ -666,11 +666,6 @@ export async function aiSetConfig(config: AiConfig): Promise<void> {
   return invokeCmd("ai_set_config", { config });
 }
 
-/** 是否已配置 AI（base_url + api_key + model 均非空） */
-export async function aiIsConfigured(): Promise<boolean> {
-  return invokeCmd("ai_is_configured");
-}
-
 /** 显式清除已保存的 API 密钥（"留空=不修改"语义下删除密钥的专用通道） */
 export async function aiClearApiKey(): Promise<void> {
   return invokeCmd("ai_clear_api_key");

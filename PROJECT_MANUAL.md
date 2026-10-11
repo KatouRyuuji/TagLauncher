@@ -72,7 +72,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌─────────────────────────────────────────┐  │
 │  │          Rust 后端 (Tauri)              │  │
 │  │                                         │  │
-│  │  commands/  ← 113 个 Tauri 命令         │  │
+│  │  commands/  ← 112 个 Tauri 命令         │  │
 │  │             (按 item/cabinet/tag/mod/   │  │
 │  │              net/ai/data/sync/update/   │  │
 │  │              settings/synonym/launch/   │  │
@@ -180,7 +180,7 @@ tag-launcher/
 │   ├── src/
 │   │   ├── main.rs               # 程序入口
 │   │   ├── lib.rs                # Tauri 初始化、插件注册、命令注册
-│   │   ├── commands/             # Tauri 命令（按业务域分模块，113 个）
+│   │   ├── commands/             # Tauri 命令（按业务域分模块，112 个）
 │   │   │   ├── item_commands.rs
 │   │   │   ├── cabinet_commands.rs
 │   │   │   ├── tag_commands.rs
@@ -452,7 +452,6 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 |--------|------|--------|------|
 | `ai_get_config` | - | AiConfig | 读取 AI 配置（**不含明文密钥**，仅回传 `hasApiKey` 是否已配置；明文密钥只在后端内部使用） |
 | `ai_set_config` | config: AiConfig | () | 写入 AI 配置 |
-| `ai_is_configured` | - | bool | 是否已配置（不泄露 key，供前端判断是否自动打标） |
 | `ai_clear_api_key` | - | () | 仅清除已保存的 API 密钥（保留 base URL / 模型等其余配置） |
 | `ai_test_connection` | - | String | 发一条极简消息测试连通性，返回模型回显 |
 | `ai_suggest_tags` | name, path, item_type, existing_tags | Vec\<String\> | 为单个对象建议标签（去重并按配置裁剪数量） |
@@ -540,7 +539,6 @@ setShowFavorites(v)       → 清空 selectedCabinetId 和 selectedTagIds
 - `setup.bat`：一键检测并安装 Node / Rust(rustup) / VS C++ BuildTools / WebView2，并执行 `npm install`（全英文 + UTF-8 + CRLF）。
 - `dev.bat` / `build.bat`：自动注入 `%USERPROFILE%\.cargo\bin` 到 PATH 并做环境前置检查；`build.bat` 支持可选 target 参数。
 - `build-arm64.bat`：面向 `aarch64-pc-windows-msvc` 的 ARM64 构建，会自动 `rustup target add`。
-- `pack-all.bat`：一键全量打包——宿主架构原生构建 + 另一架构 `--target` 交叉构建，一次产出 x64/ARM64 的 NSIS 安装包与便携 zip（对齐 CI release 流水线产物）。
 
 ### 开发模式
 ```bash
@@ -799,7 +797,7 @@ npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页�
 
 ### 17.1 tl 命令行
 
-- **分发**：`tl.exe` 以 Tauri `externalBin` sidecar 形式打进安装包并落入主程序同级目录；便携版 zip 同样附带。sidecar 构建由 `scripts/prepare-cli-bin.mjs` 完成（pack/CI 已接线）；`scripts/ensure-cli-placeholder.mjs` 在首次编译前创建占位文件（tauri-build 会校验 externalBin 存在，全新克隆缺它会编译失败，dev.bat/setup.bat/CI 已接线）。
+- **分发**：`tl.exe` 以 Tauri `externalBin` sidecar 形式打进安装包并落入主程序同级目录；便携版 zip 同样附带。sidecar 构建由 `scripts/prepare-cli-bin.mjs` 完成（pack/CI 已接线）；`node scripts/prepare-cli-bin.mjs --placeholder` 在首次编译前只创建占位文件（tauri-build 会校验 externalBin 存在，全新克隆缺它会编译失败，dev.bat/setup.bat/CI 已接线）。
 - **数据库定位**：与 GUI 同一套解析——exe 旁 `datapath.json` 重定向优先，否则 `%LOCALAPPDATA%\TagLauncher\Save\taglauncher.db`（`src-tauri/src/cli/mod.rs`）。数据库不存在时拒绝静默新建并提示先运行主程序。
 - **并发**：WAL 模式下与 GUI 并发安全；两边同时写时后到者最多排队等待 5 秒，超时报「database is locked」且不触发损坏自愈；CLI 的写操作 GUI 需刷新后可见。
 - **命令面**：`search` / `list` / `get` / `add` / `remove` / `launch`（id 或搜索词首命中）/ `tag list|add|set|clear` / `fav [--off]` / `cabinet list|items` / `stats` / `mcp` / `tui`。全局 `--json` 输出机器可读 JSON（脚本与 AI 消费）。实现：`src-tauri/src/bin/tl.rs`（clap derive）。

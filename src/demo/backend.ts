@@ -835,6 +835,9 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       };
 
     // ---- AI 自动打标 ----
+    // 演示环境没有随附的 tl 命令行
+    case "get_cli_integration_info":
+      return { cli_available: false, cli_path: "", mcp_config: "" };
     case "ai_get_config":
       return { ...state.ai, apiKey: "", hasApiKey: state.ai.apiKey.length > 0 };
     case "ai_set_config": {
@@ -848,8 +851,6 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       state.ai.extraPrompt = config.extraPrompt;
       return null;
     }
-    case "ai_is_configured":
-      return state.ai.baseUrl.length > 0 && state.ai.apiKey.length > 0 && state.ai.model.length > 0;
     case "ai_clear_api_key":
       state.ai.apiKey = "";
       return null;

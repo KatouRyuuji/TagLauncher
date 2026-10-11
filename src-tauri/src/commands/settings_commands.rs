@@ -27,7 +27,7 @@ pub fn get_cli_integration_info() -> CliIntegrationInfo {
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "tl.exe".to_string());
     CliIntegrationInfo {
-        // 0 字节是 ensure-cli-placeholder 的占位文件，不能当可用 CLI
+        // 0 字节是 prepare-cli-bin --placeholder 的占位文件，不能当可用 CLI
         cli_available: is_usable_cli_binary(std::path::Path::new(&cli_path)),
         mcp_config: serde_json::json!({
             "mcpServers": {
