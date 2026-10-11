@@ -32,8 +32,8 @@ test("library 空态：引导导入，不提供清筛选/清搜索按钮", () =>
 
 test("library 空态：概念解释退居注脚，与主引导分层", () => {
   const copy = emptyStateCopy("library", "");
-  assert.ok(!copy.description.includes("文件柜只是分组"));
-  assert.ok(copy.footnote?.includes("文件柜只是分组"));
+  assert.ok(!copy.description.includes("文件柜用来分组"));
+  assert.ok(copy.footnote?.includes("文件柜用来分组"));
 });
 
 test("library 空态：按仍在的标签/文件柜如实补一句", () => {

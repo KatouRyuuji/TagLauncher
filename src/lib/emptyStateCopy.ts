@@ -80,7 +80,7 @@ export function emptyStateCopy(
       return {
         title: "暂无项目",
         description: "将文件或文件夹拖到主区域，或点下方按钮加入库。",
-        footnote: remainingHint ? `文件柜只是分组，不会移动磁盘上的文件。${remainingHint}` : "文件柜只是分组，不会移动磁盘上的文件。",
+        footnote: remainingHint ? `文件柜用来分组，不会移动磁盘上的文件；也可以关联磁盘文件夹自动同步。${remainingHint}` : "文件柜用来分组，不会移动磁盘上的文件；也可以关联磁盘文件夹自动同步。",
         showClearSearch: false,
         showClearFilters: false,
       };
