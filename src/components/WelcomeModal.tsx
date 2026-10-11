@@ -30,7 +30,7 @@ interface FeatureEntry {
 const STEPS: FeatureEntry[] = [
   {
     title: "添加文件或文件夹",
-    description: "拖进工作台，或点右上角「添加文件 / 添加文件夹」。侧栏「文件柜」只是分组，不是磁盘目录。",
+    description: "拖进工作台，或点右上角「添加文件 / 添加文件夹」。侧栏「文件柜」用来分组，不会移动磁盘上的文件；也可以关联一个磁盘文件夹，自动同步内容。",
   },
   {
     title: "打一个标签",
