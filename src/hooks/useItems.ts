@@ -752,6 +752,15 @@ export function useItems() {
     await loadAll();
   }, [loadAll]);
 
+  // 清空最近使用时间后整库重取：默认排序随之变化
+  const clearRecent = useCallback(async () => {
+    await withErrorToast("清除最近使用", async () => {
+      const count = await db.clearRecentItems();
+      await refresh();
+      showToast(count > 0 ? `已清除 ${count} 项最近使用记录` : "没有最近使用记录", "success");
+    });
+  }, [refresh]);
+
   return {
     items: filtered,
     allItems,
@@ -775,6 +784,7 @@ export function useItems() {
     launchItem,
     toggleFavorite,
     setFavorites,
+    clearRecent,
     addItemToCabinet,
     addItemsToCabinet,
     removeItemFromCabinet,

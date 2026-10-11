@@ -337,6 +337,7 @@ pub fn run() {
             set_item_note,
             rename_items,
             set_favorites,
+            clear_recent_items,
             // 跨盘符兜底找回
             relocate_missing,
             // 文件柜
@@ -419,8 +420,28 @@ pub fn run() {
             import_mod,
             export_mod,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                clear_recent_on_exit(app);
+            }
+        });
+}
+
+/// 设置「退出时清除最近使用」开启时，在正常退出时清除。
+fn clear_recent_on_exit(app: &tauri::AppHandle) {
+    let Some(db) = app.try_state::<Database>() else {
+        return;
+    };
+    let conn = db.get_conn();
+    let enabled = settings_service::get_setting(&conn, services::item_service::CLEAR_RECENT_ON_EXIT_KEY)
+        .is_some_and(|v| v == "1");
+    if enabled {
+        if let Err(e) = services::item_service::clear_recent(&conn) {
+            log::warn!("退出时清除最近使用失败：{e}");
+        }
+    }
 }
 
 /// setup 走完前置为 true；此前的 panic（setup 返回错误、WebView2 缺失等）视为启动失败。

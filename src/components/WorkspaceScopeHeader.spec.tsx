@@ -1,7 +1,7 @@
 // ============================================================================
 // src/components/WorkspaceScopeHeader.spec.tsx — 关联文件夹的文件柜：范围栏
 // ============================================================================
-// 面包屑逐级返回、目录 / 平铺切换、「清理失效」与文件夹状态提示。
+// 面包屑逐级返回、目录 / 平铺切换、「清理失效」与文件夹状态提示；最近使用视图的「清除记录」。
 // ============================================================================
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -88,5 +88,35 @@ describe("WorkspaceScopeHeader · 关联文件夹的文件柜", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: /Sub/ }));
     await userEvent.click(screen.getByRole("button", { name: "恢复追踪（1）" }));
     await waitFor(() => expect(db.restoreIgnoredPaths).toHaveBeenCalledWith(["D:\\Photos\\Sub"]));
+  });
+});
+
+describe("WorkspaceScopeHeader · 最近使用", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      cabinets: [],
+      selectedCabinetId: null,
+      cabinetDir: null,
+      selectedTagIds: [],
+      excludedTagIds: [],
+      showFavorites: false,
+      showRecent: true,
+      searchQuery: "",
+    });
+  });
+
+  it("有记录时显示「清除记录」并回调", async () => {
+    const onClearRecent = vi.fn();
+    render(<WorkspaceScopeHeader visibleCount={2} onClearRecent={onClearRecent} />);
+    await userEvent.click(screen.getByRole("button", { name: "清除记录" }));
+    expect(onClearRecent).toHaveBeenCalledTimes(1);
+  });
+
+  it("列表为空或不在最近使用视图时不显示", () => {
+    const { rerender } = render(<WorkspaceScopeHeader visibleCount={0} onClearRecent={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "清除记录" })).toBeNull();
+    useAppStore.setState({ showRecent: false });
+    rerender(<WorkspaceScopeHeader visibleCount={2} onClearRecent={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "清除记录" })).toBeNull();
   });
 });

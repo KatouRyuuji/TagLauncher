@@ -413,6 +413,16 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       for (const id of ids(args.ids)) requireItem(id).is_favorite = favorite;
       return null;
     }
+    case "clear_recent_items": {
+      let count = 0;
+      for (const item of state.items) {
+        if (item.last_used_at) {
+          item.last_used_at = undefined;
+          count += 1;
+        }
+      }
+      return count;
+    }
     case "set_item_note": {
       const note = str(args.note).trim();
       if ([...note].length > 2000) throw new Error(`备注最多 2000 字，当前 ${[...note].length} 字`);

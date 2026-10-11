@@ -3,11 +3,12 @@
 // ============================================================================
 // 空库由 App 用 allItems.length > 0 守卫（等同 libraryEmpty）；筛选后 0 项仍渲染，
 // 空态面板在下方。状态从 store 派生，不写回。
+// 「最近使用」视图标题行带「清除记录」。
 // 选中关联文件夹的文件柜时多一行：面包屑、目录 / 平铺切换、「清理失效」「已忽略」与文件夹状态提示。
 // ============================================================================
 
 import { Fragment, useMemo } from "react";
-import { ChevronRight, Eraser, FolderTree, Rows3 } from "lucide-react";
+import { ChevronRight, Eraser, FolderTree, History, Rows3 } from "lucide-react";
 import { browseCrumbs } from "../lib/cabinetBrowse";
 import { IgnoredPathsButton } from "./IgnoredPathsButton";
 import { resolveWorkspaceScope } from "../lib/workspaceScope";
@@ -22,9 +23,10 @@ interface WorkspaceScopeHeaderProps {
   /** 关联柜内的失效对象 */
   missingIds?: number[];
   onCleanMissing?: (ids: number[]) => void;
+  onClearRecent?: () => void;
 }
 
-export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir = null, missingIds = [], onCleanMissing }: WorkspaceScopeHeaderProps) {
+export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir = null, missingIds = [], onCleanMissing, onClearRecent }: WorkspaceScopeHeaderProps) {
   const showFavorites = useAppStore((state) => state.showFavorites);
   const showRecent = useAppStore((state) => state.showRecent);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
@@ -75,6 +77,16 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir 
         <span className="text-[12px] tabular-nums text-[var(--text-muted)]">{pending ? "正在打开文件柜" : `${scope.count} 项`}</span>
         {scope.qualifiers.length > 0 && (
           <span className="text-[13px] text-[var(--text-muted)]">{scope.qualifiers.join(" · ")}</span>
+        )}
+        {showRecent && onClearRecent && visibleCount > 0 && (
+          <button
+            type="button"
+            onClick={onClearRecent}
+            className="control-chip ml-auto h-7 min-h-7 shrink-0 gap-1.5 self-center px-2.5 text-[13px]"
+          >
+            <History aria-hidden="true" size={14} strokeWidth={1.8} />
+            清除记录
+          </button>
         )}
       </div>
       {linkedCabinet && (

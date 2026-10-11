@@ -332,6 +332,14 @@ export async function setFavorites(ids: number[], favorite: boolean): Promise<vo
   return invokeCmd("set_favorites", { ids, favorite });
 }
 
+/** 清除全部对象的最近使用时间，返回清除条数 */
+export async function clearRecentItems(): Promise<number> {
+  return invokeCmd("clear_recent_items");
+}
+
+/** 设置键：值为 "1" 时应用正常退出时清除最近使用 */
+export const CLEAR_RECENT_ON_EXIT_KEY = "recent.clear_on_exit";
+
 // ---- 备注 ----
 
 /** 设置对象备注（后端去除首尾空白，空白存 NULL，超过 2000 字报错） */
