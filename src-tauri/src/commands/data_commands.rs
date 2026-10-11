@@ -15,6 +15,7 @@ use rusqlite::backup::Backup;
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 use tauri::State;
+use tauri_plugin_window_state::AppHandleExt;
 
 const DB_FILE_NAME: &str = "taglauncher.db";
 const BACKUPS_DIR_NAME: &str = "Backups";
@@ -369,6 +370,8 @@ pub fn restart_app(app: tauri::AppHandle) {
     // 主线程上的 restart 不经过 RunEvent::Exit，单实例锁不会自动释放；
     // 先释放，否则新进程会被当作第二个实例直接退出
     tauri_plugin_single_instance::destroy(&app);
+    // 同理，窗口状态也要先落盘
+    let _ = app.save_window_state(crate::WINDOW_STATE_FLAGS);
     app.restart();
 }
 
