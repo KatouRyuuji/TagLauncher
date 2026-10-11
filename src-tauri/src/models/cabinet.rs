@@ -11,6 +11,9 @@ pub struct Cabinet {
     pub folder_path: Option<String>,
     /// 最近一次同步因单柜上限截断
     pub folder_truncated: bool,
+    /// 侧栏手动顺序，升序；相同值按名称排
+    #[serde(default)]
+    pub sort_order: i64,
     /// 关联文件夹状态："ok" | "offline"（所在盘不可用）| "missing"（盘在、文件夹不在）；
     /// 仅 GUI 命令层在锁外填写，其余调用方为 None
     #[serde(default)]

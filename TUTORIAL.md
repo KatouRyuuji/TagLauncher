@@ -102,16 +102,16 @@ src-tauri/src/
 ## 4.1 `db/`（连接、schema 与迁移）
 
 - 采用 SQLite（`rusqlite` bundled）。
-- `connection.rs` 负责连接与 `PRAGMA`，`schema.rs` 建表并幂等回填 FTS，`migrations/` 下按版本（v001..v018）做表结构迁移。
+- `connection.rs` 负责连接与 `PRAGMA`，`schema.rs` 建表并幂等回填 FTS，`migrations/` 下按版本（v001..v019）做表结构迁移。
 - 表结构包括：`items`、`tags`、`item_tags`、`tag_relations`、`items_fts`、`cabinets`、`cabinet_items`、`mod_kv`、`mod_records` 等。
 
 ## 4.2 `commands/`（命令实现，按域分模块）
 
-111 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/net/ai/data/sync/update/settings/synonym/launch/object_preview/search/recolor/watch），命令体一般转调 `services/` 下的业务服务。主要命令组（节选）：
+113 个 `#[tauri::command]` 分布在 `commands/` 下的多个模块（item/tag/cabinet/mod/net/ai/data/sync/update/settings/synonym/launch/object_preview/search/recolor/watch），命令体一般转调 `services/` 下的业务服务。主要命令组（节选）：
 
 - 对象：`add_item` / `add_items` / `remove_item` / `get_items` / `launch_item` / `update_item_icon`
-- 标签：`get_tags` / `add_tag` / `update_tag` / `remove_tag` / `set_item_tags` / `get_tag_relations` / `add_tag_relation` / `remove_tag_relation`
-- 文件柜：`get_cabinets` / `add_cabinet` / `update_cabinet` / `remove_cabinet` / 关联命令
+- 标签：`get_tags` / `add_tag` / `update_tag` / `remove_tag` / `reorder_tags` / `set_item_tags` / `get_tag_relations` / `add_tag_relation` / `remove_tag_relation`
+- 文件柜：`get_cabinets` / `add_cabinet` / `update_cabinet` / `remove_cabinet` / `reorder_cabinets` / 关联命令
 - 搜索：`search_items`（备用后端搜索）
 - 同义词：`read_synonyms`
 - Mod/主题：`get_mods` / `get_mod_content` / `get_mod_dir` / `enable_mod` / `disable_mod` / `import_mod` / `delete_mod` / `get_theme_directory_info` / `install_theme_file` 等

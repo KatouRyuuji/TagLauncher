@@ -10,6 +10,7 @@ import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { notifyTagsChanged } from "../lib/modApi";
 import { compareNames } from "../lib/itemQuery";
+import { applySortOrder, compareSortOrder } from "../lib/sidebarOrder";
 import { persistPickedThemeColor } from "../lib/persistThemeColor";
 import { showToast } from "../lib/toast";
 import type { Tag } from "../types";
@@ -17,9 +18,9 @@ import type { Tag } from "../types";
 /** 标签改名/删除事件：useItems 监听后刷新对象列表，避免卡片标签 pill 残留旧值。 */
 export const TAGS_WRITTEN_EVENT = "taglauncher-tags-written";
 
-/** 按名称排序，保持与后端 get_tags 的返回顺序一致 */
+/** 手动顺序在前、名称次之，与后端 get_tags 的返回顺序一致 */
 function sortTags(list: Tag[]): Tag[] {
-  return [...list].sort((a, b) => compareNames(a.name, b.name));
+  return [...list].sort((a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name));
 }
 
 export function useTags() {
@@ -60,7 +61,7 @@ export function useTags() {
     if (snapped !== tag.color) {
       await db.updateTag(tag.id, tag.name, snapped);
     }
-    // 局部更新：把后端返回的 tag 追加进 store 并按名称排序
+    // 局部更新：把后端返回的 tag 追加进 store 并重排
     const next = sortTags([...useAppStore.getState().tags, stored]);
     setTags(next);
     notifyTagsChanged(next);
@@ -100,5 +101,13 @@ export function useTags() {
     window.dispatchEvent(new Event(TAGS_WRITTEN_EVENT));
   }, [setTags]);
 
-  return { tags, loading, refresh, addTag, updateTag, removeTag };
+  /** 按给定 id 顺序写入侧栏手动顺序 */
+  const reorderTags = useCallback(async (ids: number[]) => {
+    await db.reorderTags(ids);
+    const next = applySortOrder(useAppStore.getState().tags, ids);
+    setTags(next);
+    notifyTagsChanged(next);
+  }, [setTags]);
+
+  return { tags, loading, refresh, addTag, updateTag, removeTag, reorderTags };
 }
