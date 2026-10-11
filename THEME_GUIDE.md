@@ -2,7 +2,7 @@
 
 > 适用版本：v1.8.1-beta
 > 相关文档：[PROJECT_MANUAL.md](./PROJECT_MANUAL.md)（架构总览）· [MOD_GUIDE.md](./MOD_GUIDE.md)（Mod 开发）
-> 可参照的完整示例：仓库根目录 `ExampleTheme/SkyCloudTheme/theme.json`（112 个变量键与内置主题完全一致）
+> 可参照的完整示例：仓库根目录 `ExampleTheme/SkyCloudTheme/theme.json`（132 个变量键与内置主题完全一致）
 
 ## 1. 主题模型
 
@@ -47,26 +47,29 @@
 - 变量名为空或带 `--` 前缀；
 - `id` 命中保留清单，或与其它自定义主题重复。
 
-**导入时告警（不阻断）**：缺失推荐变量——推荐集合即下方 §5 的完整 112 键（实现：`REQUIRED_VARIABLES`）。
+**导入时告警（不阻断）**：缺失推荐变量——推荐集合即下方 §5 的完整 132 键（实现：`REQUIRED_VARIABLES`）。
 
-## 5. 变量契约（112 键）
+## 5. 变量契约（132 键）
 
 与内置主题保持键集一致是质量基线（`src/lib/themeVariables.test.ts` 会把示例主题与此集合做自动比对）：
 
 **字体排印**
-`font-family` `font-family-mono` `font-family-body` `font-size-xs` `font-size-sm` `font-size-base` `font-size-lg` `font-size-xl` `font-weight-normal` `font-weight-medium` `font-weight-bold` `line-height-tight` `line-height-normal` `letter-spacing`
+`font-family` `font-family-mono` `font-family-body` `font-size-xs` `font-size-sm` `font-size-base` `font-size-lg` `font-size-xl` `font-weight-normal` `font-weight-medium` `font-weight-semibold` `font-weight-bold` `line-height-tight` `line-height-normal` `letter-spacing`
 
 **圆角 / 阴影 / 间距 / 动效**
-`radius-sm` `radius-md` `radius-lg` `radius-xl` `radius-full` `shadow-sm` `shadow-md` `shadow-lg` `shadow-overlay` `shadow-dropdown` `shadow-card` `shadow-glow` `spacing-unit` `spacing-xs` `spacing-sm` `spacing-md` `spacing-lg` `spacing-xl` `transition-fast` `transition-normal` `transition-slow`
+`radius-sm` `radius-md` `radius-lg` `radius-xl` `radius-2xl` `radius-3xl` `radius-full` `shadow-sm` `shadow-md` `shadow-lg` `shadow-overlay` `shadow-dropdown` `shadow-card` `shadow-glow` `shadow-focus` `shadow-lift` `shadow-well` `spacing-unit` `spacing-xs` `spacing-sm` `spacing-md` `spacing-lg` `spacing-xl` `transition-fast` `transition-normal` `transition-slow`
 
 **背景层**
-`bg-base` `bg-surface` `bg-card` `bg-hover` `bg-active` `bg-overlay` `bg-elevated` `bg-card-hover` `bg-input` `bg-gradient` `overlay-bg`
+`bg-base` `bg-surface` `bg-card` `bg-hover` `bg-active` `bg-overlay` `bg-elevated` `bg-card-hover` `bg-input` `bg-input-hover` `bg-gradient` `overlay-bg`
 
 **文本层**
 `text-primary` `text-secondary` `text-tertiary` `text-muted` `text-faint` `text-ghost` `text-placeholder` `text-invert`
 
 **边框 / 强调 / 状态色**
-`border-subtle` `border-default` `border-medium` `border-strong` `border-width` `border-style` `accent-primary` `accent-primary-hover` `accent-primary-bg` `accent-primary-bg-light` `color-danger` `color-danger-hover` `color-danger-bg` `color-warning` `color-success` `color-favorite` `color-focus-ring`
+`border-subtle` `border-default` `border-medium` `border-strong` `border-width` `border-style` `accent-primary` `accent-primary-hover` `accent-primary-bg` `accent-primary-bg-light` `accent-primary-ink` `accent-primary-shallow` `accent-signal` `color-danger` `color-danger-hover` `color-danger-bg` `color-danger-ink` `color-on-danger` `color-warning` `color-warning-ink` `color-success` `color-success-ink` `color-info-ink` `color-favorite` `color-focus-ring`
+
+**选中行**
+`row-selected-bg` `row-selected-fg` `row-selected-sub-fg` `row-selected-weight` `row-selected-shadow`
 
 **特效与装饰**
 `card-backdrop-filter` `sidebar-backdrop-filter` `welcome-accent-gradient` `media-caption-gradient` `status-warning-bg` `status-success-bg` `scrollbar-thumb` `scrollbar-thumb-hover`
