@@ -1,9 +1,9 @@
 // ============================================================================
 // lib/contract.test.ts — 前后端 IPC 命令契约核对（静态文本比对，非运行时）
 // ============================================================================
-// 目的：防止"前端新增/改名了 invoke 命令，却忘了在后端 generate_handler! 注册"
-// 或反过来"后端注册了命令，前端 db.ts 却没有任何调用"这类拼写漂移，在编译期/
-// 测试期就发现，而不是等到运行时才收到 Tauri 的 "command not found"。
+// 目的：防止"前端新增/改名了 invoke 命令，却忘了在后端 generate_handler! 注册"、
+// "后端注册了命令，前端 db.ts 却没有任何调用"或"演示后端漏实现命令"这类漂移，
+// 在测试期就发现，而不是等到运行时才报错。
 //
 // 做法：分别用正则从 src/lib/db.ts 与 src-tauri/src/lib.rs 源码文本中提取命令名
 // 集合，断言两者完全一致（双向 diff 均为空）。纯文本静态分析，不依赖编译/运行。
@@ -22,6 +22,7 @@ import { resolve } from "node:path";
 
 const DB_TS_PATH = resolve(process.cwd(), "src/lib/db.ts");
 const LIB_RS_PATH = resolve(process.cwd(), "src-tauri/src/lib.rs");
+const DEMO_BACKEND_PATH = resolve(process.cwd(), "src/demo/backend.ts");
 
 /** 提取 db.ts 中所有 `invokeCmd("xxx", ...)` 调用的命令名字面量（保留出现顺序，可能含重复）。 */
 function extractFrontendCommands(source: string): string[] {
@@ -107,6 +108,13 @@ test("双向一致：后端注册的命令都被前端调用（否则可能是�
     [],
     `后端 generate_handler! 注册了但前端 db.ts 未调用的命令：${missingInFrontend.join(", ")}`,
   );
+});
+
+test("演示后端覆盖全部注册命令（否则演示模式调用会报「演示后端未实现命令」）", () => {
+  const demoSource = readFileSync(DEMO_BACKEND_PATH, "utf-8");
+  const demoSet = new Set([...demoSource.matchAll(/case "([a-z0-9_]+)":/g)].map((m) => m[1]));
+  const missingInDemo = [...backendSet].filter((c) => !demoSet.has(c)).sort();
+  assert.deepEqual(missingInDemo, [], `演示后端 src/demo/backend.ts 未实现的命令：${missingInDemo.join(", ")}`);
 });
 
 test("后端命令列表内部无重复注册（重复通常意味着复制粘贴遗漏改名）", () => {

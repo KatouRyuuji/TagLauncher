@@ -140,13 +140,6 @@ export function oklchChroma(hex: string): number {
   return Math.hypot(lab.a, lab.b);
 }
 
-export function oklabDistance(hexA: string, hexB: string): number {
-  const a = hexToOklab(hexA);
-  const b = hexToOklab(hexB);
-  if (!a || !b) return Number.POSITIVE_INFINITY;
-  return Math.hypot(a.L - b.L, a.a - b.a, a.b - b.b);
-}
-
 export function hexEquals(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }

@@ -29,7 +29,7 @@ todo.txt
 
 nul
 
-# test:design 的 esbuild 临时产物
+# 测试运行器（scripts/run-tests.mjs 等）的临时产物与证据
 .tmp-test/
 
 # maestro 本地知识索引产物
@@ -59,9 +59,6 @@ bug/
 
 # 本机设计草稿
 design-system/
-
-# verify-layout 本机截图
-scripts/.v-*.png
 
 # 本机 E2E 验证截图
 tmp-verify/

@@ -26,10 +26,6 @@ export function ensurePinyin(): Promise<PinyinModule> {
   return inflight;
 }
 
-export function isPinyinReady(): boolean {
-  return cached !== null;
-}
-
 /**
  * 同步取 pinyin：仅保证在 ensurePinyin() 完成之后调用
  * （搜索/高亮链路经防抖与预热门控；测试在 run() 前 await ensurePinyin()）。

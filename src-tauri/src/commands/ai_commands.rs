@@ -121,13 +121,6 @@ pub fn ai_set_config(db: State<Database>, config: AiConfig) -> Result<(), String
     Ok(())
 }
 
-/// 是否已配置 AI（供前端判断是否走自动打标，不泄露 key）。
-#[tauri::command]
-pub fn ai_is_configured(db: State<Database>) -> bool {
-    let conn = db.get_conn();
-    AiConfig::load(&conn).is_configured()
-}
-
 /// 显式清除已保存的 API 密钥。
 /// ai_set_config 的"密钥留空=不修改"语义下前端无法删除已存密钥，故提供独立清除通道。
 #[tauri::command]

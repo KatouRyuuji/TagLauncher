@@ -463,10 +463,6 @@ export function isHeaderSortActive(current: SortMode, column: ListHeaderColumn):
   return current === HEADER_SORT_TARGET[column];
 }
 
-export function sortModeLabel(mode: SortMode): string {
-  return SORT_OPTIONS.find((option) => option.value === mode)?.label ?? mode;
-}
-
 export function typeFilterLabel(filter: TypeFilter): string {
   return TYPE_FILTERS.find((option) => option.value === filter)?.label ?? filter;
 }

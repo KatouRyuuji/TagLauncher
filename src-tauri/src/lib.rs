@@ -385,7 +385,6 @@ pub fn run() {
             // AI 自动打标
             ai_get_config,
             ai_set_config,
-            ai_is_configured,
             ai_clear_api_key,
             ai_test_connection,
             ai_suggest_tags,

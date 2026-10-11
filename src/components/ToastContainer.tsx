@@ -3,12 +3,12 @@
 // ============================================================================
 // 通过监听 "taglauncher-toast" CustomEvent 显示通知，无需 props 传递。
 // mod JS 可以通过 window.__tagLauncherModApi.notify() 触发。
-// 应用内部也可以 import { showToast } from "./ToastContainer" 调用。
+// 应用内部统一从 lib/toast 调用 showToast。
 // ============================================================================
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Check, CircleAlert, Info, TriangleAlert, X } from "lucide-react";
-import { showToast, type ToastType } from "../lib/toast";
+import type { ToastType } from "../lib/toast";
 
 export interface ToastMessage {
   id: number;
@@ -23,9 +23,6 @@ const TOAST_DURATION: Record<ToastType, number> = {
   warning: 5000,
   error: 7000,
 };
-
-// 兼容既有 `import { showToast } from "./ToastContainer"` 的调用点，统一转发到 lib/toast。
-export { showToast };
 
 // ── 组件 ──────────────────────────────────────────────────────────────────
 
