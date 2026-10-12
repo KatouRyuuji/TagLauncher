@@ -824,7 +824,7 @@ npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页�
 
 ### 17.3 MCP 服务
 
-`tl mcp` 以 stdio（newline-delimited JSON-RPC 2.0）提供 MCP 服务，协议版本 2024-11-05，工具面：`search_items` / `list_items` / `get_item` / `launch_item` / `add_items` / `remove_items` / `list_tags` / `add_tag` / `set_item_tags` / `set_favorite` / `list_cabinets` / `list_cabinet_items` / `stats`，与 CLI 命令一一对应。同步实现、不引异步运行时（`src-tauri/src/cli/mcp.rs`）；数据库延迟到首个 `tools/call` 才打开，握手/列工具不受主程序未初始化影响。设置页「AI → AI 集成」区块展示 Claude Desktop 配置并一键复制（`get_cli_integration_info` 命令；0 字节 sidecar 占位不算可用）。
+`tl mcp` 以 stdio（newline-delimited JSON-RPC 2.0）提供 MCP 服务。握手支持协议版本 2025-11-25 / 2025-06-18 / 2025-03-26 / 2024-11-05：客户端请求其中之一时按其版本回复，否则回 2025-11-25；握手结果的 `instructions` 下发使用准则。工具面共 9 个，均带 `annotations`（查询类只读，`launch_item` / `remove_items` 标为有副作用）：`search_items`（关键词、标签名、文件柜、类型组合过滤，不给条件即列出全部，返回 `total` 与精简对象）/ `get_item`（完整字段）/ `overview`（统计、全部标签与文件柜）/ `launch_item` / `add_items` / `remove_items` / `add_tag` / `set_item_tags`（`create_missing` 为 true 时自动新建缺少的标签）/ `set_favorite`；结果为紧凑 JSON。同步实现、不引异步运行时（`src-tauri/src/cli/mcp.rs`）；数据库延迟到首个 `tools/call` 才打开，握手/列工具不受主程序未初始化影响。设置页「AI → AI 集成」区块展示 Claude Desktop 配置并一键复制（`get_cli_integration_info` 命令；0 字节 sidecar 占位不算可用）。
 
 ### 17.4 AISkill
 

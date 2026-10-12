@@ -7,13 +7,28 @@
 //! 不引异步运行时：MCP stdio 是严格的请求-响应回环，同步逐行处理即可。
 
 use crate::db::Database;
+use crate::models::{ItemWithTags, Tag};
 use crate::services::{
     cabinet_service, item_service, launch_service, search_service, tag_service,
 };
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::io::{BufRead, Write};
 
-const PROTOCOL_VERSION: &str = "2024-11-05";
+/// 握手可用的协议版本，首项为默认。客户端请求其中之一时按请求版本回复。
+const PROTOCOL_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+
+/// 握手时下发给 AI 客户端的使用准则。
+const INSTRUCTIONS: &str = "TagLauncher 是本机的标签式启动器。先用 overview 了解标签与文件柜，再用 search_items 找到对象，之后按 id 操作。launch_item 会真正打开文件或运行程序，用户没有明确要求时先确认；remove_items 只移出库，不删除磁盘文件；set_item_tags 整体替换标签，追加前先用 get_item 读出现有标签。";
+
+fn negotiate_version(requested: Option<&str>) -> &'static str {
+    PROTOCOL_VERSIONS
+        .iter()
+        .copied()
+        .find(|v| Some(*v) == requested)
+        .unwrap_or(PROTOCOL_VERSIONS[0])
+}
+const DEFAULT_TAG_COLOR: &str = "#3b82f6";
 
 pub fn serve_stdio() -> Result<(), String> {
     let stdin = std::io::stdin();
@@ -45,12 +60,15 @@ pub fn serve_stdio() -> Result<(), String> {
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": {
-                    "protocolVersion": PROTOCOL_VERSION,
+                    "protocolVersion": negotiate_version(
+                        msg.pointer("/params/protocolVersion").and_then(Value::as_str),
+                    ),
                     "capabilities": { "tools": {} },
                     "serverInfo": {
                         "name": "tag-launcher",
                         "version": env!("CARGO_PKG_VERSION"),
-                    }
+                    },
+                    "instructions": INSTRUCTIONS,
                 }
             }),
             "ping" => json!({ "jsonrpc": "2.0", "id": id, "result": {} }),
@@ -103,7 +121,7 @@ impl ToolResult {
     fn to_response(&self, id: &Value) -> Value {
         match self {
             ToolResult::Ok(v) => {
-                let text = serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string());
+                let text = v.to_string();
                 json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -127,76 +145,73 @@ fn tool_error(id: &Value, message: &str) -> Value {
 }
 
 fn tool_definitions() -> Value {
+    let read_only = json!({ "readOnlyHint": true, "openWorldHint": false });
+    let ids = json!({ "type": "array", "items": { "type": "integer" } });
     json!([
         {
             "name": "search_items",
-            "description": "按关键词全文搜索 TagLauncher 中的对象（文件/文件夹/应用等），可按类型过滤。返回 id、名称、路径、类型、标签。",
+            "description": "搜索对象（文件、文件夹、应用等），条件之间取交集；不给条件即列出全部。返回 total 与精简列表，完整信息用 get_item。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "搜索关键词（名称/路径）" },
-                    "type": { "type": "string", "description": "类型过滤：folder/image/audio/video/exe/bat/ps1", "enum": ["folder", "image", "audio", "video", "exe", "bat", "ps1"] },
-                    "limit": { "type": "integer", "description": "最大返回条数，默认 50" }
-                },
-                "required": ["query"]
-            }
-        },
-        {
-            "name": "list_items",
-            "description": "列出 TagLauncher 中的全部对象。",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "limit": { "type": "integer", "description": "最大返回条数，默认 200" }
+                    "query": { "type": "string", "description": "关键词，匹配名称和路径" },
+                    "tags": { "type": "array", "items": { "type": "string" }, "description": "标签名，需同时具备，含子标签" },
+                    "cabinet_id": { "type": "integer" },
+                    "type": { "type": "string", "enum": ["folder", "image", "audio", "video", "exe", "bat", "ps1"] },
+                    "limit": { "type": "integer", "description": "默认 50" }
                 }
-            }
+            },
+            "annotations": read_only
         },
         {
             "name": "get_item",
-            "description": "按 id 查看单个对象的完整信息。",
+            "description": "按 id 查看对象的完整信息。",
             "inputSchema": {
                 "type": "object",
                 "properties": { "id": { "type": "integer" } },
                 "required": ["id"]
-            }
+            },
+            "annotations": read_only
+        },
+        {
+            "name": "overview",
+            "description": "库概览：统计数字、全部标签和文件柜。",
+            "inputSchema": { "type": "object", "properties": {} },
+            "annotations": read_only
         },
         {
             "name": "launch_item",
-            "description": "启动（打开）一个对象：按 id 或搜索词首命中。等价于在系统中双击打开。",
+            "description": "用默认程序打开对象，等同双击。给 id，或给 query 启动搜索首个结果。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "id": { "type": "integer", "description": "对象 id（优先）" },
-                    "query": { "type": "string", "description": "无 id 时按搜索词首命中启动" }
+                    "id": { "type": "integer" },
+                    "query": { "type": "string" }
                 }
-            }
+            },
+            "annotations": { "destructiveHint": true, "openWorldHint": true }
         },
         {
             "name": "add_items",
-            "description": "把文件/文件夹添加进 TagLauncher 管理。",
+            "description": "把文件或文件夹加入库，已在库中的不重复添加。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "paths": { "type": "array", "items": { "type": "string" }, "description": "绝对路径数组" }
+                    "paths": { "type": "array", "items": { "type": "string" }, "description": "绝对路径" }
                 },
                 "required": ["paths"]
-            }
+            },
+            "annotations": { "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
         },
         {
             "name": "remove_items",
-            "description": "从 TagLauncher 移除对象（不删除磁盘文件）。",
+            "description": "把对象移出库，不删除磁盘文件。",
             "inputSchema": {
                 "type": "object",
-                "properties": {
-                    "ids": { "type": "array", "items": { "type": "integer" } }
-                },
+                "properties": { "ids": ids },
                 "required": ["ids"]
-            }
-        },
-        {
-            "name": "list_tags",
-            "description": "列出全部标签。",
-            "inputSchema": { "type": "object", "properties": {} }
+            },
+            "annotations": { "destructiveHint": true, "idempotentHint": true, "openWorldHint": false }
         },
         {
             "name": "add_tag",
@@ -208,19 +223,22 @@ fn tool_definitions() -> Value {
                     "color": { "type": "string", "description": "十六进制颜色，默认 #3b82f6" }
                 },
                 "required": ["name"]
-            }
+            },
+            "annotations": { "destructiveHint": false, "openWorldHint": false }
         },
         {
             "name": "set_item_tags",
-            "description": "设置对象的标签（整体替换；标签名须已存在）。传空数组即清空。",
+            "description": "整体替换对象的标签，空数组即清空。标签名须已存在，create_missing 为 true 时自动新建缺少的标签。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "item_id": { "type": "integer" },
-                    "tag_names": { "type": "array", "items": { "type": "string" } }
+                    "tag_names": { "type": "array", "items": { "type": "string" } },
+                    "create_missing": { "type": "boolean" }
                 },
                 "required": ["item_id", "tag_names"]
-            }
+            },
+            "annotations": { "destructiveHint": true, "idempotentHint": true, "openWorldHint": false }
         },
         {
             "name": "set_favorite",
@@ -228,32 +246,12 @@ fn tool_definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "ids": { "type": "array", "items": { "type": "integer" } },
+                    "ids": ids,
                     "favorite": { "type": "boolean" }
                 },
                 "required": ["ids", "favorite"]
-            }
-        },
-        {
-            "name": "list_cabinets",
-            "description": "列出全部文件柜。",
-            "inputSchema": { "type": "object", "properties": {} }
-        },
-        {
-            "name": "list_cabinet_items",
-            "description": "列出指定文件柜内的对象。",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "id": { "type": "integer", "description": "文件柜 id" }
-                },
-                "required": ["id"]
-            }
-        },
-        {
-            "name": "stats",
-            "description": "库概览统计（对象/标签/文件柜数量、按类型分布）。",
-            "inputSchema": { "type": "object", "properties": {} }
+            },
+            "annotations": { "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
         }
     ])
 }
@@ -284,31 +282,89 @@ fn json_i64_vec(value: Option<&Value>) -> Vec<i64> {
         .unwrap_or_default()
 }
 
+fn json_str_vec(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .map(|s| s.trim().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// 列表结果里的单个对象：只保留定位与识别所需字段，其余用 get_item 查。
+fn brief_item(it: &ItemWithTags) -> Value {
+    let mut v = json!({
+        "id": it.item.id,
+        "name": it.item.name,
+        "path": it.item.path,
+        "type": it.item.item_type,
+        "tags": it.tags.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+    });
+    let obj = v.as_object_mut().expect("json object");
+    if it.item.is_favorite {
+        obj.insert("favorite".into(), json!(true));
+    }
+    if it.item.is_missing {
+        obj.insert("missing".into(), json!(true));
+    }
+    if let Some(note) = it.item.note.as_deref().filter(|n| !n.is_empty()) {
+        obj.insert("note".into(), json!(note));
+    }
+    v
+}
+
+fn find_tag<'a>(tags: &'a [Tag], name: &str) -> Option<&'a Tag> {
+    tags.iter().find(|t| t.name.eq_ignore_ascii_case(name))
+}
+
 fn call_tool(db: &Database, name: &str, args: &Value) -> ToolResult {
     let conn = db.get_conn();
     match name {
         "search_items" => {
-            let query = args.get("query").and_then(Value::as_str).unwrap_or("");
+            let query = args
+                .get("query")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
             let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(50) as usize;
-            let mut items = match search_service::search_items(&conn, query, &[]) {
+            let tag_names = json_str_vec(args.get("tags"));
+            let mut tag_ids = Vec::new();
+            if !tag_names.is_empty() {
+                let all = match tag_service::get_tags(&conn) {
+                    Ok(v) => v,
+                    Err(e) => return ToolResult::Err(e),
+                };
+                for name in &tag_names {
+                    match find_tag(&all, name) {
+                        Some(tag) => tag_ids.push(tag.id),
+                        None => return ToolResult::Err(format!("标签「{name}」不存在")),
+                    }
+                }
+            }
+            let mut items = match search_service::search_items(&conn, query, &tag_ids) {
                 Ok(v) => v,
                 Err(e) => return ToolResult::Err(e),
             };
+            if let Some(cabinet_id) = args.get("cabinet_id").and_then(json_i64) {
+                let members: HashSet<i64> =
+                    match cabinet_service::get_cabinet_items(&conn, cabinet_id) {
+                        Ok(v) => v.iter().map(|it| it.item.id).collect(),
+                        Err(e) => return ToolResult::Err(e),
+                    };
+                items.retain(|it| members.contains(&it.item.id));
+            }
             if let Some(t) = args.get("type").and_then(Value::as_str) {
                 items.retain(|it| it.item.item_type == t);
             }
+            let total = items.len();
             items.truncate(limit);
-            ToolResult::Ok(json!(items))
-        }
-        "list_items" => {
-            let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(200) as usize;
-            match item_service::get_items(&conn) {
-                Ok(mut items) => {
-                    items.truncate(limit);
-                    ToolResult::Ok(json!(items))
-                }
-                Err(e) => ToolResult::Err(e),
-            }
+            ToolResult::Ok(json!({
+                "total": total,
+                "items": items.iter().map(brief_item).collect::<Vec<_>>(),
+            }))
         }
         "get_item" => {
             let Some(id) = args.get("id").and_then(json_i64) else {
@@ -318,6 +374,31 @@ fn call_tool(db: &Database, name: &str, args: &Value) -> ToolResult {
                 Ok(item) => ToolResult::Ok(json!(item)),
                 Err(e) => ToolResult::Err(e),
             }
+        }
+        "overview" => {
+            let stats = match super::collect_stats(&conn) {
+                Ok(v) => v,
+                Err(e) => return ToolResult::Err(e),
+            };
+            let tags = match tag_service::get_tags(&conn) {
+                Ok(v) => v,
+                Err(e) => return ToolResult::Err(e),
+            };
+            let cabinets = match cabinet_service::get_cabinets(&conn) {
+                Ok(v) => v,
+                Err(e) => return ToolResult::Err(e),
+            };
+            ToolResult::Ok(json!({
+                "stats": stats,
+                "tags": tags.iter().map(|t| json!({ "id": t.id, "name": t.name })).collect::<Vec<_>>(),
+                "cabinets": cabinets
+                    .iter()
+                    .map(|c| match &c.folder_path {
+                        Some(folder) => json!({ "id": c.id, "name": c.name, "folder": folder }),
+                        None => json!({ "id": c.id, "name": c.name }),
+                    })
+                    .collect::<Vec<_>>(),
+            }))
         }
         "launch_item" => {
             let id = if let Some(id) = args.get("id").and_then(json_i64) {
@@ -365,15 +446,11 @@ fn call_tool(db: &Database, name: &str, args: &Value) -> ToolResult {
                 Err(e) => ToolResult::Err(e),
             }
         }
-        "list_tags" => match tag_service::get_tags(&conn) {
-            Ok(tags) => ToolResult::Ok(json!(tags)),
-            Err(e) => ToolResult::Err(e),
-        },
         "add_tag" => {
             let Some(name) = args.get("name").and_then(Value::as_str) else {
                 return ToolResult::Err("缺少参数 name".to_string());
             };
-            let color = args.get("color").and_then(Value::as_str).unwrap_or("#3b82f6");
+            let color = args.get("color").and_then(Value::as_str).unwrap_or(DEFAULT_TAG_COLOR);
             match tag_service::add_tag(&conn, name, color) {
                 Ok(tag) => ToolResult::Ok(json!(tag)),
                 Err(e) => ToolResult::Err(e),
@@ -383,24 +460,38 @@ fn call_tool(db: &Database, name: &str, args: &Value) -> ToolResult {
             let Some(item_id) = args.get("item_id").and_then(json_i64) else {
                 return ToolResult::Err("缺少参数 item_id".to_string());
             };
-            let names: Vec<String> = args
-                .get("tag_names")
-                .and_then(Value::as_array)
-                .map(|arr| arr.iter().filter_map(Value::as_str).map(str::to_string).collect())
-                .unwrap_or_default();
-            let all = match tag_service::get_tags(&conn) {
+            let names = json_str_vec(args.get("tag_names"));
+            let create_missing = args.get("create_missing").and_then(Value::as_bool).unwrap_or(false);
+            // 先确认对象存在，避免 id 错误时留下新建的空标签
+            if let Err(e) = item_service::get_item(&conn, item_id) {
+                return ToolResult::Err(e);
+            }
+            let mut all = match tag_service::get_tags(&conn) {
                 Ok(v) => v,
                 Err(e) => return ToolResult::Err(e),
             };
             let mut ids = Vec::new();
+            let mut created = Vec::new();
             for name in &names {
-                match all.iter().find(|t| t.name.eq_ignore_ascii_case(name)) {
-                    Some(tag) => ids.push(tag.id),
+                let id = match find_tag(&all, name) {
+                    Some(tag) => tag.id,
+                    None if create_missing => match tag_service::add_tag(&conn, name, DEFAULT_TAG_COLOR) {
+                        Ok(tag) => {
+                            created.push(tag.name.clone());
+                            let id = tag.id;
+                            all.push(tag);
+                            id
+                        }
+                        Err(e) => return ToolResult::Err(e),
+                    },
                     None => return ToolResult::Err(format!("标签「{name}」不存在")),
+                };
+                if !ids.contains(&id) {
+                    ids.push(id);
                 }
             }
             match tag_service::set_item_tags(&conn, item_id, &ids) {
-                Ok(()) => ToolResult::Ok(json!({ "item": item_id, "tags": ids })),
+                Ok(()) => ToolResult::Ok(json!({ "item": item_id, "tags": ids, "created": created })),
                 Err(e) => ToolResult::Err(e),
             }
         }
@@ -415,23 +506,6 @@ fn call_tool(db: &Database, name: &str, args: &Value) -> ToolResult {
                 Err(e) => ToolResult::Err(e),
             }
         }
-        "list_cabinets" => match cabinet_service::get_cabinets(&conn) {
-            Ok(cabinets) => ToolResult::Ok(json!(cabinets)),
-            Err(e) => ToolResult::Err(e),
-        },
-        "list_cabinet_items" => {
-            let Some(id) = args.get("id").and_then(json_i64) else {
-                return ToolResult::Err("缺少参数 id".to_string());
-            };
-            match cabinet_service::get_cabinet_items(&conn, id) {
-                Ok(items) => ToolResult::Ok(json!(items)),
-                Err(e) => ToolResult::Err(e),
-            }
-        },
-        "stats" => match super::collect_stats(&conn) {
-            Ok(stats) => ToolResult::Ok(json!(stats)),
-            Err(e) => ToolResult::Err(e),
-        },
         _ => ToolResult::Err(format!("未知工具: {name}")),
     }
 }
@@ -474,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_definitions_include_list_cabinet_items() {
+    fn tool_definitions_cover_merged_surface() {
         let tools = tool_definitions();
         let names: Vec<&str> = tools
             .as_array()
@@ -482,10 +556,27 @@ mod tests {
             .iter()
             .filter_map(|t| t["name"].as_str())
             .collect();
-        assert!(names.contains(&"list_cabinet_items"));
+        assert_eq!(
+            names,
+            [
+                "search_items", "get_item", "overview", "launch_item", "add_items",
+                "remove_items", "add_tag", "set_item_tags", "set_favorite",
+            ]
+        );
+        for t in tools.as_array().expect("tools") {
+            assert!(t["annotations"].is_object(), "{} 缺 annotations", t["name"]);
+        }
     }
 
-    /// 进程内 MCP 工具面：mock 视频文件入库后，字符串 id / stats / 空柜列表均可调用。
+    #[test]
+    fn negotiate_version_echoes_supported_and_defaults_to_latest() {
+        assert_eq!(negotiate_version(Some("2024-11-05")), "2024-11-05");
+        assert_eq!(negotiate_version(Some("2025-06-18")), "2025-06-18");
+        assert_eq!(negotiate_version(Some("2099-01-01")), PROTOCOL_VERSIONS[0]);
+        assert_eq!(negotiate_version(None), PROTOCOL_VERSIONS[0]);
+    }
+
+    /// 进程内 MCP 工具面：mock 视频文件入库后走一遍查询、标签与概览。
     #[test]
     fn call_tool_e2e_with_mock_video_file() {
         use crate::db::Database;
@@ -507,31 +598,60 @@ mod tests {
         };
         assert_eq!(item.item_type, "video");
 
-        match call_tool(&db, "get_item", &json!({ "id": item.id.to_string() })) {
-            ToolResult::Ok(v) => {
-                assert_eq!(v["id"], item.id);
-                assert_eq!(v["type"], "video");
-            }
-            ToolResult::Err(e) => panic!("get_item: {e}"),
-        }
+        let ok = |name: &str, args: Value| match call_tool(&db, name, &args) {
+            ToolResult::Ok(v) => v,
+            ToolResult::Err(e) => panic!("{name}: {e}"),
+        };
 
-        match call_tool(&db, "search_items", &json!({ "query": "clip", "type": "video" })) {
-            ToolResult::Ok(v) => {
-                let arr = v.as_array().expect("search array");
-                assert!(arr.iter().any(|it| it["id"] == item.id));
-            }
-            ToolResult::Err(e) => panic!("search_items: {e}"),
-        }
+        let v = ok("get_item", json!({ "id": item.id.to_string() }));
+        assert_eq!(v["id"], item.id);
+        assert_eq!(v["type"], "video");
+        assert!(v.get("created_at").is_some(), "get_item 保留完整字段");
 
-        match call_tool(&db, "list_cabinet_items", &json!({ "id": "99" })) {
-            ToolResult::Ok(v) => assert_eq!(v.as_array().map(|a| a.len()), Some(0)),
-            ToolResult::Err(e) => panic!("list_cabinet_items: {e}"),
-        }
+        let v = ok("search_items", json!({ "query": "clip", "type": "video" }));
+        assert_eq!(v["total"], 1);
+        let brief = &v["items"][0];
+        assert_eq!(brief["id"], item.id);
+        assert_eq!(brief["tags"], json!([]));
+        assert!(brief.get("created_at").is_none() && brief.get("favorite").is_none());
 
-        match call_tool(&db, "stats", &json!({})) {
-            ToolResult::Ok(v) => assert!(v["items"].as_i64().unwrap_or(0) >= 1),
-            ToolResult::Err(e) => panic!("stats: {e}"),
-        }
+        let v = ok("search_items", json!({ "limit": 0 }));
+        assert_eq!(v["total"], 1, "空条件列出全部");
+        assert_eq!(v["items"], json!([]));
+
+        let v = ok("search_items", json!({ "cabinet_id": "99" }));
+        assert_eq!(v["total"], 0);
+
+        // 对象 id 错误：报错且不新建标签
+        assert!(matches!(
+            call_tool(&db, "set_item_tags", &json!({ "item_id": 999_999, "tag_names": ["新标签"], "create_missing": true })),
+            ToolResult::Err(_)
+        ));
+        // 默认不自动建标签
+        assert!(matches!(
+            call_tool(&db, "set_item_tags", &json!({ "item_id": item.id, "tag_names": ["新标签"] })),
+            ToolResult::Err(_)
+        ));
+        assert_eq!(ok("overview", json!({}))["tags"], json!([]));
+
+        let v = ok(
+            "set_item_tags",
+            json!({ "item_id": item.id, "tag_names": ["新标签", "新标签"], "create_missing": true }),
+        );
+        assert_eq!(v["created"], json!(["新标签"]));
+        assert_eq!(v["tags"].as_array().map(|a| a.len()), Some(1));
+
+        let v = ok("search_items", json!({ "tags": ["新标签"] }));
+        assert_eq!(v["items"][0]["tags"], json!(["新标签"]));
+        assert!(matches!(
+            call_tool(&db, "search_items", &json!({ "tags": ["不存在"] })),
+            ToolResult::Err(_)
+        ));
+
+        let v = ok("overview", json!({}));
+        assert!(v["stats"]["items"].as_i64().unwrap_or(0) >= 1);
+        assert_eq!(v["tags"][0]["name"], "新标签");
+        assert_eq!(v["cabinets"], json!([]));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
