@@ -828,7 +828,7 @@ npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页�
 
 ### 17.4 AISkill
 
-`skills/tag-launcher/SKILL.md` 是 AI 使用本应用的行为准则（启动前确认、id 优先、只读优先、失败重试节制），可被 Claude Code 等支持 Skills 的客户端直接装载。
+`skills/tag-launcher/SKILL.md` 面向通过 `tl` 命令行操作本应用的 AI：常用命令示例与行为准则（启动前确认、id 优先、标签整体替换、只读优先、失败重试节制），可被 Claude Code 等支持 Skills 的客户端直接装载。已接入 MCP 的客户端由服务端工具说明与 `instructions` 获得同样的准则，Skill 不重复列出 MCP 工具。
 
 ### 17.5 IM 平台集成（可选扩展）
 
