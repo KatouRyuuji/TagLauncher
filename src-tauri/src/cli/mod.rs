@@ -34,7 +34,7 @@ pub fn open_db() -> Result<Database, String> {
     Database::new(&path).map_err(|e| format!("打开数据库失败（{}）: {}", path.display(), e))
 }
 
-/// 库概览统计（CLI stats / MCP stats 工具共用）。
+/// 库概览统计（CLI stats 与 MCP overview 工具共用）。
 #[derive(serde::Serialize)]
 pub struct CliStats {
     pub items: i64,
