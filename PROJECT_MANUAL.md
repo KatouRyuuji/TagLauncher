@@ -4,13 +4,13 @@
 
 ## 一、项目简介
 
-TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「标签」管理和快速启动本地文件夹、程序、脚本、图片、音视频等对象（folder/image/audio/video/exe/bat/ps1）。
+TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「标签」管理和快速启动本地文件夹、程序、脚本、图片、音视频等对象（folder/image/audio/video/text/exe/bat/ps1）。
 
 核心理念：用标签代替传统的树形目录分类，支持一个项目挂多个标签，通过组合筛选快速定位。
 
 ### 现有能力概览
 
-- 对象类型：`folder` / `image` / `audio` / `video` / `exe` / `bat` / `ps1`，未知文件按可启动对象归入 `exe`。
+- 对象类型：`folder` / `image` / `audio` / `video` / `text` / `exe` / `bat` / `ps1`，文档与配置类扩展名（txt、md、json、yaml、ini、log、csv、xml、info 等 17 种）归入 `text`，其他未知文件按可启动对象归入 `exe`。
 - 对象身份：以「NTFS 卷序列号 + 文件ID」为唯一标识，跨重命名/同盘移动稳定；`path` 降级为可更新的「最近已知位置」。跨盘符移动（卷序列号变化）时，以内容签名（文件大小 + 首/尾 16KB 的 FNV-1a 哈希）兜底重定位自动找回，详见 `file_identity.rs`。
 - 标签系统（图状层级，DAG）：标签是集合、可多父继承构成有向无环图；选中父标签筛选时并入其所有后代标签的对象。四类筛选（标签/文件柜/收藏夹/最近使用）互斥；标签多选取交集（正选 AND），顶部筛选条支持右键反选（灰色删除线态，排除含该标签的对象，正反选互斥，反选同样展开后代闭包）；提供关系编辑器与独立图谱视图。
 - 工作台查询：类型筛选与 11 种排序（`SortMode`）在 `src/lib/itemQuery.ts` 纯函数完成，搜索命中顺序不被排序打乱；视图偏好（网格/列表/大图标、搜索模式、排序、类型）写入 localStorage 键 `taglauncher.workspace_prefs`。全屏弹层与选中锚点见 `workspaceChrome.ts`。
@@ -232,7 +232,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | id | INTEGER PK | 自增主键 |
 | name | TEXT NOT NULL | 文件/文件夹名（重定位后自动同步） |
 | path | TEXT NOT NULL | 最近已知位置（不再唯一，随重命名/移动自动更新） |
-| type | TEXT | 类型：folder/image/audio/video/exe/bat/ps1 |
+| type | TEXT | 类型：folder/image/audio/video/text/exe/bat/ps1 |
 | icon_path | TEXT | 自定义图标路径 |
 | created_at | DATETIME | 添加时间 |
 | last_used_at | DATETIME | 最后启动时间 |
@@ -841,7 +841,7 @@ npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页�
 ### 18.1 新增对象类型
 
 1. 后端类型识别：`services/item_service.rs` 的 `detect_type`。
-2. 数据库约束：新增迁移重建 `items.type` 的 CHECK（参照 `v011_video_type`）。
+2. 数据库约束：新增迁移重建 `items.type` 的 CHECK（参照 `v020_text_type`，按现有建表语句改写 CHECK 并保留索引与触发器）。
 3. 前端类型映射：类型名、图标、筛选项。
 4. 同步本手册与 `USER_GUIDE.md`。
 

@@ -5,23 +5,25 @@ export const TYPE_ICONS: Record<string, string> = {
   image: "🖼️",
   audio: "♪",
   video: "🎬",
+  text: "📄",
   exe: "⚙️",
   bat: "📜",
   ps1: "🔧",
 };
 
-/** 展示口径与 TYPE_FILTERS 六类对齐：文件夹/图片/音频/视频/程序/脚本 */
+/** 展示口径与 TYPE_FILTERS 七类对齐：文件夹/图片/音频/视频/文本/程序/脚本 */
 export const TYPE_LABELS: Record<string, string> = {
   folder: "文件夹",
   image: "图片",
   audio: "音频",
   video: "视频",
+  text: "文本",
   exe: "程序",
   bat: "脚本",
   ps1: "脚本",
 };
 
-/** 细粒度技术名：tooltip 用；主展示仍是六类，避免筛选与列表两套口径 */
+/** 细粒度技术名：tooltip 用；主展示仍是七类，避免筛选与列表两套口径 */
 export const TYPE_DETAILS: Record<string, string> = {
   exe: "应用程序",
   bat: "批处理",

@@ -16,7 +16,7 @@ function item(type: string, name: string): ItemWithTags {
 
 // ── getTypeLabel ────────────────────────────────────────────────────────
 
-test("getTypeLabel：已知类型返回与筛选同口径的六类标签", () => {
+test("getTypeLabel：已知类型返回与筛选同口径的七类标签", () => {
   assert.equal(getTypeLabel("folder"), "文件夹");
   assert.equal(getTypeLabel("exe"), "程序");
   assert.equal(getTypeLabel("bat"), "脚本");

@@ -157,7 +157,7 @@ fn tool_definitions() -> Value {
                     "query": { "type": "string", "description": "关键词，匹配名称和路径" },
                     "tags": { "type": "array", "items": { "type": "string" }, "description": "标签名，需同时具备，含子标签" },
                     "cabinet_id": { "type": "integer" },
-                    "type": { "type": "string", "enum": ["folder", "image", "audio", "video", "exe", "bat", "ps1"] },
+                    "type": { "type": "string", "enum": ["folder", "image", "audio", "video", "exe", "bat", "ps1", "text"] },
                     "limit": { "type": "integer", "description": "默认 50" }
                 }
             },

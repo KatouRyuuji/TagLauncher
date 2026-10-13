@@ -162,6 +162,46 @@ fn upgrade_reclassifies_mock_video_files_not_folders() {
     assert_eq!(folder, "folder");
 }
 
+/// 旧库把文本文件记成 exe：全链升级后改判 text，标签关联与全文搜索保留，文件夹与未知扩展名不动。
+#[test]
+fn upgrade_reclassifies_text_files_and_keeps_relations() {
+    let dir = common::TempDir::new("mig_v4_text");
+    let path = dir.db_path();
+    seed_v4_file(&path);
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            r#"
+            INSERT INTO items (id, name, path, type) VALUES (2,'readme','D:\Docs\readme.md','exe');
+            INSERT INTO items (id, name, path, type) VALUES (3,'jsondir','D:\Conf\app.json','folder');
+            INSERT INTO items (id, name, path, type) VALUES (4,'archive','D:\Docs\a.zip','exe');
+            INSERT INTO tags (id, name, color) VALUES (9,'文档','#fff');
+            INSERT INTO item_tags (item_id, tag_id) VALUES (2,9);
+            "#,
+        )
+        .unwrap();
+    }
+
+    let db = Database::new(&path).expect("migrate v4 with text files");
+    let conn = db.get_conn();
+    let type_of = |name: &str| -> String {
+        conn.query_row("SELECT type FROM items WHERE name = ?1", [name], |r| r.get(0))
+            .unwrap()
+    };
+    assert_eq!(type_of("readme"), "text");
+    assert_eq!(type_of("jsondir"), "folder");
+    assert_eq!(type_of("archive"), "exe");
+    let tagged: i64 = conn
+        .query_row("SELECT COUNT(*) FROM item_tags WHERE item_id = 2 AND tag_id = 9", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(tagged, 1, "重建 items 不应丢失标签关联");
+    let hits = tag_launcher_lib::services::search_service::search_items(&conn, "readme", &[]).unwrap();
+    assert_eq!(hits.len(), 1, "全文搜索应继续可用");
+    conn.execute("UPDATE items SET name = 'renamed' WHERE id = 2", []).unwrap();
+    let hits = tag_launcher_lib::services::search_service::search_items(&conn, "renamed", &[]).unwrap();
+    assert_eq!(hits.len(), 1, "更新触发器应继续维护全文索引");
+}
+
 /// 幂等重跑：对同一库文件再次 Database::new 不改变版本、数据无损。
 #[test]
 fn reopening_migrated_db_is_idempotent() {
