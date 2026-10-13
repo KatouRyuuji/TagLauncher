@@ -84,12 +84,19 @@ pub const VIDEO_EXTS: &[&str] = &[
     "3gp", "3g2", "mts", "m2ts", "vob", "rm", "rmvb", "asf", "divx", "ogv", "f4v", "mxf",
 ];
 
+/// 文本扩展名（文档、配置与日志类纯文本；单一来源，供 detect_type 与 v020 迁移共用）。
+/// 不收源代码扩展名。
+pub const TEXT_EXTS: &[&str] = &[
+    "txt", "md", "markdown", "json", "jsonc", "yaml", "yml", "toml", "ini", "cfg", "conf", "log",
+    "csv", "tsv", "xml", "info", "nfo",
+];
+
 /// 按（已小写的）扩展名归类为对象类型。不含目录判断——目录由调用方先行处理。
 ///
 /// 未知扩展名归为 `"exe"`：启动统一走 ShellExecuteW("open")、**不依据 type 分支**，
 /// 故这里 `"exe"` 的语义是「当作可用关联程序 shell 打开的通用文件」，而非"必为可执行程序"。
 /// 该归类仅影响前端图标/分类展示，不影响启动正确性；新增类型需同步放宽 items.type
-/// 的 CHECK 约束（见 v011 迁移）。
+/// 的 CHECK 约束（见 v020 迁移）。
 pub fn classify_by_extension(ext: Option<&str>) -> &'static str {
     match ext {
         Some(e) if IMAGE_EXTS.contains(&e) => "image",
@@ -98,6 +105,7 @@ pub fn classify_by_extension(ext: Option<&str>) -> &'static str {
         Some("exe") => "exe",
         Some("bat") | Some("cmd") => "bat",
         Some("ps1") => "ps1",
+        Some(e) if TEXT_EXTS.contains(&e) => "text",
         _ => "exe",
     }
 }
@@ -1430,6 +1438,16 @@ mod tests {
         assert_eq!(detect_type(r"D:\Apps\tool.exe"), "exe");
         assert_eq!(detect_type(r"D:\Scripts\build.cmd"), "bat");
         assert_eq!(detect_type(r"D:\Scripts\profile.ps1"), "ps1");
+    }
+
+    #[test]
+    fn detect_type_supports_text_but_not_source_code() {
+        assert_eq!(detect_type(r"D:\Docs\notes.txt"), "text");
+        assert_eq!(detect_type(r"D:\Docs\README.MD"), "text");
+        assert_eq!(detect_type(r"D:\Conf\app.json"), "text");
+        assert_eq!(detect_type(r"D:\Game\mod.info"), "text");
+        assert_eq!(detect_type(r"D:\Src\main.py"), "exe");
+        assert_eq!(detect_type(r"D:\Docs\report.docx"), "exe");
     }
 
     #[test]

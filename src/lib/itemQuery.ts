@@ -34,7 +34,7 @@ export function isListDensity(value: unknown): value is ListDensity {
 }
 
 /** 类型筛选：脚本合并 bat+ps1，避免顶栏 chip 过多 */
-export type TypeFilter = "all" | "folder" | "image" | "audio" | "video" | "exe" | "script";
+export type TypeFilter = "all" | "folder" | "image" | "audio" | "video" | "text" | "exe" | "script";
 
 export const SORT_OPTIONS: { value: SortMode; label: string; hint?: string }[] = [
   { value: "smart", label: "智能（收藏·最近）", hint: "收藏优先，其次最近使用，再按名称" },
@@ -47,7 +47,7 @@ export const SORT_OPTIONS: { value: SortMode; label: string; hint?: string }[] =
   { value: "fs-created-asc", label: "创建时间（旧→新）", hint: "按文件创建时间，最早的在前；取不到时间的排最后" },
   { value: "fs-modified", label: "修改时间（新→旧）", hint: "按文件修改时间，最新的在前；取不到时间的排最后" },
   { value: "fs-modified-asc", label: "修改时间（旧→新）", hint: "按文件修改时间，最早的在前；取不到时间的排最后" },
-  { value: "type", label: "类型", hint: "按类型分组：文件夹、图片、音频、视频、程序、脚本" },
+  { value: "type", label: "类型", hint: "按类型分组：文件夹、图片、音频、视频、文本、程序、脚本" },
 ];
 
 export const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
@@ -56,6 +56,7 @@ export const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
   { value: "image", label: "图片" },
   { value: "audio", label: "音频" },
   { value: "video", label: "视频" },
+  { value: "text", label: "文本" },
   { value: "exe", label: "程序" },
   { value: "script", label: "脚本" },
 ];
@@ -65,9 +66,10 @@ const TYPE_ORDER: Record<string, number> = {
   image: 1,
   audio: 2,
   video: 3,
-  exe: 4,
-  bat: 5,
-  ps1: 6,
+  text: 4,
+  exe: 5,
+  bat: 6,
+  ps1: 7,
 };
 
 // 排序热点：localeCompare 每次调用都会隐式构造 Collator，大库排序时开销显著。
@@ -111,7 +113,7 @@ export function isSortMode(value: unknown): value is SortMode {
 }
 
 export function isTypeFilter(value: unknown): value is TypeFilter {
-  return value === "all" || value === "folder" || value === "image" || value === "audio" || value === "video" || value === "exe" || value === "script";
+  return value === "all" || value === "folder" || value === "image" || value === "audio" || value === "video" || value === "text" || value === "exe" || value === "script";
 }
 
 /** 类型芯片再点一次回到「全部」，与筛选条、命令面板共用。 */

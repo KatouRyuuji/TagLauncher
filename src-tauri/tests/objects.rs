@@ -60,6 +60,7 @@ fn detect_type_classifies_real_filesystem_objects() {
     let cmd = common::write_file(&t.dir, "run.cmd", b"a");
     let ps1 = common::write_file(&t.dir, "s.ps1", b"a");
     let unknown = common::write_file(&t.dir, "data.xyz", b"a");
+    let md = common::write_file(&t.dir, "notes.md", b"a");
     // 视频：空文件即可（分类只看扩展名，不解码）
     let mp4 = common::write_file(&t.dir, "clip.MP4", b"mock-mp4");
 
@@ -71,6 +72,7 @@ fn detect_type_classifies_real_filesystem_objects() {
     assert_eq!(item_service::detect_type(&cmd), "bat");
     assert_eq!(item_service::detect_type(&ps1), "ps1");
     assert_eq!(item_service::detect_type(&unknown), "exe");
+    assert_eq!(item_service::detect_type(&md), "text");
     assert_eq!(item_service::detect_type(&mp4), "video");
 
     // 经 add_item 落库后类型一致（走完整入库管线）。

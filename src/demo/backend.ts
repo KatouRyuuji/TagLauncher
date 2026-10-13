@@ -156,6 +156,7 @@ function detectType(path: string): Item["type"] {
   if (/\.(jpg|jpeg|png|gif|webp|bmp|svg|tif|tiff|avif|heic|heif|ico)$/.test(name)) return "image";
   if (/\.(aac|ape|aiff|aif|afc|aifc|mp3|mp2|mp1|wav|wave|wv|opus|flac|ogg|m4a|m4b|m4p|m4r|mpc|mpp|spx)$/.test(name)) return "audio";
   if (/\.(mp4|m4v|mkv|avi|mov|wmv|flv|webm|mpg|mpeg|mpe|m2v|3gp|3g2|mts|m2ts|vob|rm|rmvb|asf|divx|ogv|f4v|mxf)$/.test(name)) return "video";
+  if (/\.(txt|md|markdown|json|jsonc|yaml|yml|toml|ini|cfg|conf|log|csv|tsv|xml|info|nfo)$/.test(name)) return "text";
   if (/\.bat$/.test(name)) return "bat";
   if (/\.ps1$/.test(name)) return "ps1";
   if (/\.[a-z0-9]+$/.test(name)) return "exe";
