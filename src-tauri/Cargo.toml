@@ -1,7 +1,7 @@
 [package]
 name = "tag-launcher"
 default-run = "tag-launcher"
-version = "1.8.1-beta"
+version = "1.9.0-beta"
 description = "标签式文件管理器"
 authors = ["RyuuJi Soft"]
 edition = "2021"
