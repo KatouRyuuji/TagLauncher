@@ -104,3 +104,4 @@ jobs:
         with:
           name: taglauncher-portable-${{ matrix.target }}
           path: ${{ matrix.bundleDir }}/*-portable.zip
+          retention-days: 3
