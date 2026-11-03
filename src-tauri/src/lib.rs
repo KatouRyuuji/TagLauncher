@@ -70,6 +70,39 @@ pub(crate) const WINDOW_STATE_FLAGS: StateFlags = StateFlags::SIZE
     .union(StateFlags::POSITION)
     .union(StateFlags::MAXIMIZED);
 
+/// 把恢复后的主窗口限制在所在显示器的工作区（不含任务栏）内：内容区超出工作区时
+/// 缩到工作区大小并居中。用于修正旧版本（tao 0.37.1，issue #45）每次重启累积撑大的
+/// 尺寸，以及显示器分辨率 / 缩放变小后恢复出超出屏幕的窗口。
+/// 调用时主窗口仍处于隐藏状态：current_monitor / outer_size / inner_size 均基于窗口矩形，
+/// 隐藏时同样有效；取不到所在显示器时退回主显示器。
+fn clamp_window_to_work_area(window: &tauri::WebviewWindow) {
+    let monitor = match window.current_monitor() {
+        Ok(Some(m)) => m,
+        _ => match window.primary_monitor() {
+            Ok(Some(m)) => m,
+            _ => return,
+        },
+    };
+    let work = *monitor.work_area();
+    let (Ok(outer), Ok(inner)) = (window.outer_size(), window.inner_size()) else {
+        return;
+    };
+    // 以内容区比较：Win11 无边框阴影窗口的外框含不可见的缩放边框，贴满屏幕的窗口
+    // 外框本就略大于工作区，不应被误判
+    if inner.width <= work.size.width && inner.height <= work.size.height {
+        return;
+    }
+    let width = inner.width.min(work.size.width);
+    let height = inner.height.min(work.size.height);
+    let _ = window.set_size(tauri::PhysicalSize::new(width, height));
+    // 外框 = 内容区 + 不可见边框；按外框尺寸在工作区内居中
+    let frame_w = outer.width.saturating_sub(inner.width) as i32;
+    let frame_h = outer.height.saturating_sub(inner.height) as i32;
+    let x = work.position.x + (work.size.width as i32 - width as i32 - frame_w) / 2;
+    let y = work.position.y + (work.size.height as i32 - height as i32 - frame_h) / 2;
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y.max(work.position.y)));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     install_startup_failure_dialog();
@@ -106,6 +139,7 @@ pub fn run() {
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.restore_state(StateFlags::SIZE | StateFlags::POSITION);
+                clamp_window_to_work_area(&window);
             }
             let app_dir = app
                 .path()

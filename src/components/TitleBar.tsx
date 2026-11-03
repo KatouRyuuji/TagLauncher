@@ -3,7 +3,8 @@
 // ============================================================================
 // tauri.conf.json 中 decorations: false 隐藏了 Windows 原生标题栏，本组件
 // 提供替代的窗口栏：
-// - data-tauri-drag-region 声明可拖拽区域（Tauri 原生处理拖拽 + 双击最大化）；
+// - header 带 data-tauri-drag-region="deep"：整个标题栏子树均可拖拽 + 双击最大化
+//   （Tauri 原生处理）；按钮等可交互元素由 Tauri drag 脚本自动排除，不会触发拖拽；
 // - 最小化 / 最大化(还原) / 关闭 三个窗口控制按钮（权限见 capabilities/default.json）；
 // - 最大化状态经 onResized 事件同步，图标在「最大化 / 还原」间切换；
 // - 全部颜色取自主题 token（--bg-surface / --border-subtle / --bg-hover 等），
@@ -69,7 +70,7 @@ export function TitleBar({
   }, []);
 
   return (
-    <header data-region="titlebar" data-tauri-drag-region>
+    <header data-region="titlebar" data-tauri-drag-region="deep">
       <div className="flex min-w-0 items-center self-stretch">
         {onToggleSidebar && (
           <button
@@ -83,8 +84,8 @@ export function TitleBar({
             <Menu aria-hidden="true" size={16} strokeWidth={1.8} />
           </button>
         )}
-        {/* 品牌区关闭 pointer-events，使 mousedown 落在带 drag-region 的 header 上。 */}
-        <div className="pointer-events-none flex min-w-0 items-center self-stretch pl-3">
+        {/* 品牌区属于 header 的 deep 拖拽子树，按下即可拖动窗口 / 双击最大化。 */}
+        <div className="flex min-w-0 items-center self-stretch pl-3">
         <div className="flex min-w-0 items-center gap-2.5 pr-3">
           <span className="truncate text-[13px] font-medium leading-4 text-[var(--text-secondary)]">
             TagLauncher

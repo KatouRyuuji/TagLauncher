@@ -33,7 +33,7 @@ describe("TitleBar", () => {
 
   it("渲染拖拽区域与三个窗口控制按钮", () => {
     const { container } = render(<TitleBar />);
-    expect(container.querySelector("[data-tauri-drag-region]")).toBeInTheDocument();
+    expect(container.querySelector('[data-tauri-drag-region="deep"]')).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "最小化" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "最大化" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "关闭" })).toBeInTheDocument();
