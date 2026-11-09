@@ -347,7 +347,7 @@ fn remove_items_and_files_recycles_real_file() {
     assert_eq!(remaining, 0);
 }
 
-/// 导入上下文：新建项可藏出 All、入普通柜、追加直接标签；重复导入不覆盖标签与可见性，柜可叠加。
+/// 导入上下文：新建项可藏出 All、入普通柜、追加直接标签；重复导入保留旧标签并追加新正选，不改可见性，柜可叠加。
 #[test]
 fn add_items_context_applies_to_new_rows_and_preserves_duplicates() {
     let t = common::temp_db();
@@ -398,7 +398,7 @@ fn add_items_context_applies_to_new_rows_and_preserves_duplicates() {
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    assert_eq!(tags, vec![tag.id], "重复导入不得覆盖已有标签");
+    assert_eq!(tags, vec![tag.id, tag2.id], "重复导入保留旧标签并追加新正选");
 
     let cabinets: Vec<i64> = conn
         .prepare("SELECT cabinet_id FROM cabinet_items WHERE item_id = ?1 ORDER BY cabinet_id")
@@ -408,6 +408,32 @@ fn add_items_context_applies_to_new_rows_and_preserves_duplicates() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(cabinets, vec![cab_a.id, cab_b.id], "柜归属可叠加");
+
+    drop(conn);
+    let visible_path = common::write_file(&t.dir, "visible.txt", b"v");
+    let created = item_service::add_items_with_context(
+        &t.db,
+        vec![visible_path.clone()],
+        item_service::AddItemsContext {
+            hide_from_all_paths: vec![],
+            cabinet_id: None,
+            tag_ids: vec![],
+        },
+    );
+    assert!(!created.items[0].hide_from_all);
+    let again = item_service::add_items_with_context(
+        &t.db,
+        vec![visible_path],
+        item_service::AddItemsContext {
+            hide_from_all_paths: vec![created.items[0].path.clone()],
+            cabinet_id: None,
+            tag_ids: vec![],
+        },
+    );
+    assert!(
+        !again.items[0].hide_from_all,
+        "重复导入不得把用户可见的旧对象改藏"
+    );
 }
 
 /// 关联目录柜不能靠导入上下文入柜；整批不写库，避免显示成功却只归了一半。

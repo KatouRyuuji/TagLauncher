@@ -370,7 +370,7 @@ pub struct AddItemFailure {
 }
 
 /// 导入落点：在同一事务里给新建项打 hide_from_all、入普通柜、追加直接标签。
-/// 重复项不覆盖已有标签 / hide_from_all；柜归属可叠加。
+/// 重复项不覆盖已有标签 / hide_from_all；新正选标签只追加；柜归属可叠加。
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AddItemsContext {
@@ -535,7 +535,7 @@ pub fn add_items_with_context(
                     )
                     .map_err(|e| e.to_string())?;
                 }
-                if created && !tag_ids.is_empty() {
+                if !tag_ids.is_empty() {
                     tag_service::add_item_tags_keep_existing(&tx, item.id, &tag_ids)?;
                 }
                 Ok((item, created))

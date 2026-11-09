@@ -335,6 +335,10 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         const existing = state.items.find((item) => pathKey(item.path) === pathKey(path));
         if (existing) {
           if (cabinetId !== null) addDemoCabinetMember(cabinetId, existing.id);
+          const extraTags = Array.isArray(context.tagIds) ? context.tagIds : [];
+          for (const tagId of extraTags) {
+            if (!existing.tagIds.includes(tagId)) existing.tagIds.push(tagId);
+          }
           added.push(withTags(existing));
           continue;
         }
