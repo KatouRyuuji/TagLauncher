@@ -131,6 +131,15 @@ test("B2 短词模糊容错：首字符一致才允许模糊", () => {
   assert.deepEqual(searchWithIndex(bcIndex, "bc").map((i) => i.id), []);
 });
 
+test("BUG-09 带扩展名的文件名：词内多字/漏字仍算一次编辑", () => {
+  const idx = buildSearchIndex([item(24, "blender.txt"), item(25, "zzz.txt")], "name");
+  assert.deepEqual(searchWithIndex(idx, "blennder").map((i) => i.id), [24]);
+  assert.deepEqual(searchWithIndex(idx, "blnder").map((i) => i.id), [24]);
+  assert.deepEqual(searchWithIndex(idx, "blendr").map((i) => i.id), [24]);
+  // 两次编辑仍不命中
+  assert.deepEqual(searchWithIndex(idx, "blxxder").map((i) => i.id), []);
+});
+
 test("CJK 查询按子串匹配，拼音/首字母仍按前缀匹配", () => {
   const cjkItems = [item(51, "周杰伦 - 晴天"), item(52, "青海湖日落"), item(53, "忍者神龟")];
   const cjkIndex = buildSearchIndex(cjkItems, "name");

@@ -25,6 +25,9 @@ import { buildDescendantsMap } from "../lib/tagGraph";
 import { flattenTagTree } from "../lib/tagTree";
 import { compareSortOrder, moveBeside } from "../lib/sidebarOrder";
 import { compareNames } from "../lib/itemQuery";
+import { matchesNameQuery } from "../lib/search";
+import { findTagByNameInsensitive } from "../lib/tagNames";
+import { ensurePinyin } from "../lib/pinyinProvider";
 import { onCabinetItemsChanged } from "../lib/modApi";
 import { useImeComposition } from "../hooks/useImeComposition";
 import * as db from "../lib/db";
@@ -182,11 +185,19 @@ export function Sidebar({
   const [tagQuery, setTagQuery] = useState("");
   const [appliedTagQuery, setAppliedTagQuery] = useState("");
   const tagFilterIme = useImeComposition<string>(setAppliedTagQuery);
+  // 拼音/首字母过滤（BUG-16）：pinyin-pro 懒加载，有过滤词时才拉取，就绪后重算
+  const [pinyinReady, setPinyinReady] = useState(false);
+  useEffect(() => {
+    if (pinyinReady || !appliedTagQuery.trim()) return;
+    let cancelled = false;
+    void ensurePinyin().then(() => { if (!cancelled) setPinyinReady(true); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [appliedTagQuery, pinyinReady]);
   const filteredTagRows = useMemo(() => {
     const q = appliedTagQuery.trim().toLowerCase();
     if (!q) return tagRows;
-    return tagRows.filter(({ tag }) => tag.name.toLowerCase().includes(q));
-  }, [tagRows, appliedTagQuery]);
+    return tagRows.filter(({ tag }) => matchesNameQuery(tag.name, q, pinyinReady));
+  }, [tagRows, appliedTagQuery, pinyinReady]);
 
   useEffect(() => {
     if (tags.length === 0) return;
@@ -681,7 +692,10 @@ export function Sidebar({
             if (editingTag) {
               await onUpdateTag(editingTag.id, name, color);
             } else {
-              await onAddTag(name, color);
+              // 与对象标签对话框 / AI 打标同一口径：大小写不敏感复用既有标签，不再并存 Game/game（BUG-15）
+              const existing = findTagByNameInsensitive(tags, name);
+              if (existing) showToast(`标签「${existing.name}」已存在`, "info");
+              else await onAddTag(name, color);
             }
             setEditingTag(null);
             setShowAddTag(false);

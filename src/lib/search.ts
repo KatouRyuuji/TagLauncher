@@ -77,6 +77,19 @@ function toPinyinInitials(value: string): string {
   return pinyin(value, { pattern: "first", toneType: "none", type: "array" }).join("");
 }
 
+/**
+ * 名称轻量匹配（侧栏“过滤标签…”等列表过滤）：子串命中，或拉丁查询命中全拼/首字母前缀，
+ * 与主搜索的拼音通道同一口径（BUG-16）。pinyin-pro 未就绪时 pinyinReady=false，只做子串。
+ */
+export function matchesNameQuery(name: string, query: string, pinyinReady = true): boolean {
+  const q = normalize(query);
+  if (!q) return true;
+  const lower = name.toLowerCase();
+  if (lower.includes(q)) return true;
+  if (!pinyinReady || !/^[a-z]+$/.test(q) || !CJK_QUERY_RE.test(name)) return false;
+  return toPinyinInitials(lower).toLowerCase().startsWith(q) || toPinyinText(lower).toLowerCase().startsWith(q);
+}
+
 function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -455,8 +468,20 @@ function isEnglishTypoMatch(source: string, query: string): boolean {
   return false;
 }
 
+// 源串比查询长时（如带扩展名的 blender.txt），只取与查询等长的切片会把一次插入/删除算成两次编辑；
+// 依次尝试长度 q-1 / q / q+1 的前缀切片，取最小编辑数（BUG-09）。
 function englishPrefixEditDistance(source: string, query: string): number | null {
-  const sourcePrefix = source.slice(0, Math.max(query.length, 1));
+  let best: number | null = null;
+  for (const len of [query.length, query.length - 1, query.length + 1]) {
+    if (len < 1 || len > source.length) continue;
+    const dist = prefixSliceEditDistance(source.slice(0, len), query);
+    if (dist !== null && (best === null || dist < best)) best = dist;
+    if (best === 0) break;
+  }
+  return best;
+}
+
+function prefixSliceEditDistance(sourcePrefix: string, query: string): number | null {
   if (!/^[a-z0-9_.-]+$/.test(sourcePrefix)) return null;
   if (Math.abs(sourcePrefix.length - query.length) > 1) return null;
 
