@@ -4,7 +4,7 @@
 
 mod common;
 
-use tag_launcher_lib::services::{import_paths, item_service};
+use tag_launcher_lib::services::{cabinet_service, import_paths, item_service, tag_service};
 
 /// add_items：批内单项失败（空路径）被隔离，不阻断整批其余项落库。
 #[test]
@@ -345,4 +345,133 @@ fn remove_items_and_files_recycles_real_file() {
         .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
         .unwrap();
     assert_eq!(remaining, 0);
+}
+
+/// 导入上下文：新建项可藏出 All、入普通柜、追加直接标签；重复导入不覆盖标签与可见性，柜可叠加。
+#[test]
+fn add_items_context_applies_to_new_rows_and_preserves_duplicates() {
+    let t = common::temp_db();
+    let path = common::write_file(&t.dir, "nested.txt", b"n");
+    let conn = t.db.get_conn();
+    let tag = tag_service::add_tag(&conn, "work", "#fff").unwrap();
+    let cab_a = cabinet_service::add_cabinet(&conn, "Inbox", "#fff").unwrap();
+    let cab_b = cabinet_service::add_cabinet(&conn, "Later", "#000").unwrap();
+    drop(conn);
+
+    let first = item_service::add_items_with_context(
+        &t.db,
+        vec![path.clone()],
+        item_service::AddItemsContext {
+            hide_from_all_paths: vec![path.clone()],
+            cabinet_id: Some(cab_a.id),
+            tag_ids: vec![tag.id],
+        },
+    );
+    assert_eq!(first.created_count, 1);
+    assert_eq!(first.failed.len(), 0);
+    assert!(first.items[0].hide_from_all);
+
+    let tag2 = {
+        let conn = t.db.get_conn();
+        tag_service::add_tag(&conn, "later", "#111").unwrap()
+    };
+    let second = item_service::add_items_with_context(
+        &t.db,
+        vec![path.clone()],
+        item_service::AddItemsContext {
+            hide_from_all_paths: vec![],
+            cabinet_id: Some(cab_b.id),
+            tag_ids: vec![tag2.id],
+        },
+    );
+    assert_eq!(second.created_count, 0);
+    assert!(
+        second.items[0].hide_from_all,
+        "重复导入不得覆盖用户已有的可见性"
+    );
+
+    let conn = t.db.get_conn();
+    let tags: Vec<i64> = conn
+        .prepare("SELECT tag_id FROM item_tags WHERE item_id = ?1 ORDER BY tag_id")
+        .unwrap()
+        .query_map([second.items[0].id], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(tags, vec![tag.id], "重复导入不得覆盖已有标签");
+
+    let cabinets: Vec<i64> = conn
+        .prepare("SELECT cabinet_id FROM cabinet_items WHERE item_id = ?1 ORDER BY cabinet_id")
+        .unwrap()
+        .query_map([second.items[0].id], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(cabinets, vec![cab_a.id, cab_b.id], "柜归属可叠加");
+}
+
+/// 关联目录柜不能靠导入上下文入柜；整批不写库，避免显示成功却只归了一半。
+#[test]
+fn add_items_context_rejects_linked_cabinet_without_partial_writes() {
+    let t = common::temp_db();
+    let folder = common::make_dir(&t.dir, "linked_root");
+    let file = common::write_file(&t.dir, "keep.txt", b"k");
+    let conn = t.db.get_conn();
+    let cab = cabinet_service::add_cabinet(&conn, "Photos", "#fff").unwrap();
+    cabinet_service::set_cabinet_folder(&conn, cab.id, Some(&folder)).unwrap();
+    drop(conn);
+
+    let result = item_service::add_items_with_context(
+        &t.db,
+        vec![file.clone()],
+        item_service::AddItemsContext {
+            hide_from_all_paths: vec![],
+            cabinet_id: Some(cab.id),
+            tag_ids: vec![],
+        },
+    );
+    assert_eq!(result.items.len(), 0);
+    assert_eq!(result.created_count, 0);
+    assert!(!result.failed.is_empty());
+    assert!(
+        result.failed[0].error.contains("文件夹"),
+        "{}",
+        result.failed[0].error
+    );
+    let conn = t.db.get_conn();
+    let n: i64 = conn
+        .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 0, "关联柜拒绝时应整批不入库");
+}
+
+/// 单项失败用 savepoint 隔离：合法项的柜归属仍落库，失败项不留下半份归类。
+#[test]
+fn add_items_context_savepoint_keeps_successful_siblings_classified() {
+    let t = common::temp_db();
+    let good = common::write_file(&t.dir, "ok.txt", b"ok");
+    let conn = t.db.get_conn();
+    let cab = cabinet_service::add_cabinet(&conn, "Inbox", "#fff").unwrap();
+    drop(conn);
+
+    let result = item_service::add_items_with_context(
+        &t.db,
+        vec![good.clone(), "   ".to_string()],
+        item_service::AddItemsContext {
+            hide_from_all_paths: vec![],
+            cabinet_id: Some(cab.id),
+            tag_ids: vec![],
+        },
+    );
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.failed.len(), 1);
+    let conn = t.db.get_conn();
+    let members: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM cabinet_items WHERE cabinet_id = ?1",
+            [cab.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(members, 1);
 }

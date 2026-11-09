@@ -14,6 +14,8 @@
   /** 文件系统创建/修改时间（Unix 秒，UTC；取不到为 null） */
   fs_created_at?: number | null;
   fs_modified_at?: number | null;
+  /** 默认不出现在 All 总览（递归导入的夹内文件 / 中间目录）。旧对象缺省为 false。 */
+  hide_from_all?: boolean;
 }
 
 export interface Cabinet {

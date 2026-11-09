@@ -193,11 +193,14 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "add_items",
-            "description": "把文件或文件夹加入库，已在库中的不重复添加。",
+            "description": "把文件或文件夹加入库，已在库中的不重复添加。可选 cabinetId 加入普通柜、tagIds 追加直接标签、hideFromAllPaths 将新建项藏出 All 总览；重复项不覆盖已有标签与可见性。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "paths": { "type": "array", "items": { "type": "string" }, "description": "绝对路径" }
+                    "paths": { "type": "array", "items": { "type": "string" }, "description": "绝对路径" },
+                    "cabinetId": { "type": "integer", "description": "普通柜 id；关联目录柜会被拒绝" },
+                    "tagIds": { "type": "array", "items": { "type": "integer" }, "description": "仅追加到新建项的直接标签" },
+                    "hideFromAllPaths": { "type": "array", "items": { "type": "string" }, "description": "新建项中默认不出现在 All 的路径" }
                 },
                 "required": ["paths"]
             },
@@ -429,7 +432,16 @@ fn call_tool(db: &Database, name: &str, args: &Value) -> ToolResult {
                 return ToolResult::Err("add_items 需要 paths 数组".to_string());
             }
             drop(conn);
-            let result = item_service::add_items(db, paths);
+            let context = item_service::AddItemsContext {
+                cabinet_id: args.get("cabinetId").and_then(json_i64),
+                tag_ids: json_i64_vec(args.get("tagIds")),
+                hide_from_all_paths: args
+                    .get("hideFromAllPaths")
+                    .and_then(Value::as_array)
+                    .map(|arr| arr.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                    .unwrap_or_default(),
+            };
+            let result = item_service::add_items_with_context(db, paths, context);
             ToolResult::Ok(json!({
                 "created": result.created_count,
                 "touched": result.items.len(),

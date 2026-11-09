@@ -93,9 +93,15 @@ export interface AddItemsResult {
   createdCount: number;
 }
 
+export interface AddItemsContext {
+  hideFromAllPaths?: string[];
+  cabinetId?: number | null;
+  tagIds?: number[];
+}
+
 /** 批量添加项目，单条失败不会阻断整批导入 */
-export async function addItems(paths: string[]): Promise<AddItemsResult> {
-  return invokeCmd("add_items", { paths });
+export async function addItems(paths: string[], context?: AddItemsContext): Promise<AddItemsResult> {
+  return invokeCmd("add_items", { paths, context: context ?? null });
 }
 
 /** 删除项目（关联的标签记录会级联删除） */

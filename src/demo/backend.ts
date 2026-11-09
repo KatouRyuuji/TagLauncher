@@ -165,7 +165,24 @@ function detectType(path: string): Item["type"] {
 
 function withTags(item: DemoItemSeed): ItemWithTags {
   const { tagIds, ...rest } = item;
-  return { ...rest, tags: tagIds.map((id) => state.tags.find((tag) => tag.id === id)).filter((tag): tag is Tag => tag !== undefined) };
+  return {
+    ...rest,
+    hide_from_all: item.hide_from_all ?? false,
+    tags: tagIds.map((id) => state.tags.find((tag) => tag.id === id)).filter((tag): tag is Tag => tag !== undefined),
+  };
+}
+
+function pathKey(path: string): string {
+  return path.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+}
+
+function addDemoCabinetMember(cabinetId: number, itemId: number): void {
+  let members = state.cabinetItems.get(cabinetId);
+  if (!members) {
+    members = new Set();
+    state.cabinetItems.set(cabinetId, members);
+  }
+  members.add(itemId);
 }
 
 function sortItems(items: DemoItemSeed[]): DemoItemSeed[] {
@@ -294,13 +311,30 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "add_item":
     case "add_items": {
       const paths = cmd === "add_item" ? [str(args.path)] : (args.paths as string[]);
+      const context = (args.context ?? {}) as {
+        hideFromAllPaths?: string[];
+        cabinetId?: number | null;
+        tagIds?: number[];
+      };
+      const hideKeys = new Set((context.hideFromAllPaths ?? []).map(pathKey));
+      const cabinetId = typeof context.cabinetId === "number" ? context.cabinetId : null;
+      if (cabinetId !== null) {
+        const cabinet = requireCabinet(cabinetId);
+        if (cabinet.folder_path) {
+          const error = "关联文件夹的文件柜内容由文件夹决定";
+          return cmd === "add_item"
+            ? (() => { throw new Error(error); })()
+            : { items: [], failed: paths.map((path) => ({ path, error })), createdCount: 0 };
+        }
+      }
       const added: Item[] = [];
       const failed: Array<{ path: string; error: string }> = [];
       let createdCount = 0;
       for (const path of paths) {
         // 与真实后端同口径：重复路径合并既有记录（计入 items 但非新建），不算失败
-        const existing = state.items.find((item) => item.path === path);
+        const existing = state.items.find((item) => pathKey(item.path) === pathKey(path));
         if (existing) {
+          if (cabinetId !== null) addDemoCabinetMember(cabinetId, existing.id);
           added.push(withTags(existing));
           continue;
         }
@@ -312,9 +346,11 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
           icon_path: null,
           created_at: new Date().toISOString(),
           is_favorite: false,
-          tagIds: [],
+          hide_from_all: hideKeys.has(pathKey(path)),
+          tagIds: Array.isArray(context.tagIds) ? [...context.tagIds] : [],
         };
         state.items.push(item);
+        if (cabinetId !== null) addDemoCabinetMember(cabinetId, item.id);
         added.push(withTags(item));
         createdCount += 1;
       }

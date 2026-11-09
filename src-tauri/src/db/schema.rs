@@ -34,7 +34,8 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             sig_tail INTEGER,
             note TEXT,
             fs_created_at INTEGER,
-            fs_modified_at INTEGER
+            fs_modified_at INTEGER,
+            hide_from_all INTEGER NOT NULL DEFAULT 0
         );
 
         -- 注意: idx_items_identity（身份唯一索引）不能放在此批处理中,
@@ -207,6 +208,7 @@ mod tests {
         assert!(has_column(&conn, "items", "volume_serial"));
         assert!(has_column(&conn, "items", "file_id"));
         assert!(has_column(&conn, "items", "is_missing"));
+        assert!(has_column(&conn, "items", "hide_from_all"));
 
         // path 不再唯一：可插两条同 path
         conn.execute(

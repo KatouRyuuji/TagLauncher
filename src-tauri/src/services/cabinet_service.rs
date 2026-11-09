@@ -237,7 +237,7 @@ pub fn get_cabinet_items(
     conn: &Connection,
     cabinet_id: i64,
 ) -> Result<Vec<ItemWithTags>, String> {
-    const COLUMNS: &str = "i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note, i.fs_created_at, i.fs_modified_at";
+    const COLUMNS: &str = crate::services::item_service::ITEM_COLS_I;
     const ORDER: &str = "ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name";
     let items: Vec<Item> = match linked_folder(conn, cabinet_id)? {
         Some(folder) => {

@@ -327,6 +327,52 @@ pub(crate) fn ensure_exists(conn: &Connection, table: &str, id: i64, label: &str
     Ok(())
 }
 
+/// 写入直接标签，保留已有标签与顺序（导入上下文用，避免重复导入全量覆盖）。
+pub(crate) fn add_item_tags_keep_existing(
+    conn: &Connection,
+    item_id: i64,
+    tag_ids: &[i64],
+) -> Result<(), String> {
+    if tag_ids.is_empty() {
+        return Ok(());
+    }
+    let mut insert = conn
+        .prepare_cached(
+            "INSERT OR IGNORE INTO item_tags (item_id, tag_id, position)
+             VALUES (?1, ?2, (SELECT COALESCE(MAX(position), -1) + 1 FROM item_tags WHERE item_id = ?1))",
+        )
+        .map_err(|e| e.to_string())?;
+    for tag_id in tag_ids {
+        insert
+            .execute(params![item_id, *tag_id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 返回仍存在的 id（保序去重）；缺失的跳过，不把整批导入打成失败。
+pub(crate) fn existing_ids(conn: &Connection, table: &str, ids: &[i64]) -> Result<Vec<i64>, String> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut seen = HashSet::new();
+    let unique: Vec<i64> = ids.iter().copied().filter(|id| seen.insert(*id)).collect();
+    let mut existing = HashSet::new();
+    for chunk in unique.chunks(crate::services::item_service::IN_CHUNK) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        let mut stmt = conn
+            .prepare_cached(&format!("SELECT id FROM {table} WHERE id IN ({placeholders})"))
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(chunk), |row| row.get::<_, i64>(0))
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            existing.insert(row.map_err(|e| e.to_string())?);
+        }
+    }
+    Ok(unique.into_iter().filter(|id| existing.contains(id)).collect())
+}
+
 /// 批量校验代码指定表中的 id，每个唯一 id 仅查询一次，错误保持输入顺序。
 pub(crate) fn ensure_ids_exist(conn: &Connection, table: &str, ids: &[i64], label: &str) -> Result<(), String> {
     let mut seen = HashSet::new();

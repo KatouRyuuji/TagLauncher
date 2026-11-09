@@ -3,13 +3,18 @@ use crate::services::file_identity::{self, FileIdentity};
 use crate::services::icon_service;
 use crate::services::tag_service;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::Path;
 use tauri::AppHandle;
 
 /// SELECT 查询中使用的列名常量
 pub const ITEM_COLS: &str =
-    "id, name, path, type, icon_path, created_at, last_used_at, is_favorite, is_missing, note, fs_created_at, fs_modified_at";
+    "id, name, path, type, icon_path, created_at, last_used_at, is_favorite, is_missing, note, fs_created_at, fs_modified_at, hide_from_all";
+
+/// `items i` 别名前缀，供 JOIN 查询与 ITEM_COLS 对齐。
+pub const ITEM_COLS_I: &str =
+    "i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note, i.fs_created_at, i.fs_modified_at, i.hide_from_all";
 
 /// 默认排序：收藏优先 → 最近使用 → 名称
 pub const ITEM_ORDER: &str = "is_favorite DESC, last_used_at DESC NULLS LAST, name";
@@ -31,6 +36,7 @@ pub fn item_from_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
         note: row.get(9)?,
         fs_created_at: row.get(10)?,
         fs_modified_at: row.get(11)?,
+        hide_from_all: row.get::<_, i64>(12)? != 0,
     })
 }
 
@@ -363,11 +369,50 @@ pub struct AddItemFailure {
     pub error: String,
 }
 
+/// 导入落点：在同一事务里给新建项打 hide_from_all、入普通柜、追加直接标签。
+/// 重复项不覆盖已有标签 / hide_from_all；柜归属可叠加。
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddItemsContext {
+    #[serde(default)]
+    pub hide_from_all_paths: Vec<String>,
+    pub cabinet_id: Option<i64>,
+    #[serde(default)]
+    pub tag_ids: Vec<i64>,
+}
+
+fn path_key(path: &str) -> String {
+    path.replace('/', "\\").trim_end_matches('\\').to_lowercase()
+}
+
+fn fail_all_metas(metas: Vec<AddFileMeta>, failed: Vec<AddItemFailure>, error: String) -> AddItemsResult {
+    AddItemsResult {
+        items: Vec::new(),
+        created_count: 0,
+        failed: metas
+            .into_iter()
+            .map(|meta| AddItemFailure {
+                path: meta.path,
+                error: error.clone(),
+            })
+            .chain(failed)
+            .collect(),
+    }
+}
+
 /// 批量添加项目（逐条隔离失败，避免单条异常影响整批导入）。
 /// 两段式与对账三段式同一取向：先在锁外逐文件采集元数据（get_identity FFI /
 /// compute_signature 读文件 / detect_type 是重 IO），再进锁内单事务批量写库——
 /// 重 IO 不再把全局 DB 锁持有整个导入过程。故入参是 &Database 而非连接。
 pub fn add_items(db: &crate::db::Database, paths: Vec<String>) -> AddItemsResult {
+    add_items_with_context(db, paths, AddItemsContext::default())
+}
+
+pub fn add_items_with_context(
+    db: &crate::db::Database,
+    paths: Vec<String>,
+    context: AddItemsContext,
+) -> AddItemsResult {
     // 写入冻结窗口：整批按失败返回，给出统一文案
     if let Err(error) = crate::db::ensure_writes_allowed() {
         return AddItemsResult {
@@ -427,21 +472,96 @@ pub fn add_items(db: &crate::db::Database, paths: Vec<String>) -> AddItemsResult
         }
     };
 
+    if let Some(cabinet_id) = context.cabinet_id {
+        match tx.query_row(
+            "SELECT folder_path FROM cabinets WHERE id = ?1",
+            [cabinet_id],
+            |r| r.get::<_, Option<String>>(0),
+        ) {
+            Ok(Some(_)) => {
+                return fail_all_metas(metas, failed, "关联文件夹的文件柜内容由文件夹决定".to_string());
+            }
+            Ok(None) => {}
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                return fail_all_metas(
+                    metas,
+                    failed,
+                    format!("文件柜不存在（id {cabinet_id}），可能已被删除"),
+                );
+            }
+            Err(error) => {
+                return fail_all_metas(metas, failed, error.to_string());
+            }
+        }
+    }
+
+    let tag_ids = match tag_service::existing_ids(&tx, "tags", &context.tag_ids) {
+        Ok(ids) => ids,
+        Err(error) => return fail_all_metas(metas, failed, error),
+    };
+
+    let hide_keys: HashSet<String> = context
+        .hide_from_all_paths
+        .iter()
+        .map(|path| path_key(path))
+        .collect();
+
     let mut created_count = 0usize;
     for meta in &metas {
-        match add_one_with_meta(&tx, meta)
-            .and_then(|added| crate::services::watch_service::unignore_path(&tx, &meta.path).map(|_| added))
-        {
+        if let Err(error) = tx.execute_batch("SAVEPOINT item_add") {
+            failed.push(AddItemFailure {
+                path: meta.path.clone(),
+                error: error.to_string(),
+            });
+            continue;
+        }
+        let placed = add_one_with_meta(&tx, meta)
+            .and_then(|added| {
+                crate::services::watch_service::unignore_path(&tx, &meta.path).map(|_| added)
+            })
+            .and_then(|(mut item, created)| {
+                if created && hide_keys.contains(&path_key(&item.path)) {
+                    tx.execute(
+                        "UPDATE items SET hide_from_all = 1 WHERE id = ?1",
+                        [item.id],
+                    )
+                    .map_err(|e| e.to_string())?;
+                    item.hide_from_all = true;
+                }
+                if let Some(cabinet_id) = context.cabinet_id {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO cabinet_items (cabinet_id, item_id) VALUES (?1, ?2)",
+                        params![cabinet_id, item.id],
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+                if created && !tag_ids.is_empty() {
+                    tag_service::add_item_tags_keep_existing(&tx, item.id, &tag_ids)?;
+                }
+                Ok((item, created))
+            });
+        match placed {
             Ok((item, created)) => {
+                if let Err(error) = tx.execute_batch("RELEASE item_add") {
+                    failed.push(AddItemFailure {
+                        path: meta.path.clone(),
+                        error: error.to_string(),
+                    });
+                    continue;
+                }
                 if created {
                     created_count += 1;
                 }
                 items.push(item);
             }
-            Err(error) => failed.push(AddItemFailure {
-                path: meta.path.clone(),
-                error,
-            }),
+            Err(error) => {
+                let _ = tx.execute_batch("ROLLBACK TO SAVEPOINT item_add");
+                let _ = tx.execute_batch("RELEASE item_add");
+                failed.push(AddItemFailure {
+                    path: meta.path.clone(),
+                    error,
+                });
+            }
         }
     }
 
