@@ -16,6 +16,7 @@ import { pickRandomTagColor } from "../lib/tagColors";
 import { showToast } from "../lib/toast";
 import { AI_TAG_ALL_EVENT, type AiTagAllDetail } from "../components/AiSettingsSection";
 import * as db from "../lib/db";
+import { selectAutoTagTargets } from "../lib/autoTagTargets";
 import type { ItemWithTags, Tag } from "../types";
 
 interface UseAiTagOrchestrationParams {
@@ -125,12 +126,7 @@ export function useAiTagOrchestration({
     if (queued.length === 0) return;
     pendingAutoTagRef.current = [];
 
-    const freshById = new Map(allItemsSnapshotRef.current.map((item) => [item.id, item]));
-    const seen = new Set<number>();
-    const targets = queued
-      .map((queuedItem) => freshById.get(queuedItem.id))
-      .filter((item): item is ItemWithTags => !!item && item.tags.length === 0)
-      .filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)));
+    const targets = selectAutoTagTargets(queued, allItemsSnapshotRef.current);
     if (targets.length === 0) return;
 
     // 取配置失败（DB 暂不可读等瞬态）或配置不完整：恢复队列不丢该批对象，

@@ -89,9 +89,7 @@ fn dependency_issues(
     for (dep_id, required_ver) in &manifest.dependencies {
         match mod_map.get(dep_id) {
             None => reasons.push(format!("依赖 mod '{}' 不存在", dep_id)),
-            Some(dep) if !dep.enabled => {
-                reasons.push(format!("依赖 mod '{}' 未启用", dep_id))
-            }
+            Some(dep) if !dep.enabled => reasons.push(format!("依赖 mod '{}' 未启用", dep_id)),
             Some(dep) if !mod_loader::semver_satisfies(&dep.manifest.version, required_ver) => {
                 reasons.push(format!(
                     "依赖 mod '{}' 版本不满足（需要 {}，实际 {}）",
@@ -133,8 +131,16 @@ pub fn reassess_dependency_compatibility(registry: &ModRegistry) {
         if !dep_marked {
             continue;
         }
-        if dependency_issues(&mod_info.manifest, &mod_map).is_empty() {
+        let issues = dependency_issues(&mod_info.manifest, &mod_map);
+        if issues.is_empty() {
             registry.mark_compatible(&mod_info.manifest.id);
+        } else {
+            // 仍不满足时刷新原因文案：避免依赖已启用后仍显示过时的「未启用」
+            // （如启用后版本不满足，应改报版本问题）
+            let reason = format!("依赖未满足：{}", issues.join("；"));
+            if mod_info.incompatible_reason.as_deref() != Some(reason.as_str()) {
+                registry.mark_incompatible(&mod_info.manifest.id, reason);
+            }
         }
     }
 }
@@ -311,8 +317,11 @@ pub fn mod_kv_remove(
     ensure_valid_mod_id(&registry, &mod_id)?;
     crate::db::ensure_writes_allowed()?;
     let conn = db.get_conn();
-    conn.execute("DELETE FROM mod_kv WHERE mod_id = ?1 AND key = ?2", [&mod_id, &key])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM mod_kv WHERE mod_id = ?1 AND key = ?2",
+        [&mod_id, &key],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -331,7 +340,8 @@ pub fn mod_records_list(
     let rows = stmt
         .query_map([&mod_id, &collection], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -589,8 +599,8 @@ pub fn import_mod(
 
     let content = std::fs::read_to_string(&manifest_path)
         .map_err(|e| format!("无法读取 manifest.json: {}", e))?;
-    let manifest: ModManifest = serde_json::from_str(&content)
-        .map_err(|e| format!("manifest.json 格式错误: {}", e))?;
+    let manifest: ModManifest =
+        serde_json::from_str(&content).map_err(|e| format!("manifest.json 格式错误: {}", e))?;
 
     if manifest.id.trim().is_empty() {
         return Err("manifest.json 中缺少 id".to_string());

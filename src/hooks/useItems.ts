@@ -146,6 +146,9 @@ export function useItems() {
   // 进行中的加载 Promise：并发触发 refresh（刷新按钮 + Mod 桥接 + 跨盘找回等）
   // 时共享同一次请求，避免多次全量 IO 与响应交错互相覆盖。
   const loadInFlightRef = useRef<Promise<void> | null>(null);
+  // 在途期间又有人请求加载：在途那次的 get_items 可能发出于最新写库（对账/重定位）之前，
+  // 复用它会读到旧数据。此时排队一次跟进加载，多次触发合并为一次。
+  const loadQueuedRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     allItemsRef.current = allItems;
@@ -156,9 +159,7 @@ export function useItems() {
     cabinetItemsRef.current = cabinetItems;
   }, [cabinetItems]);
 
-  const loadAll = useCallback((): Promise<void> => {
-    if (loadInFlightRef.current) return loadInFlightRef.current;
-
+  const startLoad = useCallback((): Promise<void> => {
     const task = (async () => {
       if (initialLoadRef.current) setLoading(true);
       try {
@@ -244,7 +245,19 @@ export function useItems() {
 
     loadInFlightRef.current = task;
     return task;
-  }, []);
+  }, [captureFrozenSortKeys]);
+
+  const loadAll = useCallback((): Promise<void> => {
+    const inFlight = loadInFlightRef.current;
+    if (!inFlight) return startLoad();
+    if (!loadQueuedRef.current) {
+      loadQueuedRef.current = inFlight.then(() => {
+        loadQueuedRef.current = null;
+        return startLoad();
+      });
+    }
+    return loadQueuedRef.current;
+  }, [startLoad]);
 
   // 跨盘符兜底找回：对失效对象按内容签名扫描候选盘，命中则刷新并提示。
   // 用 relocatingRef 防止并发/重复扫描；成功找回 0 个时保持安静。

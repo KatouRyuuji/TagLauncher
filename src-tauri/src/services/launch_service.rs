@@ -13,6 +13,10 @@ fn shell_open(path: &str) -> Result<(), String> {
 
     let file: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
     let verb: Vec<u16> = "open".encode_utf16().chain(std::iter::once(0)).collect();
+    // 工作目录 = 目标文件所在目录（与资源管理器双击一致）；传 null 会继承
+    // TagLauncher 自身的 cwd，依赖相对路径读配置/资源的程序会找不到文件。
+    let dir: Option<Vec<u16>> =
+        launch_working_dir(path).map(|d| d.encode_utf16().chain(std::iter::once(0)).collect());
 
     // ShellExecuteW 约定：返回值 > 32 表示成功，否则即为错误码（如文件不存在）。
     let result = unsafe {
@@ -21,15 +25,35 @@ fn shell_open(path: &str) -> Result<(), String> {
             verb.as_ptr(),
             file.as_ptr(),
             std::ptr::null(),
-            std::ptr::null(),
+            dir.as_ref().map_or(std::ptr::null(), |d| d.as_ptr()),
             SW_SHOWNORMAL,
         )
     };
     if result as isize > 32 {
         Ok(())
     } else {
-        Err(format!("无法打开对象（ShellExecute 错误码 {}）", result as isize))
+        Err(format!(
+            "无法打开对象（ShellExecute 错误码 {}）",
+            result as isize
+        ))
     }
+}
+
+/// 启动时的工作目录：文件取其父目录；目录、URL、无父目录时返回 None（沿用系统默认）。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn launch_working_dir(path: &str) -> Option<String> {
+    if path.contains("://") {
+        return None;
+    }
+    let p = Path::new(path);
+    if p.is_dir() {
+        return None;
+    }
+    let parent = p.parent()?;
+    if parent.as_os_str().is_empty() || !parent.is_dir() {
+        return None;
+    }
+    parent.to_str().map(str::to_string)
 }
 
 /// 用关联程序打开任意路径（调用方负责先校验路径属于库内对象）。
@@ -95,4 +119,31 @@ pub fn open_in_explorer(path: &str) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::launch_working_dir;
+
+    #[test]
+    fn working_dir_is_parent_of_file() {
+        let dir = std::env::temp_dir().join(format!("tl-launch-wd-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("tool.exe");
+        std::fs::write(&exe, b"x").unwrap();
+        assert_eq!(
+            launch_working_dir(exe.to_str().unwrap()).as_deref(),
+            dir.to_str()
+        );
+        // 目录与 URL 不设工作目录
+        assert_eq!(launch_working_dir(dir.to_str().unwrap()), None);
+        assert_eq!(launch_working_dir("https://example.com/a"), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn working_dir_none_when_parent_missing() {
+        assert_eq!(launch_working_dir("Z:/__tl_no_such_dir__/a.exe"), None);
+        assert_eq!(launch_working_dir("a.exe"), None);
+    }
 }

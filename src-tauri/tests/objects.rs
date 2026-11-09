@@ -13,10 +13,8 @@ fn add_items_isolates_single_failure_without_aborting_batch() {
     let good1 = common::write_file(&t.dir, "app1.exe", b"x");
     let good2 = common::write_file(&t.dir, "app2.exe", b"y");
 
-    let result = item_service::add_items(
-        &t.db,
-        vec![good1.clone(), "   ".to_string(), good2.clone()],
-    );
+    let result =
+        item_service::add_items(&t.db, vec![good1.clone(), "   ".to_string(), good2.clone()]);
 
     assert_eq!(result.items.len(), 2, "两个合法路径应成功入库");
     assert_eq!(result.failed.len(), 1, "空白路径应作为单项失败被隔离");
@@ -27,6 +25,30 @@ fn add_items_isolates_single_failure_without_aborting_batch() {
         .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
         .unwrap();
     assert_eq!(cnt, 2);
+}
+
+/// BUG-14：不存在的路径作为单项失败返回，不落库；同批其余真实文件照常入库。
+#[test]
+fn add_items_rejects_missing_path() {
+    let t = common::temp_db();
+    let good = common::write_file(&t.dir, "real.txt", b"x");
+    let ghost = t.dir.path.join("ghost.txt").to_string_lossy().to_string();
+
+    let result = item_service::add_items(&t.db, vec![good.clone(), ghost.clone()]);
+
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.failed.len(), 1);
+    assert_eq!(result.failed[0].path, ghost);
+    assert!(
+        result.failed[0].error.contains("不存在"),
+        "{}",
+        result.failed[0].error
+    );
+    let conn = t.db.get_conn();
+    let cnt: i64 = conn
+        .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(cnt, 1);
 }
 
 /// 真实文件重复加入去重为同一条记录（身份或 path 去重，二者之一命中）。
@@ -142,8 +164,14 @@ fn toggle_favorite_roundtrip_and_errors_on_missing() {
     let conn = t.db.get_conn();
     let item = item_service::add_item(&conn, &common::write_file(&t.dir, "fav.exe", b"a")).unwrap();
 
-    assert!(item_service::toggle_favorite(&conn, item.id).unwrap(), "首次翻转为收藏");
-    assert!(!item_service::toggle_favorite(&conn, item.id).unwrap(), "再翻转取消收藏");
+    assert!(
+        item_service::toggle_favorite(&conn, item.id).unwrap(),
+        "首次翻转为收藏"
+    );
+    assert!(
+        !item_service::toggle_favorite(&conn, item.id).unwrap(),
+        "再翻转取消收藏"
+    );
     assert!(
         item_service::toggle_favorite(&conn, 999_999).is_err(),
         "不存在的 id 应返回错误"
@@ -155,7 +183,8 @@ fn toggle_favorite_roundtrip_and_errors_on_missing() {
 fn set_item_note_trims_clears_and_validates() {
     let t = common::temp_db();
     let conn = t.db.get_conn();
-    let item = item_service::add_item(&conn, &common::write_file(&t.dir, "note.exe", b"a")).unwrap();
+    let item =
+        item_service::add_item(&conn, &common::write_file(&t.dir, "note.exe", b"a")).unwrap();
     assert_eq!(item.note, None, "新对象没有备注");
 
     item_service::set_item_note(&conn, item.id, "  第一行\n第二行  ").unwrap();
@@ -165,20 +194,32 @@ fn set_item_note_trims_clears_and_validates() {
     let max = "字".repeat(item_service::NOTE_MAX_CHARS);
     item_service::set_item_note(&conn, item.id, &max).expect("上限内按字符计可保存");
     let too_long = "字".repeat(item_service::NOTE_MAX_CHARS + 1);
-    assert!(item_service::set_item_note(&conn, item.id, &too_long).is_err(), "超长应报错");
+    assert!(
+        item_service::set_item_note(&conn, item.id, &too_long).is_err(),
+        "超长应报错"
+    );
     assert_eq!(
-        item_service::get_item(&conn, item.id).unwrap().item.note.as_deref(),
+        item_service::get_item(&conn, item.id)
+            .unwrap()
+            .item
+            .note
+            .as_deref(),
         Some(max.as_str()),
         "超长报错不改动原值"
     );
 
     item_service::set_item_note(&conn, item.id, "   ").unwrap();
     let raw: Option<String> = conn
-        .query_row("SELECT note FROM items WHERE id=?1", [item.id], |r| r.get(0))
+        .query_row("SELECT note FROM items WHERE id=?1", [item.id], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(raw, None, "空白备注存 NULL");
 
-    assert!(item_service::set_item_note(&conn, 999_999, "x").is_err(), "不存在的 id 应报错");
+    assert!(
+        item_service::set_item_note(&conn, 999_999, "x").is_err(),
+        "不存在的 id 应报错"
+    );
 }
 
 /// get_items_by_ids：去重 id、按默认顺序（收藏优先）返回、且仅返回请求的子集。
@@ -210,7 +251,11 @@ fn set_favorites_batch_and_idempotent() {
     item_service::set_favorites(&conn, &[a.id, b.id], true).expect("batch favorite");
     item_service::set_favorites(&conn, &[a.id, b.id], true).expect("idempotent");
     let fav_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM items WHERE is_favorite = 1", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM items WHERE is_favorite = 1",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(fav_count, 2, "a/b 收藏、c 不受影响");
 
@@ -236,10 +281,18 @@ fn clear_recent_resets_last_used_and_is_idempotent() {
 
     assert_eq!(item_service::clear_recent(&conn).unwrap(), 2);
     let used: i64 = conn
-        .query_row("SELECT COUNT(*) FROM items WHERE last_used_at IS NOT NULL", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM items WHERE last_used_at IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(used, 0, "全部清空");
-    assert_eq!(item_service::clear_recent(&conn).unwrap(), 0, "重复执行无记录可清");
+    assert_eq!(
+        item_service::clear_recent(&conn).unwrap(),
+        0,
+        "重复执行无记录可清"
+    );
 }
 
 /// 展开文件夹：收入嵌套文件，不把文件夹本身加入结果。
@@ -258,8 +311,22 @@ fn expand_folder_import_collects_nested_files() {
     let expanded = import_paths::expand_folder_import(vec![folder]);
     assert!(!expanded.truncated);
     assert_eq!(expanded.paths.len(), 2, "{:?}", expanded.paths);
-    assert!(expanded.paths.iter().any(|path| path.ends_with("movie.mp4")), "missing {video} in {:?}", expanded.paths);
-    assert!(expanded.paths.iter().any(|path| path.ends_with("cover.png")), "missing {nested} in {:?}", expanded.paths);
+    assert!(
+        expanded
+            .paths
+            .iter()
+            .any(|path| path.ends_with("movie.mp4")),
+        "missing {video} in {:?}",
+        expanded.paths
+    );
+    assert!(
+        expanded
+            .paths
+            .iter()
+            .any(|path| path.ends_with("cover.png")),
+        "missing {nested} in {:?}",
+        expanded.paths
+    );
 }
 
 /// 删除源文件：真实文件进回收站后出库。

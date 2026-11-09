@@ -394,6 +394,14 @@ pub fn add_items(db: &crate::db::Database, paths: Vec<String>) -> AddItemsResult
             });
             continue;
         }
+        // 不存在的路径不入库（拖放/命令行/MCP 都走这里）：否则会以普通对象落库且无失败反馈（BUG-14）
+        if std::fs::symlink_metadata(&path).is_err() {
+            failed.push(AddItemFailure {
+                path,
+                error: "路径不存在".to_string(),
+            });
+            continue;
+        }
         metas.push(collect_add_meta(&path));
     }
 
@@ -1126,8 +1134,23 @@ const SCAN_SKIP_DIRS: &[&str] = &[
     "$WinREAgent",
     "$SysReset",
     "Windows.old",
+    // 工具链生成/缓存目录：内部条目动辄数十万，且不会是用户收纳的对象
+    "node_modules",
+    ".git",
+    "__pycache__",
 ];
-const SCAN_MAX_ENTRIES: usize = 3_000_000;
+/// 仅在盘根一级跳过的系统目录（子目录里同名的用户文件夹照常扫描）。
+const SCAN_SKIP_ROOT_DIRS: &[&str] = &["Windows"];
+/// 全机唯一性扫描的条目上限。开发机常见 500 万以上条目（BUG-05：3M 上限在真实机器上必然触顶失败）。
+const SCAN_MAX_ENTRIES: usize = 12_000_000;
+
+/// Unity 工程的 Library/ 是可再生缓存（单个工程可达数百万条目）：仅当同级同时存在
+/// Assets/ 与 ProjectSettings/ 时才视为 Unity 缓存跳过，普通名为 Library 的文件夹照常扫描。
+fn is_regenerable_cache_dir(parent: &std::path::Path, name: &str) -> bool {
+    name.eq_ignore_ascii_case("Library")
+        && parent.join("Assets").is_dir()
+        && parent.join("ProjectSettings").is_dir()
+}
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 
 /// 每个失效对象最多保留的候选匹配数：达到 2 即可判定"歧义"，无需再找第 3 个。
@@ -1171,6 +1194,11 @@ fn scan_signature_roots(rows: &[MissingSignatureRow], roots: &[String], mut budg
         .collect())
 }
 
+/// 扫描中可跳过的目录读取错误：仅限根以下子目录的“拒绝访问”。
+fn skippable_read_dir_error(is_root: bool, kind: std::io::ErrorKind) -> bool {
+    !is_root && kind == std::io::ErrorKind::PermissionDenied
+}
+
 fn scan_dir_tree(
     root: &str,
     by_size: &mut SignatureGroups,
@@ -1180,9 +1208,13 @@ fn scan_dir_tree(
     use std::os::windows::fs::MetadataExt;
     let mut stack: Vec<std::path::PathBuf> = vec![std::path::PathBuf::from(root)];
 
+    let root_path = std::path::PathBuf::from(root);
     while let Some(dir) = stack.pop() {
         let read_dir = match std::fs::read_dir(&dir) {
             Ok(rd) => rd,
+            // 根以下的子目录无权列举（如 C:\Windows\WUModels）：当前用户本就无法在其中
+            // 放置/启动对象，跳过不影响唯一性判定；根本身不可读（盘离线）仍整体报错。
+            Err(e) if skippable_read_dir_error(dir == root_path, e.kind()) => continue,
             Err(_) => {
                 return Err(
                     "扫描未能读完全部目录（权限不足、盘离线或枚举中断），本次未完成唯一性核验。请确认磁盘已连接后再试。"
@@ -1210,6 +1242,13 @@ fn scan_dir_tree(
                 let name = entry.file_name();
                 let name = name.to_string_lossy();
                 if SCAN_SKIP_DIRS.iter().any(|s| name.eq_ignore_ascii_case(s)) {
+                    continue;
+                }
+                // 盘根下的系统目录（Windows）只含系统文件，且条目数以百万计，会吃光扫描预算
+                if dir == root_path && SCAN_SKIP_ROOT_DIRS.iter().any(|s| name.eq_ignore_ascii_case(s)) {
+                    continue;
+                }
+                if is_regenerable_cache_dir(&dir, &name) {
                     continue;
                 }
                 stack.push(entry.path());
@@ -1564,6 +1603,60 @@ mod tests {
             .collect();
         assert_eq!(names, ["保留"]);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn only_denied_subdirectories_are_skipped() {
+        use std::io::ErrorKind;
+        assert!(skippable_read_dir_error(false, ErrorKind::PermissionDenied));
+        assert!(!skippable_read_dir_error(true, ErrorKind::PermissionDenied), "根不可读须整体报错");
+        assert!(!skippable_read_dir_error(false, ErrorKind::NotFound), "枚举中断（目录消失）不可当作已扫完");
+        assert!(!skippable_read_dir_error(false, ErrorKind::Other));
+    }
+
+    #[test]
+    fn root_level_windows_dir_is_skipped_but_nested_one_is_scanned() {
+        let base = std::env::temp_dir().join(format!("tl_skip_win_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let sys = base.join("Windows");
+        let nested = base.join("proj").join("Windows");
+        std::fs::create_dir_all(&sys).unwrap();
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(sys.join("dup.bin"), b"skip-root-windows").unwrap();
+        let target = nested.join("keep.bin");
+        std::fs::write(&target, b"skip-root-windows").unwrap();
+        let sig = file_identity::compute_signature(&target.to_string_lossy()).unwrap();
+        let rows = [MissingSignatureRow { id: 3, path: "D:/old.bin".into(), size: sig.size, head: sig.head_hash, tail: sig.tail_hash }];
+        let found = scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 1_000).unwrap();
+        assert_eq!(found.len(), 1, "根下 Windows 不参与扫描，嵌套同名目录照常扫描");
+        assert!(found[0].1.ends_with("keep.bin"));
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn toolchain_and_unity_cache_dirs_are_skipped_but_plain_library_is_scanned() {
+        let base = std::env::temp_dir().join(format!("tl_skip_cache_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let unity = base.join("game");
+        for d in ["Assets", "ProjectSettings", "Library"] { std::fs::create_dir_all(unity.join(d)).unwrap(); }
+        let plain = base.join("docs").join("Library");
+        std::fs::create_dir_all(&plain).unwrap();
+        std::fs::create_dir_all(base.join("web").join("node_modules")).unwrap();
+        std::fs::create_dir_all(base.join("repo").join(".git")).unwrap();
+        let body = b"skip-cache-dirs-signature";
+        std::fs::write(unity.join("Library").join("dup.bin"), body).unwrap();
+        std::fs::write(base.join("web").join("node_modules").join("dup.bin"), body).unwrap();
+        std::fs::write(base.join("repo").join(".git").join("dup.bin"), body).unwrap();
+        let target = plain.join("keep.bin");
+        std::fs::write(&target, body).unwrap();
+        let sig = file_identity::compute_signature(&target.to_string_lossy()).unwrap();
+        let rows = [MissingSignatureRow { id: 4, path: "D:/old.bin".into(), size: sig.size, head: sig.head_hash, tail: sig.tail_hash }];
+        let found = scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 1_000).unwrap();
+        assert_eq!(found.len(), 1, "缓存目录内的同签名副本不应造成歧义");
+        assert!(found[0].1.ends_with("keep.bin"), "普通 Library 文件夹须照常扫描：{:?}", found);
+        assert!(is_regenerable_cache_dir(&unity, "library"));
+        assert!(!is_regenerable_cache_dir(plain.parent().unwrap(), "Library"));
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
