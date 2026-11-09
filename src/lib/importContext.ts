@@ -104,8 +104,13 @@ export function planNestedImport(args: {
   }
 
   const dirs = intermediateDirs(roots, expanded);
-  const paths = uniquePaths([...roots, ...dirs, ...expanded, ...looseFiles]);
   const keepVisible = new Set([...roots, ...looseFiles].map(dirKey));
+  // contents：不把空文件夹单独入库（沿用原扫描）；有文件时中间目录已含投放根，作为浏览入口。
+  // both：即使夹内没有文件，也把投放的文件夹本身加入库。
+  const paths =
+    args.mode === "contents"
+      ? uniquePaths([...dirs, ...expanded, ...looseFiles])
+      : uniquePaths([...roots, ...dirs, ...expanded, ...looseFiles]);
   const hideFromAllPaths = paths.filter((path) => !keepVisible.has(dirKey(path)));
   return { paths, hideFromAllPaths };
 }

@@ -117,6 +117,50 @@ test("contents / both：投放根可见，夹内文件与中间目录隐藏", ()
   assert.deepEqual(both.hideFromAllPaths.slice().sort(), contents.hideFromAllPaths.filter((p) => p !== "C:\\temp\\x.exe").slice().sort());
 });
 
+test("contents 空文件夹不入库根；both 仍加入文件夹作为入口", () => {
+  const emptyContents = planNestedImport({
+    mode: "contents",
+    droppedFolders: ["D:\\Empty"],
+    droppedFiles: [],
+    expandedFiles: [],
+  });
+  assert.deepEqual(emptyContents.paths, []);
+  assert.deepEqual(emptyContents.hideFromAllPaths, []);
+
+  const emptyBoth = planNestedImport({
+    mode: "both",
+    droppedFolders: ["D:\\Empty"],
+    droppedFiles: [],
+    expandedFiles: [],
+  });
+  assert.deepEqual(emptyBoth.paths, ["D:\\Empty"]);
+  assert.deepEqual(emptyBoth.hideFromAllPaths, []);
+});
+
+test("contents 有文件时由路径推出投放根，不另增扫描方式", () => {
+  const plan = planNestedImport({
+    mode: "contents",
+    droppedFolders: ["D:\\Work\\Docs"],
+    droppedFiles: [],
+    expandedFiles: ["D:\\Work\\Docs\\Sub\\a.txt"],
+  });
+  assert.ok(plan.paths.includes("D:\\Work\\Docs"), "中间目录含投放根，All 才有浏览入口");
+  assert.ok(plan.paths.includes("D:\\Work\\Docs\\Sub"));
+  assert.ok(!plan.hideFromAllPaths.includes("D:\\Work\\Docs"));
+});
+
+test("关键词 OR 与类型筛选都不写成标签；OR 查询只关打标", () => {
+  const orQuery = snapshotImportPlacement({
+    selectedCabinetId: 2,
+    cabinets: [{ id: 2, folder_path: null }],
+    selectedTagIds: [8],
+    excludedTagIds: [],
+    searchQuery: "alpha OR beta",
+  });
+  assert.equal(orQuery.cabinetId, 2);
+  assert.deepEqual(orQuery.tagIds, []);
+});
+
 test("中间目录由文件路径推出，不把投放根之外的祖先收进来", () => {
   const dirs = intermediateDirs(["D:\\Work\\Docs"], ["D:\\Work\\Docs\\Sub\\Deep\\f.txt", "C:\\other\\z.txt"]);
   assert.deepEqual(dirs.slice().sort(), ["D:\\Work\\Docs", "D:\\Work\\Docs\\Sub", "D:\\Work\\Docs\\Sub\\Deep"].sort());

@@ -1,4 +1,5 @@
 import { assert, test, run } from "./__testutil";
+import { itemsInDir } from "./cabinetBrowse";
 import {
   applyNestedVisibility,
   browseTargetForItem,
@@ -92,6 +93,21 @@ test("有库内后代的文件夹进入逐级浏览；隐藏文件导航到所�
 
 test("最近可见根取最长前缀，不把其他柜的路径当根", () => {
   assert.equal(nearestBrowseRoot(hidden.path, [folder, nestedDir, loose]), "D:\\Lib\\Folder");
+});
+
+test("contents 没有可见投放根时，搜索仍能落到已入库的中间目录并逐级列出", () => {
+  const hiddenRoot = { id: 20, name: "Docs", path: "D:\\Lib\\Docs", type: "folder" as const, hide_from_all: true };
+  const hiddenSub = { id: 21, name: "Sub", path: "D:\\Lib\\Docs\\Sub", type: "folder" as const, hide_from_all: true };
+  const deepFile = { id: 22, name: "a.txt", path: "D:\\Lib\\Docs\\Sub\\a.txt", type: "text" as const, hide_from_all: true };
+  const library = [hiddenRoot, hiddenSub, deepFile];
+  assert.deepEqual(applyNestedVisibility(library, false).map((item) => item.id), []);
+  const target = browseTargetForItem(deepFile, library);
+  assert.ok(target);
+  assert.equal(target.dir, "D:\\Lib\\Docs\\Sub");
+  const layer = itemsInDir(library, target.dir ?? target.root);
+  assert.deepEqual(layer.map((item) => item.id), [22]);
+  const parentLayer = itemsInDir(library, "D:\\Lib\\Docs");
+  assert.deepEqual(parentLayer.map((item) => item.id), [21]);
 });
 
 await run("nestedVisibility");

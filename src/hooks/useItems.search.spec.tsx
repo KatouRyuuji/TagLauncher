@@ -140,4 +140,19 @@ describe("对象搜索按需索引", () => {
     act(() => useAppStore.setState({ libraryBrowseDir: "D:\\Lib\\Sub" }));
     expect(result.current.items.map((item) => item.id)).toEqual([13]);
   });
+
+  it("contents 没有可见投放根时，按路径浏览仍能列出隐藏的中间目录和文件", async () => {
+    const nested: ItemWithTags[] = [
+      { id: 21, name: "Sub", path: "D:\\Lib\\Docs\\Sub", type: "folder", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
+      { id: 22, name: "a.txt", path: "D:\\Lib\\Docs\\Sub\\a.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
+      { id: 23, name: "b.txt", path: "D:\\Lib\\Docs\\b.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
+    ];
+    vi.mocked(db.getItems).mockResolvedValueOnce(nested);
+    const { result } = renderHook(useItems);
+    await waitFor(() => expect(result.current.items).toEqual([]));
+    act(() => useAppStore.setState({ libraryBrowseRoot: "D:\\Lib\\Docs", libraryBrowseDir: null }));
+    expect(result.current.items.map((item) => item.id).sort()).toEqual([21, 23]);
+    act(() => useAppStore.setState({ libraryBrowseDir: "D:\\Lib\\Docs\\Sub" }));
+    expect(result.current.items.map((item) => item.id)).toEqual([22]);
+  });
 });

@@ -63,6 +63,7 @@ test("flattenTagTree：多父默认在两支下都出现，行身份是完整路
     { id: 3, depth: 1, hasChildren: false, parentId: 2, pathKey: "2/3" },
   ]);
   assert.equal(new Set(rows.map((row) => row.pathKey)).size, 4);
+  assert.equal(new Set(rows.map((row) => row.id)).size, 3, "计数/选中仍按唯一 tag id");
 });
 
 test("flattenTagTree：uniqueIds 时多父只在首个遇到的父下出现一次（打标器）", () => {
