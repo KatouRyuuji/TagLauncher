@@ -22,7 +22,7 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LATEST_SCHEMA = "14"
+LATEST_SCHEMA = "20"
 
 # v10 实库在跑完 v001–v010 后的最小完整表：含身份/签名列，type 尚无 video。
 # 残缺夹具（只有 id/name/path/type）会在 v011 重建 items 时因缺列失败。

@@ -1,0 +1,4 @@
+__pycache__/
+# 视觉基线只保留在本机（字体/DPI/显卡相关，不入库）
+visual/baselines/
+PROGRESS.md

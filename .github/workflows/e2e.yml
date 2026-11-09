@@ -1,0 +1,65 @@
+# 面向用户的 E2E（真实 exe + WebView2 CDP）。独立、非必需（continue-on-error），不影响 ci.yml。
+# CI 只跑 CLI / UI / 视觉三层：视觉层在 CI 只截图上传、不比基线；窗口层需要交互桌面，不在 CI 跑。
+name: E2E
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: ['main']
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          python -m pip install -r e2e/requirements-e2e.txt
+
+      - name: Build debug app (embedded frontend) + CLI
+        run: |
+          node scripts/prepare-cli-bin.mjs --placeholder
+          npx tauri build --debug --no-bundle
+          cargo build --manifest-path src-tauri/Cargo.toml --bin tl
+
+      - name: Run E2E (cli + ui + visual)
+        env:
+          CI: '1'
+          TL_E2E_RUN_DIR: ${{ github.workspace }}/.tmp-test/e2e/ci-run
+        run: npm run test:e2e:ci
+
+      - name: Upload report and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            .tmp-test/e2e/ci-run/results.json
+            .tmp-test/e2e/ci-run/report.html
+            .tmp-test/e2e/ci-run/visual/
+            .tmp-test/e2e/ci-run/artifacts/
+          if-no-files-found: warn
