@@ -26,7 +26,7 @@ export type SortMode =
 /** 工作台视图：卡片网格 / 大图标 / 列表 */
 export type ViewMode = "grid" | "list" | "icons";
 
-/** 列表行密度：舒适（默认 68px）/ 紧凑（56px，一屏更多行） */
+/** 列表行密度：舒适（默认 64px）/ 紧凑（56px，一屏更多行） */
 export type ListDensity = "comfortable" | "compact";
 
 export function isListDensity(value: unknown): value is ListDensity {

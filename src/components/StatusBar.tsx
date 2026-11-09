@@ -173,7 +173,7 @@ export function StatusBar({
                 listDensity === "comfortable" ? "control-chip-active" : ""
               }`}
               aria-pressed={listDensity === "comfortable"}
-              title="舒适行高（68px）"
+              title="舒适行高（64px）"
             >
               舒适
             </button>

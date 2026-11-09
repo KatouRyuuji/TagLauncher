@@ -769,8 +769,9 @@ html.theme-switching * {
     gap: 16px;
     padding: 1.25rem;
   }
+  /* 宽度跟随卡片尺寸缩放（--grid-col-min，默认 256px → 300px），否则 ≤3 项时滑杆无效（BUG-12） */
   .item-grid-few-card {
-    width: min(300px, 100%);
+    width: min(calc(var(--grid-col-min) * 1.171875), 100%);
   }
   .item-grid-few-card > * {
     width: 100%;

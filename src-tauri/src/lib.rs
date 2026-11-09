@@ -34,14 +34,12 @@ fn migrate_legacy_db(src: &std::path::Path, dst: &std::path::Path) -> Result<(),
     }
     // 优先 VACUUM INTO（一致快照，含未 checkpoint 的 WAL 数据）；以只读方式打开旧库，
     // 避免旧库位于只读位置（Program Files、只读盘）时因无法创建 -shm/-wal 而失败。
-    let vacuum_result = rusqlite::Connection::open_with_flags(
-        src,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .and_then(|src_conn| {
-        let target = dst_str.replace('\'', "''");
-        src_conn.execute_batch(&format!("VACUUM INTO '{}'", target))
-    });
+    let vacuum_result =
+        rusqlite::Connection::open_with_flags(src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .and_then(|src_conn| {
+                let target = dst_str.replace('\'', "''");
+                src_conn.execute_batch(&format!("VACUUM INTO '{}'", target))
+            });
     match vacuum_result {
         Ok(_) => Ok(()),
         Err(e) => {
@@ -69,6 +67,47 @@ fn migrate_legacy_db(src: &std::path::Path, dst: &std::path::Path) -> Result<(),
 pub(crate) const WINDOW_STATE_FLAGS: StateFlags = StateFlags::SIZE
     .union(StateFlags::POSITION)
     .union(StateFlags::MAXIMIZED);
+
+/// BUG-08：tauri.conf 的 minWidth/minHeight（800×600）在无边框窗口上作用于含不可见
+/// 缩放边框的窗口矩形，内容区实际只有约 786×592。按当前 outer−inner 的边框差把最小值
+/// 补到窗口矩形上，保证内容区（WebView 视口）不小于 800×600 逻辑像素。
+pub const MIN_CONTENT_LOGICAL: (f64, f64) = (800.0, 600.0);
+
+/// 由当前窗口外/内尺寸（物理像素）与缩放推出应设置的最小尺寸（物理像素）。
+pub fn min_size_for_content(outer: (u32, u32), inner: (u32, u32), scale: f64) -> (u32, u32) {
+    let border_w = outer.0.saturating_sub(inner.0);
+    let border_h = outer.1.saturating_sub(inner.1);
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    (
+        (MIN_CONTENT_LOGICAL.0 * scale).ceil() as u32 + border_w,
+        (MIN_CONTENT_LOGICAL.1 * scale).ceil() as u32 + border_h,
+    )
+}
+
+#[cfg(windows)]
+fn enforce_min_content_size(window: &tauri::WebviewWindow) {
+    // 最大化/全屏时没有缩放边框，outer−inner 不代表还原态边框，跳过
+    if window.is_maximized().unwrap_or(false) || window.is_fullscreen().unwrap_or(false) {
+        return;
+    }
+    let (Ok(outer), Ok(inner), Ok(scale)) = (
+        window.outer_size(),
+        window.inner_size(),
+        window.scale_factor(),
+    ) else {
+        return;
+    };
+    let (w, h) = min_size_for_content(
+        (outer.width, outer.height),
+        (inner.width, inner.height),
+        scale,
+    );
+    let _ = window.set_min_size(Some(tauri::PhysicalSize::new(w, h)));
+}
 
 /// 把恢复后的主窗口限制在所在显示器的工作区（不含任务栏）内：内容区超出工作区时
 /// 缩到工作区大小并居中。用于修正旧版本（tao 0.37.1，issue #45）每次重启累积撑大的
@@ -140,6 +179,16 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.restore_state(StateFlags::SIZE | StateFlags::POSITION);
                 clamp_window_to_work_area(&window);
+                #[cfg(windows)]
+                {
+                    enforce_min_content_size(&window);
+                    let w = window.clone();
+                    window.on_window_event(move |e| {
+                        if matches!(e, tauri::WindowEvent::ScaleFactorChanged { .. }) {
+                            enforce_min_content_size(&w);
+                        }
+                    });
+                }
             }
             let app_dir = app
                 .path()
@@ -151,6 +200,8 @@ pub fn run() {
             app_paths.ensure_dirs().map_err(|e| {
                 std::io::Error::new(std::io::ErrorKind::Other, e)
             })?;
+            // BUG-18：asset 协议只放行应用自有目录，库内对象随列表下发增量放行
+            crate::services::asset_scope::allow_app_paths(app.handle(), &app_paths);
 
             // 初始化数据库：数据落在 %LOCALAPPDATA%\TagLauncher\Save\（见 path_service）。
             // 若用户来自旧版本（exe 同级 Save/、老 AppData、Program Files MSI 等位置）
@@ -470,8 +521,9 @@ fn clear_recent_on_exit(app: &tauri::AppHandle) {
         return;
     };
     let conn = db.get_conn();
-    let enabled = settings_service::get_setting(&conn, services::item_service::CLEAR_RECENT_ON_EXIT_KEY)
-        .is_some_and(|v| v == "1");
+    let enabled =
+        settings_service::get_setting(&conn, services::item_service::CLEAR_RECENT_ON_EXIT_KEY)
+            .is_some_and(|v| v == "1");
     if enabled {
         if let Err(e) = services::item_service::clear_recent(&conn) {
             log::warn!("退出时清除最近使用失败：{e}");
@@ -587,7 +639,11 @@ fn migrate_backups(src_save_dir: &std::path::Path, dst_save_dir: &std::path::Pat
     };
     let dst_backups = dst_save_dir.join("Backups");
     if let Err(e) = std::fs::create_dir_all(&dst_backups) {
-        log::warn!("[migrate] 创建备份目录 {:?} 失败({})，跳过历史备份迁移", dst_backups, e);
+        log::warn!(
+            "[migrate] 创建备份目录 {:?} 失败({})，跳过历史备份迁移",
+            dst_backups,
+            e
+        );
         return;
     }
     for entry in entries.flatten() {
@@ -758,8 +814,10 @@ mod tests {
         let debris = base.join("debris_no_version.db");
         {
             let conn = rusqlite::Connection::open(&debris).unwrap();
-            conn.execute_batch("CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);")
-                .unwrap();
+            conn.execute_batch(
+                "CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+            )
+            .unwrap();
         }
         assert_eq!(probe_db(&debris), DbState::Debris);
 
@@ -831,5 +889,33 @@ mod tests {
         assert_eq!(name, "migrated");
 
         cleanup(&base);
+    }
+}
+
+#[cfg(test)]
+mod min_size_tests {
+    use super::min_size_for_content;
+
+    #[test]
+    fn bug08_min_size_adds_invisible_border() {
+        // 实测：800×600 窗口矩形 → 786×592 内容区（左右 7px、底 8px 不可见边框）
+        assert_eq!(
+            min_size_for_content((800, 600), (786, 592), 1.0),
+            (814, 608)
+        );
+        // 150% 缩放：内容区 1200×900 物理像素 + 边框
+        assert_eq!(
+            min_size_for_content((1221, 912), (1200, 900), 1.5),
+            (1221, 912)
+        );
+        // 无边框差（或取值异常）时退回 800×600
+        assert_eq!(
+            min_size_for_content((900, 700), (900, 700), 1.0),
+            (800, 600)
+        );
+        assert_eq!(
+            min_size_for_content((10, 10), (20, 20), f64::NAN),
+            (800, 600)
+        );
     }
 }

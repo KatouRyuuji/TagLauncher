@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useId, type ReactElement } from "react";
+import { Children, cloneElement, isValidElement, useId, type ReactElement, type ReactNode } from "react";
 
 /**
  * 设置区共享的表单行容器与输入框样式（Ai/Sync 设置等共用，避免逐字重复维护）。
@@ -9,15 +9,23 @@ export const inputClass =
   "input-frame min-h-10 min-w-0 w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] focus:outline-none";
 
 /** 表单标题关联唯一输入；复合控件通过 htmlFor 指定目标输入。 */
+const CONTROL_TAGS = ["input", "textarea", "select"];
+
+function isControl(node: ReactNode): node is ReactElement<{ id?: string }> {
+  return isValidElement<{ id?: string }>(node) && typeof node.type === "string" && CONTROL_TAGS.includes(node.type);
+}
+
 export function SettingsField({ label, children, htmlFor }: { label: string; children: React.ReactNode; htmlFor?: string }) {
   const generatedId = useId();
-  const directControl = isValidElement<{ id?: string }>(children)
-    && typeof children.type === "string" && ["input", "textarea", "select"].includes(children.type);
-  const id = htmlFor ?? (directControl ? children.props.id : undefined) ?? generatedId;
+  // 直接子元素里的第一个表单控件即标题目标（允许并列 datalist/提示等兄弟节点）
+  const nodes = Children.toArray(children);
+  const controlIndex = htmlFor === undefined ? nodes.findIndex(isControl) : -1;
+  const control = controlIndex >= 0 ? (nodes[controlIndex] as ReactElement<{ id?: string }>) : null;
+  const id = htmlFor ?? control?.props.id ?? generatedId;
   return (
     <div className="settings-field block min-w-0">
       <label htmlFor={id} className="mb-1.5 block text-[13px] font-medium text-[var(--text-primary)]">{label}</label>
-      {directControl ? cloneElement(children as ReactElement<{ id?: string }>, { id }) : children}
+      {control ? nodes.map((node, i) => (i === controlIndex ? cloneElement(control, { id }) : node)) : children}
     </div>
   );
 }

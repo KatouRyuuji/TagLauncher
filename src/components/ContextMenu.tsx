@@ -226,7 +226,14 @@ export function ContextMenu({
     });
     const id = window.requestAnimationFrame(updateMenuPosition);
     return () => window.cancelAnimationFrame(id);
-  }, [position.x, position.y, updateMenuPosition, openSubmenu, cabinets.length]);
+  }, [position.x, position.y, updateMenuPosition]);
+
+  // 子菜单开合/柜数量变化只做原地夹取，不先复位到原始鼠标坐标：贴底打开时复位
+  // 会让主菜单下跳一帧、父项滑出光标 → 子菜单收起 → 再复位，形成循环闪烁（BUG-06）。
+  useEffect(() => {
+    const id = window.requestAnimationFrame(updateMenuPosition);
+    return () => window.cancelAnimationFrame(id);
+  }, [updateMenuPosition, openSubmenu, cabinets.length]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -235,6 +242,16 @@ export function ContextMenu({
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [updateMenuPosition]);
+
+  // 菜单内容挂载后仍可能变高（异步状态、字体/图标加载等），只在挂载时测一次会让底边越界（BUG-13）：
+  // 尺寸变化即重新夹回视口。
+  useEffect(() => {
+    const menuEl = menuRef.current;
+    if (!menuEl || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => updateMenuPosition());
+    observer.observe(menuEl);
+    return () => observer.disconnect();
+  }, [menuRef, updateMenuPosition]);
 
   useEffect(() => {
     if (!openSubmenu) return;
@@ -455,6 +472,12 @@ export function ContextMenu({
         ref={menuRef}
         data-context-menu=""
         role="menu"
+        // 菜单键 / Shift+F10 打开菜单后，原生 contextmenu 以已聚焦的菜单项为目标，经 portal 冒泡到
+        // 对象卡片与 SelectionCanvas，会被当作空白区右键再叠开背景菜单（BUG-10）：菜单内部自行吞掉。
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
         style={{ ...style, boxShadow: "var(--shadow-dropdown)" }}
         className="modal-surface w-[220px] max-h-[72vh] max-w-[72vw] overflow-y-auto p-1.5"
       >
@@ -659,6 +682,7 @@ export function ContextMenu({
         <div
           ref={submenuRef}
           role="menu"
+          onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}
           style={{ ...submenuStyle, boxShadow: "var(--shadow-dropdown)" }}
           onMouseEnter={() => openSubmenuNow("cabinet")}
           onMouseLeave={scheduleCloseSubmenu}
@@ -691,6 +715,7 @@ export function ContextMenu({
         <div
           ref={thumbnailSubmenuRef}
           role="menu"
+          onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}
           style={{ ...submenuStyle, boxShadow: "var(--shadow-dropdown)" }}
           onMouseEnter={() => openSubmenuNow("thumbnail")}
           onMouseLeave={scheduleCloseSubmenu}

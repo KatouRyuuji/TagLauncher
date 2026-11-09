@@ -13,6 +13,11 @@ describe("设置控件", () => {
     await userEvent.click(screen.getByText("密钥"));
     expect(screen.getByRole("textbox", { name: "密钥", exact: true })).toHaveFocus();
   });
+  it("输入框与 datalist 并列时标题仍关联输入框", async () => {
+    render(<SettingsField label="模型"><input list="cands" placeholder="占位" /><datalist id="cands"><option value="a" /></datalist></SettingsField>);
+    await userEvent.click(screen.getByText("模型"));
+    expect(screen.getByRole("combobox", { name: "模型", exact: true })).toHaveFocus();
+  });
   it("开关可由键盘切换，名称与说明独立朗读", async () => {
     function Demo() {
       const [checked, setChecked] = useState(false);

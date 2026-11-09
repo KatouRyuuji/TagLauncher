@@ -16,7 +16,11 @@ vi.mock("../lib/db", () => ({
 vi.mock("../lib/toast", () => ({ showToast: vi.fn() }));
 
 // jsdom 不提供 ResizeObserver：菜单滚动提示只需能订阅
-vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+const resizeCallbacks: Array<() => void> = [];
+vi.stubGlobal("ResizeObserver", class {
+  constructor(cb: () => void) { resizeCallbacks.push(cb); }
+  observe() {} unobserve() {} disconnect() {}
+});
 
 const item: ItemWithTags = { id: 5, name: "旧名称.exe", path: "D:/旧名称.exe", type: "exe", created_at: "2026-01-01", is_favorite: false, tags: [] };
 const noop = vi.fn(async () => {});
@@ -106,3 +110,93 @@ describe("关联柜内的文件夹", () => {
   });
 });
 
+
+describe("贴近窗口底部时悬停「添加到文件柜」", () => {
+  const cabinet = { id: 2, name: "收纳", color: "#fff", created_at: "2026-10-10", folder_path: null, folder_truncated: false, folder_state: "ok" } as const;
+  afterEach(() => vi.restoreAllMocks());
+
+  it("子菜单展开不会让主菜单复位到原始坐标（不再循环闪烁）", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      { x: 0, y: 0, top: 0, left: 0, right: 200, bottom: 300, width: 200, height: 300, toJSON: () => ({}) } as DOMRect,
+    );
+    const y = window.innerHeight - 20;
+    render(
+      <ContextMenu
+        item={item}
+        cabinets={[cabinet]}
+        currentCabinetId={null}
+        currentCabinetName={null}
+        position={{ x: 10, y }}
+        onClose={vi.fn()}
+        onLaunch={vi.fn()}
+        onRemove={vi.fn()}
+        onEditTags={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onAddItemToCabinet={noop}
+        onRemoveItemFromCabinet={noop}
+        onUpdateThumbnail={noop}
+      />,
+    );
+    const menu = screen.getAllByRole("menu")[0];
+    const clamped = `${window.innerHeight - 300 - 8}px`;
+    await waitFor(() => expect(menu.style.top).toBe(clamped));
+    await userEvent.hover(screen.getByRole("menuitem", { name: /添加到文件柜/ }));
+    expect(screen.getByRole("menuitem", { name: /收纳/ })).toBeInTheDocument();
+    expect(menu.style.top).toBe(clamped);
+  });
+});
+
+describe("BUG-10 菜单内部的原生 contextmenu 不外溢", () => {
+  it("菜单项上的 contextmenu 被吞掉，不冒泡到外层（不会叠开空白区菜单）", () => {
+    const outer = vi.fn();
+    render(
+      <div onContextMenu={outer}>
+        <ContextMenu
+          item={item} cabinets={[]} currentCabinetId={null} currentCabinetName={null}
+          position={{ x: 10, y: 10 }} onClose={vi.fn()} onLaunch={vi.fn()} onRemove={vi.fn()}
+          onEditTags={vi.fn()} onToggleFavorite={vi.fn()} onAddItemToCabinet={noop}
+          onRemoveItemFromCabinet={noop} onUpdateThumbnail={noop}
+        />
+      </div>,
+    );
+    const first = screen.getAllByRole("menuitem")[0];
+    const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    first.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(outer).not.toHaveBeenCalled();
+  });
+});
+
+describe("BUG-13 菜单变高后重新夹回视口", () => {
+  it("ResizeObserver 回调触发后按新高度重算 top", async () => {
+    resizeCallbacks.length = 0;
+    const origH = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 600 });
+    let height = 100;
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const h = this.getAttribute("role") === "menu" ? height : 0;
+      return { x: 0, y: 0, left: 0, top: 0, right: 220, bottom: h, width: 220, height: h, toJSON() {} } as DOMRect;
+    });
+    try {
+      render(
+        <ContextMenu
+          item={item} cabinets={[]} currentCabinetId={null} currentCabinetName={null}
+          position={{ x: 10, y: 480 }} onClose={vi.fn()} onLaunch={vi.fn()} onRemove={vi.fn()}
+          onEditTags={vi.fn()} onToggleFavorite={vi.fn()} onAddItemToCabinet={noop}
+          onRemoveItemFromCabinet={noop} onUpdateThumbnail={noop}
+        />,
+      );
+      const menu = screen.getAllByRole("menu")[0];
+      await waitFor(() => expect(menu.style.top).toBe("480px"));
+      // 等挂载时的 rAF 测量跑完，再模拟内容变高
+      for (let i = 0; i < 3; i++) await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      expect(menu.style.top).toBe("480px");
+      height = 300;
+      resizeCallbacks.forEach((cb) => cb());
+      await waitFor(() => expect(menu.style.top).toBe(`${600 - 300 - 8}px`));
+    } finally {
+      spy.mockRestore();
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: origH });
+    }
+  });
+});
