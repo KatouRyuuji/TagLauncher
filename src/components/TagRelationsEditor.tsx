@@ -26,7 +26,7 @@ interface TagRelationsEditorProps {
  */
 export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRelation, onClose }: TagRelationsEditorProps) {
   const relations = useAppStore((s) => s.tagRelations);
-  const tagRows = useMemo(() => flattenTagTree(tags, relations, (a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name)), [tags, relations]);
+  const tagRows = useMemo(() => flattenTagTree(tags, relations, (a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name), { uniqueIds: true }), [tags, relations]);
   const [focusedId, setFocusedId] = useState<number | null>(tags[0]?.id ?? null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
