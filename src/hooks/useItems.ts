@@ -6,6 +6,8 @@ import { ensurePinyin } from "../lib/pinyinProvider";
 import { applyMissingFilter, applyTypeFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/itemQuery";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { currentBrowseDir, itemsInDir } from "../lib/cabinetBrowse";
+import { applyNestedVisibility, libraryBrowseDirOf, shouldRevealNested } from "../lib/nestedVisibility";
+import type { AddItemsContext } from "../lib/db";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
 import { TAGS_WRITTEN_EVENT } from "./useTags";
@@ -103,6 +105,9 @@ export function useItems() {
   const sortMode = useAppStore((state) => state.sortMode);
   const typeFilter = useAppStore((state) => state.typeFilter);
   const hideMissing = useAppStore((state) => state.hideMissing);
+  const showNestedContents = useAppStore((state) => state.showNestedContents);
+  const libraryBrowseRoot = useAppStore((state) => state.libraryBrowseRoot);
+  const libraryBrowseDir = useAppStore((state) => state.libraryBrowseDir);
   const tagRelations = useAppStore((state) => state.tagRelations);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
@@ -457,6 +462,21 @@ export function useItems() {
     linkedFolder !== null && !cabinetFlat && !hasSearchQuery && selectedTagIds.length === 0 && excludedTagIds.length === 0
       ? currentBrowseDir(linkedFolder, cabinetDir)
       : null;
+  const libraryDir = libraryBrowseDirOf(libraryBrowseRoot, libraryBrowseDir, {
+    hasSearchQuery,
+    selectedTagIds,
+    excludedTagIds,
+  });
+  const revealNested = shouldRevealNested({
+    showNestedContents,
+    hasSearchQuery,
+    selectedTagIds,
+    excludedTagIds,
+    selectedCabinetId,
+    showFavorites,
+    showRecent,
+    libraryBrowseRoot,
+  });
   // 浏览和筛选直接使用对象数据；输入搜索词时才构建拼音等派生字段。
   const sourceSearchIndex = useMemo(
     () => hasSearchQuery ? buildSearchIndex(source, searchMode) : null,
@@ -491,7 +511,10 @@ export function useItems() {
     if (searchIndex) {
       return applyMissingFilter(applyTypeFilter(searchWithIndex(searchIndex, deferredSearchQuery), typeFilter), hideMissing);
     }
-    const scoped = browseDir !== null ? itemsInDir(tagFiltered, browseDir) : tagFiltered;
+    const layerDir = browseDir ?? libraryDir;
+    const scoped = layerDir !== null
+      ? itemsInDir(tagFiltered, layerDir)
+      : applyNestedVisibility(tagFiltered, revealNested);
     return applyWorkspaceQuery(applyMissingFilter(scoped, hideMissing), {
       typeFilter,
       sortMode,
@@ -501,7 +524,7 @@ export function useItems() {
           ? undefined
           : { lastUsedAt: frozenSortKeysRef.current ?? undefined },
     });
-  }, [searchIndex, tagFiltered, browseDir, deferredSearchQuery, typeFilter, hideMissing, sortMode, showRecent]);
+  }, [searchIndex, tagFiltered, browseDir, libraryDir, revealNested, deferredSearchQuery, typeFilter, hideMissing, sortMode, showRecent]);
 
   // 关联柜内的失效对象（「清理失效」用）：取整个关联文件夹，不受当前目录与筛选影响
   const linkedMissingIds = useMemo(
@@ -509,9 +532,9 @@ export function useItems() {
     [linkedFolder, cabinetReady, source],
   );
 
-  const addItems = useCallback(async (paths: string[]) => {
+  const addItems = useCallback(async (paths: string[], context?: AddItemsContext) => {
     await withErrorToast("批量导入", async () => {
-      const result = await db.addItems(paths);
+      const result = await db.addItems(paths, context);
       if (result.failed.length > 0) {
         const first = result.failed[0];
         showToast(`导入失败 ${result.failed.length} 项：${getPathDisplayName(first.path)}（${first.error}）`, "warning");
@@ -532,6 +555,13 @@ export function useItems() {
 
       const changedItems = await db.getItemsByIds(result.items.map((item) => item.id), false);
       applyChangedItems(changedItems);
+      const cabinetId = context?.cabinetId;
+      if (cabinetId != null) {
+        if (useAppStore.getState().selectedCabinetId === cabinetId) {
+          setCabinetItems((current) => upsertItems(current, changedItems));
+        }
+        notifyCabinetItemsChanged(cabinetId, changedItems.map((item) => item.id));
+      }
 
       // 通知新对象已加入（供 AI 自动打标等后台监听）。携带完整对象，
       // 避免监听方读到尚未 flush 的列表状态。

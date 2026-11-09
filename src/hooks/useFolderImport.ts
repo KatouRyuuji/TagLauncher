@@ -2,9 +2,17 @@
 // hooks/useFolderImport.ts — 添加路径时若含文件夹，让用户选择入库方式
 // ============================================================================
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import * as db from "../lib/db";
 import { showToast } from "../lib/toast";
+import {
+  LINKED_CABINET_IMPORT_NOTICE,
+  planNestedImport,
+  snapshotImportPlacement,
+  toAddItemsContext,
+  type ImportPlacement,
+} from "../lib/importContext";
+import { useAppStore } from "../stores/appStore";
 
 const FOLDER_IMPORT_MODE_KEY = "taglauncher.folder_import_mode";
 
@@ -37,25 +45,49 @@ function persistMode(mode: FolderImportMode): void {
   }
 }
 
-export function useFolderImport(addItems: (paths: string[]) => Promise<void>) {
+function currentPlacement(): ImportPlacement {
+  const state = useAppStore.getState();
+  return snapshotImportPlacement({
+    selectedCabinetId: state.selectedCabinetId,
+    cabinets: state.cabinets,
+    selectedTagIds: state.selectedTagIds,
+    excludedTagIds: state.excludedTagIds,
+    searchQuery: state.searchQuery,
+  });
+}
+
+function noticeLinkedCabinet(placement: ImportPlacement): void {
+  if (placement.linkedCabinetBlocked) {
+    showToast(LINKED_CABINET_IMPORT_NOTICE, "info");
+  }
+}
+
+export function useFolderImport(addItems: (paths: string[], context?: db.AddItemsContext) => Promise<void>) {
   const [pendingPaths, setPendingPaths] = useState<string[] | null>(null);
   const [folderNames, setFolderNames] = useState<string[]>([]);
   const [fileCount, setFileCount] = useState(0);
   const [defaultMode, setDefaultMode] = useState<FolderImportMode>("folder");
+  const placementRef = useRef<ImportPlacement | null>(null);
+  const classifiedFilesRef = useRef<string[]>([]);
 
   const requestAddPaths = useCallback(async (paths: string[]) => {
     const normalized = Array.from(new Set(paths.map((path) => path.trim()).filter((path) => path.length > 0)));
     if (normalized.length === 0) return;
 
+    const placement = currentPlacement();
+    placementRef.current = placement;
+
     try {
       const classified = await db.classifyImportPaths(normalized);
       if (classified.folders.length === 0) {
-        await addItems(classified.files);
+        noticeLinkedCabinet(placement);
+        await addItems(classified.files, toAddItemsContext(placement, []));
         return;
       }
 
       setFolderNames(classified.folders);
       setFileCount(classified.files.length);
+      classifiedFilesRef.current = classified.files;
       setDefaultMode(readLastMode());
       setPendingPaths(normalized);
     } catch (error) {
@@ -65,18 +97,31 @@ export function useFolderImport(addItems: (paths: string[]) => Promise<void>) {
 
   const handleCancel = useCallback(() => {
     setPendingPaths(null);
+    placementRef.current = null;
+    classifiedFilesRef.current = [];
   }, []);
 
   const handleConfirm = useCallback(async (mode: FolderImportMode, remember: boolean) => {
     const paths = pendingPaths;
     const folders = folderNames;
+    const placement = placementRef.current ?? currentPlacement();
+    const droppedFiles = classifiedFilesRef.current;
     setPendingPaths(null);
+    placementRef.current = null;
+    classifiedFilesRef.current = [];
     if (!paths || paths.length === 0) return;
 
     if (remember) persistMode(mode);
+    noticeLinkedCabinet(placement);
     try {
       if (mode === "folder") {
-        await addItems(paths);
+        const plan = planNestedImport({
+          mode,
+          droppedFolders: folders,
+          droppedFiles,
+          expandedFiles: [],
+        });
+        await addItems(plan.paths, toAddItemsContext(placement, plan.hideFromAllPaths));
         return;
       }
 
@@ -85,21 +130,17 @@ export function useFolderImport(addItems: (paths: string[]) => Promise<void>) {
         showToast("文件夹很大，已先导入前 2000 个文件。其余请再选一次或分批添加。", "warning");
       }
 
-      if (mode === "both") {
-        const combined = Array.from(new Set([...folders, ...expanded.paths]));
-        if (combined.length === 0) {
-          showToast("这些文件夹里没有可导入的项目", "info");
-          return;
-        }
-        await addItems(combined);
+      const plan = planNestedImport({
+        mode,
+        droppedFolders: folders,
+        droppedFiles,
+        expandedFiles: expanded.paths,
+      });
+      if (plan.paths.length === 0) {
+        showToast(mode === "both" ? "这些文件夹里没有可导入的项目" : "这些文件夹里没有可导入的文件", "info");
         return;
       }
-
-      if (expanded.paths.length === 0) {
-        showToast("这些文件夹里没有可导入的文件", "info");
-        return;
-      }
-      await addItems(expanded.paths);
+      await addItems(plan.paths, toAddItemsContext(placement, plan.hideFromAllPaths));
     } catch (error) {
       showToast(`导入失败：${error instanceof Error ? error.message : String(error)}`, "error");
     }

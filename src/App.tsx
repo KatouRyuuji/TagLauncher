@@ -43,6 +43,7 @@ import { useStartupMaintenance } from "./hooks/useStartupMaintenance";
 import { useWorkspaceHotkeys } from "./hooks/useWorkspaceHotkeys";
 import { resetWorkspaceSearchInput } from "./lib/workspaceChrome";
 import { isUnderDir, parentBrowseDir } from "./lib/cabinetBrowse";
+import { browseTargetForItem } from "./lib/nestedVisibility";
 import { initModApi, notifySelectionChanged, onModWrite } from "./lib/modApi";
 import { initModRuntime } from "./lib/modRuntime";
 import { ToastContainer } from "./components/ToastContainer";
@@ -254,8 +255,8 @@ function App() {
     [findItemById, launchItem],
   );
 
-  // 关联柜内双击 / Enter 文件夹 = 进入该子目录（切回按目录浏览，并清掉会让目录视图失效的搜索与标签筛选）；
-  // 其余对象照常启动。
+  // 关联柜 / 库内目录：双击或 Enter 文件夹进入该层（清掉会让目录视图失效的搜索与标签筛选）；
+  // 搜索命中的隐藏对象导航到所在目录。其余对象照常启动。
   const handleOpenItem = useCallback(
     async (itemId: number) => {
       const state = useAppStore.getState();
@@ -274,20 +275,48 @@ function App() {
         setSelectedItemIds([]);
         return;
       }
+      if (item && state.selectedCabinetId === null) {
+        const target = browseTargetForItem(item, allItems);
+        if (target) {
+          if (state.searchQuery || state.searchInputValue) {
+            state.setSearchQuery("");
+            resetWorkspaceSearchInput();
+          }
+          if (state.selectedTagIds.length > 0 || state.excludedTagIds.length > 0) {
+            useAppStore.setState({ selectedTagIds: [], excludedTagIds: [] });
+          }
+          state.setLibraryBrowseRoot(target.root);
+          state.setLibraryBrowseDir(target.dir);
+          setSelectedItemIds([]);
+          return;
+        }
+      }
       await handleLaunchItem(itemId);
     },
-    [findItemById, handleLaunchItem, setSelectedItemIds],
+    [allItems, findItemById, handleLaunchItem, setSelectedItemIds],
   );
 
   const handleNavigateUp = useCallback(() => {
     const state = useAppStore.getState();
     const root = state.cabinets.find((cabinet) => cabinet.id === state.selectedCabinetId)?.folder_path;
-    if (!root || browseDir === null) return false;
-    const parent = parentBrowseDir(root, state.cabinetDir);
-    if (parent === undefined) return false;
-    state.setCabinetDir(parent);
-    setSelectedItemIds([]);
-    return true;
+    if (root && browseDir !== null) {
+      const parent = parentBrowseDir(root, state.cabinetDir);
+      if (parent === undefined) return false;
+      state.setCabinetDir(parent);
+      setSelectedItemIds([]);
+      return true;
+    }
+    if (state.libraryBrowseRoot) {
+      const parent = parentBrowseDir(state.libraryBrowseRoot, state.libraryBrowseDir);
+      if (parent === undefined) {
+        state.setLibraryBrowseRoot(null);
+      } else {
+        state.setLibraryBrowseDir(parent);
+      }
+      setSelectedItemIds([]);
+      return true;
+    }
+    return false;
   }, [browseDir, setSelectedItemIds]);
 
   // 手动刷新（刷新按钮/命令面板「刷新」）：显式触发对账 + 图标重取；

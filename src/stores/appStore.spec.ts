@@ -228,6 +228,15 @@ describe("appStore", () => {
     expect(useAppStore.getState().typeFilter).toBe("script");
   });
 
+  it("切柜与收藏会退出库内目录浏览，不把隐藏策略带到其他视图", () => {
+    useAppStore.setState({ libraryBrowseRoot: "D:\\Lib", libraryBrowseDir: "D:\\Lib\\Sub" });
+    useAppStore.getState().setSelectedCabinetId(4);
+    expect(useAppStore.getState().libraryBrowseRoot).toBeNull();
+    useAppStore.setState({ libraryBrowseRoot: "D:\\Lib", selectedCabinetId: null });
+    useAppStore.getState().setShowFavorites(true);
+    expect(useAppStore.getState().libraryBrowseRoot).toBeNull();
+  });
+
   it("setHideMissing 写入 workspace_prefs，清除筛选后写回 false", () => {
     useAppStore.getState().setHideMissing(true);
     const readStored = () => (JSON.parse(localStorage.getItem("taglauncher.workspace_prefs") ?? "{}") as { hideMissing?: boolean }).hideMissing;
