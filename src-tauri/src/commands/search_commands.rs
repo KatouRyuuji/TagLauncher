@@ -18,5 +18,6 @@ pub fn search_items(
         search_service::search_items(&conn, &query, &tag_ids)?
     };
     item_service::fill_visuals(&app, &mut items);
+    crate::services::asset_scope::allow_items(&app, &items);
     Ok(items)
 }

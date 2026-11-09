@@ -141,5 +141,6 @@ pub fn get_cabinet_items(
     if include_visuals.unwrap_or(true) {
         item_service::fill_visuals(&app, &mut items);
     }
+    crate::services::asset_scope::allow_items(&app, &items);
     Ok(items)
 }

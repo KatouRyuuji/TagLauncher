@@ -54,7 +54,9 @@ pub fn classify_import_paths(paths: Vec<String>) -> crate::services::import_path
 
 /// 把文件夹递归展开为文件路径；已是文件的项原样保留。
 #[tauri::command(async)]
-pub fn expand_folder_import(paths: Vec<String>) -> crate::services::import_paths::ExpandFolderImportResult {
+pub fn expand_folder_import(
+    paths: Vec<String>,
+) -> crate::services::import_paths::ExpandFolderImportResult {
     crate::services::import_paths::expand_folder_import(paths)
 }
 
@@ -67,10 +69,7 @@ pub struct ItemTagsChange {
 }
 
 #[tauri::command(async)]
-pub fn set_many_item_tags(
-    db: State<Database>,
-    changes: Vec<ItemTagsChange>,
-) -> Result<(), String> {
+pub fn set_many_item_tags(db: State<Database>, changes: Vec<ItemTagsChange>) -> Result<(), String> {
     let conn = db.get_conn();
     let pairs: Vec<(i64, Vec<i64>)> = changes
         .into_iter()
@@ -94,7 +93,11 @@ pub fn update_item_icon(
 // 对账已解耦到 reconcile_runtime（启动首跑 + 60s 节流 + 手动触发），本命令纯读库，
 // 不再为每次读取付出全量 exists() 扫盘成本。
 #[tauri::command(async)]
-pub fn get_items(app: AppHandle, db: State<Database>, include_visuals: Option<bool>) -> Result<Vec<ItemWithTags>, String> {
+pub fn get_items(
+    app: AppHandle,
+    db: State<Database>,
+    include_visuals: Option<bool>,
+) -> Result<Vec<ItemWithTags>, String> {
     let mut items = {
         let conn = db.get_conn();
         item_service::get_items(&conn)?
@@ -102,6 +105,7 @@ pub fn get_items(app: AppHandle, db: State<Database>, include_visuals: Option<bo
     if include_visuals.unwrap_or(true) {
         item_service::fill_visuals(&app, &mut items);
     }
+    crate::services::asset_scope::allow_items(&app, &items);
     Ok(items)
 }
 
@@ -155,23 +159,29 @@ pub fn get_item_visual(app: AppHandle, db: State<Database>, id: i64) -> Result<I
     if !item.is_missing {
         crate::services::icon_service::fill_item_visual(&app, &mut item);
     }
-    Ok(ItemVisual { path: item.path, icon_path: item.icon_path })
+    crate::services::asset_scope::allow_item_visual(
+        &app,
+        &item.path,
+        item.is_missing,
+        item.icon_path.as_deref(),
+    );
+    Ok(ItemVisual {
+        path: item.path,
+        icon_path: item.icon_path,
+    })
 }
 
 // fill_visuals 在图标未缓存时会跑 PowerShell/文件 IO，同步命令会在主线程执行而冻结 UI，
 // 与 get_items 一致用 (async) 放到工作线程。函数体全同步（无 await），无跨 await 持锁。
 #[tauri::command(async)]
-pub fn get_item(
-    app: AppHandle,
-    db: State<Database>,
-    id: i64,
-) -> Result<ItemWithTags, String> {
+pub fn get_item(app: AppHandle, db: State<Database>, id: i64) -> Result<ItemWithTags, String> {
     // 锁内只取数据，释放锁后再补图标（PowerShell/文件 IO），避免阻塞其它命令。
     let mut item = {
         let conn = db.get_conn();
         item_service::get_item(&conn, id)?
     };
     item_service::fill_visuals(&app, std::slice::from_mut(&mut item));
+    crate::services::asset_scope::allow_items(&app, std::slice::from_ref(&item));
     Ok(item)
 }
 
@@ -190,6 +200,7 @@ pub fn get_items_by_ids(
     if include_visuals.unwrap_or(true) {
         item_service::fill_visuals(&app, &mut items);
     }
+    crate::services::asset_scope::allow_items(&app, &items);
     Ok(items)
 }
 

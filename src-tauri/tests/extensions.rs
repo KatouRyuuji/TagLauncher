@@ -9,7 +9,9 @@ mod common;
 use tag_launcher_lib::extensions::mod_registry::ModRegistry;
 use tag_launcher_lib::extensions::{mod_loader, theme_loader};
 use tag_launcher_lib::models::ModManifest;
-use tag_launcher_lib::{ensure_valid_mod_id, reassess_dependency_compatibility, resolve_mod_file_path};
+use tag_launcher_lib::{
+    ensure_valid_mod_id, reassess_dependency_compatibility, resolve_mod_file_path,
+};
 
 /// 在 mods 目录下写一个 mod 的 manifest.json。
 fn write_manifest(mods_dir: &std::path::Path, sub: &str, json: &str) {
@@ -18,8 +20,7 @@ fn write_manifest(mods_dir: &std::path::Path, sub: &str, json: &str) {
     std::fs::write(dir.join("manifest.json"), json).unwrap();
 }
 
-const GOOD_MANIFEST: &str =
-    r#"{"id":"goodmod","name":"Good","version":"1.0.0","author":"me","description":"d","type":"css"}"#;
+const GOOD_MANIFEST: &str = r#"{"id":"goodmod","name":"Good","version":"1.0.0","author":"me","description":"d","type":"css"}"#;
 
 /// discover_mods：合法 mod 收入结果；非法 id / 坏 JSON 进错误列表；缺 manifest 目录静默跳过。
 #[test]
@@ -209,7 +210,10 @@ fn resolve_mod_file_path_blocks_escape_and_absolute() {
 
     // 正常相对路径（尚不存在的新文件）→ 解析为 mod 目录内路径。
     let ok = resolve_mod_file_path(&registry, "goodmod", "data/config.json").expect("resolve ok");
-    assert!(ok.starts_with(mod_dir.canonicalize().unwrap()), "应落在 mod 目录内");
+    assert!(
+        ok.starts_with(mod_dir.canonicalize().unwrap()),
+        "应落在 mod 目录内"
+    );
 
     // 目录逃逸 → 拒。
     assert!(resolve_mod_file_path(&registry, "goodmod", "../escape.txt").is_err());
@@ -363,4 +367,42 @@ fn mod_data_tables_storage_semantics() {
             .collect()
     };
     assert_eq!(ordered, vec!["second".to_string(), "first".to_string()]);
+}
+
+/// 小 UX：依赖已启用但版本仍不满足时，重估应把过时的「未启用」原因刷新为版本问题。
+#[test]
+fn reassess_refreshes_stale_reason_when_still_incompatible() {
+    let registry = ModRegistry::new();
+    let base: ModManifest = serde_json::from_str(
+        r#"{"id":"base","name":"B","version":"1.2.0","author":"a","description":"d","type":"css"}"#,
+    )
+    .unwrap();
+    let need2: ModManifest = serde_json::from_str(
+        r#"{"id":"need2","name":"N","version":"1.0.0","author":"a","description":"d","type":"css",
+            "dependencies":{"base":"^2.0.0"}}"#,
+    )
+    .unwrap();
+    let root = common::TempDir::new("reassess-stale");
+    registry.register(base, root.path.join("base"), false, true, None);
+    registry.register(
+        need2,
+        root.path.join("need2"),
+        false,
+        false,
+        Some("依赖未满足：依赖 mod 'base' 未启用".to_string()),
+    );
+    assert!(registry.enable_mod("base"));
+    reassess_dependency_compatibility(&registry);
+    let m = registry
+        .list_mods()
+        .into_iter()
+        .find(|m| m.manifest.id == "need2")
+        .unwrap();
+    assert!(!m.is_compatible);
+    let reason = m.incompatible_reason.unwrap_or_default();
+    assert!(!reason.contains("未启用"), "原因未刷新: {reason}");
+    assert!(
+        reason.contains("版本不满足") && reason.starts_with("依赖未满足"),
+        "{reason}"
+    );
 }
