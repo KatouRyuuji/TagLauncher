@@ -34,3 +34,30 @@ vi.mock("@tauri-apps/api/webview", () => ({
 
 // 全局测试用工具，供测试文件直接读取
 (globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+
+// Node ≥22 实验性 localStorage 可能占住全局键，导致 jsdom Storage 未被 vitest 注入。
+// execArgv 已关 webstorage；此处再兜底，避免个别 runner 未把 execArgv 传到 worker。
+(() => {
+  const usable = (value: unknown): value is Storage =>
+    !!value
+    && typeof (value as Storage).getItem === "function"
+    && typeof (value as Storage).setItem === "function"
+    && typeof (value as Storage).clear === "function";
+  if (usable(globalThis.localStorage)) return;
+  const store = new Map<string, string>();
+  const storage: Storage = {
+    get length() { return store.size; },
+    clear() { store.clear(); },
+    getItem(key) { return store.has(key) ? store.get(key)! : null; },
+    key(index) { return [...store.keys()][index] ?? null; },
+    removeItem(key) { store.delete(key); },
+    setItem(key, value) { store.set(String(key), String(value)); },
+  };
+  Object.defineProperty(globalThis, "localStorage", {
+    value: storage,
+    configurable: true,
+    enumerable: true,
+    writable: true,
+  });
+})();
+
