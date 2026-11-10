@@ -90,7 +90,10 @@ def test_ambiguous_candidates_not_written_back(app, sandbox):
     wait_until(lambda: app.item("歧义.txt")["is_missing"], 10)
     c1 = files.write(sandbox.files / "copy1" / "歧义.txt", data)
     c2 = files.write(sandbox.files / "copy2" / "歧义.txt", data)
-    n = app.invoke("relocate_missing")
+    # 范围限定在沙箱（两份候选都在其中）：歧义判定与全盘相同，只是不扫整台 runner。
+    # 全盘冷扫描在 GitHub runner 实测 2271 s（16cd1ce），超出分片时限；全盘路径改由 Rust 单测
+    # full_scan_without_roots_covers_every_logical_drive（None → 全部盘符）与共享扫描核心的单测覆盖。
+    n = app.invoke("relocate_missing", {"roots": [str(sandbox.files)]})
     it = next(i for i in app.items() if i["id"] == iid)
     assert it["is_missing"], f"两个同名同内容候选不应自动回写：relocated={n} path={it['path']}"
     assert it["path"].lower() == str(a).lower()

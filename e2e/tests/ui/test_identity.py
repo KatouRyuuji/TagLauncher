@@ -85,7 +85,7 @@ def test_relocate_all_missing(app, sandbox):
     app.page.get_by_role("button", name="1 个失效项目，打开待处理").click()
     dlg = app.dialog("失效项目")
     # 限定在沙箱内找回（「在选定文件夹中找回…」，原生文件夹对话框以 IPC 桩返回沙箱根）。
-    # 全盘路径（不传范围）由 E-ID-10 歧义用例与 Rust 单测 full_scan_without_roots_covers_every_logical_drive 覆盖。
+    # 全盘路径（不传范围）由 Rust 单测 full_scan_without_roots_covers_every_logical_drive 覆盖（runner 全盘冷扫描实测 2271 s）。
     app.stub("plugin:dialog|open", [str(sandbox.files)])
     dlg.get_by_role("button", name="在选定文件夹中找回…").click()
     # 失效出现后应用会自动发起一次全盘找回（args 无 roots，可能仍在扫描）；这里只看带范围的那次调用
