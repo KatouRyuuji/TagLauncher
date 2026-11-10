@@ -8,11 +8,13 @@ const make = (id: number, name = `o${id}`): ItemWithTags =>
 function backend(n: number) {
   const db = new Map(Array.from({ length: n }, (_, i) => [i + 1, make(i + 1)] as const));
   const calls: number[][] = [];
-  const fetch = async (ids: number[]) => {
+  const kinds: string[] = [];
+  const fetch = async (ids: number[], kind: string = "visible") => {
     calls.push(ids);
+    kinds.push(kind);
     return ids.flatMap((id) => db.get(id) ?? []);
   };
-  return { db, calls, fetch };
+  return { db, calls, kinds, fetch };
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -112,6 +114,7 @@ test("小视图空闲补齐：分批只取没取过的，可视页在途时让�
   }
   const sizes = b.calls.slice(2).map((c) => c.length);
   assert.deepEqual(sizes, [WARM_BATCH, n - 2 * PAGE_SIZE - WARM_BATCH], "跳过已取过的可视页与预取页");
+  assert.deepEqual(b.kinds, ["visible", "ahead", "warm", "warm"], "补齐按 warm 取（后端只放行卡片直接显示的路径）");
   assert.equal(data, 0, "补齐的对象不在可视区间：不重渲染");
   assert.equal(store.stats().cached, n);
   // 全量刷新后只是过期：补齐不重取

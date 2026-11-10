@@ -270,11 +270,17 @@ pub fn get_items_page(
     db: State<Database>,
     index: State<SearchIndex>,
     ids: Vec<i64>,
+    warm: Option<bool>,
 ) -> Result<Vec<ItemWithTags>, String> {
     let items = {
         let ro = db.read_conn()?;
         index.items_page(ro.conn(), &ids, &synonyms_loader(&app))?
     };
-    crate::services::asset_scope::allow_items(&app, &items);
+    // 空闲补齐（warm）只放行卡片直接显示的路径；预览命令读取前按需放行其余范围
+    if warm.unwrap_or(false) {
+        crate::services::asset_scope::allow_items_for_cards(&app, &items);
+    } else {
+        crate::services::asset_scope::allow_items(&app, &items);
+    }
     Ok(items)
 }
