@@ -14,6 +14,7 @@ vi.mock("../lib/db", () => ({
   getItem: vi.fn(async () => after),
   relocateMissing: vi.fn(),
   clearIconNoneMarkers: vi.fn(async () => {}),
+  searchWarm: vi.fn(async () => ({})),
 }));
 vi.mock("../lib/modApi", () => ({ notifyItemsChanged: vi.fn() }));
 const events = vi.hoisted(() => ({ handlers: new Map<string, Set<(e: { payload: unknown }) => void>>() }));
