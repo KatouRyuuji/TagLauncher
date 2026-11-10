@@ -1,9 +1,12 @@
+mod collect;
 mod commands;
 mod data_sync;
 /// F18 托盘 / 全局快捷键 / 关闭行为（仅 GUI 使用）
 mod desktop;
 mod quick;
 pub mod search;
+/// 资源管理器右键菜单 / 发送到（阶段③）
+pub mod shell_integration;
 pub mod view;
 // 集成测试（tests/ 目录把本 crate 当外部 rlib 使用）与 CLI 二进制（src/bin/tl.rs）
 // 只能访问 pub 项，故将以下模块公开，使其 service/db/model/extension/cli 层可被直接调用。
@@ -20,6 +23,9 @@ pub use db::Database;
 use desktop::*;
 // 快速搜索窗命令（阶段②）
 use quick::{quick_hide, quick_locate_in_main, quick_open};
+// 收纳会话与右键菜单（阶段③）
+use collect::{collect_finish, collect_session, get_collect_preference, set_collect_preference};
+use shell_integration::{get_shell_integration, set_shell_integration};
 
 use extensions::mod_loader;
 use extensions::mod_registry::ModRegistry;
@@ -154,6 +160,13 @@ fn clamp_window_to_work_area(window: &tauri::WebviewWindow) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 便携版清理入口 `--shell-integration remove`：在单实例转发之前处理并退出
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if let Some(code) = shell_integration::handle_cli(&args) {
+            std::process::exit(code);
+        }
+    }
     install_startup_failure_dialog();
     tauri::Builder::default()
         // 须为首个插件：第二个实例在初始化其余部分前即退出，只把已有主窗口唤到前台
@@ -396,7 +409,12 @@ pub fn run() {
             app.manage(services::search_index::SearchIndex::default());
             data_sync::start(app.handle());
             app.manage(registry);
+            app.manage(collect::CollectState::default());
             desktop::init(app.handle(), desktop::parse_launch_args(std::env::args().skip(1)));
+            // 由右键菜单/发送到启动的首个实例：后台启动（不显示主窗），只弹快速窗收纳
+            if let Some(paths) = collect::collect_args(std::env::args().skip(1)) {
+                collect::submit(app.handle(), paths);
+            }
             app.manage(services::watch_runtime::FolderWatchHub::new());
             app.manage(services::reconcile_runtime::ReconcileScheduler::new());
             let handle = app.handle().clone();
@@ -439,6 +457,13 @@ pub fn run() {
             quick_open,
             quick_hide,
             quick_locate_in_main,
+            // 收纳与右键菜单（阶段③）
+            collect_session,
+            collect_finish,
+            get_collect_preference,
+            set_collect_preference,
+            get_shell_integration,
+            set_shell_integration,
             set_hotkey,
             set_close_action,
             set_hotkey_ignore_fullscreen,
