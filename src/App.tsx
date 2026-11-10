@@ -36,6 +36,7 @@ import { useBatchSelection } from "./hooks/useBatchSelection";
 import { useAiTagOrchestration } from "./hooks/useAiTagOrchestration";
 import { useCardPointerHighlight } from "./hooks/useCardPointerHighlight";
 import { useAppStore } from "./stores/appStore";
+import { useQuickLocate } from "./hooks/useQuickLocate";
 import { useInternalDragStore } from "./stores/internalDragStore";
 import { loadSynonyms } from "./lib/synonyms";
 import { copyText } from "./lib/clipboard";
@@ -123,6 +124,8 @@ function App() {
   const isDraggingItem = useInternalDragStore((state) => state.drag?.kind === "item");
 
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  // 快速搜索窗「在主窗定位」：清空筛选后选中并滚动到目标
+  useQuickLocate(items, setSelectedItemIds);
 
   useCardPointerHighlight();
 

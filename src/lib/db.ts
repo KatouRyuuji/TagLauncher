@@ -536,6 +536,27 @@ export async function wakeDataSync(): Promise<void> {
   return invokeCmd("wake_data_sync");
 }
 
+// ---- 全局快速搜索窗（阶段②） ----
+
+/** 唤出快速搜索窗（与热键同一入口）。t0Ms = 唤出请求时刻；activate=false 只供 E2E（不抢前台） */
+export async function quickOpen(opts?: { t0Ms?: number; activate?: boolean }): Promise<void> {
+  return invokeCmd("quick_open", { t0Ms: opts?.t0Ms, activate: opts?.activate });
+}
+
+export async function quickHide(): Promise<void> {
+  return invokeCmd("quick_hide");
+}
+
+/** 快速窗数据：后端走只读连接，不含自动图标 */
+export async function quickGetItems(): Promise<ItemWithTags[]> {
+  return invokeCmd("quick_get_items");
+}
+
+/** 收起快速窗、显示主窗并在主窗中定位该对象 */
+export async function quickLocateInMain(id: number): Promise<void> {
+  return invokeCmd("quick_locate_in_main", { id });
+}
+
 /** 首个实例的启动方式：background 时主题就绪后不显示主窗 */
 export async function getLaunchMode(): Promise<LaunchMode> {
   return invokeCmd("get_launch_mode");

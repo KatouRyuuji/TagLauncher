@@ -1,0 +1,26 @@
+/* 快速搜索窗：无边框小窗，颜色全部取主题变量（主窗快照） */
+html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; background: var(--bg-app, #f7f5f2); }
+.quick-shell { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: 12px; gap: 8px;
+  color: var(--text-primary, #222); font-size: calc(14px * var(--ui-font-scale, 1)); }
+.quick-input { width: 100%; box-sizing: border-box; height: 44px; padding: 0 14px; font-size: 1.15em;
+  border-radius: var(--radius-md, 8px); border: 1px solid var(--border-subtle, #ddd);
+  background: var(--bg-input, #fff); color: inherit; outline: none; }
+.quick-input:focus { border-color: var(--accent, #c0647d); }
+.quick-input-small { height: 34px; font-size: 1em; }
+.quick-list { flex: 1; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+.quick-row { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; padding: 6px 10px;
+  border-radius: var(--radius-sm, 6px); cursor: default; }
+.quick-row[aria-selected="true"] { background: var(--bg-selected, rgba(192, 100, 125, 0.14)); }
+.quick-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-tags { color: var(--text-muted, #777); font-size: 0.85em; justify-self: end; white-space: nowrap; }
+.quick-path { grid-column: 1 / -1; color: var(--text-faint, #999); font-size: 0.8em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-missing .quick-name { text-decoration: line-through; opacity: 0.7; }
+.quick-empty { padding: 16px 10px; color: var(--text-muted, #777); }
+.quick-footer { color: var(--text-faint, #999); font-size: 0.8em; min-height: 1.4em; }
+.quick-error { color: var(--color-danger-ink, #b3261e); }
+.quick-picker { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
+.quick-picker-title { color: var(--text-muted, #777); font-size: 0.9em; }
+.quick-picker .quick-row { grid-template-columns: 1.2em 0.8em 1fr; align-items: center; }
+.quick-check { color: var(--accent, #c0647d); }
+.quick-tag-dot { width: 0.7em; height: 0.7em; border-radius: 50%; }

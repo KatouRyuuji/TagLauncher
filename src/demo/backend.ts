@@ -83,7 +83,10 @@ function seedState(): DemoState {
       Object.entries(DEMO_CABINET_ITEMS).map(([id, ids]) => [Number(id), new Set(ids)]),
     ),
     desktop: {
-      hotkeys: [{ action: "toggle_main", label: "显示 / 隐藏主窗口", accelerator: null, error: null }],
+      hotkeys: [
+        { action: "toggle_main", label: "显示 / 隐藏主窗口", accelerator: null, error: null },
+        { action: "open_quick", label: "打开快速搜索窗", accelerator: null, error: null },
+      ],
       closeAction: "exit",
       ignoreFullscreen: true,
       launchMode: "show",
@@ -845,6 +848,13 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return structuredClone(state.desktop);
     case "get_launch_mode":
       return "show";
+    // 快速搜索窗：演示模式没有第二个窗口
+    case "quick_open":
+    case "quick_hide":
+    case "quick_locate_in_main":
+      return null;
+    case "quick_get_items":
+      return sortItems(state.items).map(withTags);
     case "wake_data_sync":
       return null;
     case "set_hotkey": {

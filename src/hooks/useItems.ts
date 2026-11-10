@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } from "react";
 import { isScanCancelled, scanErrorMessage } from "../lib/relocateScan";
-import { onExternalDataChanged } from "../lib/dataSync";
+import { onExternalDataChanged, onWindowDataWritten } from "../lib/dataSync";
+import { runSearchPipeline } from "../lib/searchPipeline";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
-import { buildSearchIndex, expandForTagFilter, filterItemsByTags, filterSearchIndex, searchWithIndex } from "../lib/search";
+import { buildSearchIndex, expandForTagFilter, filterItemsByTags, filterSearchIndex } from "../lib/search";
 import { ensurePinyin } from "../lib/pinyinProvider";
-import { applyMissingFilter, applyTypeFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/itemQuery";
+import { applyMissingFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/itemQuery";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { currentBrowseDir, itemsInDir } from "../lib/cabinetBrowse";
 import { applyNestedVisibility, libraryBrowseDirOf, shouldRevealNested } from "../lib/nestedVisibility";
@@ -448,6 +449,14 @@ export function useItems() {
     });
   }, []);
 
+  // 快速搜索窗写库（打标签、启动刷新最近使用）后按对象 ID 增量刷新，不全量重载
+  useEffect(() => onWindowDataWritten("main", ({ itemIds }) => {
+    if (itemIds.length === 0) return;
+    void db.getItemsByIds(itemIds, false)
+      .then(applyChangedItems)
+      .catch((error: unknown) => console.error("增量刷新对象失败:", error));
+  }), [applyChangedItems]);
+
   const source = useMemo(() => {
     if (showFavorites) {
       return allItems.filter((item) => item.is_favorite);
@@ -530,7 +539,7 @@ export function useItems() {
 
   const filtered = useMemo(() => {
     if (searchIndex) {
-      return applyMissingFilter(applyTypeFilter(searchWithIndex(searchIndex, deferredSearchQuery), typeFilter), hideMissing);
+      return runSearchPipeline(searchIndex, deferredSearchQuery, { typeFilter, hideMissing });
     }
     const layerDir = browseDir ?? libraryDir;
     const scoped = layerDir !== null
