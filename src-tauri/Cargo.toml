@@ -14,12 +14,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-log = "2"
 tauri-plugin-window-state = "2"
+# F18：用户启用后才注册的全局唤起热键（默认不注册，不抢任何键）；仅 Rust 侧调用，不向前端开放插件权限
+tauri-plugin-global-shortcut = "2"
 log = "0.4"
 # 文件夹监视：notify 官方防抖层（经 re-export 使用 notify；Windows 底层为 ReadDirectoryChangesW）
 notify-debouncer-full = "0.7"

@@ -1,4 +1,6 @@
 mod commands;
+/// F18 托盘 / 全局快捷键 / 关闭行为（仅 GUI 使用）
+mod desktop;
 // 集成测试（tests/ 目录把本 crate 当外部 rlib 使用）与 CLI 二进制（src/bin/tl.rs）
 // 只能访问 pub 项，故将以下模块公开，使其 service/db/model/extension/cli 层可被直接调用。
 // 仅放宽可见性，不改变任何业务逻辑。
@@ -9,6 +11,8 @@ pub mod models;
 pub mod services;
 
 pub use commands::*;
+// 命令（含 #[tauri::command] 生成的 __cmd__ 宏）需在 generate_handler! 处可见
+use desktop::*;
 pub use db::Database;
 
 use extensions::mod_loader;
@@ -175,6 +179,30 @@ pub fn run() {
         )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        // F18：插件只提供注册能力；默认不注册任何键，用户在设置里启用后才由 desktop 模块注册
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        desktop::toggle_main_window(app);
+                    }
+                })
+                .build(),
+        )
+        // F18：关闭行为为「最小化到托盘」时拦截关闭、只隐藏主窗口；默认（退出）不拦截，保持旧行为
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main"
+                    && window
+                        .app_handle()
+                        .try_state::<desktop::DesktopState>()
+                        .is_some_and(|s| s.close_to_tray())
+                {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.restore_state(StateFlags::SIZE | StateFlags::POSITION);
@@ -342,6 +370,7 @@ pub fn run() {
 
             app.manage(database);
             app.manage(registry);
+            desktop::init(app.handle());
             app.manage(services::watch_runtime::FolderWatchHub::new());
             app.manage(services::reconcile_runtime::ReconcileScheduler::new());
             let handle = app.handle().clone();
@@ -376,6 +405,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // 桌面驻留（F18）
+            get_desktop_settings,
+            set_global_shortcut,
+            set_close_action,
             // 项目 CRUD
             add_item,
             add_items,

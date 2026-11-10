@@ -7,6 +7,7 @@ import {
   Download,
   FolderOpen,
   Palette,
+  AppWindow,
   PanelRight,
   Puzzle,
   RefreshCw,
@@ -31,6 +32,7 @@ import { SyncSettingsSection } from "./SyncSettingsSection";
 import { ThemeFamilyGallery } from "./ThemeFamilyGallery";
 import { useThemeContext } from "./ThemeProvider";
 import { UpdateSettingsSection } from "./UpdateSettingsSection";
+import { DesktopSettingsSection } from "./DesktopSettingsSection";
 import { UiFontScaleSelect } from "./UiFontScaleSelect";
 
 interface SettingsPanelProps {
@@ -62,6 +64,7 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   theme: Palette,
   ai: Sparkles,
   data: Database,
+  desktop: AppWindow,
   sync: Cloud,
   update: RefreshCw,
   mods: Puzzle,
@@ -347,6 +350,10 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
               <div id={settingsSectionDomId("data")} hidden={activeSection !== "data"} aria-labelledby="settings-nav-data">
                 {visitedSections.has("data") && <DataSettingsSection />}
+              </div>
+
+              <div id={settingsSectionDomId("desktop")} hidden={activeSection !== "desktop"} aria-labelledby="settings-nav-desktop">
+                {visitedSections.has("desktop") && <DesktopSettingsSection />}
               </div>
 
               <div id={settingsSectionDomId("sync")} hidden={activeSection !== "sync"} aria-labelledby="settings-nav-sync">

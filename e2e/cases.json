@@ -649,6 +649,50 @@
 "coverage": "F07"
 },
 {
+"id": "E-DSK-01",
+"module": "桌面驻留",
+"scenario": "默认不抢键、关闭即退出",
+"steps": "全新库打开设置→桌面驻留",
+"expect": "未启用快捷键，关闭行为=退出；通用 set_setting 不能写 desktop.*",
+"layer": "UI",
+"automation": "CDP + Win32 只读",
+"priority": "P1",
+"coverage": "F18"
+},
+{
+"id": "E-DSK-02",
+"module": "桌面驻留",
+"scenario": "全局快捷键真实注册并持久",
+"steps": "设置 Ctrl+Alt+Shift+F9→重启→清除",
+"expect": "系统层被占用（RegisterHotKey 探测失败）；重启后重新注册；清除后释放",
+"layer": "UI",
+"automation": "CDP + Win32 只读",
+"priority": "P1",
+"coverage": "F18"
+},
+{
+"id": "E-DSK-03",
+"module": "桌面驻留",
+"scenario": "快捷键冲突回滚",
+"steps": "外部进程占住 F10→改为 F10",
+"expect": "报错含「占用」，设置与系统注册保持旧值 F9",
+"layer": "UI",
+"automation": "CDP + Win32 只读",
+"priority": "P1",
+"coverage": "F18"
+},
+{
+"id": "E-DSK-04",
+"module": "桌面驻留",
+"scenario": "关闭到托盘",
+"steps": "关闭行为=托盘→点关闭→切回退出→关闭",
+"expect": "托盘模式隐藏不退出；退出模式关闭即退出",
+"layer": "UI",
+"automation": "CDP + Win32 只读",
+"priority": "P1",
+"coverage": "F18"
+},
+{
 "id": "E-LCH-01",
 "module": "启动对象",
 "scenario": "双击启动 .bat",

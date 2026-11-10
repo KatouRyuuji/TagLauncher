@@ -9,6 +9,7 @@
 // 数据在页面刷新后重置为初始演示数据集（demo 不追求持久化）。
 // ============================================================================
 
+import type { DesktopSettings } from "../lib/desktopShortcut";
 import type { Cabinet, Item, ItemWithTags, Tag, TagRelation } from "../types";
 import type { ModInfo } from "../types/mod";
 import type { ThemeDefinition } from "../types/theme";
@@ -42,6 +43,7 @@ interface DemoState {
   cabinets: Cabinet[];
   cabinetItems: Map<number, Set<number>>;
   settings: Map<string, string>;
+  desktop: DesktopSettings;
   ai: {
     baseUrl: string;
     apiKey: string;
@@ -80,6 +82,7 @@ function seedState(): DemoState {
     cabinetItems: new Map(
       Object.entries(DEMO_CABINET_ITEMS).map(([id, ids]) => [Number(id), new Set(ids)]),
     ),
+    desktop: { globalShortcut: null, closeAction: "exit", shortcutError: null },
     settings: new Map([
       // 演示主用主题：樱花粉（功能巡演与截图全覆盖）
       ["theme", "7f47aab2-74bb-4c77-b99b-550f0acf3c9c"],
@@ -827,6 +830,22 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "set_current_theme":
       state.settings.set("theme", str(args.themeId));
       return null;
+    case "get_desktop_settings":
+      return { ...state.desktop };
+    case "set_global_shortcut": {
+      const next = typeof args.shortcut === "string" && args.shortcut.trim() ? args.shortcut.trim() : null;
+      if (next && !/(^|\+)(Ctrl|Control|Alt|Super)(\+|$)/i.test(next)) {
+        throw new Error(`全局快捷键「${next}」至少要包含 Ctrl、Alt 或 Win 之一，避免拦截日常输入`);
+      }
+      state.desktop = { ...state.desktop, globalShortcut: next, shortcutError: null };
+      return { ...state.desktop };
+    }
+    case "set_close_action": {
+      const action = str(args.action);
+      if (action !== "exit" && action !== "tray") throw new Error(`未知的关闭行为「${action}」，只能是 exit 或 tray`);
+      state.desktop = { ...state.desktop, closeAction: action };
+      return { ...state.desktop };
+    }
     case "get_setting":
       return state.settings.get(str(args.key)) ?? null;
     case "set_setting":
