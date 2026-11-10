@@ -52,6 +52,7 @@ import { ToastContainer } from "./components/ToastContainer";
 import { FloatingPanels } from "./components/FloatingPanels";
 import * as db from "./lib/db";
 import { showToast } from "./lib/toast";
+import { markFirstItems } from "./lib/mainPerf";
 
 const WELCOME_HIDE_KEY = "taglauncher.hide_welcome_modal";
 
@@ -125,6 +126,9 @@ function App() {
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   // 快速搜索窗「在主窗定位」：清空筛选后选中并滚动到目标
   useQuickLocate(items, setSelectedItemIds);
+  useEffect(() => {
+    if (!loading) markFirstItems(items.length);
+  }, [loading, items.length]);
 
   useCardPointerHighlight();
 

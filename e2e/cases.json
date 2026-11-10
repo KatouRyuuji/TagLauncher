@@ -792,6 +792,17 @@
 "coverage": "搜索挪到 Rust 前后对比"
 },
 {
+"id": "E-PERF-MAIN-MEM",
+"module": "性能",
+"scenario": "主窗内存构成与首屏/滚动耗时（5k/50k，只测量）",
+"steps": "启动后记录首屏时间，静置后采进程树内存（按 WebView2 进程类型）、渲染进程 JS 堆、图标缓存与索引规模；把列表滚到 10 个位置，等视口内卡片出齐",
+"expect": "写入 artifacts/main-perf-*.json；不设阈值，用于主窗分页前后对比",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P2",
+"coverage": "主窗分页前后对比"
+},
+{
 "id": "E-LCH-01",
 "module": "启动对象",
 "scenario": "双击启动 .bat",
