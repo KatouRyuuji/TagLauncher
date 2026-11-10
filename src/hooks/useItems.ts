@@ -267,10 +267,10 @@ export function useItems() {
 
   // 跨盘符兜底找回：对失效对象按内容签名扫描候选盘，命中则刷新并提示。
   // 用 relocatingRef 防止并发/重复扫描；成功找回 0 个时保持安静。
-  const relocateMissing = useCallback((): Promise<number> => {
+  const relocateMissing = useCallback((roots?: string[]): Promise<number> => {
     if (relocatingRef.current) return relocatingRef.current;
     const task = (async () => {
-      const recovered = await db.relocateMissing();
+      const recovered = await db.relocateMissing(roots);
       if (recovered > 0) {
         await loadAll();
         showToast(`已跨盘找回 ${recovered} 个对象`, "success");

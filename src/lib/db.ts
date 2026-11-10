@@ -400,8 +400,9 @@ export async function renameItems(renames: RenameRequest[], dryRun: boolean): Pr
 // ---- 跨盘符兜底找回 ----
 
 /** 对失效对象按内容签名做跨盘找回，返回成功找回数量（扫描在后端锁外进行） */
-export async function relocateMissing(): Promise<number> {
-  return invokeCmd("relocate_missing");
+/** 失效对象按内容签名找回；`roots` 省略 = 全部盘符，给定 = 只在这些文件夹内找回并核验唯一性。 */
+export async function relocateMissing(roots?: string[]): Promise<number> {
+  return invokeCmd("relocate_missing", roots ? { roots } : undefined);
 }
 
 // ---- Mod 网络 API ----

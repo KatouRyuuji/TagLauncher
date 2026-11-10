@@ -5,6 +5,7 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { relocateNoneCopy, relocateRecoveredCopy } from "../lib/itemActionCopy";
 import { compareNames } from "../lib/itemQuery";
 import { truncatePathMiddle } from "../lib/itemUtils";
+import { showToast } from "../lib/toast";
 import type { ItemWithTags } from "../types";
 import { DialogHeader } from "./DialogHeader";
 import { ItemVisualIcon } from "./ItemVisualIcon";
@@ -16,6 +17,7 @@ export function MissingItemsReviewDialog({
   lastRelocateResult,
   onClose,
   onRelocate,
+  onPickRelocateRoots,
   onRemove,
 }: {
   open: boolean;
@@ -23,13 +25,27 @@ export function MissingItemsReviewDialog({
   relocating: boolean;
   lastRelocateResult: number | null;
   onClose: () => void;
-  onRelocate: () => Promise<void>;
+  /** roots 省略 = 全部盘符；给定 = 只在这些文件夹内找回 */
+  onRelocate: (roots?: string[]) => Promise<void>;
+  /** 选择找回范围（原生文件夹对话框）；返回 null 表示取消 */
+  onPickRelocateRoots: () => Promise<string[] | null>;
   onRemove: (ids: number[]) => Promise<void>;
 }) {
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open });
   useEscapeKey(onClose, open);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [removing, setRemoving] = useState(false);
+
+  const handlePickAndRelocate = async () => {
+    let roots: string[] | null;
+    try {
+      roots = await onPickRelocateRoots();
+    } catch (err) {
+      showToast(`无法打开文件夹选择：${err instanceof Error ? err.message : String(err)}`, "error");
+      return;
+    }
+    if (roots && roots.length > 0) await onRelocate(roots);
+  };
 
   const ordered = useMemo(
     () => [...items].sort((a, b) => compareNames(a.name, b.name)),
@@ -173,6 +189,15 @@ export function MissingItemsReviewDialog({
             </button>
             <button type="button" className="action-button" onClick={onClose}>
               关闭
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              disabled={relocating || ordered.length === 0}
+              title="只扫描你选定的文件夹（比全盘快得多）；唯一性也只在这些文件夹内核验"
+              onClick={() => void handlePickAndRelocate()}
+            >
+              在选定文件夹中找回…
             </button>
             <button
               type="button"

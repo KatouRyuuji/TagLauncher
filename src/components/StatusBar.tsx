@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { pickRelocateRoots } from "../lib/importDialogs";
 import { LoaderCircle, TriangleAlert, ZoomIn, ZoomOut } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { useSearch } from "../hooks/useSearch";
@@ -19,7 +20,7 @@ export function StatusBar({
   onRemoveMissing,
 }: {
   missingItems: ItemWithTags[];
-  onRelocateMissing: () => Promise<number>;
+  onRelocateMissing: (roots?: string[]) => Promise<number>;
   onRemoveMissing: (ids: number[]) => Promise<void>;
 }) {
   const { searchQuery, inputValue } = useSearch();
@@ -69,12 +70,12 @@ export function StatusBar({
     }
   }, [reviewOpen]);
 
-  const handleRelocate = async () => {
+  const handleRelocate = async (roots?: string[]) => {
     if (relocating) return;
     setLastRelocateResult(null);
     setRelocating(true);
     try {
-      const recovered = await onRelocateMissing();
+      const recovered = await onRelocateMissing(roots);
       setLastRelocateResult(recovered);
       // 找回数为 0 的说明已写在对话框横幅上（上下文最强），不再弹 toast 重复同一文案
       if (recovered > 0) {
@@ -257,6 +258,7 @@ export function StatusBar({
       lastRelocateResult={lastRelocateResult}
       onClose={() => setReviewOpen(false)}
       onRelocate={handleRelocate}
+      onPickRelocateRoots={pickRelocateRoots}
       onRemove={onRemoveMissing}
     />
     </>

@@ -22,6 +22,14 @@ export async function pickFoldersToAdd(): Promise<string[] | null> {
   return Array.isArray(selected) ? selected : [selected];
 }
 
+/** 失效对象「在选定文件夹中找回」的范围选择（可多选）。 */
+export async function pickRelocateRoots(): Promise<string[] | null> {
+  const selected = await open({ title: "选择要在其中找回失效对象的文件夹", directory: true, multiple: true });
+  if (!selected) return null;
+  const list = Array.isArray(selected) ? selected : [selected];
+  return list.length > 0 ? list : null;
+}
+
 export async function pickFolderToLink(): Promise<string | null> {
   const selected = await open({ directory: true, multiple: false });
   return typeof selected === "string" ? selected : null;

@@ -1302,9 +1302,59 @@ const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 /// 每个失效对象最多保留的候选匹配数：达到 2 即可判定"歧义"，无需再找第 3 个。
 const MAX_SIGNATURE_CANDIDATES: usize = 2;
 
-/// 扫描候选盘的可读目录，完整遍历后返回唯一签名命中；超过预算时明确报错。
-pub fn scan_for_signatures(rows: &[MissingSignatureRow]) -> Result<Vec<(i64, String)>, String> {
-    scan_signature_roots(rows, &file_identity::candidate_roots(), SCAN_MAX_ENTRIES)
+/// 扫描候选范围的可读目录，完整遍历后返回唯一签名命中；超过预算时明确报错。
+/// `roots` 为 None 时扫描本机全部盘符（原行为）；给定时只在这些文件夹内找回，
+/// 唯一性也只在该范围内核验（范围内恰好一个同签名文件才回写，规则不变）。
+/// `roots` 由 [`resolve_scan_roots`] 得出。
+pub fn scan_for_signatures(rows: &[MissingSignatureRow], roots: &[String]) -> Result<Vec<(i64, String)>, String> {
+    scan_signature_roots(rows, roots, SCAN_MAX_ENTRIES)
+}
+
+/// 找回扫描范围：None → 全部盘符；Some → 校验并去重用户选定的文件夹。
+pub fn resolve_scan_roots(roots: Option<&[String]>) -> Result<Vec<String>, String> {
+    match roots {
+        None => Ok(file_identity::candidate_roots()),
+        Some(list) => normalize_scan_roots(list),
+    }
+}
+
+/// 用户选定的找回范围：必须是存在的绝对路径文件夹；嵌套或重复的文件夹只保留最外层，
+/// 否则同一文件会被枚举两次而误判为「多个候选」。
+fn normalize_scan_roots(list: &[String]) -> Result<Vec<String>, String> {
+    if list.is_empty() {
+        return Err("请至少选择一个文件夹".to_string());
+    }
+    let mut picked: Vec<(String, String)> = Vec::new(); // (原路径, 比较键)
+    for raw in list {
+        let trimmed = raw.trim();
+        let path = std::path::Path::new(trimmed);
+        if trimmed.is_empty() || !path.is_absolute() {
+            return Err(format!("找回范围必须是绝对路径：{raw}"));
+        }
+        if !path.is_dir() {
+            return Err(format!("找回范围不是可访问的文件夹：{raw}"));
+        }
+        let key = scan_root_key(trimmed);
+        picked.push((trimmed.to_string(), key));
+    }
+    picked.sort_by(|a, b| a.1.len().cmp(&b.1.len()).then_with(|| a.1.cmp(&b.1)));
+    let mut kept: Vec<(String, String)> = Vec::new();
+    for (path, key) in picked {
+        if kept.iter().any(|(_, k)| key == *k || key.starts_with(k.as_str())) {
+            continue;
+        }
+        kept.push((path, key));
+    }
+    Ok(kept.into_iter().map(|(p, _)| p).collect())
+}
+
+/// 路径比较键：统一分隔符、大小写，并以分隔符结尾（避免 D:\a 误包含 D:\ab）。
+fn scan_root_key(path: &str) -> String {
+    let mut key = path.replace('/', "\\").to_lowercase();
+    if !key.ends_with('\\') {
+        key.push('\\');
+    }
+    key
 }
 
 type SignatureGroups = std::collections::HashMap<u64, std::collections::HashMap<(u64, u64), Vec<usize>>>;
@@ -1391,7 +1441,8 @@ fn scan_dir_tree(
                     continue;
                 }
                 // 盘根下的系统目录（Windows）只含系统文件，且条目数以百万计，会吃光扫描预算
-                if dir == root_path && SCAN_SKIP_ROOT_DIRS.iter().any(|s| name.eq_ignore_ascii_case(s)) {
+                // 只对盘根生效：用户选定的普通文件夹里名为 Windows 的子目录照常扫描
+                if dir == root_path && root_path.parent().is_none() && SCAN_SKIP_ROOT_DIRS.iter().any(|s| name.eq_ignore_ascii_case(s)) {
                     continue;
                 }
                 if is_regenerable_cache_dir(&dir, &name) {
@@ -1657,6 +1708,59 @@ mod tests {
         assert_eq!(found.len(), 1, "应按内容签名找回唯一文件");
         assert!(found[0].1.to_lowercase().ends_with("moved.bin"));
 
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn full_scan_without_roots_covers_every_logical_drive() {
+        // 不传范围 = 原全盘行为：扫描根就是本机全部盘符，且包含临时目录所在盘
+        let roots = resolve_scan_roots(None).unwrap();
+        assert_eq!(roots, file_identity::candidate_roots());
+        assert!(!roots.is_empty(), "全盘找回至少应有一个盘符");
+        let temp = std::env::temp_dir().to_string_lossy().to_lowercase();
+        assert!(roots.iter().any(|r| temp.starts_with(&r.to_lowercase())), "临时目录所在盘应在全盘范围内：{roots:?}");
+    }
+
+    #[test]
+    fn chosen_roots_are_validated_and_nested_ones_collapsed() {
+        let base = std::env::temp_dir().join(format!("tl_roots_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("inner")).unwrap();
+        std::fs::create_dir_all(base.join("innerX")).unwrap();
+        let outer = base.to_string_lossy().into_owned();
+        let inner = base.join("inner").to_string_lossy().into_owned();
+        let sibling = base.join("innerX").to_string_lossy().into_owned();
+        let roots = resolve_scan_roots(Some(&[inner.clone(), outer.to_uppercase(), outer.clone()][..])).unwrap();
+        assert_eq!(roots.len(), 1, "嵌套/重复只保留最外层：{roots:?}");
+        assert_eq!(roots[0].to_lowercase(), outer.to_lowercase());
+        let roots = resolve_scan_roots(Some(&[inner.clone(), sibling.clone()][..])).unwrap();
+        assert_eq!(roots.len(), 2, "inner 不是 innerX 的父目录");
+        assert!(resolve_scan_roots(Some(&[][..])).is_err());
+        assert!(resolve_scan_roots(Some(&["relative\\dir".to_string()][..])).is_err());
+        assert!(resolve_scan_roots(Some(&[base.join("nope").to_string_lossy().into_owned()][..])).is_err());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn chosen_root_limits_scan_and_uniqueness_scope() {
+        // 范围外的同内容副本不参与：范围内唯一即回写；包含两份的范围仍判歧义
+        let base = std::env::temp_dir().join(format!("tl_scope_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let data: Vec<u8> = (0..40_000u32).map(|i| (i % 89) as u8).collect();
+        let inside = base.join("pick").join("Windows").join("moved.bin");
+        let outside = base.join("other").join("copy.bin");
+        std::fs::create_dir_all(inside.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(outside.parent().unwrap()).unwrap();
+        std::fs::write(&inside, &data).unwrap();
+        std::fs::write(&outside, &data).unwrap();
+        let sig = file_identity::compute_signature(&inside.to_string_lossy()).unwrap();
+        let rows = vec![MissingSignatureRow { id: 5, path: "D:/old/moved.bin".to_string(), size: sig.size, head: sig.head_hash, tail: sig.tail_hash }];
+        let pick = base.join("pick").to_string_lossy().into_owned();
+        let found = scan_for_signatures(&rows, &resolve_scan_roots(Some(&[pick][..])).unwrap()).unwrap();
+        assert_eq!(found.len(), 1, "选定文件夹内唯一（其下名为 Windows 的子目录也要扫描）");
+        assert!(found[0].1.to_lowercase().ends_with("moved.bin"));
+        let whole = base.to_string_lossy().into_owned();
+        assert!(scan_for_signatures(&rows, &resolve_scan_roots(Some(&[whole][..])).unwrap()).unwrap().is_empty(), "范围内两份 → 歧义不回写");
         let _ = std::fs::remove_dir_all(&base);
     }
 

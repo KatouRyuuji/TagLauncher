@@ -827,11 +827,11 @@
 {
 "id": "E-ID-04",
 "module": "文件身份",
-"scenario": "失效复核：尝试找回全部",
-"steps": "移走后再移回/改名→失效项目对话框“尝试找回全部失效项”",
-"expect": "唯一候选被回写，失效清零",
+"scenario": "失效复核：在选定文件夹中找回",
+"steps": "移走后改名→失效项目对话框“在选定文件夹中找回…”选沙箱根（全盘路径见 E-ID-10 与 Rust 单测）",
+"expect": "只扫描选定文件夹（IPC 参数 roots=沙箱根），唯一候选被回写，失效清零",
 "layer": "UI",
-"automation": "CDP",
+"automation": "CDP；IPC 桩 plugin:dialog|open",
 "priority": "P0",
 "coverage": "ID-06 identity.rs"
 },

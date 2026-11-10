@@ -254,10 +254,13 @@ pub fn clear_recent_items(db: State<Database>) -> Result<usize, String> {
 }
 
 /// 对失效对象按内容签名做跨盘符兜底找回，返回成功找回数量。
+/// `roots` 省略时扫描全部盘符；给定时只在这些文件夹内找回并核验唯一性。
 /// 扫描阶段在锁外执行：先取数据释放锁 → 扫描候选盘 → 再加锁回写，避免长扫描阻塞其它命令。
 /// 全盘扫描是重 IO，用 (async) 放到工作线程；函数体无 await，DB 锁只在取数据/回写两小段内持有。
 #[tauri::command(async)]
-pub fn relocate_missing(db: State<Database>) -> Result<usize, String> {
+pub fn relocate_missing(db: State<Database>, roots: Option<Vec<String>>) -> Result<usize, String> {
+    // 先校验范围：选错文件夹应立即报错，而不是在读库之后才失败
+    let scan_roots = item_service::resolve_scan_roots(roots.as_deref())?;
     let rows = {
         let conn = db.get_conn();
         item_service::read_missing_signatures(&conn)?
@@ -265,7 +268,7 @@ pub fn relocate_missing(db: State<Database>) -> Result<usize, String> {
     if rows.is_empty() {
         return Ok(0);
     }
-    let found = item_service::scan_for_signatures(&rows)?;
+    let found = item_service::scan_for_signatures(&rows, &scan_roots)?;
     if found.is_empty() {
         return Ok(0);
     }

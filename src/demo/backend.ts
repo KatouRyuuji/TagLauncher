@@ -584,7 +584,10 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return report;
     }
     case "relocate_missing":
-      // 演示集中没有可找回的盘符，模拟「未找到」
+      // 演示集中没有可找回的盘符/文件夹，模拟「未找到」；范围参数与桌面端同形（可省略）
+      if (args.roots !== undefined && (!Array.isArray(args.roots) || args.roots.length === 0)) {
+        throw new Error("请至少选择一个文件夹");
+      }
       return 0;
     case "open_in_explorer":
     case "open_in_explorer_by_id":
