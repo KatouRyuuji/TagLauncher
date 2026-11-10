@@ -103,6 +103,8 @@ def test_tag_graph(app, sandbox):
     p = app.add_tag("图谱父")
     c = app.add_tag("图谱子")
     app.invoke("add_tag_relation", {"parentId": p, "childId": c})
+    gc = app.add_tag("图谱孙")
+    app.invoke("add_tag_relation", {"parentId": c, "childId": gc})
     app.invoke("set_item_tags", {"itemId": app.item("图父.txt")["id"], "tagIds": [p]})
     app.invoke("set_item_tags", {"itemId": app.item("图子.txt")["id"], "tagIds": [c]})
     app.reload_page()
@@ -116,6 +118,10 @@ def test_tag_graph(app, sandbox):
     assert "父：" in det.inner_text() and "图谱父" in det.inner_text()
     g.locator(f'[data-graph-node-id="{p}"]').click()
     assert "子：" in det.inner_text() and "图谱子" in det.inner_text()
+    # F06：选中父标签时孙标签也高亮（后代闭包），详情给出后代数
+    assert g.locator(f'[data-graph-node-id="{gc}"]').get_attribute("data-graph-relation") == "descendant"
+    assert g.locator(f'[data-graph-node-id="{c}"]').get_attribute("data-graph-relation") == "child"
+    assert "共 2 个后代标签" in det.inner_text()
     g.get_by_role("button", name="关闭层级图谱").click()
     g.wait_for(state="hidden")
     # 入口二：命令面板；双击节点直接筛选并回到工作台
