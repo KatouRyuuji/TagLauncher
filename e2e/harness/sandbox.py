@@ -20,6 +20,15 @@ def free_port() -> int:
         return sock.getsockname()[1]
 
 
+def webview2_args(cdp_port: int) -> str:
+    """WebView2 附加参数：CDP 端口 + 屏幕外不降帧。环境变量与 CI 的 HKLM 策略共用同一串。"""
+    return (f"--remote-debugging-port={cdp_port} "
+            # 窗口在屏幕外（harness.stealth）：不要按“被遮挡/后台”降帧或停渲染
+            "--disable-features=CalculateNativeWinOcclusion "
+            "--disable-backgrounding-occluded-windows --disable-renderer-backgrounding "
+            "--disable-background-timer-throttling")
+
+
 @dataclass
 class Sandbox:
     root: Path
@@ -100,11 +109,7 @@ class Sandbox:
         put("TMP", str(self.root / "Temp"))
         put("WEBVIEW2_USER_DATA_FOLDER", str(self.root / "WebView2"))
         if cdp_port:
-            put("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", f"--remote-debugging-port={cdp_port} "
-                # 窗口在屏幕外（harness.stealth）：不要按“被遮挡/后台”降帧或停渲染
-                "--disable-features=CalculateNativeWinOcclusion "
-                "--disable-backgrounding-occluded-windows --disable-renderer-backgrounding "
-                "--disable-background-timer-throttling")
+            put("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", webview2_args(cdp_port))
         else:
             env.pop("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", None)
         # mock 服务都在回环地址上：绕开用户机器上可能存在的代理

@@ -11,10 +11,10 @@ from pathlib import Path
 
 from playwright.sync_api import Browser, Page, Playwright
 
-from . import launchdiag, stealth
+from . import launchdiag, stealth, webview2_policy
 from .launchdiag import HEALTH, LaunchRecord, StartupError
 from .integrity import real_dirs
-from .sandbox import Sandbox, free_port
+from .sandbox import Sandbox, free_port, webview2_args
 
 # tests/window（physical_input）需要真实可见窗口，在其 conftest 里关掉
 STEALTH = {"on": True}
@@ -61,8 +61,12 @@ class AppSession:
         if stealth.ENABLED and STEALTH["on"] and self.guard is None:
             self.guard = stealth.Guard(self.sb.root)
         env = self.sb.env(self.port)
+        policy = bool(self.cdp and webview2_policy.enabled())
+        if policy:
+            self._prepare_elevated_webview2()
         rec = LaunchRecord(n=self.launch_count, exe=str(self.sb.exe), args=list(self.args), cwd=str(self.sb.bin),
                            cdp_port=self.port, env=LaunchRecord.safe_env(env))
+        rec.env["webview2_channel"] = "hklm-policy" if policy else "env"
         self._launch = rec
         try:
             self.proc = subprocess.Popen([str(self.sb.exe), *self.args], cwd=self.sb.bin,
@@ -81,8 +85,15 @@ class AppSession:
             log.close()
         if self.cdp:
             HEALTH.record_ok()
+            # 证据：WebView2 实际用的是哪个配置目录（沙箱变量被丢弃时只有真实目录出现）
+            rec.env["profile_in_sandbox"] = str((self.sb.root / "WebView2" / "EBWebView").exists())
         rec.write(self.sb.artifacts)
         return self
+
+    def _prepare_elevated_webview2(self) -> None:
+        """CI 提权宿主：WebView2 丢弃 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS，CDP 端口改经 HKLM 策略下发。
+        （CI 实测：用户数据目录仍落在沙箱 WebView2\\EBWebView，只有附加参数被丢。）"""
+        webview2_policy.set_args(webview2_args(self.port))
 
     def _fail_launch(self, rec: LaunchRecord, log_path: Path) -> None:
         """记录退出码/存活、日志尾部；落盘 launch-N.json 与 process-N.log，更新熔断计数。"""

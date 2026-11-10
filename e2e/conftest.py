@@ -102,6 +102,15 @@ def real_dir_guard(pytestconfig, run_dir):
         pytestconfig._tl_reporter.session_notes.append(f"真实目录有变化：{diff}")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def webview2_policy_cleanup():
+    """CI 提权时 harness 会写 HKLM WebView2 策略（见 harness.webview2_policy）；会话结束删掉。"""
+    from harness import webview2_policy
+    yield
+    if webview2_policy.enabled():
+        webview2_policy.clear()
+
+
 @pytest.fixture(scope="session")
 def pw():
     from playwright.sync_api import sync_playwright
