@@ -1,5 +1,5 @@
 import { compareSortOrder } from "../lib/sidebarOrder";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { Tag, ItemWithTags } from "../types";
 import { useAppStore } from "../stores/appStore";
@@ -22,16 +22,19 @@ interface TagRelationsEditorProps {
   onAddTag: (name: string, color: string) => Promise<Tag>;
   onRemoveTag: (id: number) => Promise<void>;
   onClose: () => void;
+  /** 打开时对准的标签（侧栏当前父标签 / 右键「添加子标签」）；缺省或已失效回退第一个 */
+  initialTagId?: number | null;
 }
 
 /**
  * 标签关系编辑器：为每个标签维护父标签（多继承），并预览该标签关联的对象。
  * 父标签是子标签的超集；筛选时选中父标签会并入其所有后代对象。后端拒绝成环关系。
  */
-export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRelation, onAddTag, onRemoveTag, onClose }: TagRelationsEditorProps) {
+export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRelation, onAddTag, onRemoveTag, onClose, initialTagId = null }: TagRelationsEditorProps) {
   const relations = useAppStore((s) => s.tagRelations);
   const tagRows = useMemo(() => flattenTagTree(tags, relations, (a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name), { uniqueIds: true }), [tags, relations]);
-  const [focusedId, setFocusedId] = useState<number | null>(tags[0]?.id ?? null);
+  const initialTarget = initialTagId != null && tags.some((t) => t.id === initialTagId) ? initialTagId : null;
+  const [focusedId, setFocusedId] = useState<number | null>(initialTarget ?? tags[0]?.id ?? null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -43,7 +46,16 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
   }, [tags, focusedId]);
 
   useEscapeKey(onClose);
-  const contentRef = useFocusTrap<HTMLDivElement>({ active: true });
+  // 指定目标时焦点直接落在「新建子标签」输入框，由下方 effect 接管，不先抢到首个按钮
+  const contentRef = useFocusTrap<HTMLDivElement>({ active: true, autoFocus: initialTarget == null });
+  const childInputRef = useRef<HTMLInputElement>(null);
+  const focusedRowRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (initialTarget == null) return;
+    focusedRowRef.current?.scrollIntoView({ block: "nearest" });
+    childInputRef.current?.focus();
+    // 仅打开时对准一次；之后用户切换左侧标签不再强制回跳
+  }, []);
 
   const tagById = new Map(tags.map((t) => [t.id, t]));
   const focused = focusedId == null ? null : tagById.get(focusedId) ?? null;
@@ -141,6 +153,9 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
       if (childId === focused.id) {
         throw new Error("不能把标签设为自己的子标签");
       }
+      if (ancestorIds.has(childId)) {
+        throw new Error(`「${name}」是当前标签的上级，不能再设为子标签（会成环）`);
+      }
       await onAddRelation(focused.id, childId);
       setChildName("");
       setChildFilter("");
@@ -200,7 +215,9 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                   return (
                     <button
                       key={tag.id}
+                      ref={active ? focusedRowRef : undefined}
                       type="button"
+                      aria-current={active ? "true" : undefined}
                       onClick={() => { setFocusedId(tag.id); setError(null); }}
                       style={{ paddingLeft: `${10 + depth * 14}px` }}
                       className={`flex items-center gap-2 rounded-[var(--radius-sm)] py-1.5 pr-2.5 text-left text-sm ${
@@ -345,6 +362,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                     }}
                   >
                     <input
+                      ref={childInputRef}
                       type="text"
                       value={childName}
                       onChange={(event) => setChildName(event.target.value)}

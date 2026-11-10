@@ -102,3 +102,54 @@ describe("TagRelationsEditor 添加子标签", () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe("TagRelationsEditor 打开时对准指定标签", () => {
+  beforeEach(() => {
+    useAppStore.setState({ tagRelations: [] });
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  function renderAt(initialTagId: number | null, onAddRelation = vi.fn(async () => {})) {
+    const onAddTag = vi.fn(async (name: string) => ({ id: 9, name, color: "#abc" }));
+    render(
+      <TagRelationsEditor
+        tags={tags}
+        allItems={[]}
+        initialTagId={initialTagId}
+        onAddRelation={onAddRelation}
+        onRemoveRelation={vi.fn(async () => {})}
+        onAddTag={onAddTag}
+        onRemoveTag={vi.fn(async () => {})}
+        onClose={vi.fn()}
+      />,
+    );
+    return { onAddRelation, onAddTag };
+  }
+
+  it("指定父标签：新建子写入该父且输入框获得焦点", async () => {
+    const { onAddRelation } = renderAt(3);
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+    const input = screen.getByRole("textbox", { name: "新建子标签" });
+    await waitFor(() => expect(input).toHaveFocus());
+    await userEvent.type(input, "新子");
+    await userEvent.click(screen.getByRole("button", { name: "添加" }));
+    await waitFor(() => expect(onAddRelation).toHaveBeenCalledWith(3, 9));
+  });
+
+  it("指定标签已不存在时回退第一个标签", async () => {
+    const { onAddRelation } = renderAt(404);
+    await userEvent.click(screen.getByRole("button", { name: "添加子标签「旁」" }));
+    await waitFor(() => expect(onAddRelation).toHaveBeenCalledWith(1, 3));
+  });
+
+  it("输入上级标签名作子标签：本地拒绝间接成环，不调用后端也不新建", async () => {
+    // 父(1) → 子(2) → 旁(3)：对准「旁」时把「父」设为子会成环
+    useAppStore.setState({ tagRelations: [{ parentId: 1, childId: 2 }, { parentId: 2, childId: 3 }] });
+    const { onAddRelation, onAddTag } = renderAt(3);
+    await userEvent.type(screen.getByRole("textbox", { name: "新建子标签" }), "父");
+    await userEvent.click(screen.getByRole("button", { name: "添加" }));
+    expect(await screen.findByText(/会成环/)).toBeInTheDocument();
+    expect(onAddRelation).not.toHaveBeenCalled();
+    expect(onAddTag).not.toHaveBeenCalled();
+  });
+});

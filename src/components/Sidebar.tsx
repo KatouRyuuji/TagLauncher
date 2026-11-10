@@ -128,7 +128,8 @@ export function Sidebar({
   const [showAddTag, setShowAddTag] = useState(false);
   const [editingCabinet, setEditingCabinet] = useState<Cabinet | null>(null);
   const [showAddCabinet, setShowAddCabinet] = useState(false);
-  const [showRelationsEditor, setShowRelationsEditor] = useState(false);
+  // null = 关闭；打开时记下要对准的标签（右键所在标签或侧栏当前选中标签）
+  const [relationsEditor, setRelationsEditor] = useState<{ initialTagId: number | null } | null>(null);
   const [collapsedTagPaths, setCollapsedTagPaths] = useState<Set<string>>(() => new Set());
   const initializedTagTreeRef = useRef(false);
   const wasLibraryEmptyRef = useRef(allItems.length === 0);
@@ -425,7 +426,7 @@ export function Sidebar({
           <div className="space-y-5">
             <section aria-labelledby="sidebar-tags-label">
               <SectionHeader id="sidebar-tags-label" label="标签" count={loading ? undefined : tags.length}>
-                <SidebarIconButton label="管理标签父子关系" onClick={() => setShowRelationsEditor(true)}>
+                <SidebarIconButton label="管理标签父子关系" onClick={() => setRelationsEditor({ initialTagId: selectedTagIds[0] ?? null })}>
                   <GitFork className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
                 </SidebarIconButton>
                 <SidebarIconButton label="打开标签关系图" onClick={() => setTagGraphOpen(true)}>
@@ -680,6 +681,10 @@ export function Sidebar({
       {(showAddTag || editingTag) && (
         <TagEditor
           tag={editingTag}
+          onAddChild={editingTag ? () => {
+            setRelationsEditor({ initialTagId: editingTag.id });
+            setEditingTag(null);
+          } : undefined}
           onSave={async (name, color) => {
             if (editingTag) {
               await onUpdateTag(editingTag.id, name, color);
@@ -741,15 +746,16 @@ export function Sidebar({
         />
       )}
 
-      {showRelationsEditor && (
+      {relationsEditor && (
         <TagRelationsEditor
+          initialTagId={relationsEditor.initialTagId}
           tags={tags}
           allItems={allItems}
           onAddRelation={onAddTagRelation}
           onRemoveRelation={onRemoveTagRelation}
           onAddTag={onAddTag}
           onRemoveTag={onRemoveTag}
-          onClose={() => setShowRelationsEditor(false)}
+          onClose={() => setRelationsEditor(null)}
         />
       )}
     </aside>

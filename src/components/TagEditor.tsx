@@ -18,6 +18,8 @@ interface TagEditorProps {
   folderPath?: string | null;
   onSave: (name: string, color: string, folderPath: string | null) => Promise<void>;
   onDelete?: () => void | Promise<void>;
+  /** 仅编辑已有标签时传入：转到关系编辑器并对准本标签添加子标签 */
+  onAddChild?: () => void;
   onClose: () => void;
 }
 
@@ -25,7 +27,7 @@ function sameHex(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-export function TagEditor({ tag, label = "标签", folderPath, onSave, onDelete, onClose }: TagEditorProps) {
+export function TagEditor({ tag, label = "标签", folderPath, onSave, onDelete, onAddChild, onClose }: TagEditorProps) {
   const [presetColors] = useState(getThemeTagPresetColors);
   const [name, setName] = useState(tag?.name || "");
   const [color, setColor] = useState(() =>
@@ -143,6 +145,18 @@ export function TagEditor({ tag, label = "标签", folderPath, onSave, onDelete,
                 >
                   返回编辑
                 </button>
+            )}
+
+            {onAddChild && (
+              <button
+                type="button"
+                disabled={saving || deleting}
+                hidden={confirmingDelete}
+                onClick={onAddChild}
+                className="action-button"
+              >
+                添加子标签…
+              </button>
             )}
 
             <div className="flex-1" />
