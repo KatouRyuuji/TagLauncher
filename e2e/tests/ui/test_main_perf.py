@@ -107,6 +107,8 @@ def test_main_memory_and_scroll(sandbox, app_factory, n):
     build_library(sandbox, n)
     app = app_factory()
     app.wait_count(n, timeout=120)
+    # 分页后总数（ID 列表）先于首页对象到达：等首屏标记落定再读
+    app.page.wait_for_function("() => (window.__tlMainPerf || {}).firstItemsMs > 0", timeout=60_000)
     first = app.page.evaluate("() => { const p = window.__tlMainPerf || {}; return {ms: p.firstItemsMs ?? null, count: p.firstItemsCount ?? null}; }")
     time.sleep(8)  # 启动期对账、索引预热、图标取完
     pid = app.proc.pid
