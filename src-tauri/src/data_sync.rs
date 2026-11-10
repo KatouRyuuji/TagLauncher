@@ -90,10 +90,12 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn main_window_visible(app: &AppHandle) -> bool {
-    app.get_webview_window("main")
-        .map(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
-        .unwrap_or(false)
+/// 主窗或快速搜索窗有一个在显示，就按可见间隔检测
+fn any_window_visible(app: &AppHandle) -> bool {
+    ["main", crate::quick::QUICK_LABEL].iter().any(|label| {
+        app.get_webview_window(label)
+            .is_some_and(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
+    })
 }
 
 /// 检测一轮：有变化时广播并返回来源。
@@ -133,7 +135,7 @@ pub fn start(app: &AppHandle) {
             // 建立基线：启动前已发生的写入由首屏加载覆盖
             check_once(&app, &mut tracker);
             // 可见性查询要跨线程到主线程，按 VISIBILITY_EVERY 轮刷新一次；唤醒（获焦/唤出）时立即刷新
-            let mut visible = main_window_visible(&app);
+            let mut visible = any_window_visible(&app);
             let mut ticks: u32 = 0;
             loop {
                 let interval = if visible {
@@ -153,7 +155,7 @@ pub fn start(app: &AppHandle) {
                 check_once(&app, &mut tracker);
                 ticks = ticks.wrapping_add(1);
                 if woken || !visible || ticks % VISIBILITY_EVERY == 0 {
-                    visible = main_window_visible(&app);
+                    visible = any_window_visible(&app);
                 }
             }
         });
