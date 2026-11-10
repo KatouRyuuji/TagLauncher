@@ -120,3 +120,63 @@ class LaunchRecord:
         out = artifacts / f"launch-{self.n}.json"
         out.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
         return out
+
+
+def windows_snapshot(sandbox_root: Path) -> dict:
+    """启动失败时的 Windows 现场：沙箱相关进程（含 WebView2 子进程命令行）、其监听端口、
+    应用顶层窗口（类名/标题/可见，可识别原生错误对话框 #32770）、WebView2 数据目录概况。
+    只取与沙箱路径相关的进程，不读取环境块。非 Windows 返回空。"""
+    if os.name != "nt":
+        return {}
+    import subprocess
+
+    out: dict = {}
+    root = str(sandbox_root)
+    ps = (
+        "$r = $env:TL_DIAG_ROOT; "
+        "$p = @(Get-CimInstance Win32_Process | Where-Object { ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($r, 'OrdinalIgnoreCase')) -or ($_.CommandLine -and $_.CommandLine.IndexOf($r, [StringComparison]::OrdinalIgnoreCase) -ge 0) } "
+        "| Select-Object ProcessId, ParentProcessId, Name, CommandLine); "
+        "$ids = @($p | ForEach-Object { [int]$_.ProcessId }); "
+        "$l = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $ids -contains [int]$_.OwningProcess } "
+        "| Select-Object LocalAddress, LocalPort, OwningProcess); "
+        "@{ processes = $p; listening = $l } | ConvertTo-Json -Depth 4 -Compress"
+    )
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=30,
+                           env={**os.environ, "TL_DIAG_ROOT": root})
+        out.update(json.loads(r.stdout) if r.stdout.strip() else {"ps_error": r.stderr[-1500:]})
+    except Exception as e:  # 诊断本身失败不影响用例结论
+        out["ps_error"] = f"{type(e).__name__}: {e}"
+    try:
+        out["windows"] = _app_windows(root)
+    except Exception as e:
+        out["windows_error"] = f"{type(e).__name__}: {e}"
+    wv = sandbox_root / "WebView2"
+    try:
+        out["webview2_dir"] = sorted(p.name for p in wv.iterdir()) if wv.exists() else None
+        ebw = wv / "EBWebView"
+        out["ebwebview_dir"] = sorted(p.name for p in ebw.iterdir())[:40] if ebw.exists() else None
+        port_file = ebw / "DevToolsActivePort"
+        out["devtools_active_port"] = port_file.read_text(encoding="utf-8", errors="replace")[:200] if port_file.exists() else None
+    except OSError as e:
+        out["webview2_dir_error"] = str(e)
+    return out
+
+
+def _app_windows(root: str) -> list[dict]:
+    import ctypes
+    from ctypes import wintypes
+
+    from . import stealth
+
+    user32 = stealth.user32
+    res = []
+    for h in stealth._windows_under(root.lower().rstrip("\\") + "\\"):
+        cls = ctypes.create_unicode_buffer(128)
+        title = ctypes.create_unicode_buffer(512)
+        user32.GetClassNameW(h, cls, 128)
+        user32.GetWindowTextW(wintypes.HWND(h), title, 512)
+        res.append({"class": cls.value, "title": title.value, "visible": bool(user32.IsWindowVisible(h)),
+                    "rect": stealth._rect(h)})
+    return res

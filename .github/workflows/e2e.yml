@@ -52,7 +52,10 @@ jobs:
           $keys = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
                   'HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
           foreach ($k in $keys) { if (Test-Path $k) { "WebView2 runtime ($k): $((Get-ItemProperty $k).pv)" } }
-          "Session: $([Environment]::UserInteractive) user=$env:USERNAME"
+          "Session: $([Environment]::UserInteractive) user=$env:USERNAME elevated=$(([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
+          foreach ($k in 'HKLM:\SOFTWARE\Policies\Microsoft\Edge', 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2', 'HKCU:\SOFTWARE\Policies\Microsoft\Edge\WebView2') {
+            if (Test-Path $k) { "Policy ${k}"; Get-ItemProperty $k | Select-Object * -ExcludeProperty PS* | Format-List | Out-String -Width 200 } else { "Policy ${k}: (none)" }
+          }
           Get-Item src-tauri/target/debug/tag-launcher.exe, src-tauri/target/debug/tl.exe | Format-Table Name, Length, LastWriteTime
 
       - name: Run E2E (cli + ui + visual)

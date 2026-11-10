@@ -90,6 +90,10 @@ class AppSession:
             code = self.proc.poll()
             rec.alive, rec.exit_code = code is None, code
         rec.log_tail = launchdiag.tail_text(log_path)
+        snap = launchdiag.windows_snapshot(self.sb.root)
+        if snap:
+            (self.sb.artifacts / f"launch-{rec.n}-system.json").write_text(
+                json.dumps(snap, ensure_ascii=False, indent=1), encoding="utf-8")
         out = rec.write(self.sb.artifacts)
         try:
             (self.sb.artifacts / log_path.name).write_bytes(log_path.read_bytes())
