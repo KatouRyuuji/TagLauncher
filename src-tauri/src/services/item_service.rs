@@ -1441,8 +1441,7 @@ fn scan_dir_tree(
                     continue;
                 }
                 // 盘根下的系统目录（Windows）只含系统文件，且条目数以百万计，会吃光扫描预算
-                // 只对盘根生效：用户选定的普通文件夹里名为 Windows 的子目录照常扫描
-                if dir == root_path && root_path.parent().is_none() && SCAN_SKIP_ROOT_DIRS.iter().any(|s| name.eq_ignore_ascii_case(s)) {
+                if dir == root_path && SCAN_SKIP_ROOT_DIRS.iter().any(|s| name.eq_ignore_ascii_case(s)) {
                     continue;
                 }
                 if is_regenerable_cache_dir(&dir, &name) {
@@ -1747,7 +1746,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!("tl_scope_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let data: Vec<u8> = (0..40_000u32).map(|i| (i % 89) as u8).collect();
-        let inside = base.join("pick").join("Windows").join("moved.bin");
+        let inside = base.join("pick").join("sub").join("moved.bin");
         let outside = base.join("other").join("copy.bin");
         std::fs::create_dir_all(inside.parent().unwrap()).unwrap();
         std::fs::create_dir_all(outside.parent().unwrap()).unwrap();
@@ -1757,7 +1756,7 @@ mod tests {
         let rows = vec![MissingSignatureRow { id: 5, path: "D:/old/moved.bin".to_string(), size: sig.size, head: sig.head_hash, tail: sig.tail_hash }];
         let pick = base.join("pick").to_string_lossy().into_owned();
         let found = scan_for_signatures(&rows, &resolve_scan_roots(Some(&[pick][..])).unwrap()).unwrap();
-        assert_eq!(found.len(), 1, "选定文件夹内唯一（其下名为 Windows 的子目录也要扫描）");
+        assert_eq!(found.len(), 1, "选定文件夹内唯一");
         assert!(found[0].1.to_lowercase().ends_with("moved.bin"));
         let whole = base.to_string_lossy().into_owned();
         assert!(scan_for_signatures(&rows, &resolve_scan_roots(Some(&[whole][..])).unwrap()).unwrap().is_empty(), "范围内两份 → 歧义不回写");
