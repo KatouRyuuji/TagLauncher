@@ -146,8 +146,9 @@ fn view_query_follows_db_with_frozen_smart_order() {
         "重拍后最近使用升顶"
     );
 
-    // 搜索走同一入口；文件柜成员由后端解析
-    assert_eq!(view(smart.clone(), "file2", false).ids, vec![b]);
+    // 搜索走同一入口；文件柜成员由后端解析。file10 对 file2 是英文低容错弱命中，排在强命中之后
+    assert_eq!(view(smart.clone(), "file2", false).ids, vec![b, a]);
+    assert_eq!(view(smart.clone(), "file2.txt", false).ids, vec![b]);
 
     // typeahead 在同一视图里找：前缀命中按视图顺序（a 已升顶）、子串兜底
     let ta = |text: &str| {
