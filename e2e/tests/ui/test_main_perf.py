@@ -1,4 +1,12 @@
-"""主窗内存构成与首屏/滚动耗时（E-PERF-MAIN-MEM）：只测量、不设阈值，用于分页迁移前后对比。
+"""主窗内存构成与首屏/滚动耗时（E-PERF-MAIN-MEM）。
+
+阈值依据（不按分页后的实测反推）：
+- 跳转滚动 p95：不劣于分页前基线 bfaf626（E2E 42843030365：5k 22.1 ms、50k 36.8 ms）。该指标按 rAF 逐帧轮询，
+  天然量化到 60 Hz 帧（16.7 ms），基线向上取整到整帧：5k ≤ 2 帧（33.4 ms）、50k ≤ 3 帧（50.0 ms）。
+- 进程树私有内存：5k 不超过基线（263.9 MB → 264 MB）；50k 不超过基线的一半（888.9 MB → 444 MB）——
+  基线里 Rust 主进程 512 MB + 渲染进程 297 MB 主要是整表下发，分页的设计目标就是去掉这部分。
+- 首屏：设计目标 5k ≤ 500 ms、50k ≤ 1000 ms（基线 391 / 4107 ms；50k 的整表首屏正是分页要解决的问题）。
+- 前端持有对象数 ≤ 页缓存上限 MAX_CACHED（3000，src/lib/itemView.ts），即与库规模无关。
 
 - 内存：进程树（按 WebView2 进程类型归类：browser / renderer / gpu-process / utility / 应用主进程），
   渲染进程 JS 堆（CDP Runtime.getHeapUsage、Performance.getMetrics），图标缓存规模，后端搜索索引估算。
@@ -19,10 +27,18 @@ from tests.ui.test_quick import build_library, stats
 
 SCROLL_STEPS = [0.5, 1.0, 0.25, 0.0, 0.75, 0.1, 0.9, 0.33, 0.66, 0.0]
 
+FRAME_MS = 1000 / 60
+TARGETS = {
+    5000: {"scroll_p95_ms": 2 * FRAME_MS, "private_mb": 264, "first_ms": 500},
+    50000: {"scroll_p95_ms": 3 * FRAME_MS, "private_mb": 444, "first_ms": 1000},
+}
+MAX_CACHED = 3000
+
 # 滚到 frac 处，等视口内卡片都有名称：返回 {ms, cards}
 SCROLL_JS = """async (frac) => {
   const el = document.querySelector('[data-region="item-grid"], [data-region="item-list"]');
   if (!el) return null;
+  const store = () => { const f = ((window.__tlMainPerf || {}).stats || {}).itemStore; return f ? f() : null; };
   const t0 = performance.now();
   el.scrollTop = Math.round((el.scrollHeight - el.clientHeight) * frac);
   const box = () => el.getBoundingClientRect();
@@ -38,7 +54,13 @@ SCROLL_JS = """async (frac) => {
   for (;;) {
     await new Promise((r) => requestAnimationFrame(r));
     const n = ready();
-    if (n) return { ms: performance.now() - t0, cards: n };
+    if (n) {
+      const ms = performance.now() - t0;
+      const after = store();
+      // 本次跳转的第一次取页（可视页）相对滚动的起点与往返耗时：拆分渲染与取页
+      const f = after && (after.recentFetches || []).find((x) => x.start >= t0);
+      return { ms, cards: n, fetched: !!f, fetchStartMs: f ? f.start - t0 : null, fetchMs: f ? f.end - f.start : null };
+    }
     if (performance.now() - t0 > 10000) return { ms: null, cards: 0 };
   }
 }"""
@@ -141,3 +163,15 @@ def test_main_memory_and_scroll(sandbox, app_factory, n):
     print("MAIN_PERF", json.dumps(out, ensure_ascii=False))
     assert first["ms"] is not None and first["ms"] > 0, f"未记录首屏：{first}"
     assert len(scroll_ms) == len(SCROLL_STEPS), f"有滚动未在 10s 内出齐：{scrolls}"
+    target = TARGETS[n]
+    failures = []
+    if out["scroll_ms"]["p95"] > target["scroll_p95_ms"]:
+        failures.append(f"跳转滚动 p95 {out['scroll_ms']['p95']} ms > {target['scroll_p95_ms']:.1f} ms")
+    if mem["private_mb"] > target["private_mb"]:
+        failures.append(f"进程树私有内存 {mem['private_mb']} MB > {target['private_mb']} MB")
+    if first["ms"] > target["first_ms"]:
+        failures.append(f"首屏 {first['ms']:.0f} ms > {target['first_ms']} ms")
+    held = (caches.get("itemStore") or {}).get("cached")
+    if held is None or held > MAX_CACHED:
+        failures.append(f"前端持有对象 {held} > {MAX_CACHED}")
+    assert not failures, "；".join(failures) + f"（详见 main-perf-{n}.json）"

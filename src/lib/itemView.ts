@@ -40,6 +40,7 @@ export class ItemStore {
   private ids: readonly number[] = [];
   private index = new Map<number, number>();
   private version = 0;
+  private readonly recentFetches: { start: number; end: number; count: number }[] = [];
   private snapshot: ItemView;
   /** 统计：页请求次数与取回对象数 */
   fetches = 0;
@@ -51,7 +52,14 @@ export class ItemStore {
 
   /** 规模统计（E2E 经 __tlMainPerf.stats.itemStore 读取；由持有方在挂载后登记） */
   stats() {
-    return { ids: this.ids.length, cached: this.slots.size, fetches: this.fetches, fetchedItems: this.fetchedItems };
+    return {
+      ids: this.ids.length,
+      cached: this.slots.size,
+      fetches: this.fetches,
+      fetchedItems: this.fetchedItems,
+      // 最近几次取页的起止（performance.now）：E2E 拆分滚动耗时用
+      recentFetches: this.recentFetches,
+    };
   }
 
   registerPerf() {
@@ -204,8 +212,13 @@ export class ItemStore {
     const epoch = this.epoch;
     try {
       this.fetches += 1;
+      const t0 = typeof performance === "undefined" ? 0 : performance.now();
       const items = await this.fetchItems(ids);
       this.fetchedItems += items.length;
+      if (typeof performance !== "undefined") {
+        this.recentFetches.push({ start: t0, end: performance.now(), count: ids.length });
+        if (this.recentFetches.length > 8) this.recentFetches.shift();
+      }
       const got = new Set(items.map((item) => item.id));
       if (cache) {
         for (const item of items) {

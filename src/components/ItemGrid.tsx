@@ -270,6 +270,15 @@ export function ItemGrid({
 
   // 已加载行的真实行高（含 paddingBottom 行间距）：未测量行与占位都按它估算，跳转/取页时行高不再骤变
   const loadedRowHeight = useLoadedRowHeight(scrollRef, rowEstimate);
+  // onChange 在滚动事件里调用：经 ref 读最新视图与列数
+  const viewRef = useRef(view);
+  const lanesRef = useRef(lanes);
+  const fewResultsRef = useRef(fewResults);
+  useLayoutEffect(() => {
+    viewRef.current = view;
+    lanesRef.current = lanes;
+    fewResultsRef.current = fewResults;
+  });
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
@@ -286,6 +295,13 @@ export function ItemGrid({
     },
     // 列数自适应 overscan：一行卡片越多预渲染越贵，行数相应减少
     overscan: gridOverscanRows(lanes),
+    // 滚动回调里就发起取页（不等 React 提交后的 effect），跳转时省掉一轮渲染
+    onChange: (instance) => {
+      const rows = instance.getVirtualIndexes();
+      if (rows.length === 0 || fewResultsRef.current) return;
+      const n = Math.max(1, lanesRef.current);
+      viewRef.current.ensureRange(rows[0] * n, (rows[rows.length - 1] + 1) * n);
+    },
   });
 
   // 每次渲染把可见行的真实测量数据记录下来，供 getItemRects 使用。

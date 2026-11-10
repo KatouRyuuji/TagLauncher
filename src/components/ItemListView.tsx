@@ -237,6 +237,10 @@ export function ItemListView({
   const rowMetricsRef = useRef<Map<number, { start: number; size: number }>>(new Map());
 
   const loadedRowHeight = useLoadedRowHeight(scrollRef, rowHeightEstimate);
+  const viewRef = useRef(view);
+  useLayoutEffect(() => {
+    viewRef.current = view;
+  });
   const virtualizer = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
@@ -247,6 +251,11 @@ export function ItemListView({
     // itemSizeCache（v3 同步测量命中缓存即不读 DOM），表现为行距错乱。
     getItemKey: (index) => ids[index] ?? index,
     overscan: 6,
+    // 滚动回调里就发起取页（不等 React 提交后的 effect），跳转时省掉一轮渲染
+    onChange: (instance) => {
+      const rows = instance.getVirtualIndexes();
+      if (rows.length > 0) viewRef.current.ensureRange(rows[0], rows[rows.length - 1] + 1);
+    },
   });
 
   // 记录可见行真实测量数据；缺失行用 estimateSize 估算。
