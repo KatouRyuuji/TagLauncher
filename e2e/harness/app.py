@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import time
@@ -10,7 +11,9 @@ from pathlib import Path
 
 from playwright.sync_api import Browser, Page, Playwright
 
-from . import stealth
+from . import launchdiag, stealth
+from .launchdiag import HEALTH, LaunchRecord, StartupError
+from .integrity import real_dirs
 from .sandbox import Sandbox, free_port
 
 # tests/window（physical_input）需要真实可见窗口，在其 conftest 里关掉
@@ -47,21 +50,69 @@ class AppSession:
 
     # ------------------------------------------------------------------ 生命周期
     def start(self, timeout: float = 60) -> "AppSession":
+        threshold = launchdiag.fuse_threshold()
+        if self.cdp and HEALTH.tripped(threshold):
+            raise StartupError(HEALTH.fuse_message())
         self.sb.install_exe()
         self.port = free_port() if self.cdp else None
         self.launch_count += 1
-        log = (self.sb.root / f"process-{self.launch_count}.log").open("w", encoding="utf-8")
+        log_path = self.sb.root / f"process-{self.launch_count}.log"
+        log = log_path.open("w", encoding="utf-8")
         if stealth.ENABLED and STEALTH["on"] and self.guard is None:
             self.guard = stealth.Guard(self.sb.root)
-        self.proc = subprocess.Popen([str(self.sb.exe), *self.args], cwd=self.sb.bin,
-                                     env=self.sb.env(self.port), stdout=log, stderr=log)
+        env = self.sb.env(self.port)
+        rec = LaunchRecord(n=self.launch_count, exe=str(self.sb.exe), args=list(self.args), cwd=str(self.sb.bin),
+                           cdp_port=self.port, env=LaunchRecord.safe_env(env))
+        self._launch = rec
+        try:
+            self.proc = subprocess.Popen([str(self.sb.exe), *self.args], cwd=self.sb.bin,
+                                         env=env, stdout=log, stderr=log)
+            rec.pid = self.proc.pid
+            rec.mark("进程已创建")
+            if self.cdp:
+                self._connect(timeout)
+                rec.mark("页面就绪")
+        except Exception as e:
+            log.flush()
+            rec.error = f"{type(e).__name__}: {e}"
+            self._fail_launch(rec, log_path)
+            raise StartupError(rec.summary()) from e
+        finally:
+            log.close()
         if self.cdp:
-            self._connect(timeout)
+            HEALTH.record_ok()
+        rec.write(self.sb.artifacts)
         return self
+
+    def _fail_launch(self, rec: LaunchRecord, log_path: Path) -> None:
+        """记录退出码/存活、日志尾部；落盘 launch-N.json 与 process-N.log，更新熔断计数。"""
+        if self.proc is not None:
+            code = self.proc.poll()
+            rec.alive, rec.exit_code = code is None, code
+        rec.log_tail = launchdiag.tail_text(log_path)
+        out = rec.write(self.sb.artifacts)
+        try:
+            (self.sb.artifacts / log_path.name).write_bytes(log_path.read_bytes())
+        except OSError:
+            pass
+        if os.environ.get("CI"):
+            # CI 一次性 runner：Tauri 日志走真实 %LOCALAPPDATA%\com.taglauncher.app\logs（不认沙箱变量），
+            # 附上最新日志尾部；本机运行不读用户真实目录。
+            try:
+                logs = sorted((real_dirs()[1] / "logs").glob("*.log"), key=lambda f: f.stat().st_mtime)
+                if logs:
+                    (self.sb.artifacts / f"tauri-log-{rec.n}.txt").write_text(
+                        launchdiag.tail_text(logs[-1], 200), encoding="utf-8")
+            except OSError:
+                pass
+        if self.cdp:
+            HEALTH.record_fail(rec.summary(), str(out))
 
     def _connect(self, timeout: float) -> None:
         endpoint = f"http://127.0.0.1:{self.port}"
         deadline = time.monotonic() + timeout
+        rec = getattr(self, "_launch", None)
+        mark = rec.mark if rec else (lambda _p: None)
         while True:
             if self.proc.poll() is not None:
                 raise RuntimeError(f"应用进程提前退出 code={self.proc.returncode} sandbox={self.sb.root}")
@@ -72,10 +123,12 @@ class AppSession:
                 if time.monotonic() > deadline:
                     raise RuntimeError(f"WebView2 CDP 端口不可用: {self.sb.root}")
                 time.sleep(0.2)
+        mark("CDP 端口可用")
         # 偶发：首个 CDP 连接错过页面 target（一直看不到 tauri.localhost）。每 10s 无果就重连一次。
         page, seen = None, set()
         while page is None:
             self.browser = self.pw.chromium.connect_over_cdp(endpoint)
+            mark("CDP 已连接")
             reconnect_at = time.monotonic() + 10
             while page is None and time.monotonic() < min(deadline, reconnect_at):
                 for ctx in self.browser.contexts:
@@ -89,19 +142,25 @@ class AppSession:
                         break
                 if page is None:
                     time.sleep(0.2)
+            if rec:
+                rec.seen_urls = sorted(seen)
             if page is None:
                 # 不调用 browser.close()：CDP 连接上 close 可能连带关闭 WebView；旧连接随进程结束释放
                 if time.monotonic() >= deadline or self.proc.poll() is not None:
                     raise RuntimeError(f"找不到应用页面 seen={sorted(seen)} alive={self.proc.poll() is None}")
         # 桩脚本需要在应用脚本之前生效：注册 init script 后立刻 reload。
         # 应用的启动期更新检查有 8s 延迟，reload 发生在其之前（spike 验证）。
+        mark("找到应用页面")
         page.context.add_init_script(STUB_JS)
         page.evaluate(STUB_JS)
         if self.reload:
             page.reload(wait_until="domcontentloaded")
         self.page = page
         page.on("pageerror", lambda err: self.page_errors.append(str(err)))
+        if self.reload:
+            mark("reload 完成")
         page.locator('[data-region="root"]').wait_for(state="attached", timeout=60_000)
+        mark("应用根节点就绪")
         if self.throttle_update:
             page.evaluate("localStorage.setItem('taglauncher.update_last_check_ts', String(Date.now()))")
         if self.dismiss_welcome:

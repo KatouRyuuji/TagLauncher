@@ -46,11 +46,25 @@ jobs:
           npx tauri build --debug --no-bundle
           cargo build --manifest-path src-tauri/Cargo.toml --bin tl
 
+      - name: Runner diagnostics (WebView2 / session)
+        shell: pwsh
+        run: |
+          $keys = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
+                  'HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          foreach ($k in $keys) { if (Test-Path $k) { "WebView2 runtime ($k): $((Get-ItemProperty $k).pv)" } }
+          "Session: $([Environment]::UserInteractive) user=$env:USERNAME"
+          Get-Item src-tauri/target/debug/tag-launcher.exe, src-tauri/target/debug/tl.exe | Format-Table Name, Length, LastWriteTime
+
       - name: Run E2E (cli + ui + visual)
+        timeout-minutes: 45
         env:
           CI: '1'
           TL_E2E_RUN_DIR: ${{ github.workspace }}/.tmp-test/e2e/ci-run
-        run: npm run test:e2e:ci
+        run: npm run test:e2e:ci -- --junitxml=.tmp-test/e2e/ci-run/junit.xml
+
+      - name: E2E summary
+        if: always()
+        run: python e2e/tools/ci_summary.py .tmp-test/e2e/ci-run
 
       - name: Upload report and screenshots
         if: always()
@@ -59,6 +73,8 @@ jobs:
           name: e2e-report
           path: |
             .tmp-test/e2e/ci-run/results.json
+            .tmp-test/e2e/ci-run/results.jsonl
+            .tmp-test/e2e/ci-run/junit.xml
             .tmp-test/e2e/ci-run/report.html
             .tmp-test/e2e/ci-run/visual/
             .tmp-test/e2e/ci-run/artifacts/
