@@ -300,8 +300,20 @@ mod tests {
 
         let like = query_items_by_text_like(&conn, "安装").expect("like alias");
         assert_eq!(like.len(), 1);
-        let tagged = query_items_by_text_and_tags_like(&conn, "安装", &[], false);
-        assert!(tagged.is_ok());
+        // 带标签筛选的两条路径（FTS / LIKE）也要命中别名（空标签列表不走这里，由 search_items 分流）
+        conn.execute("INSERT INTO tags (id, name) VALUES (1, '工具')", [])
+            .expect("insert tag");
+        conn.execute(
+            "INSERT INTO item_tags (item_id, tag_id) VALUES (?1, 1)",
+            params![id],
+        )
+        .expect("tag item");
+        let tagged =
+            query_items_by_text_and_tags_like(&conn, "安装", &[1], false).expect("tagged like alias");
+        assert_eq!(tagged.len(), 1);
+        let tagged_fts =
+            query_items_by_text_and_tags(&conn, "安装", &[1], false).expect("tagged fts alias");
+        assert_eq!(tagged_fts.len(), 1);
 
         crate::services::item_service::set_item_alias(&conn, id, "   ").expect("clear alias");
         assert!(query_items_by_text(&conn, "安装").unwrap().is_empty(), "清除后不再命中");
