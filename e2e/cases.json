@@ -1947,6 +1947,17 @@
 "coverage": "TH-03"
 },
 {
+"id": "E-TH-08",
+"module": "主题外观",
+"scenario": "界面字号独立调节并持久化",
+"steps": "列表视图→设置选特大→重启",
+"expect": "文字放大、行重测不重叠、重启保持",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P2",
+"coverage": "F03"
+},
+{
 "id": "E-MOD-01",
 "module": "扩展 Mods",
 "scenario": "发现与启用 css Mod",

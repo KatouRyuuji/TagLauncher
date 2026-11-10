@@ -105,16 +105,16 @@ export function RemoveFromAppConfirmDialog({
                   <p className="flex min-w-0 items-center gap-1.5">
                     <span className="truncate text-sm font-medium text-[var(--text-primary)]">{item.name}</span>
                     {item.type === "folder" && (
-                      <span className="shrink-0 text-[12px] text-[var(--text-muted)]">{folderTypeBadge}</span>
+                      <span className="shrink-0 text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-muted)]">{folderTypeBadge}</span>
                     )}
                   </p>
-                  <p className="truncate text-[12px] text-[var(--text-faint)]" title={item.path}>
+                  <p className="truncate text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-faint)]" title={item.path}>
                     {truncatePathMiddle(item.path, 56)}
                   </p>
                 </li>
               ))}
               {itemCount > previewItems.length && (
-                <li className="text-[12px] text-[var(--text-muted)]">等 {itemCount} 项</li>
+                <li className="text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-muted)]">等 {itemCount} 项</li>
               )}
             </ul>
           )}

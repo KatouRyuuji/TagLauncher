@@ -834,7 +834,7 @@ export function MenuItem({
     >
       <Icon aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 opacity-80" />
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {checked ? <span className="text-[13px] text-[var(--text-muted)]" aria-hidden="true">✓</span> : null}
+      {checked ? <span className="text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-muted)]" aria-hidden="true">✓</span> : null}
     </button>
   );
 }

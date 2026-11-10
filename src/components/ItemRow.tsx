@@ -136,14 +136,14 @@ function ItemRowComponent({
             />
           </div>
           <div className="min-w-0">
-            <h3 className="flex items-center gap-1.5 truncate text-[14px] font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
+            <h3 className="flex items-center gap-1.5 truncate text-[length:calc(14px*var(--ui-font-scale,1))] font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
               <span className="truncate">
                 <SearchHighlightText text={item.name} query={searchQuery} />
               </span>
               <ItemNoteIcon note={item.note} />
               {item.is_missing && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning-ink)]"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1 py-0.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-semibold leading-none text-[var(--color-warning-ink)]"
                   title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
                 >
                   <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
@@ -152,7 +152,7 @@ function ItemRowComponent({
               )}
             </h3>
             <p
-              className={`mt-0.5 flex min-w-0 text-[13px] leading-4 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
+              className={`mt-0.5 flex min-w-0 text-[length:calc(13px*var(--ui-font-scale,1))] leading-4 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
               title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
             >
               {/* 目录段先行截断，末段名保底可见；末段自身超长时从头部省略，扩展名始终完整 */}
@@ -161,7 +161,7 @@ function ItemRowComponent({
             </p>
             {/* 元行高度对齐：失效且从未启动时也要占住这一行，不比邻居「矮一截」 */}
             {(lastUsedText !== "" || item.is_missing) && (
-              <p className={`mt-0.5 truncate text-[12px] leading-4 ${item.is_missing && lastUsedText === "" ? "text-[var(--color-warning-ink)]" : "text-[var(--text-faint)]"}`}>
+              <p className={`mt-0.5 truncate text-[length:calc(12px*var(--ui-font-scale,1))] leading-4 ${item.is_missing && lastUsedText === "" ? "text-[var(--color-warning-ink)]" : "text-[var(--text-faint)]"}`}>
                 {lastUsedText !== "" ? `上次使用 ${lastUsedText}` : "失效 · 可找回"}
               </p>
             )}
@@ -176,7 +176,7 @@ function ItemRowComponent({
           {modSlots.actions.length > 0 && <div ref={actionsSlotRef} className="mb-0.5 flex justify-end" />}
           {/* 星标是独立动作位（固定 28px），不贴在类型文案末尾被读成类型的一部分 */}
           <div className="flex items-center gap-2">
-            <p className="min-w-0 flex-1 truncate text-right text-[13px] font-semibold text-[var(--text-secondary)]" title={getTypeDetail(item.type)}>
+            <p className="min-w-0 flex-1 truncate text-right text-[length:calc(13px*var(--ui-font-scale,1))] font-semibold text-[var(--text-secondary)]" title={getTypeDetail(item.type)}>
               {getTypeLabel(item.type)}
             </p>
             <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center [&_button]:bg-transparent">
@@ -184,7 +184,7 @@ function ItemRowComponent({
             </span>
           </div>
           {getFileSuffix(item) !== "无后缀" && (
-            <p className="data-readout mt-0.5 truncate text-[13px] text-[var(--text-faint)]" title={getFileSuffix(item)}>
+            <p className="data-readout mt-0.5 truncate text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]" title={getFileSuffix(item)}>
               {getFileSuffix(item)}
             </p>
           )}

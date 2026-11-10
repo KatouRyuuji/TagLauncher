@@ -414,7 +414,7 @@ export function Sidebar({
       {activeDragKind === "item" && sidebarTab !== "cabinets" && (
         <div
           role="status"
-          className="mx-2 mt-2 flex shrink-0 items-center gap-2 border-l-2 border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] px-2.5 py-2 text-[13px] leading-4 text-[var(--accent-primary-ink)]"
+          className="mx-2 mt-2 flex shrink-0 items-center gap-2 border-l-2 border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] px-2.5 py-2 text-[length:calc(13px*var(--ui-font-scale,1))] leading-4 text-[var(--accent-primary-ink)]"
         >
           <Info className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
           <span>项目拖拽中，已显示文件柜</span>
@@ -462,7 +462,7 @@ export function Sidebar({
                   onCompositionEnd={tagFilterIme.onCompositionEnd}
                   placeholder="过滤标签…"
                   aria-label="过滤标签"
-                  className="input-frame mb-1 h-7 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[12px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)]"
+                  className="input-frame mb-1 h-7 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-primary)] placeholder-[var(--text-placeholder)]"
                 />
               )}
               <div className="mt-1 space-y-0.5">
@@ -541,7 +541,7 @@ export function Sidebar({
                           }}
                           aria-hidden="true"
                         />
-                        <span className={`min-w-0 flex-1 truncate text-[13px] ${depth === 0 ? "font-medium" : "font-normal"} ${excluded ? "line-through" : ""}`}>{tag.name}</span>
+                        <span className={`min-w-0 flex-1 truncate text-[length:calc(13px*var(--ui-font-scale,1))] ${depth === 0 ? "font-medium" : "font-normal"} ${excluded ? "line-through" : ""}`}>{tag.name}</span>
                         <NavCount value={itemCountByTag.get(tag.id) ?? 0} />
                       </button>
                     </div>
@@ -550,7 +550,7 @@ export function Sidebar({
               </div>
 
               {tags.length === 0 && (
-                <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[13px] leading-5 text-[var(--text-muted)]">
+                <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">
                   暂无标签
                 </div>
               )}
@@ -615,7 +615,7 @@ export function Sidebar({
                         style={{ backgroundColor: cabinet.color }}
                         aria-hidden="true"
                       />
-                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{cabinet.name}</span>
+                      <span className="min-w-0 flex-1 truncate text-[length:calc(13px*var(--ui-font-scale,1))] font-medium">{cabinet.name}</span>
                       {cabinet.folder_path && <LinkedFolderMark cabinet={cabinet} />}
                       {cabinetInsert?.cabinetId === cabinet.id && <InsertLine after={cabinetInsert.after} />}
                       <NavCount value={itemCountByCabinet.get(cabinet.id) ?? 0} />
@@ -625,7 +625,7 @@ export function Sidebar({
               </div>
 
               {cabinets.length === 0 && (
-                <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[13px] leading-5 text-[var(--text-muted)]">
+                <div className="mt-1 border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">
                   暂无文件柜
                 </div>
               )}
@@ -658,7 +658,7 @@ export function Sidebar({
       {(!sidebarHintDismissed || activeDragKind === "item") && (
         <div
           data-region="sidebar-hint"
-          className="flex h-8 shrink-0 items-center gap-2 px-3 text-[12px] leading-4 text-[var(--text-muted)]"
+          className="flex h-8 shrink-0 items-center gap-2 px-3 text-[length:calc(12px*var(--ui-font-scale,1))] leading-4 text-[var(--text-muted)]"
         >
           <Info className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" strokeWidth={1.8} aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate" title={activeDragKind === "item" ? "释放到收藏夹或文件柜完成归档（不会移动磁盘文件）" : "拖标签到项目打标，拖项目到文件柜。文件柜是分组，不是磁盘文件夹。"}>
@@ -779,7 +779,7 @@ function SectionHeader({
         {label}
       </h2>
       {typeof count === "number" && (
-        <span className="data-readout text-[13px] text-[var(--text-faint)]">{count}</span>
+        <span className="data-readout text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]">{count}</span>
       )}
       {children && <div className="ml-auto flex shrink-0 items-center gap-0.5">{children}</div>}
     </div>
@@ -813,7 +813,7 @@ function SidebarIconButton({
 
 function NavCount({ value }: { value: number }) {
   return (
-    <span className={`min-w-6 shrink-0 text-right text-[12px] tabular-nums text-[var(--text-muted)] ${value === 0 ? "opacity-40" : ""}`}>
+    <span className={`min-w-6 shrink-0 text-right text-[length:calc(12px*var(--ui-font-scale,1))] tabular-nums text-[var(--text-muted)] ${value === 0 ? "opacity-40" : ""}`}>
       {value}
     </span>
   );
@@ -824,7 +824,7 @@ function AddRowButton({ label, onClick }: { label: string; onClick: () => void }
     <button
       type="button"
       onClick={onClick}
-      className="mt-1.5 flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-hover)] px-2 text-[13px] font-medium text-[var(--text-tertiary)] hover:bg-[var(--accent-primary-bg-light)] hover:text-[var(--accent-primary)]"
+      className="mt-1.5 flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-hover)] px-2 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium text-[var(--text-tertiary)] hover:bg-[var(--accent-primary-bg-light)] hover:text-[var(--accent-primary)]"
     >
       <Plus className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
       <span>{label}</span>
@@ -848,7 +848,7 @@ function SidebarTabButton({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-[13px] font-medium transition-colors ${
+      className={`flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium transition-colors ${
         active
           ? "bg-[var(--surface-raised)] text-[var(--text-primary)] shadow-[var(--shadow-sm)]"
           : "text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
@@ -905,7 +905,7 @@ function FilterNavButton({
       {...props}
     >
       <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</span>
+      <span className="min-w-0 flex-1 truncate text-[length:calc(13px*var(--ui-font-scale,1))] font-medium">{title}</span>
       {typeof count === "number" && <NavCount value={count} />}
     </button>
   );
@@ -928,7 +928,7 @@ function SidebarPanelSlot({ panel }: { panel: PanelDescriptor }) {
           type="button"
           aria-expanded={!collapsed}
           onClick={() => setCollapsed((value) => !value)}
-          className="flex h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          className="flex h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
           {collapsed ? (
             <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" strokeWidth={1.8} aria-hidden="true" />
@@ -938,7 +938,7 @@ function SidebarPanelSlot({ panel }: { panel: PanelDescriptor }) {
           <span className="truncate font-medium">{panel.title}</span>
         </button>
       ) : (
-        <div className="flex h-8 items-center gap-2 px-2 text-[13px] text-[var(--text-secondary)]">
+        <div className="flex h-8 items-center gap-2 px-2 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-secondary)]">
           <span className="min-w-0 flex-1 truncate font-medium">{panel.title}</span>
           <button
             type="button"
@@ -959,7 +959,7 @@ function SidebarPanelSlot({ panel }: { panel: PanelDescriptor }) {
       <div
         ref={containerRef}
         className="mx-1 min-h-10 px-1.5 py-1 text-[var(--text-primary)]"
-        style={{ fontSize: "var(--font-size-sm)", display: collapsed ? "none" : undefined }}
+        style={{ fontSize: "calc(var(--font-size-sm) * var(--ui-font-scale, 1))", display: collapsed ? "none" : undefined }}
       />
     </div>
   );
@@ -974,7 +974,7 @@ function LinkedFolderMark({ cabinet }: { cabinet: Cabinet }) {
   return (
     <span title={title} className="flex shrink-0 items-center gap-1 text-[var(--text-faint)]">
       <FolderSync aria-label={title} size={13} strokeWidth={1.8} />
-      {state && <span className="text-[11px] text-[var(--color-warning-ink)]">{state}</span>}
+      {state && <span className="text-[length:calc(11px*var(--ui-font-scale,1))] text-[var(--color-warning-ink)]">{state}</span>}
     </span>
   );
 }

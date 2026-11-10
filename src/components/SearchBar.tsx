@@ -196,7 +196,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               handleSearch(value);
               notifySearchInput(value);
             }}
-            className="h-full min-w-0 flex-1 appearance-none border-0 bg-transparent text-[14px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none [&::-webkit-search-cancel-button]:hidden"
+            className="h-full min-w-0 flex-1 appearance-none border-0 bg-transparent text-[length:calc(14px*var(--ui-font-scale,1))] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none [&::-webkit-search-cancel-button]:hidden"
           />
 
           {searchMode !== "all" && !showFilterRow && (
@@ -204,7 +204,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               type="button"
               data-testid="search-mode-badge"
               onClick={() => setSearchMode("all")}
-              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent-primary)_36%,transparent)] bg-[var(--accent-primary-bg)] px-1.5 text-[13px] font-semibold text-[var(--accent-primary)] hover:border-[var(--accent-primary)]"
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent-primary)_36%,transparent)] bg-[var(--accent-primary-bg)] px-1.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-semibold text-[var(--accent-primary)] hover:border-[var(--accent-primary)]"
               title={`退出「仅${MODES.find((mode) => mode.value === searchMode)?.label}」模式，恢复搜索全部范围（保留当前关键词）`}
               aria-label="退出搜索模式，恢复搜索全部范围"
             >
@@ -216,7 +216,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
           {queryKind === "pinyin" && (
             <span
               data-testid="search-kind-pinyin"
-              className="inline-flex h-6 shrink-0 items-center rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] px-1.5 text-[12px] font-medium text-[var(--text-secondary)]"
+              className="inline-flex h-6 shrink-0 items-center rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] px-1.5 text-[length:calc(12px*var(--ui-font-scale,1))] font-medium text-[var(--text-secondary)]"
               title="按拼音或英文缩写匹配名称与标签"
             >
               拼音
@@ -225,7 +225,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
           {queryKind === "expression" && (
             <span
               data-testid="search-kind-expression"
-              className="inline-flex h-6 shrink-0 items-center rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] px-1.5 text-[12px] font-medium text-[var(--text-secondary)]"
+              className="inline-flex h-6 shrink-0 items-center rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] px-1.5 text-[length:calc(12px*var(--ui-font-scale,1))] font-medium text-[var(--text-secondary)]"
               title="表达式：&& 同时满足，|| 任一满足，!! 排除"
             >
               表达式
@@ -298,7 +298,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
         </div>
 
         <div
-          className="flex h-8 min-w-0 shrink items-center gap-1.5 rounded-[var(--radius-md)] px-2 text-[13px] text-[var(--text-secondary)] [&>div]:min-w-0"
+          className="flex h-8 min-w-0 shrink items-center gap-1.5 rounded-[var(--radius-md)] px-2 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-secondary)] [&>div]:min-w-0"
           title={SORT_OPTIONS.find((option) => option.value === sortMode)?.hint}
         >
           <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)] max-[1100px]:hidden" strokeWidth={1.8} aria-hidden="true" />
@@ -310,7 +310,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               { label: "排序依据", options: SORT_OPTIONS.filter((option) => option.value !== "smart") },
             ]}
             ariaLabel="排序方式"
-            className="flex h-full min-w-14 max-w-full items-center gap-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none"
+            className="flex h-full min-w-14 max-w-full items-center gap-1 bg-transparent text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-primary)] outline-none"
           />
         </div>
 
@@ -322,7 +322,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               setMoreMenuOpen(false);
               setAddMenuOpen((value) => !value);
             }}
-            className="action-button h-9 min-h-9 gap-1.5 px-3 text-[13px] max-[1100px]:w-9 max-[1100px]:px-0"
+            className="action-button h-9 min-h-9 gap-1.5 px-3 text-[length:calc(13px*var(--ui-font-scale,1))] max-[1100px]:w-9 max-[1100px]:px-0"
             title="添加文件或文件夹"
             aria-label="添加文件或文件夹"
             aria-haspopup="menu"
@@ -342,7 +342,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
                 type="button"
                 role="menuitem"
                 onClick={() => { setAddMenuOpen(false); void handleBrowse(); }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
               >
                 <FilePlus2 className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden="true" />
                 添加文件…
@@ -351,7 +351,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
                 type="button"
                 role="menuitem"
                 onClick={() => { setAddMenuOpen(false); void handleBrowseFolder(); }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
               >
                 <FolderPlus className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden="true" />
                 添加文件夹…
@@ -395,7 +395,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               }
               setWorkspaceFiltersOpen(!showFilterRow);
             }}
-              className={`control-chip relative h-9 gap-1.5 border-0 px-2.5 text-[13px] ${
+              className={`control-chip relative h-9 gap-1.5 border-0 px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))] ${
                 filtersForcedOpen
                   ? "control-chip-active"
                   : showFilterRow ? "control-chip-active" : ""
@@ -409,7 +409,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               {/* 激活筛选计数外显：行收起时也能看出有筛选在作用 */}
               {activeFilterCount > 0 && (
                 <span
-                  className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--bg-elevated)] px-0.5 text-[10px] font-semibold leading-none text-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]"
+                  className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--bg-elevated)] px-0.5 text-[length:calc(10px*var(--ui-font-scale,1))] font-semibold leading-none text-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]"
                   aria-label={`${activeFilterCount} 个筛选激活`}
                 >
                   {activeFilterCount}
@@ -424,7 +424,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
                 setMoreMenuOpen(false);
                 onOpenSettings();
               }}
-              className="control-chip h-9 gap-1.5 border-0 px-2.5 text-[13px]"
+              className="control-chip h-9 gap-1.5 border-0 px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))]"
               title="设置（Ctrl+,）"
               aria-label="设置"
             >
@@ -466,7 +466,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
                       useAppStore.getState().setActivityNotice("列表已是最新");
                     });
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
                 >
                   <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} strokeWidth={1.8} aria-hidden="true" />
                   刷新列表
@@ -475,7 +475,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
                   type="button"
                   role="menuitem"
                   onClick={() => { setMoreMenuOpen(false); onOpenAbout(); }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                 >
                   <Info className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                   关于 TagLauncher
@@ -499,7 +499,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               key={mode.value}
               type="button"
               onClick={() => setSearchMode(mode.value)}
-              className={`control-chip h-6 min-h-6 rounded-[var(--radius-sm)] border-0 px-2.5 text-[13px] font-medium ${
+              className={`control-chip h-6 min-h-6 rounded-[var(--radius-sm)] border-0 px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium ${
                 searchMode === mode.value ? "control-chip-active" : ""
               }`}
               aria-pressed={searchMode === mode.value}
@@ -521,7 +521,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
                 type="button"
                 onClick={() => setTypeFilter(nextTypeFilter(typeFilter, filter.value))}
                 aria-pressed={typeFilter === filter.value}
-                className={`control-chip h-6 min-h-6 shrink-0 rounded-[var(--radius-sm)] border-0 px-2.5 text-[13px] font-medium ${
+                className={`control-chip h-6 min-h-6 shrink-0 rounded-[var(--radius-sm)] border-0 px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium ${
                   typeFilter === filter.value ? "control-chip-active" : ""
                 }`}
                 title={typeFilter === filter.value && filter.value !== "all" ? "再次点击取消筛选" : filter.label}
@@ -537,7 +537,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
           type="button"
           onClick={() => setHideMissing(!hideMissing)}
           aria-pressed={hideMissing}
-          className={`control-chip h-8 min-h-8 shrink-0 rounded-[var(--radius-sm)] px-2.5 text-[13px] font-medium ${
+          className={`control-chip h-8 min-h-8 shrink-0 rounded-[var(--radius-sm)] px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium ${
             hideMissing ? "control-chip-active" : ""
           }`}
           title="隐藏文件已丢失或所在磁盘离线的对象；失效计数与复核入口不受影响"

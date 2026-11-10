@@ -133,7 +133,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
         disabled={saving || creating}
         aria-pressed={selected}
         aria-label={tag.name}
-        className={`flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] pr-3 text-left text-[13px] transition-colors ${selected
+        className={`flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] pr-3 text-left text-[length:calc(13px*var(--ui-font-scale,1))] transition-colors ${selected
           ? "bg-[var(--bg-hover)] font-medium text-[var(--text-primary)]"
           : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"}`}
         style={{
@@ -189,7 +189,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
           {selectedIds.length > 0 && (
             <div className="mb-4 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto" aria-label="已选标签">
               {selectedTags.map((tag) => (
-                <button key={tag.id} type="button" className="tag-pill gap-1.5 px-2 py-1 text-[12px]" style={{ "--tag-color": tag.color } as CSSProperties}
+                <button key={tag.id} type="button" className="tag-pill gap-1.5 px-2 py-1 text-[length:calc(12px*var(--ui-font-scale,1))]" style={{ "--tag-color": tag.color } as CSSProperties}
                   disabled={saving || creating} onClick={() => toggleTag(tag.id)} aria-label={`移除已选标签「${tag.name}」`}>
                   {tag.name}<X size={12} aria-hidden="true" />
                 </button>

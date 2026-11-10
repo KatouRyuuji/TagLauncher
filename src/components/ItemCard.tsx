@@ -227,7 +227,7 @@ function ItemCardComponent({
         {iconLayout ? (
           <>
             <div className="relative w-full">
-              <div className="aspect-square w-full overflow-hidden rounded-[var(--radius-lg)] bg-[var(--surface-recessed)] text-[42px]">
+              <div className="aspect-square w-full overflow-hidden rounded-[var(--radius-lg)] bg-[var(--surface-recessed)] text-[length:calc(42px*var(--ui-font-scale,1))]">
                 <ItemVisualIcon
                   item={item}
                   emojiClass="leading-none"
@@ -236,7 +236,7 @@ function ItemCardComponent({
               </div>
               {item.is_missing && (
                 <span
-                  className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[12px] font-semibold text-[var(--color-warning-ink)]"
+                  className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[length:calc(12px*var(--ui-font-scale,1))] font-semibold text-[var(--color-warning-ink)]"
                   title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
                 >
                   <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
@@ -255,7 +255,7 @@ function ItemCardComponent({
               </div>
             </div>
             <h3
-              className="mt-2 line-clamp-2 w-full text-center text-[13px] font-medium leading-4 text-[var(--text-primary)]"
+              className="mt-2 line-clamp-2 w-full text-center text-[length:calc(13px*var(--ui-font-scale,1))] font-medium leading-4 text-[var(--text-primary)]"
               title={item.name}
             >
               <SearchHighlightText text={item.name} query={searchQuery} />
@@ -271,7 +271,7 @@ function ItemCardComponent({
         ) : (
           <>
         <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-[var(--card-thumb-size)] w-[var(--card-thumb-size)] shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] bg-[var(--surface-recessed)] text-[26px]">
+          <div className="flex h-[var(--card-thumb-size)] w-[var(--card-thumb-size)] shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] bg-[var(--surface-recessed)] text-[length:calc(26px*var(--ui-font-scale,1))]">
             <ItemVisualIcon
               item={item}
               emojiClass="leading-none"
@@ -282,13 +282,13 @@ function ItemCardComponent({
           {/* 文本列为右上角的星标/选中勾预留安全间距，任何状态下文字不与控件重叠 */}
           <div className="min-w-0 flex-1 pr-9">
             <div className="flex min-w-0 items-center gap-1.5">
-              <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
+              <h3 className="min-w-0 flex-1 truncate text-[length:calc(15px*var(--ui-font-scale,1))] font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
                 <SearchHighlightText text={item.name} query={searchQuery} />
               </h3>
               <ItemNoteIcon note={item.note} />
               {item.is_missing && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[13px] font-semibold leading-none text-[var(--color-warning-ink)]"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--color-warning)_65%,transparent)] bg-[var(--status-warning-bg)] px-1.5 py-0.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-semibold leading-none text-[var(--color-warning-ink)]"
                   title="文件已丢失或移动到其他磁盘；应用内归类已保留，文件恢复后会自动重新关联"
                 >
                   <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
@@ -297,11 +297,11 @@ function ItemCardComponent({
               )}
             </div>
             {showMetaLine && metaLine !== "" && (
-              <p className={`mt-0.5 truncate text-[12px] leading-4 ${item.is_missing && lastUsedText === "" ? "text-[var(--color-warning-ink)]" : "text-[var(--text-faint)]"}`}>
+              <p className={`mt-0.5 truncate text-[length:calc(12px*var(--ui-font-scale,1))] leading-4 ${item.is_missing && lastUsedText === "" ? "text-[var(--color-warning-ink)]" : "text-[var(--text-faint)]"}`}>
                 {metaLine}
               </p>
             )}
-            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[13px] leading-4 text-[var(--text-faint)]">
+            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[length:calc(13px*var(--ui-font-scale,1))] leading-4 text-[var(--text-faint)]">
               <span className="instrument-label truncate" title={getTypeDetail(item.type)}>
                 {getTypeLabel(item.type)}
               </span>

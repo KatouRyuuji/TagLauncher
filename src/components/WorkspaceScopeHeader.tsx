@@ -81,16 +81,16 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir 
   return (
     <div data-region="scope-header" className="shrink-0 px-6 pt-5 pb-2">
       <div className="flex items-baseline gap-3">
-        <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--text-primary)]">{scope.title}</h2>
-        <span className="text-[12px] tabular-nums text-[var(--text-muted)]">{pending ? "正在打开文件柜" : `${scope.count} 项`}</span>
+        <h2 className="text-[length:calc(22px*var(--ui-font-scale,1))] font-semibold tracking-[-0.02em] text-[var(--text-primary)]">{scope.title}</h2>
+        <span className="text-[length:calc(12px*var(--ui-font-scale,1))] tabular-nums text-[var(--text-muted)]">{pending ? "正在打开文件柜" : `${scope.count} 项`}</span>
         {scope.qualifiers.length > 0 && (
-          <span className="text-[13px] text-[var(--text-muted)]">{scope.qualifiers.join(" · ")}</span>
+          <span className="text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-muted)]">{scope.qualifiers.join(" · ")}</span>
         )}
         {showRecent && onClearRecent && visibleCount > 0 && (
           <button
             type="button"
             onClick={onClearRecent}
-            className="control-chip ml-auto h-7 min-h-7 shrink-0 gap-1.5 self-center px-2.5 text-[13px]"
+            className="control-chip ml-auto h-7 min-h-7 shrink-0 gap-1.5 self-center px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))]"
           >
             <History aria-hidden="true" size={14} strokeWidth={1.8} />
             清除记录
@@ -101,7 +101,7 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir 
             type="button"
             aria-pressed={showNestedContents}
             onClick={() => setShowNestedContents(!showNestedContents)}
-            className="control-chip ml-auto h-7 min-h-7 shrink-0 gap-1.5 self-center px-2.5 text-[13px]"
+            className="control-chip ml-auto h-7 min-h-7 shrink-0 gap-1.5 self-center px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))]"
           >
             {showNestedContents ? <FolderTree aria-hidden="true" size={14} strokeWidth={1.8} /> : <Rows3 aria-hidden="true" size={14} strokeWidth={1.8} />}
             {showNestedContents ? "隐藏目录内文件" : "显示目录内文件"}
@@ -147,7 +147,7 @@ function LinkedCabinetBar({
   const notice = folderNotice(cabinet);
 
   return (
-    <div data-region="linked-cabinet-bar" className="mt-2 flex min-h-7 flex-wrap items-center gap-2 text-[13px]">
+    <div data-region="linked-cabinet-bar" className="mt-2 flex min-h-7 flex-wrap items-center gap-2 text-[length:calc(13px*var(--ui-font-scale,1))]">
       <nav aria-label="文件夹路径" title={root} className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[var(--text-muted)]">
         {crumbs ? (
           crumbs.map((crumb, index) => (
@@ -175,7 +175,7 @@ function LinkedCabinetBar({
         <button
           type="button"
           onClick={() => onCleanMissing(missingIds)}
-          className="control-chip h-7 min-h-7 shrink-0 gap-1.5 px-2.5 text-[13px]"
+          className="control-chip h-7 min-h-7 shrink-0 gap-1.5 px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))]"
         >
           <Eraser aria-hidden="true" size={14} strokeWidth={1.8} />
           清理失效（{missingIds.length}）
@@ -186,7 +186,7 @@ function LinkedCabinetBar({
         type="button"
         aria-pressed={cabinetFlat}
         onClick={() => setCabinetFlat(!cabinetFlat)}
-        className="control-chip h-7 min-h-7 shrink-0 gap-1.5 px-2.5 text-[13px]"
+        className="control-chip h-7 min-h-7 shrink-0 gap-1.5 px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))]"
       >
         {cabinetFlat ? <FolderTree aria-hidden="true" size={14} strokeWidth={1.8} /> : <Rows3 aria-hidden="true" size={14} strokeWidth={1.8} />}
         {cabinetFlat ? "按目录浏览" : "平铺显示"}
@@ -208,7 +208,7 @@ function LibraryBrowseBar({ root }: { root: string }) {
   const crumbs = browseCrumbs(folderLabel(root), root, libraryBrowseDir);
 
   return (
-    <div data-region="library-browse-bar" className="mt-2 flex min-h-7 flex-wrap items-center gap-2 text-[13px]">
+    <div data-region="library-browse-bar" className="mt-2 flex min-h-7 flex-wrap items-center gap-2 text-[length:calc(13px*var(--ui-font-scale,1))]">
       <nav aria-label="文件夹路径" title={root} className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[var(--text-muted)]">
         <button
           type="button"

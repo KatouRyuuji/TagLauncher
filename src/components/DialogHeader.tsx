@@ -14,7 +14,7 @@ export function DialogHeader({ title, description, onClose, disabled = false, ic
       {icon && <span className="mt-0.5 shrink-0">{icon}</span>}
       <div className="min-w-0">
         <h2 className="text-lg font-semibold leading-snug text-[var(--text-primary)]">{title}</h2>
-        {description && <p className="mt-1 break-words text-[13px] leading-5 text-[var(--text-secondary)]">{description}</p>}
+        {description && <p className="mt-1 break-words text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-secondary)]">{description}</p>}
       </div>
       <button type="button" onClick={onClose} disabled={disabled} aria-label={`关闭${title}`} title="关闭（Esc）"
         className="icon-button shrink-0 disabled:opacity-50">

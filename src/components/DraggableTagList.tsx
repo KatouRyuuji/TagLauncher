@@ -191,7 +191,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact, maxVis
         <span
           data-reorder-remove-item-id={item.id}
           onDoubleClick={(event) => event.stopPropagation()}
-          className={`inline-flex items-center rounded-[var(--radius-full)] border border-dashed px-2.5 py-1 text-[13px] font-medium transition-colors ${
+          className={`inline-flex items-center rounded-[var(--radius-full)] border border-dashed px-2.5 py-1 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium transition-colors ${
             removeZoneActive
               ? "border-[var(--color-danger)] bg-[var(--color-danger-bg)] text-[var(--color-danger-ink)]"
               : "border-[var(--border-medium)] text-[var(--text-faint)]"

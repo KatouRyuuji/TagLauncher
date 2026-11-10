@@ -144,7 +144,7 @@ export function ThemeFamilyGallery({
                   </span>
                 </span>
               </span>
-              <span className="mt-2 flex items-center justify-between gap-1 px-0.5 text-[13px] font-medium">
+              <span className="mt-2 flex items-center justify-between gap-1 px-0.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium">
                 <span className="truncate">{family.name}</span>
                 {selected && <Check size={14} strokeWidth={2} aria-hidden="true" />}
               </span>

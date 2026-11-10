@@ -87,7 +87,7 @@ export function TitleBar({
         {/* 品牌区属于 header 的 deep 拖拽子树，按下即可拖动窗口 / 双击最大化。 */}
         <div className="flex min-w-0 items-center self-stretch pl-3">
         <div className="flex min-w-0 items-center gap-2.5 pr-3">
-          <span className="truncate text-[13px] font-medium leading-4 text-[var(--text-secondary)]">
+          <span className="truncate text-[length:calc(13px*var(--ui-font-scale,1))] font-medium leading-4 text-[var(--text-secondary)]">
             TagLauncher
           </span>
         </div>

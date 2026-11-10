@@ -180,19 +180,19 @@ export function ModManagerPanel() {
                   <span className="text-base font-semibold text-[var(--text-primary)]">{mod.name}</span>
                   <TypeBadge type={mod.type} />
                   {mod.enabled ? (
-                    <span className="rounded-[var(--radius-full)] bg-[var(--status-success-bg)] px-2 py-1 text-[13px] font-semibold text-[var(--color-success-ink)]">
+                    <span className="rounded-[var(--radius-full)] bg-[var(--status-success-bg)] px-2 py-1 text-[length:calc(13px*var(--ui-font-scale,1))] font-semibold text-[var(--color-success-ink)]">
                       已启用
                     </span>
                   ) : (
                     /* 禁用态用描边徽章：浅色主题下 bg-hover 近白底，扫视时看不出状态 */
-                    <span className="rounded-[var(--radius-full)] border border-[var(--border-subtle)] bg-[var(--surface-recessed)] px-2 py-0.5 text-[13px] font-semibold text-[var(--text-muted)]">
+                    <span className="rounded-[var(--radius-full)] border border-[var(--border-subtle)] bg-[var(--surface-recessed)] px-2 py-0.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-semibold text-[var(--text-muted)]">
                       已禁用
                     </span>
                   )}
                   {mod.is_compatible === false && (
                     <span
                       title={mod.incompatible_reason ?? "与当前应用版本不兼容"}
-                      className="rounded-[var(--radius-full)] bg-[var(--color-danger-bg)] px-2 py-1 text-[13px] font-semibold text-[var(--color-danger-ink)]"
+                      className="rounded-[var(--radius-full)] bg-[var(--color-danger-bg)] px-2 py-1 text-[length:calc(13px*var(--ui-font-scale,1))] font-semibold text-[var(--color-danger-ink)]"
                     >
                       不兼容
                     </span>
@@ -257,7 +257,7 @@ export function ModManagerPanel() {
             <div className="mt-4 flex flex-wrap gap-2">
               {permissions.length === 0 ? (
                 <span
-                  className="tag-pill px-2.5 py-1 text-[13px]"
+                  className="tag-pill px-2.5 py-1 text-[length:calc(13px*var(--ui-font-scale,1))]"
                   style={{ "--tag-color": "var(--text-faint)" } as CSSProperties}
                 >
                   无特殊权限
@@ -268,7 +268,7 @@ export function ModManagerPanel() {
                   return (
                     <span
                       key={permission}
-                      className="tag-pill px-2.5 py-1 text-[13px]"
+                      className="tag-pill px-2.5 py-1 text-[length:calc(13px*var(--ui-font-scale,1))]"
                       style={{ "--tag-color": meta.color } as CSSProperties}
                     >
                       {meta.label}
@@ -324,7 +324,7 @@ export function ModManagerPanel() {
                         return (
                           <span
                             key={permission}
-                            className="tag-pill px-2.5 py-1 text-[13px]"
+                            className="tag-pill px-2.5 py-1 text-[length:calc(13px*var(--ui-font-scale,1))]"
                             style={{ "--tag-color": meta.color } as CSSProperties}
                           >
                             {meta.label}
@@ -419,7 +419,7 @@ function TypeBadge({ type }: { type: string }) {
 
   return (
     <span
-      className="rounded-[var(--radius-full)] px-2.5 py-1 text-[13px] font-medium"
+      className="rounded-[var(--radius-full)] px-2.5 py-1 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium"
       style={{ color: style.color, backgroundColor: style.bg }}
     >
       {style.label}

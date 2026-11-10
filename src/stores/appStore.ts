@@ -6,6 +6,7 @@
 // 视图偏好（视图/搜索模式/排序/类型筛选/筛选条展开）持久化到 localStorage。
 // ============================================================================
 
+import { applyUiFontScale, DEFAULT_UI_FONT_SCALE, isUiFontScale, type UiFontScale } from "../lib/uiFontScale";
 import { create } from "zustand";
 import type { Tag, Cabinet, TagRelation } from "../types";
 import * as db from "../lib/db";
@@ -117,6 +118,7 @@ interface WorkspacePrefs {
   iconSizeScale?: number;
   listDensity?: ListDensity;
   tagFilterMode?: TagFilterMode;
+  uiFontScale?: UiFontScale;
 }
 
 /** 读取持久化的缩放值：非法值丢弃（回退默认 1），合法值夹取到允许范围 */
@@ -146,6 +148,7 @@ function loadWorkspacePrefs(): WorkspacePrefs {
       iconSizeScale: loadSizeScale(parsed.iconSizeScale, ICON_SIZE_SCALE_RANGE),
       listDensity: isListDensity(parsed.listDensity) ? parsed.listDensity : undefined,
       tagFilterMode: isTagFilterMode(parsed.tagFilterMode) ? parsed.tagFilterMode : undefined,
+      uiFontScale: isUiFontScale(parsed.uiFontScale) ? parsed.uiFontScale : undefined,
     };
   } catch {
     return {};
@@ -164,6 +167,7 @@ const initialPrefs = loadWorkspacePrefs();
 
 // 启动即应用持久化的尺寸缩放，避免首帧按默认尺寸渲染后再跳变
 applyCardSizeVars(initialPrefs.cardSizeScale ?? 1, initialPrefs.iconSizeScale ?? 1);
+applyUiFontScale(initialPrefs.uiFontScale ?? DEFAULT_UI_FONT_SCALE);
 
 // 侧栏拖拽教程计次：超过上限自动收起（须在读初始状态前执行）
 countSidebarHintSeenAndAutoDismiss();
@@ -216,6 +220,8 @@ interface AppState {
   viewMode: ViewMode;
   /** 列表行密度（仅 list 视图生效）：紧凑档一屏更多行 */
   listDensity: ListDensity;
+  /** 界面字号档位（F03），只缩放文字 */
+  uiFontScale: UiFontScale;
   /** 标签筛选是否展开后代；默认含后代，与历史行为兼容 */
   tagFilterMode: TagFilterMode;
   sortMode: SortMode;
@@ -275,6 +281,7 @@ interface AppState {
   setSearchMode: (mode: SearchMode) => void;
   setViewMode: (mode: ViewMode) => void;
   setListDensity: (density: ListDensity) => void;
+  setUiFontScale: (scale: UiFontScale) => void;
   setTagFilterMode: (mode: TagFilterMode) => void;
   setSortMode: (mode: SortMode) => void;
   setTypeFilter: (filter: TypeFilter) => void;
@@ -320,6 +327,7 @@ export const useAppStore = create<AppState>((set, get) => {
       iconSizeScale: state.iconSizeScale,
       listDensity: state.listDensity,
       tagFilterMode: state.tagFilterMode,
+      uiFontScale: state.uiFontScale,
     });
   };
 
@@ -343,6 +351,7 @@ export const useAppStore = create<AppState>((set, get) => {
   searchMode: initialPrefs.searchMode ?? "all",
   viewMode: initialPrefs.viewMode ?? "grid",
   listDensity: initialPrefs.listDensity ?? "comfortable",
+  uiFontScale: initialPrefs.uiFontScale ?? DEFAULT_UI_FONT_SCALE,
   tagFilterMode: initialPrefs.tagFilterMode ?? "descendants",
   sortMode: initialPrefs.sortMode ?? "smart",
   typeFilter: initialPrefs.typeFilter ?? "all",
@@ -462,6 +471,12 @@ export const useAppStore = create<AppState>((set, get) => {
   setListDensity: (density) => {
     if (get().listDensity === density) return;
     set({ listDensity: density });
+    persistNow();
+  },
+  setUiFontScale: (scale) => {
+    if (!isUiFontScale(scale) || get().uiFontScale === scale) return;
+    set({ uiFontScale: scale });
+    applyUiFontScale(scale);
     persistNow();
   },
   setTagFilterMode: (mode) => {

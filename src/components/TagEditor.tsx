@@ -95,7 +95,7 @@ export function TagEditor({ tag, label = "标签", folderPath, onSave, onDelete,
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-col">
           <fieldset className="dialog-body" disabled={saving || deleting}>
           <label className="block">
-            <span className="text-[13px] font-medium text-[var(--text-primary)]">名称</span>
+            <span className="text-[length:calc(13px*var(--ui-font-scale,1))] font-medium text-[var(--text-primary)]">名称</span>
             <input
               type="text"
               value={name}
@@ -115,14 +115,14 @@ export function TagEditor({ tag, label = "标签", folderPath, onSave, onDelete,
           {folderPath !== undefined && (
             <LinkedFolderField initial={folderPath} editing={tag !== null} value={folder} onChange={setFolder} />
           )}
-          <div className="mt-4 flex items-center gap-3 text-[12px] text-[var(--text-muted)]">
+          <div className="mt-4 flex items-center gap-3 text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-muted)]">
             <span>标签预览</span>
             <span className="tag-pill px-2 py-1" style={{ "--tag-color": color } as CSSProperties}>{name.trim() || `${label}名称`}</span>
           </div>
           </fieldset>
 
           <div className="dialog-footer">
-            {onDelete && confirmingDelete && <p className="w-full text-[13px] leading-5 text-[var(--color-danger-ink)]">
+            {onDelete && confirmingDelete && <p className="w-full text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--color-danger-ink)]">
               {label === "文件柜" ? "删除文件柜后，柜内对象仍保留在库中。" : "删除后，此标签会从所有对象上移除。"}
             </p>}
             {onDelete && (
@@ -201,11 +201,11 @@ function LinkedFolderField({
 
   return (
     <div className="mt-5">
-      <div className="text-[13px] font-medium text-[var(--text-primary)]">关联文件夹（可选）</div>
+      <div className="text-[length:calc(13px*var(--ui-font-scale,1))] font-medium text-[var(--text-primary)]">关联文件夹（可选）</div>
       <div className="mt-2 flex items-center gap-2">
         <span
           title={value ?? undefined}
-          className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-[13px] text-[var(--text-secondary)]"
+          className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-secondary)]"
         >
           {value !== null && <FolderSync aria-hidden="true" size={14} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />}
           <span className="truncate">{value ?? "未关联"}</span>
@@ -225,7 +225,7 @@ function LinkedFolderField({
           </button>
         )}
       </div>
-      <p className="mt-2 text-[12px] leading-5 text-[var(--text-muted)]">{hint}</p>
+      <p className="mt-2 text-[length:calc(12px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">{hint}</p>
     </div>
   );
 }
@@ -243,7 +243,7 @@ function TagColorField({
 
   return (
     <div className="mt-5">
-      <div className="text-[13px] font-medium text-[var(--text-primary)]">颜色</div>
+      <div className="text-[length:calc(13px*var(--ui-font-scale,1))] font-medium text-[var(--text-primary)]">颜色</div>
       <div className="mt-2">
         <div role="radiogroup" aria-label="分类颜色" className="grid grid-cols-5 gap-2">
           {options.map((preset, index) => {
@@ -276,7 +276,7 @@ function TagColorField({
                     ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[nextIndex]
                     ?.focus();
                 }}
-                className="tag-pill min-h-9 justify-between gap-1 px-2 text-[12px]"
+                className="tag-pill min-h-9 justify-between gap-1 px-2 text-[length:calc(12px*var(--ui-font-scale,1))]"
                 style={{ "--tag-color": preset, borderColor: selected ? "var(--tag-ink)" : "transparent" } as CSSProperties}
               >
                 <span>{label}</span>

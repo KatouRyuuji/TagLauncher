@@ -74,7 +74,7 @@ export function TagFilterBar() {
         <button
           type="button"
           onClick={() => setSelectedTagIds([])}
-          className="control-chip h-7 min-h-7 shrink-0 px-2.5 text-[13px] font-medium"
+          className="control-chip h-7 min-h-7 shrink-0 px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium"
         >
           清除标签筛选
         </button>
@@ -83,7 +83,7 @@ export function TagFilterBar() {
           aria-pressed={tagFilterMode === "direct"}
           title={tagFilterMode === "direct" ? "当前仅匹配直接打上所选标签的对象，不含后代。点击改回含后代。" : "当前选父标签会并入后代对象。点击改为仅直接标签。"}
           onClick={() => setTagFilterMode(tagFilterMode === "direct" ? "descendants" : "direct")}
-          className={`control-chip h-7 min-h-7 shrink-0 px-2.5 text-[13px] font-medium ${
+          className={`control-chip h-7 min-h-7 shrink-0 px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium ${
             tagFilterMode === "direct" ? "control-chip-active" : ""
           }`}
         >
@@ -96,7 +96,7 @@ export function TagFilterBar() {
           return (
             <Fragment key={tag.id}>
               {index > 0 && activeTags.length >= 2 && (
-                <span aria-hidden="true" className="shrink-0 text-[12px] text-[var(--text-faint)]">
+                <span aria-hidden="true" className="shrink-0 text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-faint)]">
                   {excluded ? "且非" : "且"}
                 </span>
               )}
@@ -107,7 +107,7 @@ export function TagFilterBar() {
                   event.preventDefault();
                   toggleTagExclusion(tag.id);
                 }}
-                className={`inline-flex h-7 min-h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[13px] font-medium ${
+                className={`inline-flex h-7 min-h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium ${
                   excluded ? "text-[var(--text-faint)]" : "text-[var(--text-secondary)]"
                 }`}
                 aria-pressed={active}
@@ -129,7 +129,7 @@ export function TagFilterBar() {
                       boxShadow: "none",
                     }}
               >
-                {excluded && <span aria-hidden="true" className="text-[11px] font-semibold">非</span>}
+                {excluded && <span aria-hidden="true" className="text-[length:calc(11px*var(--ui-font-scale,1))] font-semibold">非</span>}
                 <span className={excluded ? "line-through" : undefined}>{tag.name}</span>
                 <X className="h-3 w-3 opacity-60" strokeWidth={1.8} aria-hidden="true" />
               </button>

@@ -89,11 +89,11 @@ export function AddFolderImportDialog({
             {fileCount > 0 ? `，另外还有 ${fileCount} 个文件` : ""}。
           </p>
           {fileCount > 0 && (
-            <p className="mt-1 text-[13px] leading-5 text-[var(--text-muted)]">
+            <p className="mt-1 text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">
               附带的 {fileCount} 个文件不受添加方式影响，将直接入库。
             </p>
           )}
-          <p className="mt-2 text-[13px] leading-5 text-[var(--text-muted)]">
+          <p className="mt-2 text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">
             内容会留在对象库里，可搜索、打标签、逐级浏览。不会移动或删除磁盘上的文件。
           </p>
           {shownNames.length > 0 && (
@@ -101,7 +101,7 @@ export function AddFolderImportDialog({
               {shownNames.map((name, index) => (
                 <li
                   key={`${index}:${name}`}
-                  className="flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--surface-recessed)] px-2 py-1 text-[13px] leading-5 text-[var(--text-secondary)]"
+                  className="flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--surface-recessed)] px-2 py-1 text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-secondary)]"
                   title={name}
                 >
                   <Folder className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)]" aria-hidden="true" />
@@ -109,7 +109,7 @@ export function AddFolderImportDialog({
                 </li>
               ))}
               {previewNames.length > shownNames.length && (
-                <li className="px-2 text-[12px] leading-5 text-[var(--text-faint)]">等 {previewNames.length} 个</li>
+                <li className="px-2 text-[length:calc(12px*var(--ui-font-scale,1))] leading-5 text-[var(--text-faint)]">等 {previewNames.length} 个</li>
               )}
             </ul>
           )}
@@ -127,7 +127,7 @@ export function AddFolderImportDialog({
               />
             ))}
           </div>
-          <label className="mt-3 flex cursor-pointer items-center gap-2 text-[12px] leading-5 text-[var(--text-faint)]">
+          <label className="mt-3 flex cursor-pointer items-center gap-2 text-[length:calc(12px*var(--ui-font-scale,1))] leading-5 text-[var(--text-faint)]">
             <input
               type="checkbox"
               checked={remember}
@@ -186,7 +186,7 @@ function ModeCard({
       </span>
       <span className="min-w-0">
         <span className="block text-sm font-semibold text-[var(--text-primary)]">{title}</span>
-        <span className="mt-1 block text-[13px] leading-5 text-[var(--text-muted)]">{description}</span>
+        <span className="mt-1 block text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">{description}</span>
       </span>
     </button>
   );

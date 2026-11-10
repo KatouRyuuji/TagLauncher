@@ -310,7 +310,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                       className="flex w-full items-stretch gap-4 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--bg-surface)_60%,transparent)] px-2 py-3"
                     >
                       {/* 层标列加宽并不换行：w-14 时「第 1 层」折成「第 1」/「层」竖排两行 */}
-                      <div className="data-readout flex w-16 shrink-0 items-center justify-end whitespace-nowrap border-r border-[var(--line-hairline)] pr-3 text-right text-[12px] font-medium text-[var(--text-secondary)]">
+                      <div className="data-readout flex w-16 shrink-0 items-center justify-end whitespace-nowrap border-r border-[var(--line-hairline)] pr-3 text-right text-[length:calc(12px*var(--ui-font-scale,1))] font-medium text-[var(--text-secondary)]">
                         第 {level + 1} 层
                       </div>
                       <div className="flex min-w-0 flex-1 flex-wrap gap-6">
@@ -348,7 +348,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                               <span className="h-[10px] w-[10px] shrink-0 rounded-[3px]" style={{ backgroundColor: tag.color }} />
                               <span className="min-w-0 max-w-[180px] truncate">{tag.name}</span>
                               <span
-                                className="ml-1 inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-full)] px-1.5 text-[13px] font-semibold"
+                                className="ml-1 inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-full)] px-1.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-semibold"
                                 style={{
                                   backgroundColor: "var(--bg-hover)",
                                   color: "var(--text-muted)",
@@ -442,7 +442,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                         className="flex min-w-0 items-center gap-2.5 rounded-[var(--radius-md)] px-2 py-1.5 hover:bg-[var(--bg-hover)]"
                         title={it.path}
                       >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] text-[17px]">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] text-[length:calc(17px*var(--ui-font-scale,1))]">
                           <ItemVisualIcon item={it} emojiClass="leading-none" imageClass="h-full w-full object-cover" />
                         </div>
                         <span className="min-w-0 flex-1 truncate text-sm text-[var(--text-secondary)]">{it.name}</span>
