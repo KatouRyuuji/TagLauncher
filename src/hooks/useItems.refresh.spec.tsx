@@ -93,4 +93,26 @@ describe("外部改名后的界面刷新", () => {
     await waitFor(() => expect(result.current.items.map((item) => item.name)).toEqual(["新名称"]));
     expect(db.getItems).toHaveBeenCalledTimes(1);
   });
+
+  it("全盘找回在途时，限定文件夹的找回独立执行（不被全盘扫描吞掉）；重复全盘请求复用在途扫描", async () => {
+    const { result } = renderHook(useItems);
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    let releaseFull!: (n: number) => void;
+    vi.mocked(db.relocateMissing).mockImplementationOnce(() => new Promise((resolve) => { releaseFull = resolve; }));
+    vi.mocked(db.relocateMissing).mockResolvedValueOnce(0);
+    let full!: Promise<number>;
+    let fullAgain!: Promise<number>;
+    let scoped!: Promise<number>;
+    act(() => {
+      full = result.current.relocateMissing();
+      fullAgain = result.current.relocateMissing();
+      scoped = result.current.relocateMissing(["D:\\Games"]);
+    });
+    await act(async () => { await scoped; });
+    expect(db.relocateMissing).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(db.relocateMissing).mock.calls[0]).toEqual([undefined]);
+    expect(vi.mocked(db.relocateMissing).mock.calls[1]).toEqual([["D:\\Games"]]);
+    expect(fullAgain).toBe(full);
+    await act(async () => { releaseFull(0); await full; });
+  });
 });

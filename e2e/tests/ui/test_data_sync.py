@@ -39,6 +39,19 @@ _WATCH_JS = """(names) => {
 }"""
 
 
+_EVENTS_JS = """() => {
+  if (window.__syncEvents) return;
+  window.__syncEvents = [];
+  window.__TAURI__.event.listen('data-changed', (e) => {
+    window.__syncEvents.push({ ...e.payload, receivedAt: Date.now() });
+  });
+}"""
+
+
+def _events(app):
+    return app.page.evaluate("() => window.__syncEvents || []")
+
+
 def _seen(app, name):
     return app.page.evaluate("n => (window.__syncSeen || {})[n] ?? null", name)
 
@@ -49,6 +62,7 @@ def test_tl_add_appears_in_main_window_without_refresh(app, sandbox, cli_path):
     names = [f"外部新增{i}.txt" for i in range(5)]
     paths = [files.write(sandbox.files / "sync" / n, f"sync-{i}") for i, n in enumerate(names)]
     app.page.evaluate(_WATCH_JS, names)
+    app.page.evaluate(_EVENTS_JS)
     time.sleep(0.5)  # 让检测线程处于常态节拍，不与启动期对账写入叠加
     samples = []
     for name, path in zip(names, paths):
@@ -57,7 +71,12 @@ def test_tl_add_appears_in_main_window_without_refresh(app, sandbox, cli_path):
         t_exit = time.time() * 1000
         wait_until(lambda: _seen(app, name) is not None, 5, lambda: f"tl add 后 5 秒主窗仍未出现 {name}")
         seen = _seen(app, name)
-        samples.append({"name": name, "from_exit_ms": round(seen - t_exit), "from_start_ms": round(seen - t_start)})
+        # 分解：tl 返回→后端检测到（检测）、检测→页面收到事件（IPC）、收到→DOM 出现（重载+渲染）
+        ev = next((e for e in _events(app) if e.get("origin") == "external" and e["detectedAtMs"] >= t_start), None)
+        samples.append({"name": name, "from_exit_ms": round(seen - t_exit), "from_start_ms": round(seen - t_start),
+                        "detect_ms": round(ev["detectedAtMs"] - t_exit) if ev else None,
+                        "ipc_ms": round(ev["receivedAt"] - ev["detectedAtMs"]) if ev else None,
+                        "render_ms": round(seen - ev["receivedAt"]) if ev else None})
         time.sleep(0.25)
     lat = [s["from_exit_ms"] for s in samples]
     report = {"samples": samples, "median_ms": statistics.median(lat), "max_ms": max(lat), "target_ms": TARGET_MS}

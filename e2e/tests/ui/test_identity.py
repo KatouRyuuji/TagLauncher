@@ -88,10 +88,12 @@ def test_relocate_all_missing(app, sandbox):
     # 全盘路径（不传范围）由 E-ID-10 歧义用例与 Rust 单测 full_scan_without_roots_covers_every_logical_drive 覆盖。
     app.stub("plugin:dialog|open", [str(sandbox.files)])
     dlg.get_by_role("button", name="在选定文件夹中找回…").click()
-    app.wait_ipc("relocate_missing", timeout=10)
-    wait_until(lambda: app.calls("relocate_missing")[-1].get("done"), 60, lambda: app.calls("relocate_missing"))
-    call = app.calls("relocate_missing")[-1]
-    assert [r.lower() for r in (call.get("args") or {}).get("roots", [])] == [str(sandbox.files).lower()], call
+    # 失效出现后应用会自动发起一次全盘找回（args 无 roots，可能仍在扫描）；这里只看带范围的那次调用
+    scoped = lambda: [c for c in app.calls("relocate_missing") if (c.get("args") or {}).get("roots")]
+    wait_until(lambda: scoped(), 10, lambda: app.calls("relocate_missing"))
+    wait_until(lambda: scoped()[-1].get("done"), 60, lambda: app.calls("relocate_missing"))
+    call = scoped()[-1]
+    assert [r.lower() for r in call["args"]["roots"]] == [str(sandbox.files).lower()], call
     (sandbox.artifacts / "relocate-call.json").parent.mkdir(parents=True, exist_ok=True)
     (sandbox.artifacts / "relocate-call.json").write_text(repr(call), encoding="utf-8")
     err = str(call.get("error") or "")

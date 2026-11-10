@@ -269,17 +269,22 @@ export function useItems() {
   // 跨盘符兜底找回：对失效对象按内容签名扫描候选盘，命中则刷新并提示。
   // 用 relocatingRef 防止并发/重复扫描；成功找回 0 个时保持安静。
   const relocateMissing = useCallback((roots?: string[]): Promise<number> => {
-    if (relocatingRef.current) return relocatingRef.current;
+    const scoped = roots !== undefined && roots.length > 0;
+    // 全盘找回去重（自动触发与手动点击共用一次扫描）；限定文件夹的找回是用户明确指定的
+    // 小范围扫描，不能被在途的全盘扫描吞掉（否则要等全盘扫完、且不是用户要的范围），独立执行。
+    if (!scoped && relocatingRef.current) return relocatingRef.current;
     const task = (async () => {
-      const recovered = await db.relocateMissing(roots);
+      const recovered = await db.relocateMissing(scoped ? roots : undefined);
       if (recovered > 0) {
         await loadAll();
-        showToast(`已跨盘找回 ${recovered} 个对象`, "success");
+        showToast(scoped ? `已在选定文件夹中找回 ${recovered} 个对象` : `已跨盘找回 ${recovered} 个对象`, "success");
       }
       return recovered;
-    })().finally(() => { relocatingRef.current = null; });
-    relocatingRef.current = task;
-    return task;
+    })();
+    if (scoped) return task;
+    const tracked = task.finally(() => { relocatingRef.current = null; });
+    relocatingRef.current = tracked;
+    return tracked;
   }, [loadAll]);
 
   useEffect(() => {

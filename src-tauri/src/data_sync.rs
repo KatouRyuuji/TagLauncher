@@ -23,6 +23,8 @@ pub const DATA_CHANGED_EVENT: &str = "data-changed";
 /// 主窗可见时的检测间隔：外部写入到主窗反映的目标是 0.3 秒（检测 ≤100ms + 合并 16ms + 重载）。
 /// 每轮只有两次 PRAGMA data_version（读共享内存里的计数，不读表），每秒 10 次的开销可忽略。
 pub const VISIBLE_INTERVAL: Duration = Duration::from_millis(100);
+/// 主窗可见时每多少轮重新查询一次可见性（5 × 100ms = 0.5 秒）。
+const VISIBILITY_EVERY: u32 = 5;
 /// 主窗隐藏/最小化时的检测间隔；唤出时会立即检测一次，不依赖这个间隔。
 pub const HIDDEN_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -130,21 +132,29 @@ pub fn start(app: &AppHandle) {
             let mut tracker = VersionTracker::default();
             // 建立基线：启动前已发生的写入由首屏加载覆盖
             check_once(&app, &mut tracker);
+            // 可见性查询要跨线程到主线程，按 VISIBILITY_EVERY 轮刷新一次；唤醒（获焦/唤出）时立即刷新
+            let mut visible = main_window_visible(&app);
+            let mut ticks: u32 = 0;
             loop {
-                let interval = if main_window_visible(&app) {
+                let interval = if visible {
                     VISIBLE_INTERVAL
                 } else {
                     HIDDEN_INTERVAL
                 };
-                match rx.recv_timeout(interval) {
+                let woken = match rx.recv_timeout(interval) {
                     Ok(()) => {
                         // 合并短时间内的多次唤醒
                         while rx.try_recv().is_ok() {}
+                        true
                     }
-                    Err(RecvTimeoutError::Timeout) => {}
+                    Err(RecvTimeoutError::Timeout) => false,
                     Err(RecvTimeoutError::Disconnected) => return,
-                }
+                };
                 check_once(&app, &mut tracker);
+                ticks = ticks.wrapping_add(1);
+                if woken || !visible || ticks % VISIBILITY_EVERY == 0 {
+                    visible = main_window_visible(&app);
+                }
             }
         });
 }
