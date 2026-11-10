@@ -806,14 +806,14 @@ mod tests {
             HotkeyAction::parse("toggle_main").unwrap(),
             HotkeyAction::ToggleMain
         );
-        assert!(
+        assert_eq!(
             HotkeyAction::parse("open_quick").unwrap(),
             HotkeyAction::OpenQuick
         );
         assert_eq!(HotkeyAction::OpenQuick.setting_key(), "hotkey.open_quick");
         assert!(
             HotkeyAction::parse("quick_search").is_err(),
-            "本批只开放 toggle_main"
+            "未开放的动作一律拒绝"
         );
     }
 
