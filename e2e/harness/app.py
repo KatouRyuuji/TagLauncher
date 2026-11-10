@@ -27,6 +27,14 @@ CONSOLE_ALLOW = (
 )
 
 
+UPDATE_RESET_JS = """(() => { try {
+  if (sessionStorage.getItem('__e2e_update_reset')) return;
+  sessionStorage.setItem('__e2e_update_reset', '1');
+  localStorage.removeItem('taglauncher.update_last_check_ts');
+  localStorage.removeItem('taglauncher.update_notified_version');
+} catch (e) {} })();"""
+
+
 class AppSession:
     """一个运行中的应用进程 + CDP 连接。"""
 
@@ -139,12 +147,13 @@ class AppSession:
                     raise RuntimeError(f"WebView2 CDP 端口不可用: {self.sb.root}")
                 time.sleep(0.2)
         mark("CDP 端口可用")
-        # 偶发：首个 CDP 连接错过页面 target（一直看不到 tauri.localhost）。每 10s 无果就重连一次。
+        # 偶发：首个 CDP 连接错过页面 target（一直看不到 tauri.localhost）。每 4s 无果就重连一次
+        # （原 10s 晚于应用 8s 的启动期更新检查，f1c4766 实测由此吞掉更新检查用例）。
         page, seen = None, set()
         while page is None:
             self.browser = self.pw.chromium.connect_over_cdp(endpoint)
             mark("CDP 已连接")
-            reconnect_at = time.monotonic() + 10
+            reconnect_at = time.monotonic() + 4
             while page is None and time.monotonic() < min(deadline, reconnect_at):
                 for ctx in self.browser.contexts:
                     for cand in ctx.pages:
@@ -167,6 +176,11 @@ class AppSession:
         # 应用的启动期更新检查有 8s 延迟，reload 发生在其之前（spike 验证）。
         mark("找到应用页面")
         page.context.add_init_script(STUB_JS)
+        if not self.throttle_update and self.reload:
+            # 测启动期更新检查时，要从"从未检查过"开始。CI 上找到页面可能晚于 8s（f1c4766 实测
+            # 10.6s），重载前的页面已跑过一次检查并写下节流时间戳，重载后的检查会被 24h 节流吞掉。
+            # 只在本标签页第一次加载时清理（sessionStorage 跨 reload 保留），用例自己的二次重载仍走节流。
+            page.context.add_init_script(UPDATE_RESET_JS)
         page.evaluate(STUB_JS)
         if self.reload:
             page.reload(wait_until="domcontentloaded")
@@ -363,7 +377,8 @@ class AppSession:
             " && e.classList.contains('bg-[var(--accent-primary-bg)]'))).map(e => e.dataset.selectableItemId)")]
 
     def context_menu(self, name: str):
-        self.card(name).click(button="right")
+        # 右键名称而非行中心：理由同 select_card（行中心在窄窗口落在「+ 添加标签」上）
+        self.card(name).get_by_role("heading", level=3).click(button="right")
         menu = self.page.locator("[data-context-menu][role=menu]").first
         menu.wait_for(timeout=5000)
         return menu

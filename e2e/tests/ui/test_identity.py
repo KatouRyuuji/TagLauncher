@@ -87,8 +87,9 @@ def test_relocate_all_missing(app, sandbox):
     dlg.get_by_role("button", name="尝试找回全部失效项").click()
     # 先等 relocate_missing 返回（全盘签名扫描，可能较慢），再查库；轮询 get_items 会挤掉 IPC 记录
     app.wait_ipc("relocate_missing", timeout=10)
-    # 全机签名扫描（C:+D: 合计数百万条目）在本机约 40–90 s
-    wait_until(lambda: app.calls("relocate_missing")[-1].get("done"), 300, lambda: app.calls("relocate_missing"))
+    # 全机签名扫描（C:+D: 合计数百万条目）在本机约 40–90 s；GitHub windows runner 实测
+    # 286 s（a245b25）、>300 s（f1c4766），给到 600 s。耗时本身记为产品性能观察，不在此断言。
+    wait_until(lambda: app.calls("relocate_missing")[-1].get("done"), 600, lambda: app.calls("relocate_missing"))
     call = app.calls("relocate_missing")[-1]
     (sandbox.artifacts / "relocate-call.json").parent.mkdir(parents=True, exist_ok=True)
     (sandbox.artifacts / "relocate-call.json").write_text(repr(call), encoding="utf-8")

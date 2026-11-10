@@ -52,23 +52,26 @@ def test_click_ctrl_shift_selection(app, sandbox):
 
 @pytest.mark.case("E-VIEW-07")
 def test_marquee_select_and_alt_subtract(app, sandbox):
-    seed_n(app, sandbox, 8)
+    # 6 行：CI 屏幕把窗口夹到 ~720px 高，8 行（舒适 64px）会占满列表区，末行下方没有空白可起拖
+    seed_n(app, sandbox, 6)
     app.page.get_by_role("button", name="列表视图", exact=True).click()
     names = app.visible_names()
-    assert len(names) == 8, names
+    assert len(names) == 6, names
     ids = {i["name"]: i["id"] for i in app.items()}
     last = app.card(names[-1]).bounding_box()
     m = app.page.mouse
     # 列表行占满整宽，起点在行上会变成拖拽卡片；框选须从列表下方空白处起拖（向上覆盖后三行）
     x0 = last["x"] + last["width"] / 2
     y0 = last["y"] + last["height"] + 25
-    target = app.card(names[5]).bounding_box()
+    target = app.card(names[3]).bounding_box()
+    status = app.page.get_by_role("button", name="紧凑", exact=True).bounding_box()
+    assert y0 < status["y"] - 4, ("末行下方无空白可起拖", last, status)
     m.move(x0, y0)
     m.down()
     m.move(x0 - 40, target["y"] + target["height"] / 2, steps=12)
     m.up()
     got = set(app.selected_ids())
-    assert {ids[n] for n in names[5:]} <= got and ids[names[4]] not in got, (got, names[5:])
+    assert {ids[n] for n in names[3:]} <= got and ids[names[2]] not in got, (got, names[3:])
     # Alt+框选：从已选集合中减去（只覆盖最后一行）
     # 选中后底部浮出批量工具条，会盖住原起点：Alt 框选从末行与工具条之间的空隙起拖
     tbar = app.get_toolbar().bounding_box()
@@ -82,7 +85,7 @@ def test_marquee_select_and_alt_subtract(app, sandbox):
     m.up()
     app.page.keyboard.up("Alt")
     got2 = set(app.selected_ids())
-    assert ids[names[7]] not in got2 and {ids[names[5]], ids[names[6]]} <= got2, (got2, names)
+    assert ids[names[5]] not in got2 and {ids[names[3]], ids[names[4]]} <= got2, (got2, names)
 
 
 @pytest.mark.case("E-VIEW-08")
@@ -126,7 +129,8 @@ def test_virtualization_50k(sandbox, app_factory):
     (sandbox.artifacts / "view-10-startup.txt").write_text(f"{startup:.1f}s", encoding="utf-8")
     print(f"VIEW-10 startup {startup:.1f}s")
     app.page.get_by_role("button", name="列表视图", exact=True).click()
-    app.page.locator("[data-selectable-item-id]").first.click()
+    # 点名称：行中心在窄窗口落在「+ 添加标签」上
+    app.page.locator("[data-selectable-item-id]").first.get_by_role("heading", level=3).click()
     app.page.keyboard.press("End")
     first_id = app.selected_ids()
     wait_until(lambda: app.selected_ids() and app.selected_ids() != first_id, 10)

@@ -23,7 +23,7 @@ def id3_mp3(title: str, artist: str) -> bytes:
 
 
 def open_preview(app, name):
-    app.card(name).click()
+    app.select_card(name)
     app.page.keyboard.press(" ")
     pv = app.page.get_by_role("dialog", name="快速预览")
     pv.wait_for(timeout=5000)
