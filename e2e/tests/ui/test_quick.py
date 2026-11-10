@@ -283,6 +283,8 @@ def test_quick_window_performance(sandbox, app_factory, n):
         "mem_after": {k: after[k] for k in ("private_mb", "working_set_mb")},
         "processes_after": after["processes"],
         "slowest_queries": sorted(queries, key=lambda x: -x["ms"])[:5],
+        # Rust 搜索索引在主进程（主窗首屏后预建，计入 mem_before），单列便于拆分内存构成
+        "search_index": app.invoke("search_index_stats"),
         "targets": {"summon_p95": SUMMON_P95_MS, "query_p95": QUERY_P95_MS[n], "hidden_mb": HIDDEN_MEM_MB[n]},
     }
     (sandbox.artifacts / f"quick-perf-{n}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")

@@ -54,6 +54,7 @@ def test_main_search_latency(sandbox, app_factory, n):
         "samples": len(got),
         "slowest": sorted(got, key=lambda r: -(r["applyMs"] or 0))[:5],
         "results": {r["q"]: r["results"] for r in got},
+        "search_index": app.invoke("search_index_stats"),
     }
     (sandbox.artifacts / f"main-search-perf-{n}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print("MAIN_SEARCH_PERF", json.dumps(out, ensure_ascii=False))
