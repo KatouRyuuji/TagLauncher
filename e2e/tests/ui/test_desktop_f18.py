@@ -119,7 +119,8 @@ def test_close_to_tray_hides_instead_of_exit(app, sandbox):
     # 切回「退出」：托盘移除，关闭即退出（默认旧行为）
     s = app.invoke("set_close_action", {"action": "exit"})
     assert s["closeAction"] == "exit" and s["trayActive"] is False, s
-    app.page.evaluate("window.__TAURI__.window.getCurrentWindow().close()")
+    # 延后关闭：进程退出得比 evaluate 回包快，同步调用会让 Playwright 报 TargetClosed（CI 实测）
+    app.page.evaluate("setTimeout(() => window.__TAURI__.window.getCurrentWindow().close(), 100)")
     wait_until(lambda: app.proc.poll() is not None, 15, "退出模式下关闭应退出进程")
 
 
