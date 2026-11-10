@@ -162,6 +162,17 @@ export class ItemStore {
       else this.touch(id);
     }
     if (missing.length > 0) void this.fetch(missing, true).catch((e: unknown) => console.error("取对象页失败:", e));
+    // 相邻页预取（前后各一页，单独一次请求，排在可视页之后）：连续滚动到下一页时通常已在缓存
+    const ahead: number[] = [];
+    const lo = Math.max(0, from - PAGE_SIZE);
+    const hi = Math.min(this.ids.length, to + PAGE_SIZE);
+    for (let i = lo; i < hi; i++) {
+      if (i === from) i = to;
+      if (i >= hi) break;
+      const id = this.ids[i];
+      if (this.needs(id)) ahead.push(id);
+    }
+    if (ahead.length > 0) void this.fetch(ahead, true).catch((e: unknown) => console.error("预取对象页失败:", e));
   }
 
   /**

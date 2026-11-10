@@ -398,6 +398,13 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       const item = requireItem(num(args.id));
       return { path: item.path, icon_path: item.icon_path ?? (item.is_missing ? null : item.path) };
     }
+    case "get_items_page": {
+      const byId = new Map(state.items.map((item) => [item.id, item] as const));
+      return ids(args.ids).flatMap((id) => {
+        const item = byId.get(id);
+        return item ? [withTags(item)] : [];
+      });
+    }
     case "get_items_by_ids": {
       const wanted = new Set(ids(args.ids));
       return sortItems(state.items.filter((item) => wanted.has(item.id))).map(withTags);

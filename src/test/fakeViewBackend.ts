@@ -60,6 +60,10 @@ export function fakeViewDb(fake: FakeBackend) {
       const byId = new Map(fake.items.map((it) => [it.id, it]));
       return ids.flatMap((id) => byId.get(id) ?? []);
     }),
+    getItemsPage: vi.fn(async (ids: number[]) => {
+      const byId = new Map(fake.items.map((it) => [it.id, it]));
+      return ids.flatMap((id) => byId.get(id) ?? []);
+    }),
     getItems: vi.fn(async () => fake.items),
     viewTypeahead: vi.fn(async () => null),
   };

@@ -486,6 +486,7 @@ pub fn run() {
             view_query,
             library_stats,
             view_typeahead,
+            get_items_page,
             browse_target,
             // 启动/打开
             launch_item,

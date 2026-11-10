@@ -114,7 +114,8 @@ describe("外部改名后的界面刷新", () => {
     }
     await waitFor(() => expect(result.current.view.get(5000)).toBeDefined());
     expect(result.current.view.get(1)).toBeUndefined();
-    const calls = vi.mocked(db.getItemsByIds).mock.calls;
+    const calls = vi.mocked(db.getItemsPage).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
     expect(calls.every(([ids]) => ids.length <= 50)).toBe(true);
     await act(async () => { result.current.view.ensureRange(0, 50); await Promise.resolve(); });
     await waitFor(() => expect(result.current.view.get(1)?.name).toBe("对象1"));

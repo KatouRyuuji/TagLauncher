@@ -78,7 +78,7 @@ export function useItems() {
   const tagFilterMode = useAppStore((state) => state.tagFilterMode);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
-  const [store] = useState(() => new ItemStore((ids) => db.getItemsByIds(ids, false)));
+  const [store] = useState(() => new ItemStore((ids) => db.getItemsPage(ids)));
   const view = useSyncExternalStore(store.subscribe, store.getSnapshot);
   // StrictMode 下 useState 初始化会跑两次：统计在挂载后登记，确保指向实际使用的那个实例
   useEffect(() => store.registerPerf(), [store]);

@@ -84,6 +84,11 @@ export async function getItemsByIds(ids: number[], includeVisuals = true): Promi
   return invokeCmd("get_items_by_ids", { ids, includeVisuals });
 }
 
+/** 主窗取页：后端从内存索引按 ID 组装（不含自动图标），按请求顺序返回，已不存在的略去 */
+export async function getItemsPage(ids: number[]): Promise<ItemWithTags[]> {
+  return invokeCmd("get_items_page", { ids });
+}
+
 /** 添加项目，传入文件/文件夹的完整路径，后端自动检测类型 */
 export async function addItem(path: string): Promise<Item> {
   return invokeCmd("add_item", { path });

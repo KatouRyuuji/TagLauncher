@@ -16,18 +16,21 @@ function backend(n: number) {
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-test("按页对齐补取可视区间，已缓存的页不重取", async () => {
+test("按页对齐补取可视区间，已缓存的页不重取；可视页先取，前后相邻页随后单独预取", async () => {
   const b = backend(500);
   const store = new ItemStore(b.fetch);
   store.setIds(Array.from({ length: 500 }, (_, i) => i + 1));
   store.ensureRange(10, 30);
   await tick();
-  assert.deepEqual(b.calls.map((c) => [c[0], c.length]), [[1, PAGE_SIZE]]);
+  assert.deepEqual(b.calls.map((c) => [c[0], c.length]), [[1, PAGE_SIZE], [51, PAGE_SIZE]]);
   store.ensureRange(0, 50);
   store.ensureRange(40, 60);
   await tick();
-  assert.deepEqual(b.calls.map((c) => [c[0], c.length]), [[1, 50], [51, 50]]);
+  assert.deepEqual(b.calls.map((c) => [c[0], c.length]), [[1, 50], [51, 50], [101, 50]]);
   assert.equal(store.getSnapshot().at(59)?.name, "o60");
+  store.ensureRange(260, 270);
+  await tick();
+  assert.deepEqual(b.calls.slice(3).map((c) => [c[0], c.length]), [[251, 50], [201, 100]], "跳转：可视页在前，上一页与下一页合并在后");
 });
 
 test("缓存有上限：超过 MAX_CACHED 时淘汰最久未用的页", async () => {

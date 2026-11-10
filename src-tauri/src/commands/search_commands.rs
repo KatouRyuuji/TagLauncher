@@ -145,7 +145,7 @@ pub struct ViewQueryArgs {
 }
 
 /// 主窗当前视图的全部 ID（已筛选排序；搜索时按命中排序）。对象数据由前端按可视区间经
-/// `get_items_by_ids` 分页取，总数、全选、批量与定位都基于这份 ID。
+/// `get_items_page` 分页取，总数、全选、批量与定位都基于这份 ID。
 #[tauri::command(async)]
 pub fn view_query(
     app: AppHandle,
@@ -260,4 +260,21 @@ pub fn browse_target(
         items.push(entry);
     }
     Ok(target.and_then(|(item, missing)| browse_target(&item, missing, &items)))
+}
+
+/// 主窗取页：按 ID 从内存索引组装对象（不含自动图标，与 `get_items_by_ids(.., false)` 同形），
+/// 走只读连接校验新鲜度，不经写连接、不跑 SQL 取行，滚动跳转时少一段等待。
+#[tauri::command(async)]
+pub fn get_items_page(
+    app: AppHandle,
+    db: State<Database>,
+    index: State<SearchIndex>,
+    ids: Vec<i64>,
+) -> Result<Vec<ItemWithTags>, String> {
+    let items = {
+        let ro = db.read_conn()?;
+        index.items_page(ro.conn(), &ids, &synonyms_loader(&app))?
+    };
+    crate::services::asset_scope::allow_items(&app, &items);
+    Ok(items)
 }
