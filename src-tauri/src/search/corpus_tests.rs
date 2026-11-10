@@ -89,7 +89,7 @@ fn pinyin_matches_pinyin_pro() {
 }
 
 fn build_entries(items: &[CorpusItem]) -> Vec<Entry> {
-    let mut cache: HashMap<String, Text> = HashMap::new();
+    let mut cache: HashMap<String, Arc<Text>> = HashMap::new();
     let mut tag_cache: HashMap<String, Arc<Text>> = HashMap::new();
     items
         .iter()
@@ -117,7 +117,7 @@ fn build_entries(items: &[CorpusItem]) -> Vec<Entry> {
             Entry::build(&src, tags, &mut |s| {
                 cache
                     .entry(s.to_string())
-                    .or_insert_with(|| engine::build_text(s))
+                    .or_insert_with(|| Arc::new(engine::build_text(s)))
                     .clone()
             })
         })

@@ -137,8 +137,8 @@ pub struct Entry {
     pub is_favorite: bool,
     pub is_missing: bool,
     pub item_type: String,
-    name: Text,
-    alias: Option<Text>,
+    name: Arc<Text>,
+    alias: Option<Arc<Text>>,
     path_without_drive: String,
     tags: Vec<Arc<Text>>,
     note: String,
@@ -173,7 +173,7 @@ impl Entry {
     pub fn build(
         src: &EntrySource<'_>,
         tags: Vec<Arc<Text>>,
-        text_of: &mut dyn FnMut(&str) -> Text,
+        text_of: &mut dyn FnMut(&str) -> Arc<Text>,
     ) -> Entry {
         let alias = src.alias.map(js_trim).filter(|a| !a.is_empty());
         Entry {
@@ -816,5 +816,27 @@ pub fn type_matches(item_type: &str, filter: &str) -> bool {
         "" | "all" => true,
         "script" => item_type == "bat" || item_type == "ps1",
         f => item_type == f,
+    }
+}
+
+impl Text {
+    /// 堆上占用（字符串/数组容量），供索引内存统计。
+    pub fn heap_bytes(&self) -> usize {
+        self.name.capacity()
+            + self.pinyin_name.capacity()
+            + self.pinyin_initials.capacity()
+            + self.english.initials.capacity()
+            + self.english.compact.capacity() * 2
+            + self.english.word_starts.capacity() * std::mem::size_of::<usize>()
+    }
+}
+
+impl Entry {
+    /// 条目自身的堆上占用（不含共享的名称/标签字段）。
+    pub fn heap_bytes(&self) -> usize {
+        self.item_type.capacity()
+            + self.path_without_drive.capacity()
+            + self.note.capacity()
+            + self.tags.capacity() * std::mem::size_of::<Arc<Text>>()
     }
 }

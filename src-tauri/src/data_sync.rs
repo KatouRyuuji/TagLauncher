@@ -118,6 +118,14 @@ pub fn check_once(app: &AppHandle, tracker: &mut VersionTracker) -> Option<Chang
         detected_at_ms: now_ms(),
     };
     let _ = app.emit(DATA_CHANGED_EVENT, payload);
+    // 搜索索引在后台先跟上（已建过才重建），窗口收到事件后的查询不必等重建
+    if let Some(index) = app.try_state::<crate::services::search_index::SearchIndex>() {
+        if let Ok(ro) = db.read_conn() {
+            if let Err(e) = index.refresh_if_built(ro.conn()) {
+                log::warn!("data_sync: 搜索索引刷新失败：{e}");
+            }
+        }
+    }
     Some(origin)
 }
 

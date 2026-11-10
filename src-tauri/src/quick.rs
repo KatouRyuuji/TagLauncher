@@ -4,16 +4,13 @@
 //!   预创建隐藏的 `quick` 窗口并复用；关闭（清除快捷键）时销毁，不占资源。
 //! - 唤出：定位到鼠标所在显示器的工作区（居中偏上）→ show → focus → 给快速窗发
 //!   `quick-shown { t0Ms }`（t0 = 热键回调时刻，供前端度量「唤出到可输入」）。
-//! - 数据：快速窗用只读连接取对象（`quick_get_items`），搜索在前端复用主窗同一套 TS 搜索代码；
-//!   写操作（打标签）调用与主窗相同的命令，写后发 `window-data-written` 让主窗按 ID 增量刷新。
+//! - 数据：快速窗不加载全量对象，每次输入调 `quick_search`（与主窗同一个 Rust 内存索引，
+//!   见 services::search_index）只取前 50 条；写操作（打标签）调用与主窗相同的命令，
+//!   写后发 `window-data-written` 让主窗按 ID 增量刷新。
 
 use serde::Serialize;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-
-use crate::models::ItemWithTags;
-use crate::services::item_service;
-use crate::Database;
 
 pub const QUICK_LABEL: &str = "quick";
 pub const QUICK_SHOWN_EVENT: &str = "quick-shown";
@@ -193,13 +190,6 @@ pub fn quick_hide(app: AppHandle) {
     hide(&app);
 }
 
-/// 快速窗的数据：走只读连接（WAL 下不排在导入/对账的长写锁后面），不含图标。
-#[tauri::command(async)]
-pub fn quick_get_items(db: tauri::State<Database>) -> Result<Vec<ItemWithTags>, String> {
-    let ro = db.read_conn()?;
-    item_service::get_items(ro.conn())
-}
-
 /// 在主窗中定位对象：显示主窗并通知它选中、滚动到该对象。
 #[tauri::command]
 pub fn quick_locate_in_main(app: AppHandle, id: i64) {
@@ -213,6 +203,8 @@ pub fn quick_locate_in_main(app: AppHandle, id: i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::item_service;
+    use crate::Database;
 
     #[test]
     fn placement_centers_horizontally_and_sits_in_upper_fifth() {

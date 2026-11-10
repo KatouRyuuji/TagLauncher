@@ -3,7 +3,7 @@ mod data_sync;
 /// F18 托盘 / 全局快捷键 / 关闭行为（仅 GUI 使用）
 mod desktop;
 mod quick;
-mod search;
+pub mod search;
 // 集成测试（tests/ 目录把本 crate 当外部 rlib 使用）与 CLI 二进制（src/bin/tl.rs）
 // 只能访问 pub 项，故将以下模块公开，使其 service/db/model/extension/cli 层可被直接调用。
 // 仅放宽可见性，不改变任何业务逻辑。
@@ -18,7 +18,7 @@ pub use db::Database;
 // 桌面驻留命令（含 #[tauri::command] 生成的 __cmd__ 宏）需在 generate_handler! 处可见
 use desktop::*;
 // 快速搜索窗命令（阶段②）
-use quick::{quick_get_items, quick_hide, quick_locate_in_main, quick_open};
+use quick::{quick_hide, quick_locate_in_main, quick_open};
 
 use extensions::mod_loader;
 use extensions::mod_registry::ModRegistry;
@@ -392,6 +392,7 @@ pub fn run() {
             }
 
             app.manage(database);
+            app.manage(services::search_index::SearchIndex::default());
             data_sync::start(app.handle());
             app.manage(registry);
             desktop::init(app.handle(), desktop::parse_launch_args(std::env::args().skip(1)));
@@ -436,7 +437,6 @@ pub fn run() {
             // 快速搜索窗（阶段②）
             quick_open,
             quick_hide,
-            quick_get_items,
             quick_locate_in_main,
             set_hotkey,
             set_close_action,
@@ -479,6 +479,10 @@ pub fn run() {
             recolor_tags_and_cabinets,
             // 搜索
             search_items,
+            search_query,
+            quick_search,
+            search_warm,
+            search_index_stats,
             // 启动/打开
             launch_item,
             open_in_explorer,
