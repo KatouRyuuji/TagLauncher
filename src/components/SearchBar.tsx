@@ -21,7 +21,7 @@ import { notifySearchInput } from "../lib/modApi";
 import { useAppStore, type SearchMode } from "../stores/appStore";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
 import { SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter, type SortMode } from "../lib/itemQuery";
-import { classifySearchQuery } from "../lib/search";
+import { classifySearchQuery } from "../lib/nameMatch";
 import { showToast } from "../lib/toast";
 import { SEARCH_RESET_EVENT, WORKSPACE_SEARCH_ID } from "../lib/workspaceChrome";
 import { SelectMenu } from "./SelectMenu";

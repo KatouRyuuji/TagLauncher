@@ -1,49 +1,9 @@
-import { beforeAll, describe, expect, it } from "vitest";
-import { ensurePinyin } from "../lib/pinyinProvider";
+import { describe, expect, it } from "vitest";
 import type { ItemWithTags } from "../types";
-import {
-  buildQuickData,
-  filterTagChoices,
-  QUICK_RESULT_LIMIT,
-  quickKeyAction,
-  quickResults,
-  stepIndex,
-  toggledTagIds,
-} from "./quickModel";
+import { filterTagChoices, quickKeyAction, stepIndex, toggledTagIds } from "./quickModel";
 
 const item = (id: number, name: string, extra: Partial<ItemWithTags> = {}): ItemWithTags => ({
   id, name, path: `D:/${name}`, type: "exe", created_at: "2026-01-01", is_favorite: false, tags: [], ...extra,
-});
-
-beforeAll(async () => { await ensurePinyin(); });
-
-describe("quickResults", () => {
-  const items = [
-    item(1, "项目文档", { type: "folder" }),
-    item(2, "Visual Studio Code", { is_favorite: true }),
-    item(3, "旧版本", { is_missing: true }),
-    item(4, "最近用的", { last_used_at: "2026-11-01 10:00:00" }),
-  ];
-
-  it("空查询按智能排序（收藏 → 最近使用 → 名称），可隐藏丢失对象", () => {
-    const data = buildQuickData(items, "all");
-    expect(quickResults(data, "", { hideMissing: false }).map((i) => i.id)).toEqual([2, 4, 3, 1]);
-    expect(quickResults(data, "  ", { hideMissing: true }).map((i) => i.id)).toEqual([2, 4, 1]);
-  });
-
-  it("拼音、缩写、表达式与主窗同一索引口径", () => {
-    const data = buildQuickData(items, "all");
-    expect(quickResults(data, "xmwd", { hideMissing: false }).map((i) => i.id)).toEqual([1]);
-    expect(quickResults(data, "vsc", { hideMissing: false }).map((i) => i.id)).toEqual([2]);
-    expect(quickResults(data, "jbb", { hideMissing: true })).toEqual([]);
-  });
-
-  it("结果最多 QUICK_RESULT_LIMIT 条", () => {
-    const many = Array.from({ length: QUICK_RESULT_LIMIT + 30 }, (_, i) => item(i + 1, `tool-${i}`));
-    const data = buildQuickData(many, "all");
-    expect(quickResults(data, "tool", { hideMissing: false })).toHaveLength(QUICK_RESULT_LIMIT);
-    expect(quickResults(data, "", { hideMissing: false })).toHaveLength(QUICK_RESULT_LIMIT);
-  });
 });
 
 describe("quickKeyAction", () => {

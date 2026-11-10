@@ -207,6 +207,22 @@ function sortItems(items: DemoItemSeed[]): DemoItemSeed[] {
   });
 }
 
+/** 演示桩搜索：名称/别名/标签名子串（不分大小写）；scope 给出时按其顺序，否则按默认排序 */
+function demoSearch(query: string, scope: number[] | null, hideMissing: boolean, typeFilter: string): number[] {
+  const q = query.trim().toLowerCase();
+  const byId = new Map(state.items.map((item) => [item.id, item]));
+  const base = scope ? scope.map((id) => byId.get(id)).filter((item): item is DemoItemSeed => item !== undefined) : sortItems(state.items);
+  return base
+    .filter((item) => {
+      if (hideMissing && item.is_missing) return false;
+      if (typeFilter === "script" ? item.type !== "bat" && item.type !== "ps1" : typeFilter !== "all" && item.type !== typeFilter) return false;
+      if (!q) return true;
+      const tags = item.tagIds.map((id) => state.tags.find((tag) => tag.id === id)?.name ?? "");
+      return [item.name, item.alias ?? "", ...tags].some((text) => text.toLowerCase().includes(q));
+    })
+    .map((item) => item.id);
+}
+
 function requireItem(id: number): DemoItemSeed {
   const item = state.items.find((entry) => entry.id === id);
   if (!item) throw new Error(`对象不存在（id=${id}）`);
@@ -853,8 +869,24 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "quick_hide":
     case "quick_locate_in_main":
       return null;
-    case "quick_get_items":
-      return sortItems(state.items).map(withTags);
+    // 演示模式没有 Rust 后端：搜索只做名称/别名/标签名的不分大小写子串匹配（演示桩，不是产品搜索语义）
+    case "search_query": {
+      const scope = Array.isArray(args.scopeIds) ? ids(args.scopeIds) : null;
+      return { ids: demoSearch(str(args.query), scope, args.hideMissing === true, str(args.typeFilter) || "all") };
+    }
+    case "quick_search": {
+      const hits = demoSearch(str(args.query), null, args.hideMissing === true, "all");
+      const limit = typeof args.limit === "number" ? args.limit : 50;
+      const byId = new Map(state.items.map((item) => [item.id, item]));
+      return {
+        total: hits.length,
+        indexed: state.items.length,
+        items: hits.slice(0, limit).map((id) => withTags(byId.get(id)!)),
+      };
+    }
+    case "search_warm":
+    case "search_index_stats":
+      return { entries: state.items.length, builds: 0, lastBuildMs: 0, lastBuildNewTexts: 0, cachedTexts: 0, approxBytes: 0 };
     case "wake_data_sync":
       return null;
     case "set_hotkey": {

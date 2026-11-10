@@ -6,7 +6,7 @@ import { ensurePinyin } from "./pinyinProvider";
 
 await ensurePinyin();
 import { findTagByNameInsensitive } from "./tagNames";
-import { matchesNameQuery } from "./search";
+import { matchesNameQuery } from "./nameMatch";
 
 test("BUG-15 新建标签大小写不敏感命中既有标签", () => {
   const tags = [{ id: 1, name: "Game", color: "#000" }, { id: 2, name: "工作", color: "#000" }];

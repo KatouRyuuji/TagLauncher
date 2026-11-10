@@ -25,7 +25,7 @@ import { buildDescendantsMap } from "../lib/tagGraph";
 import { filterCollapsedTagRows, flattenTagTree } from "../lib/tagTree";
 import { compareSortOrder, moveBeside } from "../lib/sidebarOrder";
 import { compareNames } from "../lib/itemQuery";
-import { matchesNameQuery } from "../lib/search";
+import { matchesNameQuery } from "../lib/nameMatch";
 import { findTagByNameInsensitive } from "../lib/tagNames";
 import { ensurePinyin } from "../lib/pinyinProvider";
 import { onCabinetItemsChanged } from "../lib/modApi";

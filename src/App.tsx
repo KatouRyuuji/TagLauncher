@@ -38,7 +38,6 @@ import { useCardPointerHighlight } from "./hooks/useCardPointerHighlight";
 import { useAppStore } from "./stores/appStore";
 import { useQuickLocate } from "./hooks/useQuickLocate";
 import { useInternalDragStore } from "./stores/internalDragStore";
-import { loadSynonyms } from "./lib/synonyms";
 import { copyText } from "./lib/clipboard";
 import { formatPathCopy, idsNeedingFavoriteToggle } from "./lib/itemQuery";
 import { useVersionCheck } from "./hooks/useVersionCheck";
@@ -181,7 +180,6 @@ function App() {
   const sidebarPanels = useSidebarPanels();
 
   useEffect(() => {
-    void loadSynonyms();
     initModApi();
     // 初始化 mod 运行时：注入所有已启用 mod 的 CSS / JS / Theme
     void db.getMods().then(initModRuntime).catch(() => {

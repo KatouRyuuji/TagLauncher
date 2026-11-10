@@ -23,8 +23,13 @@ const fixtures: ItemWithTags[] = [
   { id: 2, name: "Visual Studio Code", path: "D:/Code.exe", type: "exe", created_at: "2026-01-01", is_favorite: true, tags: [] },
 ];
 
+// 后端 quick_search 的替身：只区分空查询与示例里用到的两个词（打分语义由 Rust 对照测试覆盖）
+const BACKEND_HITS: Record<string, number[]> = { "": [2, 1], xmwd: [1], vsc: [2] };
 vi.mock("../lib/db", () => ({
-  quickGetItems: vi.fn(async () => fixtures),
+  quickSearch: vi.fn(async ({ query }: { query: string }) => {
+    const ids = BACKEND_HITS[query.trim()] ?? [];
+    return { total: ids.length, indexed: fixtures.length, items: ids.map((id) => fixtures.find((it) => it.id === id)!) };
+  }),
   quickHide: vi.fn(async () => {}),
   quickLocateInMain: vi.fn(async () => {}),
   launchItem: vi.fn(async () => {}),
@@ -55,10 +60,12 @@ beforeEach(() => {
 });
 
 describe("QuickApp", () => {
-  it("输入即搜索（拼音缩写），Enter 打开、广播写入并收起", async () => {
+  it("输入即向后端取前 50 条，Enter 打开、广播写入并收起", async () => {
     const { user, input } = await setup();
     await user.type(input, "xmwd");
-    expect(screen.getAllByTestId("quick-result").map((el) => el.dataset.itemId)).toEqual(["1"]);
+    await waitFor(() => expect(screen.getAllByTestId("quick-result").map((el) => el.dataset.itemId)).toEqual(["1"]));
+    expect(db.quickSearch).toHaveBeenLastCalledWith({ query: "xmwd", mode: "all", hideMissing: false, limit: 50 });
+    expect(input).toHaveAttribute("placeholder", "搜索 2 个对象…");
     await user.keyboard("{Enter}");
     await waitFor(() => expect(db.quickHide).toHaveBeenCalled());
     expect(db.launchItem).toHaveBeenCalledWith(1);
@@ -90,6 +97,7 @@ describe("QuickApp", () => {
   it("Ctrl+T 打开标签选择器，Enter 切换标签并广播，Esc 返回结果", async () => {
     const { user, input } = await setup();
     await user.type(input, "xmwd");
+    await waitFor(() => expect(screen.getAllByTestId("quick-result")).toHaveLength(1));
     await user.keyboard("{Control>}t{/Control}");
     await screen.findByTestId("quick-tag-picker");
     await user.keyboard("工具");
@@ -110,9 +118,10 @@ describe("QuickApp", () => {
     const perf = (window as unknown as { __tlQuickPerf: { summons: Array<{ ms: number; focused: boolean }> } }).__tlQuickPerf;
     await waitFor(() => expect(perf.summons.length).toBeGreaterThan(0));
     expect(perf.summons.at(-1)!.focused).toBe(true);
-    expect(db.quickGetItems).toHaveBeenCalledTimes(1);
+    expect(db.quickSearch).toHaveBeenCalledTimes(1);
+    expect(db.quickSearch).toHaveBeenLastCalledWith({ query: "", mode: "all", hideMissing: false, limit: 50 });
     fire("data-changed", { origin: "app", seq: 1, detectedAtMs: 1 });
-    await waitFor(() => expect(db.quickGetItems).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(db.quickSearch).toHaveBeenCalledTimes(2));
   });
 
   it("跟随主窗主题快照", async () => {

@@ -28,6 +28,8 @@ async function invokeCmd<T>(cmd: string, args?: Record<string, unknown>): Promis
 }
 import type { ModInfo, ModLoadError } from "../types/mod";
 import type { CloseAction, DesktopSettings, HotkeyAction, LaunchMode } from "./desktopShortcut";
+import type { SearchMode } from "../stores/appStore";
+import type { TypeFilter } from "./itemQuery";
 import type {
   CustomThemesResult,
   ThemeDefinition,
@@ -261,6 +263,62 @@ export async function searchItems(
   includeDescendants = true,
 ): Promise<ItemWithTags[]> {
   return invokeCmd("search_items", { query, tagIds, includeDescendants });
+}
+
+export interface SearchQueryArgs {
+  query: string;
+  mode: SearchMode;
+  /** 限定范围（文件柜 / 收藏 / 最近 / 标签筛选后的对象），按其顺序作为结果基础顺序；不传 = 全部对象 */
+  scopeIds?: number[] | null;
+  typeFilter?: TypeFilter;
+  hideMissing?: boolean;
+}
+
+/**
+ * 主窗搜索：后端内存索引（与快速窗同一实现，见 src-tauri/src/search）返回全部命中 ID，
+ * 已按「收藏强 → 收藏弱 → 其余强 → 其余弱」排序并应用类型/丢失筛选。对象本体主窗已有，不重复传输。
+ */
+export async function searchQuery(args: SearchQueryArgs): Promise<number[]> {
+  const res = (await invokeCmd("search_query", {
+    query: args.query,
+    mode: args.mode,
+    scopeIds: args.scopeIds ?? null,
+    typeFilter: args.typeFilter ?? "all",
+    hideMissing: args.hideMissing ?? false,
+  })) as { ids: number[] };
+  return res.ids;
+}
+
+export interface QuickSearchResult {
+  /** 命中总数（items 只含前 limit 条） */
+  total: number;
+  /** 索引中的对象总数 */
+  indexed: number;
+  items: ItemWithTags[];
+}
+
+/** 快速窗搜索：只取前 limit（默认 50）条；空查询 = 默认排序（收藏 → 最近使用 → 名称）的前若干项 */
+export async function quickSearch(args: { query: string; mode: SearchMode; hideMissing: boolean; limit?: number }): Promise<QuickSearchResult> {
+  return invokeCmd("quick_search", { query: args.query, mode: args.mode, hideMissing: args.hideMissing, limit: args.limit ?? 50 });
+}
+
+export interface SearchIndexStats {
+  entries: number;
+  builds: number;
+  lastBuildMs: number;
+  lastBuildNewTexts: number;
+  cachedTexts: number;
+  approxBytes: number;
+}
+
+/** 预建后端搜索索引（主窗首屏加载后调用），第一次搜索不承担建索引耗时 */
+export async function searchWarm(): Promise<SearchIndexStats> {
+  return invokeCmd("search_warm");
+}
+
+/** 后端搜索索引统计（诊断 / E2E） */
+export async function searchIndexStats(): Promise<SearchIndexStats> {
+  return invokeCmd("search_index_stats");
 }
 
 /** 读取同义词分组（每组内词互为同义，供搜索扩展） */
@@ -545,11 +603,6 @@ export async function quickOpen(opts?: { t0Ms?: number; activate?: boolean }): P
 
 export async function quickHide(): Promise<void> {
   return invokeCmd("quick_hide");
-}
-
-/** 快速窗数据：后端走只读连接，不含自动图标 */
-export async function quickGetItems(): Promise<ItemWithTags[]> {
-  return invokeCmd("quick_get_items");
 }
 
 /** 收起快速窗、显示主窗并在主窗中定位该对象 */

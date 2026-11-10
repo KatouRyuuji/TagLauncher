@@ -1,30 +1,22 @@
 // ============================================================================
 // quick/QuickApp.tsx — 全局快速搜索窗
 // ============================================================================
-// 预创建、隐藏常驻：数据在隐藏期间就加载好并建好搜索索引，唤出时只做聚焦。
+// 预创建、隐藏常驻：不加载全量对象，每次输入向后端 quick_search 取前 50 条
+// （与主窗同一个 Rust 内存索引，见 src-tauri/src/search）；唤出时只做聚焦。
 // 键位：↑↓ 选择 · Enter 打开 · Ctrl+Enter 显示位置 · Ctrl+Shift+C 复制路径 ·
 //       Alt+Enter 在主窗定位 · Ctrl+T 打标签 · Esc 先清空再收起。
 // ============================================================================
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import * as db from "../lib/db";
 import { announceWindowWrite, onAnyDataChanged } from "../lib/dataSync";
-import { ensurePinyin } from "../lib/pinyinProvider";
 import { formatPathCopy } from "../lib/itemQuery";
 import { itemDisplayName } from "../lib/itemDisplay";
 import { loadWorkspacePrefs, PREFS_KEY, type SearchMode } from "../stores/appStore";
 import { applyThemeSnapshot, parseThemeSnapshot, THEME_SNAPSHOT_KEY } from "../lib/themeSnapshot";
 import type { ItemWithTags, Tag } from "../types";
-import {
-  buildQuickData,
-  filterTagChoices,
-  quickKeyAction,
-  quickResults,
-  stepIndex,
-  toggledTagIds,
-  type QuickData,
-} from "./quickModel";
+import { filterTagChoices, QUICK_RESULT_LIMIT, quickKeyAction, stepIndex, toggledTagIds } from "./quickModel";
 import { recordQuickLoad, recordQuickQuery, recordQuickSummon } from "./quickPerf";
 
 export const QUICK_SHOWN_EVENT = "quick-shown";
@@ -66,43 +58,16 @@ export function QuickApp() {
   const inputRef = useRef<HTMLInputElement>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
   const [prefs, setPrefs] = useState(readPrefs);
-  const [items, setItems] = useState<ItemWithTags[] | null>(null);
+  const [res, setRes] = useState<{ query: string; total: number; indexed: number; items: ItemWithTags[] } | null>(null);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const [status, setStatus] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [picker, setPicker] = useState<TagPickerState | null>(null);
   const pendingQueryStart = useRef<{ q: string; start: number } | null>(null);
-  const loading = useRef<Promise<void> | null>(null);
-  const reloadAgain = useRef(false);
-
-  // 数据：只读连接取全部对象；拼音词典先就绪再建索引（与主窗同一索引代码）
-  const load = useCallback((): Promise<void> => {
-    if (loading.current) {
-      reloadAgain.current = true;
-      return loading.current;
-    }
-    const started = performance.now();
-    loading.current = Promise.all([ensurePinyin(), db.quickGetItems()])
-      .then(([, next]) => {
-        setItems(next);
-        recordQuickLoad(next.length, performance.now() - started);
-      })
-      .catch((e: unknown) => setStatus({ text: `读取对象失败：${errorText(e)}`, tone: "error" }))
-      .finally(() => {
-        loading.current = null;
-        if (reloadAgain.current) {
-          reloadAgain.current = false;
-          void load();
-        }
-      });
-    return loading.current;
-  }, []);
-
-  useEffect(() => {
-    void load();
-    // 任何来源的写入（主窗、tl CLI、本窗口）都重新加载：隐藏期间也做，唤出时即是最新
-    return onAnyDataChanged(() => { void load(); });
-  }, [load]);
+  const searchSeq = useRef(0);
+  // 数据版本：任何来源的写入（主窗、tl CLI、本窗口）都重查当前词，隐藏期间也做，唤出时即是最新
+  const [dataTick, setDataTick] = useState(0);
+  useEffect(() => onAnyDataChanged(() => setDataTick((t) => t + 1)), []);
 
   // 主窗改了搜索范围 / 隐藏丢失对象的偏好
   useEffect(() => {
@@ -113,23 +78,32 @@ export function QuickApp() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const data: QuickData | null = useMemo(
-    () => (items ? buildQuickData(items, prefs.searchMode) : null),
-    [items, prefs.searchMode],
-  );
-  const results = useMemo(
-    () => (data ? quickResults(data, query, { hideMissing: prefs.hideMissing }) : []),
-    [data, query, prefs.hideMissing],
-  );
+  useEffect(() => {
+    const seq = ++searchSeq.current;
+    const started = performance.now();
+    db.quickSearch({ query, mode: prefs.searchMode, hideMissing: prefs.hideMissing, limit: QUICK_RESULT_LIMIT })
+      .then((r) => {
+        if (seq !== searchSeq.current) return;
+        setRes({ query, total: r.total, indexed: r.indexed, items: r.items });
+        // 「加载」= 空查询结果就绪（含后端首次建索引），E2E 据此等待预热完成
+        if (!query.trim()) recordQuickLoad(r.indexed, performance.now() - started);
+      })
+      .catch((e: unknown) => {
+        if (seq === searchSeq.current) setStatus({ text: `搜索失败：${errorText(e)}`, tone: "error" });
+      });
+  }, [query, prefs.searchMode, prefs.hideMissing, dataTick]);
+  // 新词的结果到达前沿用上一次结果，避免列表闪空
+  const results = res?.items ?? [];
   const current = results[Math.min(selected, results.length - 1)] ?? null;
 
   // 「输入到出结果」：输入事件时刻 → 结果提交后的下一帧
   useLayoutEffect(() => {
     const pending = pendingQueryStart.current;
-    if (!pending || pending.q !== query) return;
+    if (!pending || !res || pending.q !== res.query) return;
     pendingQueryStart.current = null;
-    requestAnimationFrame(() => recordQuickQuery(query, results.length, performance.now() - pending.start, items?.length ?? 0));
-  }, [query, results, items]);
+    const { query: q, total, indexed } = res;
+    requestAnimationFrame(() => recordQuickQuery(q, total, performance.now() - pending.start, indexed));
+  }, [res]);
 
   // 唤出：聚焦并全选上次的输入（直接打字即替换）
   useEffect(() => {
@@ -265,7 +239,7 @@ export function QuickApp() {
         data-testid="quick-input"
         className="quick-input"
         aria-label="快速搜索"
-        placeholder={items ? `搜索 ${items.length} 个对象…` : "正在加载…"}
+        placeholder={res ? `搜索 ${res.indexed} 个对象…` : "正在加载…"}
         value={query}
         spellCheck={false}
         autoComplete="off"
@@ -310,7 +284,7 @@ export function QuickApp() {
         </div>
       ) : (
         <ul role="listbox" aria-label="搜索结果" className="quick-list" data-testid="quick-results">
-          {data && results.length === 0 && <li className="quick-empty">没有匹配的对象</li>}
+          {res && results.length === 0 && <li className="quick-empty">没有匹配的对象</li>}
           {results.map((item, i) => (
             <li
               key={item.id}

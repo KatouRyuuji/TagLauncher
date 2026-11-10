@@ -1,37 +1,13 @@
 // ============================================================================
 // quick/quickModel.ts — 快速搜索窗的纯逻辑（结果、按键映射、标签切换）
 // ============================================================================
-// 结果与主窗同源：runSearchPipeline（主窗 useItems 也调它），类型「全部」、无标签/柜筛选，
-// 隐藏丢失对象的偏好与主窗共用 workspace_prefs。空查询显示主窗默认（智能）排序的前若干项。
+// 结果来自后端 quick_search（与主窗 search_query 同一个 Rust 内存索引），只取前 50 条；
+// 类型「全部」、无标签/柜筛选，隐藏丢失对象的偏好与主窗共用 workspace_prefs。
 // ============================================================================
 
-import { buildSearchIndex, type SearchIndex } from "../lib/search";
-import type { SearchMode } from "../stores/appStore";
-import { applyMissingFilter, sortItemsByMode } from "../lib/itemQuery";
-import { runSearchPipeline } from "../lib/searchPipeline";
 import type { ItemWithTags } from "../types";
 
 export const QUICK_RESULT_LIMIT = 50;
-
-export interface QuickData {
-  index: SearchIndex;
-  /** 空查询时的列表（智能排序：收藏 → 最近使用 → 名称） */
-  recent: ItemWithTags[];
-}
-
-export function buildQuickData(items: ItemWithTags[], mode: SearchMode): QuickData {
-  return { index: buildSearchIndex(items, mode), recent: sortItemsByMode(items, "smart") };
-}
-
-export function quickResults(
-  data: QuickData,
-  query: string,
-  opts: { hideMissing: boolean; limit?: number },
-): ItemWithTags[] {
-  const limit = opts.limit ?? QUICK_RESULT_LIMIT;
-  if (!query.trim()) return applyMissingFilter(data.recent, opts.hideMissing).slice(0, limit);
-  return runSearchPipeline(data.index, query, { typeFilter: "all", hideMissing: opts.hideMissing }).slice(0, limit);
-}
 
 export type QuickAction = "up" | "down" | "launch" | "reveal" | "copy" | "locate" | "tag" | "escape";
 

@@ -29,12 +29,12 @@ import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
 import { filterCommandsByQuery, isImeKeyboardEvent, SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter, applyTypeFilter } from "../lib/itemQuery";
-import { buildSearchIndex, expandForTagFilter, filterItemsByTags, searchWithIndex } from "../lib/search";
+import { expandForTagFilter, filterItemsByTags } from "../lib/tagFilter";
 import { requestEditItemTags } from "../lib/tagEditIntent";
 import { showToast } from "../lib/toast";
 import { ensurePinyin } from "../lib/pinyinProvider";
 import { buildDescendantsMap } from "../lib/tagGraph";
-import { getCabinetItems } from "../lib/db";
+import { getCabinetItems, searchQuery as searchItemIds } from "../lib/db";
 import { onCabinetItemsChanged } from "../lib/modApi";
 import { focusWorkspaceSearch, resetWorkspaceSearchInput } from "../lib/workspaceChrome";
 import { useAppStore } from "../stores/appStore";
@@ -234,19 +234,39 @@ export function CommandPalette({
   }, [commands, filterQuery]);
   // 对象候选搜索固定用「全部」模式（名称+标签均可命中），不跟随工作台的「仅标签」类模式，
   // 否则切到「仅标签」后在面板里输对象名命中不了对象。
-  // ≥2 字符才建索引并起搜：单字符（尤其单 CJK 字）扫全库既贵又不出有效候选
+  // ≥2 字符才起搜：单字符（尤其单 CJK 字）扫全库既贵又不出有效候选。
+  // 搜索走后端内存索引（与主窗/快速窗同一实现），范围 = 上面收窄后的候选，取前 8 条。
   const itemSearchQuery = filterQuery.trim().length >= 2 ? filterQuery.trim() : "";
-  // 索引与查询词无关（buildSearchIndex 只读 scopedItems）：门控用布尔，
-  // 否则 ≥2 字符后每次防抖击键都把全库索引重建一遍
-  const hasItemQuery = itemSearchQuery.length > 0;
-  const searchIndex = useMemo(
-    () => (open && hasItemQuery ? buildSearchIndex(scopedItems, "all") : { entries: [], mode: "all" as const }),
-    [open, scopedItems, hasItemQuery],
-  );
-  const matchedItems = useMemo(() => {
-    if (!itemSearchQuery) return [];
-    return searchWithIndex(searchIndex, itemSearchQuery).slice(0, 8);
-  }, [searchIndex, itemSearchQuery]);
+  const [matchedItems, setMatchedItems] = useState<ItemWithTags[]>([]);
+  useEffect(() => {
+    if (!open || !itemSearchQuery) {
+      setMatchedItems([]);
+      return;
+    }
+    let cancelled = false;
+    const byId = new Map(scopedItems.map((item) => [item.id, item] as const));
+    void searchItemIds({
+      query: itemSearchQuery,
+      mode: "all",
+      scopeIds: scopedItems === items ? null : scopedItems.map((item) => item.id),
+    })
+      .then((ids) => {
+        if (cancelled) return;
+        const next: ItemWithTags[] = [];
+        for (const id of ids) {
+          const item = byId.get(id);
+          if (item) next.push(item);
+          if (next.length >= 8) break;
+        }
+        setMatchedItems(next);
+      })
+      .catch(() => {
+        if (!cancelled) setMatchedItems([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, itemSearchQuery, scopedItems, items]);
 
   type Row = { kind: "command"; command: CommandDef } | { kind: "item"; item: ItemWithTags };
   const rows = useMemo<Row[]>(() => {

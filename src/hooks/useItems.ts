@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } from "react";
 import { autoRelocateFailureNotice } from "../lib/relocateScan";
 import { onExternalDataChanged, onWindowDataWritten } from "../lib/dataSync";
-import { runSearchPipeline } from "../lib/searchPipeline";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
-import { buildSearchIndex, expandForTagFilter, filterItemsByTags, filterSearchIndex } from "../lib/search";
-import { ensurePinyin } from "../lib/pinyinProvider";
+import { expandForTagFilter, filterItemsByTags } from "../lib/tagFilter";
 import { applyMissingFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/itemQuery";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { currentBrowseDir, itemsInDir } from "../lib/cabinetBrowse";
@@ -15,14 +13,6 @@ import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } fro
 import { showToast } from "../lib/toast";
 import { markSearchResult } from "../lib/searchPerf";
 import { TAGS_WRITTEN_EVENT } from "./useTags";
-
-/** 搜索索引闲时预热的单片大小（1000 条/片，片间让出主线程） */
-const SEARCH_WARM_SLICE = 1000;
-/** 预热片间隔：单片构建 ~100-200ms，间隔拉长避免 IPC/交互排队超过人感阈值 */
-const SEARCH_WARM_GAP_MS = 250;
-/** 预热条目上限：超大库不为全量预热付首分钟成本——
- *  前 5000 条（最近使用头部）覆盖高频命中，其余靠首次搜索的防抖窗口构建 */
-const SEARCH_WARM_MAX_ENTRIES = 5000;
 
 /** 主题换色后的就地改色事件：detail.tagColors = { tagId: color }。
  *  只改颜色不动结构，无需 TAGS_WRITTEN_EVENT 的全量重取级联。 */
@@ -131,8 +121,6 @@ export function useItems() {
   const cabinetItemsRef = useRef<ItemWithTags[]>([]);
   const relocatingRef = useRef<Promise<number> | null>(null);
   const relocateMissingRef = useRef<() => void>(() => {});
-  // 闲时预热定时器（取消/卸载清理用）
-  const warmupTimerRef = useRef<{ kind: "idle"; id: number } | { kind: "timeout"; id: ReturnType<typeof setTimeout> } | null>(null);
   // 会话内冻结排序键：启动对象只刷新 last_used_at 不重排视图（Explorer 语义）。
   // 快照重拍时机 = loadAll 成功 / 排序变更 / 视图域切换；launch 的 refreshItemById 不重拍
   const frozenSortKeysRef = useRef<ReadonlyMap<number, string | null | undefined> | null>(null);
@@ -140,16 +128,6 @@ export function useItems() {
     (items: ItemWithTags[]) => new Map(items.map((item) => [item.id, item.last_used_at] as const)),
     [],
   );
-  // 预热代数：每次取消/重调度自增；挂在 pinyin 分片与切片链上的回调凭代数判断是否已被取代
-  const warmupGenRef = useRef(0);
-  const cancelSearchWarmup = useCallback(() => {
-    warmupGenRef.current += 1;
-    if (warmupTimerRef.current === null) return;
-    if (warmupTimerRef.current.kind === "idle") window.cancelIdleCallback?.(warmupTimerRef.current.id);
-    else clearTimeout(warmupTimerRef.current.id);
-    warmupTimerRef.current = null;
-  }, []);
-  useEffect(() => cancelSearchWarmup, [cancelSearchWarmup]);
   // 仅首屏加载显示整屏 loading；后台刷新（刷新按钮/跨盘找回后）保留旧列表原地更新，
   // 不清空、不闪 spinner、不丢滚动位置。
   const initialLoadRef = useRef(true);
@@ -184,44 +162,8 @@ export function useItems() {
         }
         // 全量加载 = 显式重排点：重拍冻结排序键
         frozenSortKeysRef.current = captureFrozenSortKeys(data);
-        // 搜索索引闲时预热（含 pinyin-pro 懒加载分片）：首次击键不再全量构建。
-        // 模块级 searchFieldsCache 按内容指纹跨刷新复用，预热只补未命中条目。
-        // 取消上一次未触发的预热并随卸载清理：避免陈旧定时器在新数据/新会话上误建
-        cancelSearchWarmup();
-        const warmupGen = warmupGenRef.current;
-        const warm = () => {
-          warmupTimerRef.current = null;
-          void ensurePinyin().then(() => {
-            // 分片到达时本轮预热可能已被取代（新一轮 loadAll）：代数不符直接放弃，
-            // 否则旧链会用陈旧数据建片并与新链交错、双倍占用主线程
-            if (warmupGen !== warmupGenRef.current) return;
-            // 1000 条/片 × 250ms 间隔的空闲切片预热（上限 5000 条）：
-            // 整块构建在 10k+ 库上会冻结主线程数秒；超大库只暖头部高频区
-            const warmTarget = Math.min(data.length, SEARCH_WARM_MAX_ENTRIES);
-            const step = (start: number) => {
-              if (warmupGen !== warmupGenRef.current) return; // 已被取消/取代
-              if (start >= warmTarget) {
-                warmupTimerRef.current = null;
-                return;
-              }
-              buildSearchIndex(data.slice(0, start + SEARCH_WARM_SLICE), "all");
-              if (start + SEARCH_WARM_SLICE >= warmTarget) {
-                warmupTimerRef.current = null;
-                return;
-              }
-              const next = start + SEARCH_WARM_SLICE;
-              warmupTimerRef.current = { kind: "timeout", id: setTimeout(() => step(next), SEARCH_WARM_GAP_MS) };
-            };
-            step(0);
-          }).catch(() => {
-            // 分片加载失败（pinyinProvider 已重置）：本轮预热放弃，下次 loadAll/输入重试
-          });
-        };
-        if (typeof window.requestIdleCallback === "function") {
-          warmupTimerRef.current = { kind: "idle", id: window.requestIdleCallback(warm, { timeout: 2000 }) };
-        } else {
-          warmupTimerRef.current = { kind: "timeout", id: setTimeout(warm, 200) };
-        }
+        // 后端搜索索引预建（后台线程；已是最新则只比对一次 data_version）：首次击键不承担建索引
+        void db.searchWarm().catch(() => {});
         setLoadError(null);
 
         const newlyMissing = data.filter(
@@ -505,21 +447,38 @@ export function useItems() {
     showRecent,
     libraryBrowseRoot,
   });
-  // 浏览和筛选直接使用对象数据；输入搜索词时才构建拼音等派生字段。
-  const sourceSearchIndex = useMemo(
-    () => hasSearchQuery ? buildSearchIndex(source, searchMode) : null,
-    [source, searchMode, hasSearchQuery],
+  // 搜索在后端内存索引（与快速窗同一实现，src-tauri/src/search）：这里只传范围、取回全部命中 ID，
+  // 再映射回本地已有的对象（总数、全选、批量操作、定位都基于完整 ID 列表，不受分页影响）。
+  // 范围 = 当前视图域（文件柜/收藏/最近）+ 标签筛选，按其顺序作为结果基础顺序；全部对象时不传。
+  const searchScopeIds = useMemo(
+    () => (hasSearchQuery && tagFiltered !== allItems ? tagFiltered.map((item) => item.id) : null),
+    [hasSearchQuery, tagFiltered, allItems],
   );
-
-  const tagFilteredIds = useMemo(
-    () => new Set(tagFiltered.map((item) => item.id)),
-    [tagFiltered],
+  const sourceById = useMemo(
+    () => (hasSearchQuery ? new Map(source.map((item) => [item.id, item] as const)) : null),
+    [hasSearchQuery, source],
   );
-
-  const searchIndex = useMemo(
-    () => sourceSearchIndex ? filterSearchIndex(sourceSearchIndex, tagFilteredIds) : null,
-    [sourceSearchIndex, tagFilteredIds],
-  );
+  const [searchHits, setSearchHits] = useState<{ query: string; ids: number[] } | null>(null);
+  const searchSeqRef = useRef(0);
+  useEffect(() => {
+    const seq = ++searchSeqRef.current;
+    if (!hasSearchQuery) {
+      setSearchHits(null);
+      return;
+    }
+    const query = deferredSearchQuery;
+    db.searchQuery({ query, mode: searchMode, scopeIds: searchScopeIds, typeFilter, hideMissing })
+      .then((ids) => {
+        if (seq === searchSeqRef.current) setSearchHits({ query, ids });
+      })
+      .catch((error: unknown) => {
+        if (seq !== searchSeqRef.current) return;
+        console.error("搜索失败:", error);
+        setSearchHits({ query, ids: [] });
+        showToast(`搜索失败：${error instanceof Error ? error.message : String(error)}`, "error");
+      });
+    // allItems：数据重载/增量更新后按新数据重查（后端索引随 data_version 自动跟上）
+  }, [hasSearchQuery, deferredSearchQuery, searchMode, searchScopeIds, typeFilter, hideMissing, allItems]);
 
   // 排序变更 / 视图域切换 = 显式重排点：渲染期同步重拍冻结排序键，
   // 本帧即按新快照排序（effect 后拍会先按旧快照渲一帧、且不再触发 memo 重算）。
@@ -536,8 +495,14 @@ export function useItems() {
   }
 
   const filtered = useMemo(() => {
-    if (searchIndex) {
-      return runSearchPipeline(searchIndex, deferredSearchQuery, { typeFilter, hideMissing });
+    // 新查询的结果到达前沿用上一次结果（与 useDeferredValue 同样的「旧结果先留着」体验）
+    if (hasSearchQuery && searchHits && sourceById) {
+      const hits: ItemWithTags[] = [];
+      for (const id of searchHits.ids) {
+        const item = sourceById.get(id);
+        if (item) hits.push(item);
+      }
+      return hits;
     }
     const layerDir = browseDir ?? libraryDir;
     const scoped = layerDir !== null
@@ -552,11 +517,11 @@ export function useItems() {
           ? undefined
           : { lastUsedAt: frozenSortKeysRef.current ?? undefined },
     });
-  }, [searchIndex, tagFiltered, browseDir, libraryDir, revealNested, deferredSearchQuery, typeFilter, hideMissing, sortMode, showRecent]);
+  }, [hasSearchQuery, searchHits, sourceById, tagFiltered, browseDir, libraryDir, revealNested, typeFilter, hideMissing, sortMode, showRecent]);
 
   useEffect(() => {
-    if (searchIndex) markSearchResult(deferredSearchQuery, filtered.length);
-  }, [searchIndex, deferredSearchQuery, filtered]);
+    if (searchHits) markSearchResult(searchHits.query, filtered.length);
+  }, [searchHits, filtered]);
 
   // 关联柜内的失效对象（「清理失效」用）：取整个关联文件夹，不受当前目录与筛选影响
   const linkedMissingIds = useMemo(
