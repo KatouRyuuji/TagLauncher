@@ -186,12 +186,31 @@ pub fn view_query(
     args: ViewQueryArgs,
 ) -> Result<ViewResponse, String> {
     let ro = db.read_conn()?;
+    let req = view_request(ro.conn(), args)?;
+    index.view(ro.conn(), &req, &synonyms_loader(&app))
+}
+
+/// 主窗 typeahead：在与 `view_query` 同参数的视图里找名称（小写）前缀/子串命中的首项。
+#[tauri::command(async)]
+pub fn view_typeahead(
+    app: AppHandle,
+    db: State<Database>,
+    index: State<SearchIndex>,
+    args: ViewQueryArgs,
+    text: String,
+) -> Result<Option<i64>, String> {
+    let ro = db.read_conn()?;
+    let req = view_request(ro.conn(), args)?;
+    index.typeahead(ro.conn(), &req, &text, &synonyms_loader(&app))
+}
+
+fn view_request(conn: &rusqlite::Connection, args: ViewQueryArgs) -> Result<ViewRequest, String> {
     let scope = match args.scope.as_str() {
         "favorites" => Scope::Favorites,
         "recent" => Scope::Recent,
         "cabinet" => {
             let id = args.cabinet_id.ok_or("cabinet 视图缺少 cabinetId")?;
-            let (members, linked_folder) = cabinet_service::cabinet_member_ids(ro.conn(), id)?;
+            let (members, linked_folder) = cabinet_service::cabinet_member_ids(conn, id)?;
             Scope::Cabinet {
                 members,
                 linked_folder,
@@ -199,7 +218,7 @@ pub fn view_query(
         }
         _ => Scope::All,
     };
-    let req = ViewRequest {
+    Ok(ViewRequest {
         params: ViewParams {
             scope,
             selected_groups: args.selected_groups,
@@ -221,8 +240,7 @@ pub fn view_query(
         query: args.query,
         mode: args.mode,
         refreeze: args.refreeze,
-    };
-    index.view(ro.conn(), &req, &synonyms_loader(&app))
+    })
 }
 
 /// 侧栏/状态栏计数：总数、收藏、最近使用、未打标、失效 ID 与各标签计数。
@@ -236,4 +254,42 @@ pub fn library_stats(
 ) -> Result<LibraryStats, String> {
     let ro = db.read_conn()?;
     index.library_stats(ro.conn(), &tag_groups, &synonyms_loader(&app))
+}
+
+/// 主窗「打开」对象时的逐级浏览落点（文件夹有库内后代 → 进入；隐藏对象 → 所在目录）。
+/// 无需逐级浏览时返回 None，前端照常启动。
+#[tauri::command(async)]
+pub fn browse_target(
+    db: State<Database>,
+    id: i64,
+) -> Result<Option<crate::view::browse::BrowseTarget>, String> {
+    use crate::view::browse::{browse_target, PathEntry};
+    let ro = db.read_conn()?;
+    let conn = ro.conn();
+    let mut stmt = conn
+        .prepare("SELECT id, path, type, hide_from_all, is_missing FROM items")
+        .map_err(|e| e.to_string())?;
+    let mut target: Option<(PathEntry, bool)> = None;
+    let mut items = Vec::new();
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                PathEntry {
+                    id: r.get(0)?,
+                    path: r.get(1)?,
+                    is_folder: r.get::<_, String>(2)? == "folder",
+                    hide_from_all: r.get::<_, i64>(3)? != 0,
+                },
+                r.get::<_, i64>(4)? != 0,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (entry, missing) = row.map_err(|e| e.to_string())?;
+        if entry.id == id {
+            target = Some((entry.clone(), missing));
+        }
+        items.push(entry);
+    }
+    Ok(target.and_then(|(item, missing)| browse_target(&item, missing, &items)))
 }

@@ -50,6 +50,8 @@ struct Inner {
     entries: Vec<Entry>,
     /// 与 entries 一一对应的视图字段（主窗浏览的筛选与排序）
     views: Vec<ViewEntry>,
+    /// 与 entries 一一对应的小写对象名（主窗 typeahead 用，与 TS `name.toLowerCase()` 同口径）
+    names_lower: Vec<Box<str>>,
     pos: HashMap<i64, usize>,
     /// 显示名 → 排序名次；显示名集合不变时（只改了最近使用/收藏等）复用，不重排
     name_ranks: HashMap<String, u32>,
@@ -219,6 +221,10 @@ impl Inner {
                     .map(|ts| ts.iter().map(|(id, _)| *id).collect())
                     .unwrap_or_default(),
             })
+            .collect();
+        self.names_lower = rows
+            .iter()
+            .map(|row| row.name.to_lowercase().into_boxed_str())
             .collect();
         self.pos = entries.iter().enumerate().map(|(i, e)| (e.id, i)).collect();
         self.entries = entries;
@@ -404,6 +410,35 @@ impl SearchIndex {
             browse_dir: out.browse_dir,
             library_total: inner.views.len(),
         })
+    }
+
+    /// 主窗 typeahead：在当前视图（同一组视图参数，不重拍冻结键）里找名称匹配项。
+    /// 首个前缀命中优先，否则首个子串命中（与迁移前 useWorkspaceHotkeys 的单趟扫描一致）。
+    pub fn typeahead(
+        &self,
+        conn: &Connection,
+        req: &ViewRequest,
+        text: &str,
+        load_synonyms: &dyn Fn() -> Vec<Vec<String>>,
+    ) -> Result<Option<i64>, String> {
+        let mut req = req.clone();
+        req.refreeze = false;
+        let ids = self.view(conn, &req, load_synonyms)?.ids;
+        let inner = self.lock();
+        let mut substring = None;
+        for id in ids {
+            let Some(&i) = inner.pos.get(&id) else {
+                continue;
+            };
+            let name = &inner.names_lower[i];
+            if name.starts_with(text) {
+                return Ok(Some(id));
+            }
+            if substring.is_none() && name.contains(text) {
+                substring = Some(id);
+            }
+        }
+        Ok(substring)
     }
 
     /// 侧栏与状态栏的计数（不把全量对象交给前端）。

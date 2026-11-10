@@ -17,6 +17,7 @@ import pkg from "../../package.json";
 import { demoAlbumCover } from "./assets";
 import { isUnderDir } from "../lib/cabinetBrowse";
 import { demoLibraryStats, demoView } from "./demoView";
+import { browseTargetForItem } from "../lib/nestedVisibility";
 import type { SortMode, TypeFilter } from "../lib/itemQuery";
 import { planUntrack, watchRootPaths } from "../lib/untrack";
 import { applySortOrder, compareSortOrder } from "../lib/sidebarOrder";
@@ -325,6 +326,33 @@ type Args = Record<string, unknown>;
 const num = (value: unknown): number => Number(value);
 const str = (value: unknown): string => String(value);
 const ids = (value: unknown): number[] => (value as number[]).map(Number);
+
+function demoViewQuery(raw: unknown) {
+  const v = (raw ?? {}) as Record<string, unknown>;
+  const cabinetId = typeof v.cabinetId === "number" ? v.cabinetId : null;
+  const folder = v.scope === "cabinet" ? state.cabinets.find((entry) => entry.id === cabinetId)?.folder_path ?? null : null;
+  const members = v.scope === "cabinet" ? (folder ? new Set(linkedMembers(folder)) : state.cabinetItems.get(cabinetId ?? -1) ?? new Set<number>()) : null;
+  const groups = (x: unknown) => (Array.isArray(x) ? x.map((g) => ids(g)) : []);
+  const strOrNull = (x: unknown) => (typeof x === "string" ? x : null);
+  return demoView(sortItems(state.items).map(withTags), {
+    scope: str(v.scope) || "all",
+    members,
+    linkedFolder: folder,
+    selectedGroups: groups(v.selectedGroups),
+    excludedGroups: groups(v.excludedGroups),
+    typeFilter: (str(v.typeFilter) || "all") as TypeFilter,
+    hideMissing: v.hideMissing === true,
+    sortMode: (str(v.sortMode) || "smart") as SortMode,
+    showNestedContents: v.showNestedContents === true,
+    libraryBrowseRoot: strOrNull(v.libraryBrowseRoot),
+    libraryBrowseDir: strOrNull(v.libraryBrowseDir),
+    cabinetDir: strOrNull(v.cabinetDir),
+    cabinetFlat: v.cabinetFlat === true,
+    query: str(v.query),
+    search: (scope) => demoSearch(str(v.query), scope, v.hideMissing === true, str(v.typeFilter) || "all"),
+  });
+}
+
 /** 新建排末尾，与后端 MAX(sort_order) + 1 一致 */
 const nextSortOrder = (list: Array<{ sort_order?: number }>): number =>
   list.reduce((max, entry) => Math.max(max, entry.sort_order ?? 0), 0) + 1;
@@ -887,30 +915,24 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       };
     }
     case "search_warm":
-    case "view_query": {
-      const v = (args.args ?? {}) as Record<string, unknown>;
-      const cabinetId = typeof v.cabinetId === "number" ? v.cabinetId : null;
-      const folder = v.scope === "cabinet" ? state.cabinets.find((entry) => entry.id === cabinetId)?.folder_path ?? null : null;
-      const members = v.scope === "cabinet" ? (folder ? new Set(linkedMembers(folder)) : state.cabinetItems.get(cabinetId ?? -1) ?? new Set<number>()) : null;
-      const groups = (x: unknown) => (Array.isArray(x) ? x.map((g) => ids(g)) : []);
-      const strOrNull = (x: unknown) => (typeof x === "string" ? x : null);
-      return demoView(sortItems(state.items).map(withTags), {
-        scope: str(v.scope) || "all",
-        members,
-        linkedFolder: folder,
-        selectedGroups: groups(v.selectedGroups),
-        excludedGroups: groups(v.excludedGroups),
-        typeFilter: (str(v.typeFilter) || "all") as TypeFilter,
-        hideMissing: v.hideMissing === true,
-        sortMode: (str(v.sortMode) || "smart") as SortMode,
-        showNestedContents: v.showNestedContents === true,
-        libraryBrowseRoot: strOrNull(v.libraryBrowseRoot),
-        libraryBrowseDir: strOrNull(v.libraryBrowseDir),
-        cabinetDir: strOrNull(v.cabinetDir),
-        cabinetFlat: v.cabinetFlat === true,
-        query: str(v.query),
-        search: (scope) => demoSearch(str(v.query), scope, v.hideMissing === true, str(v.typeFilter) || "all"),
-      });
+    case "view_query":
+      return demoViewQuery(args.args);
+    case "view_typeahead": {
+      const text = str(args.text);
+      const { ids: viewIds } = demoViewQuery(args.args);
+      const byId = new Map(state.items.map((item) => [item.id, item.name.toLowerCase()] as const));
+      let substring: number | null = null;
+      for (const id of viewIds) {
+        const name = byId.get(id) ?? "";
+        if (name.startsWith(text)) return id;
+        if (substring === null && name.includes(text)) substring = id;
+      }
+      return substring;
+    }
+    case "browse_target": {
+      const all = state.items.map(withTags);
+      const item = all.find((it) => it.id === Number(args.id));
+      return item ? browseTargetForItem(item, all) : null;
     }
     case "library_stats": {
       const groups = Array.isArray(args.tagGroups) ? (args.tagGroups as [number, number[]][]) : [];

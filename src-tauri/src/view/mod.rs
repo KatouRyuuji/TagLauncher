@@ -9,6 +9,7 @@
 //! 为避免每次排序都做排序规则比较，索引重建时按显示名一次性排好、得到名次（比较为 0 的同名次）。
 
 pub mod collation;
+pub mod browse;
 #[cfg(test)]
 mod corpus_tests;
 
@@ -121,7 +122,7 @@ pub fn parent_dir(path: &str) -> String {
     }
 }
 
-fn is_under_dir(path: &str, root: &str) -> bool {
+pub(crate) fn is_under_dir(path: &str, root: &str) -> bool {
     dir_key(path).starts_with(&format!("{}\\", dir_key(root)))
 }
 

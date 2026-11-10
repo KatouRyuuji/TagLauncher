@@ -354,6 +354,11 @@ export async function viewQuery(args: ViewQueryArgs): Promise<ViewQueryResult> {
   return (await invokeCmd("view_query", { args })) as ViewQueryResult;
 }
 
+/** 主窗 typeahead：与 viewQuery 同参数的视图里名称（小写）前缀优先、子串兜底的首项 */
+export async function viewTypeahead(args: ViewQueryArgs, text: string): Promise<number | null> {
+  return (await invokeCmd("view_typeahead", { args, text })) as number | null;
+}
+
 export interface LibraryStats {
   total: number;
   favorites: number;
@@ -367,6 +372,16 @@ export interface LibraryStats {
 /** 侧栏/状态栏计数（不把全量对象交给前端）。 */
 export async function libraryStats(tagGroups: [number, number[]][]): Promise<LibraryStats> {
   return (await invokeCmd("library_stats", { tagGroups })) as LibraryStats;
+}
+
+export interface BrowseTarget {
+  root: string;
+  dir: string | null;
+}
+
+/** 打开对象时的逐级浏览落点（后端按库内全部路径判定）；null = 照常启动 */
+export async function browseTarget(id: number): Promise<BrowseTarget | null> {
+  return (await invokeCmd("browse_target", { id })) as BrowseTarget | null;
 }
 
 /** 读取同义词分组（每组内词互为同义，供搜索扩展） */

@@ -148,6 +148,19 @@ fn view_query_follows_db_with_frozen_smart_order() {
 
     // 搜索走同一入口；文件柜成员由后端解析
     assert_eq!(view(smart.clone(), "file2", false).ids, vec![b]);
+
+    // typeahead 在同一视图里找：前缀命中按视图顺序（a 已升顶）、子串兜底
+    let ta = |text: &str| {
+        let ro = t.db.read_conn().unwrap();
+        let req = ViewRequest {
+            params: smart.clone(),
+            query: String::new(),
+            mode: "all".into(),
+            refreeze: false,
+        };
+        idx.typeahead(ro.conn(), &req, text, &no_synonyms).unwrap()
+    };
+    assert_eq!((ta("file"), ta("2.t"), ta("zz")), (Some(a), Some(b), None));
     let (members, folder) = {
         let conn = t.db.get_conn();
         cabinet_service::cabinet_member_ids(&conn, 9999).unwrap()
