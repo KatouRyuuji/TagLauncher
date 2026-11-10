@@ -54,6 +54,7 @@ class AppSession:
         self.port: int | None = None
         self.page_errors: list[str] = []
         self.launch_count = 0
+        self.spawned_at_ms: float | None = None
         self.guard: stealth.Guard | None = None
 
     # ------------------------------------------------------------------ 生命周期
@@ -77,6 +78,8 @@ class AppSession:
         rec.env["webview2_channel"] = "hklm-policy" if policy else "env"
         self._launch = rec
         try:
+            # 墙钟起点（与页面 performance.timeOrigin 同一时钟）：冷启动 TTI 从进程创建算起
+            self.spawned_at_ms = time.time() * 1000
             self.proc = subprocess.Popen([str(self.sb.exe), *self.args], cwd=self.sb.bin,
                                          env=env, stdout=log, stderr=log)
             rec.pid = self.proc.pid
@@ -147,6 +150,19 @@ class AppSession:
                     raise RuntimeError(f"WebView2 CDP 端口不可用: {self.sb.root}")
                 time.sleep(0.2)
         mark("CDP 端口可用")
+        # 先经 /json/list 等应用页面 target 出现再连：过早 connect_over_cdp 偶发错过页面，
+        # 原先只能 4s 后重连（冷启动 TTI 失败即源于此）。等不到也继续，走下面的重连兜底。
+        target_deadline = min(deadline, time.monotonic() + 15)
+        while time.monotonic() < target_deadline and self.proc.poll() is None:
+            try:
+                with urllib.request.urlopen(endpoint + "/json/list", timeout=1) as resp:
+                    targets = json.loads(resp.read().decode("utf-8", "replace"))
+                if any(t.get("type") == "page" and str(t.get("url", "")).startswith("http://tauri.localhost") for t in targets):
+                    mark("页面 target 出现")
+                    break
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.05)
         # 偶发：首个 CDP 连接错过页面 target（一直看不到 tauri.localhost）。每 4s 无果就重连一次
         # （原 10s 晚于应用 8s 的启动期更新检查，f1c4766 实测由此吞掉更新检查用例）。
         page, seen = None, set()

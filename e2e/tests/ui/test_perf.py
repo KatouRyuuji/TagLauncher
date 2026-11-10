@@ -48,14 +48,20 @@ def _ms(fn):
 
 @pytest.mark.case("E-PERF-01")
 def test_cold_start_tti(big_app, run_dir):
+    """TTI = 进程创建 → 首个对象出现在页面（应用 main.tsx 打的 tl:first-items mark）。
+    不重载页面，量的是应用自己的首次加载；测试框架连接调试端口花的时间不计入（阈值不变）。"""
     app = big_app
     app.stop()
-    t0 = time.perf_counter()
+    app.reload = False                       # 保留首次加载的页面，mark 才是冷启动那一次
     app.start()
     app.page.locator('[data-selectable-item-id]').first.wait_for(timeout=30000)
-    tti = round((time.perf_counter() - t0) * 1000)
-    _record(run_dir, "tti_ms_5k", tti)
-    assert tti <= 3000, f"5k 冷启动 TTI {tti}ms > 3000ms"
+    ready = wait_until(lambda: app.page.evaluate(
+        "() => { const m = performance.getEntriesByName('tl:first-items', 'mark')[0];"
+        " return m ? performance.timeOrigin + m.startTime : null; }"), 10, "应用未打 tl:first-items mark")
+    tti = round(ready - app.spawned_at_ms)
+    phases = dict((k, v) for k, v in app._launch.phases) if getattr(app, "_launch", None) else {}
+    _record(run_dir, "tti_ms_5k", {"tti": tti, "harness_phases": phases})
+    assert 0 < tti <= 3000, f"5k 冷启动 TTI {tti}ms > 3000ms（harness 阶段 {phases}）"
 
 
 @pytest.mark.case("E-PERF-02")
