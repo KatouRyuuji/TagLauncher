@@ -61,7 +61,7 @@ def test_import_invalid_rejected(app, sandbox, kind, hint):
     assert app.proc.poll() is None, "非法导入不应触发重启"
     assert dbh.scalar(sandbox.db_path, "SELECT COUNT(*) FROM items") == before
     assert [i["name"] for i in app.items()] == ["原有.txt"]
-    assert dbh.meta(sandbox.db_path, "schema_version") == "20"
+    assert dbh.meta(sandbox.db_path, "schema_version") == dbh.current_schema_version()
 
 
 @pytest.mark.case("E-DAT-07")
@@ -124,8 +124,9 @@ def test_auto_backup_and_retention(sandbox, app_factory):
         olds.append(f)
     manual = bdir / "taglauncher_backup_20200101_000000.db"
     manual.write_bytes(b"manual")
-    app = app_factory()
+    # t0 取启动前：start() 要等页面就绪，CI 上冷启动 ~10s，延迟 10s 的备份可能在其返回前已写出
     t0 = time.monotonic()
+    app = app_factory()
 
     def autos():
         return sorted(p.name for p in bdir.glob("taglauncher_auto_*.db"))

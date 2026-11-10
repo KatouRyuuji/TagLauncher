@@ -23,13 +23,18 @@ def test_add_files_button(app, sandbox, zoo):
     assert rows == {"图片.png": "image", "笔记.txt": "text", "脚本.bat": "bat"}
 
 
-@pytest.mark.parametrize("mode,expect", [
-    ("只加入文件夹", {"项目夹"}),
-    ("只加入里面的文件", {"a.txt", "b.png", "c.txt"}),
-    ("两者都加入", {"项目夹", "a.txt", "b.png", "c.txt"}),
+# PR46 规格：contents/both 递归收入夹内文件与中间目录，投放的文件夹作为浏览入口留在「全部项目」，
+# 夹内文件与中间目录 hide_from_all（总览默认不铺开，可逐级浏览/切换显示）。
+NESTED = {"项目夹", "子目录", "a.txt", "b.png", "c.txt"}
+
+
+@pytest.mark.parametrize("mode,expect,visible", [
+    ("只加入文件夹", {"项目夹"}, {"项目夹"}),
+    ("只加入里面的文件", NESTED, {"项目夹"}),
+    ("两者都加入", NESTED, {"项目夹"}),
 ])
 @pytest.mark.case("E-OBJ-02")
-def test_add_folder_modes(app, sandbox, mode, expect):
+def test_add_folder_modes(app, sandbox, mode, expect, visible):
     root = sandbox.files / "项目夹"
     files.write(root / "a.txt", "a")
     files.write(root / "b.png", files.png_bytes())
@@ -40,8 +45,11 @@ def test_add_folder_modes(app, sandbox, mode, expect):
     folder_dialog_confirm(app, mode)
     wait_until(lambda: {i["name"] for i in app.items()} == expect, 8, lambda: [i["name"] for i in app.items()])
     app.wait_toast(f"已导入 {len(expect)} 个对象")
-    if "项目夹" in expect:
-        assert app.item("项目夹")["type"] == "folder"
+    shown = {i["name"] for i in app.items() if not i.get("hide_from_all")}
+    assert shown == visible, app.items()
+    assert app.item("项目夹")["type"] == "folder"
+    if "子目录" in expect:
+        assert app.item("子目录")["type"] == "folder"
 
 
 @pytest.mark.case("E-OBJ-05")

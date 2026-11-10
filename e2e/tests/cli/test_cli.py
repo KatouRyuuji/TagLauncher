@@ -154,10 +154,13 @@ def test_concurrent_gui_and_cli_writes(tl, sandbox, app_factory):
     import threading
     errors = []
 
+    gui_failed = []
+
     def gui_side():
         try:
             for chunk in range(0, 60, 10):
-                app.invoke("add_items", {"paths": [str(p) for p in gui_batch[chunk:chunk + 10]]})
+                res = app.invoke("add_items", {"paths": [str(p) for p in gui_batch[chunk:chunk + 10]]})
+                gui_failed.extend((res or {}).get("failed") or [])
         except Exception as e:  # noqa: BLE001
             errors.append(e)
     # Playwright 同步 API 不能跨线程：GUI 写在主线程，CLI 写在后台线程
@@ -168,9 +171,13 @@ def test_concurrent_gui_and_cli_writes(tl, sandbox, app_factory):
     gui_side()
     t.join(120)
     assert not errors
+    assert not gui_failed, gui_failed
     assert all(r.returncode == 0 for r in results), [r.err for r in results]
     assert all("locked" not in r.err for r in results)
-    assert dbh.scalar(sandbox.db_path, "SELECT COUNT(*) FROM items") == 120
+    names = {r[0] for r in dbh.query(sandbox.db_path, "SELECT name FROM items")}
+    missing = sorted({p.name for p in batch + gui_batch} - names)
+    assert dbh.scalar(sandbox.db_path, "SELECT COUNT(*) FROM items") == 120, (
+        f"缺失 {missing}；GUI failed={gui_failed}；CLI stdout/err={[(r.out[-400:], r.err[-400:]) for r in results]}")
     assert len(app.items()) == 120
 
 

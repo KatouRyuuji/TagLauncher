@@ -11,6 +11,13 @@ from .paths import ROOT
 SCHEMA_RS = ROOT / "src-tauri" / "src" / "db" / "schema.rs"
 
 
+def current_schema_version() -> str:
+    """应用当前 schema 版本 = 迁移目录里最大的 vNNN（新增迁移时断言随之更新，不再手改常量）。"""
+    mig = ROOT / "src-tauri" / "src" / "db" / "migrations"
+    nums = [int(m.group(1)) for f in mig.glob("v*.rs") if (m := re.match(r"v(\d+)_", f.name))]
+    return str(max(nums))
+
+
 def query(db: Path, sql: str, params=()) -> list[tuple]:
     uri = f"file:{db.as_posix()}?mode=ro"
     with closing(sqlite3.connect(uri, uri=True, timeout=5)) as con:

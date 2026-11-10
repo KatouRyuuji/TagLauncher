@@ -344,6 +344,11 @@ class AppSession:
         """卡片/行定位：以 item id 为准（data-selectable-item-id）。"""
         return self.page.locator(f'[data-selectable-item-id="{self.item(name)["id"]}"]')
 
+    def select_card(self, name: str) -> None:
+        """单击名称选中。不点行中心：窄窗口（CI 屏幕把窗口夹到 ~1040px）下列表行中心正落在
+        标签列的「+ 添加标签」按钮上，会弹出标签编辑框而不是选中（a245b25 failure.png 实证）。"""
+        self.card(name).get_by_role("heading", level=3).click()
+
     def card_by_id(self, item_id: int):
         return self.page.locator(f'[data-selectable-item-id="{item_id}"]')
 
