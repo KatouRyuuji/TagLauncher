@@ -75,13 +75,26 @@ def write_command(cls: str, value: str) -> None:
 
 
 def read_shortcut(link: Path) -> dict:
+    """WScript.Shell 读快捷方式。先复制成 ASCII 文件名再读，排除命令行/环境变量里的非 ASCII 路径因素。"""
+    import shutil
+    probe = link.parent.parent / "tl-e2e-probe.lnk"
+    shutil.copyfile(link, probe)
+    try:
+        return _read_shortcut(probe) | {"bytes": probe.stat().st_size, "head": probe.read_bytes()[:20].hex()}
+    finally:
+        probe.unlink(missing_ok=True)
+
+
+def _read_shortcut(link: Path) -> dict:
     script = ("[Console]::OutputEncoding = [Text.Encoding]::UTF8; "
               "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:TL_LNK); "
-              "@{ target = $s.TargetPath; args = $s.Arguments } | ConvertTo-Json -Compress")
+              "@{ target = $s.TargetPath; args = $s.Arguments; exists = [IO.File]::Exists($env:TL_LNK); "
+              "path = $env:TL_LNK } | ConvertTo-Json -Compress")
     r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
                        env={**os.environ, "TL_LNK": str(link)}, timeout=30)
     assert r.returncode == 0, r.stderr.decode("utf-8", "replace")
-    return json.loads(r.stdout.decode("utf-8", "replace"))
+    out = r.stdout.decode("utf-8", "replace")
+    return json.loads(out) | {"raw": out[:300], "stderr": r.stderr.decode("utf-8", "replace")[:300]}
 
 
 def same_path(a: str | Path, b: str | Path) -> bool:
