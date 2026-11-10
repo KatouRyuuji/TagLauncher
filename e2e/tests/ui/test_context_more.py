@@ -19,20 +19,38 @@ def inside_viewport(app, loc) -> None:
     assert box["x"] + box["width"] <= vp["w"] + 0.5 and box["y"] + box["height"] <= vp["h"] + 0.5, (box, vp)
 
 
+LOADING = "正在读取监视状态…"
+
+
+def watch_labels_settled(menu, want: str, wrong: str) -> list[str]:
+    """监视项读回前只允许显示读取中占位（禁用），任何一次轮询看到相反状态即失败。"""
+    seen, bad = [], []
+
+    def check():
+        labels = menu_labels(menu)
+        seen.append(labels)
+        if any(l.startswith(wrong) for l in labels):
+            bad.append(labels)            # wait_until 会吞异常，错误标签单独记下、等完再断言
+        return labels if any(l.startswith(want) for l in labels) else None
+    labels = wait_until(check, 5, lambda: seen[-3:])
+    assert not bad, f"监视项出现过错误标签「{wrong}」：{bad[:2]}"
+    return labels
+
+
 @pytest.mark.case("E-CTX-02")
 def test_folder_menu(app, sandbox):
     d = sandbox.files / "菜单夹"
     files.write(d / "a.txt", "a")
     app.seed([d])
     menu = app.context_menu("菜单夹")
-    labels = menu_labels(menu)
-    assert "打开此文件夹" in labels and "监视此文件夹" in labels and "打开上一级" in labels, labels
+    labels = watch_labels_settled(menu, "监视此文件夹", "停止监视此文件夹")
+    assert "打开此文件夹" in labels and "打开上一级" in labels and LOADING not in labels, labels
     menu.get_by_role("menuitem", name="监视此文件夹").click()
     app.wait_toast("已打开监视")
-    # 右键菜单每次打开才异步拉 get_folder_watch_status，返回前按"未监视"渲染
-    # （bf9cf2b IPC 时间线：菜单出现时这次查询尚未返回）。轮询同一个打开的菜单，等它稳定到已监视
+    # 菜单每次打开才异步读监视状态：读回前显示禁用的占位项，绝不显示旧的「监视此文件夹」
     menu = app.context_menu("菜单夹")
-    wait_until(lambda: any(l.startswith("停止监视此文件夹") for l in menu_labels(menu)), 5, lambda: menu_labels(menu))
+    labels = watch_labels_settled(menu, "停止监视此文件夹", "监视此文件夹")
+    assert LOADING not in labels, labels
     app.page.get_by_role("menuitem").filter(has_text="停止监视此文件夹").click()
     app.wait_toast("已停止监视")
 
