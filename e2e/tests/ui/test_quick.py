@@ -32,8 +32,46 @@ def quick_pages(app):
     return [p for ctx in app.browser.contexts for p in ctx.pages if "quick.html" in (p.url or "") and not p.is_closed()]
 
 
+def _cdp_targets(app) -> list[dict]:
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{app.port}/json/list", timeout=2) as r:
+            return [{"type": t.get("type"), "url": t.get("url")} for t in json.loads(r.read().decode("utf-8", "replace"))]
+    except Exception as e:  # noqa: BLE001
+        return [{"error": str(e)}]
+
+
+def _quick_diag(app) -> str:
+    labels = app.page.evaluate("() => window.__TAURI__.window.getAllWindows().then(ws => ws.map(w => w.label))")
+    logs = []
+    for f in app.sb.root.rglob("*.log"):
+        try:
+            logs += [ln.strip() for ln in f.read_text(encoding="utf-8", errors="replace").splitlines() if "quick" in ln.lower()]
+        except OSError:
+            pass
+    return f"windows={labels} cdp={_cdp_targets(app)} logs={logs[-8:]}"
+
+
 def quick_page(app, timeout: float = 20):
-    page = wait_until(lambda: (ps := quick_pages(app)) and ps[0], timeout, "快速搜索窗页面未出现")
+    """快速窗是第二个 WebView：Playwright 的 CDP 连接按 target 自动挂接；挂接不到时另开一条连接兜底。"""
+    extra = []
+
+    def find():
+        if ps := quick_pages(app):
+            return ps[0]
+        if any("quick.html" in (t.get("url") or "") for t in _cdp_targets(app)):
+            if not extra:
+                extra.append(app.pw.chromium.connect_over_cdp(f"http://127.0.0.1:{app.port}"))
+            for ctx in extra[0].contexts:
+                for p in ctx.pages:
+                    if "quick.html" in (p.url or "") and not p.is_closed():
+                        return p
+        return None
+
+    try:
+        page = wait_until(find, timeout, "快速搜索窗页面未出现")
+    except AssertionError as e:
+        raise AssertionError(f"{e}；{_quick_diag(app)}") from None
     page.wait_for_function("() => !!document.querySelector('[data-testid=quick-input]')", timeout=15000)
     # 桩（不真正启动程序/打开资源管理器、剪贴板只记录）随 context init script 注入；保险起见补一次
     if not page.evaluate("() => !!window.__e2e"):
