@@ -102,6 +102,39 @@ pub fn allow_items(app: &AppHandle, items: &[ItemWithTags]) {
     apply(app, entries);
 }
 
+/// 卡片直接显示的路径：自定义图标、图片对象本身（缩略图）。其余（文件夹递归、普通文件）
+/// 留给预览命令按需放行——小视图空闲补齐（get_items_page warm）一次取上千条，
+/// 每条一个 glob（约 2 KB 起，另有规范化副本）会让主进程常驻多出几十 MB。
+pub fn entries_for_card(
+    path: &str,
+    is_missing: bool,
+    item_type: &str,
+    icon_path: Option<&str>,
+) -> Vec<ScopeEntry> {
+    let mut out = entries_for_item(
+        if item_type == "image" { path } else { "" },
+        is_missing,
+        icon_path,
+    );
+    out.retain(|e| !e.recursive_dir);
+    out
+}
+
+pub fn allow_items_for_cards(app: &AppHandle, items: &[ItemWithTags]) {
+    let entries = items
+        .iter()
+        .flat_map(|i| {
+            entries_for_card(
+                &i.item.path,
+                i.item.is_missing,
+                &i.item.item_type,
+                i.item.icon_path.as_deref(),
+            )
+        })
+        .collect();
+    apply(app, entries);
+}
+
 pub fn allow_item_visual(app: &AppHandle, path: &str, is_missing: bool, icon_path: Option<&str>) {
     apply(app, entries_for_item(path, is_missing, icon_path));
 }
@@ -116,6 +149,40 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn card_entries_cover_only_what_cards_show() {
+        let dir = scratch("card");
+        let img = dir.join("a.png");
+        let txt = dir.join("b.txt");
+        let icon = dir.join("icon.png");
+        std::fs::write(&img, b"x").unwrap();
+        std::fs::write(&txt, b"x").unwrap();
+        let file = |p: &PathBuf| ScopeEntry {
+            path: p.clone(),
+            recursive_dir: false,
+        };
+        assert_eq!(
+            entries_for_card(img.to_str().unwrap(), false, "image", None),
+            vec![file(&img)]
+        );
+        assert_eq!(
+            entries_for_card(txt.to_str().unwrap(), false, "file", None),
+            vec![]
+        );
+        assert_eq!(
+            entries_for_card(dir.to_str().unwrap(), false, "folder", None),
+            vec![]
+        );
+        assert_eq!(
+            entries_for_card(dir.to_str().unwrap(), false, "folder", icon.to_str()),
+            vec![file(&icon)]
+        );
+        assert_eq!(
+            entries_for_card(img.to_str().unwrap(), true, "image", None),
+            vec![]
+        );
     }
 
     #[test]

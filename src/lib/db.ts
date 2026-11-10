@@ -85,8 +85,8 @@ export async function getItemsByIds(ids: number[], includeVisuals = true): Promi
 }
 
 /** 主窗取页：后端从内存索引按 ID 组装（不含自动图标），按请求顺序返回，已不存在的略去 */
-export async function getItemsPage(ids: number[]): Promise<ItemWithTags[]> {
-  return invokeCmd("get_items_page", { ids });
+export async function getItemsPage(ids: number[], warm = false): Promise<ItemWithTags[]> {
+  return invokeCmd("get_items_page", { ids, warm });
 }
 
 /** 添加项目，传入文件/文件夹的完整路径，后端自动检测类型 */

@@ -19,9 +19,10 @@ export const MAX_CACHED = 10000;
 /** 空闲补齐每批条数 */
 export const WARM_BATCH = 500;
 
-export type FetchItems = (ids: number[]) => Promise<ItemWithTags[]>;
+/** kind 让取数方区分空闲补齐（warm 只放行卡片直接显示的 asset 路径，见 get_items_page） */
+export type FetchItems = (ids: number[], kind: FetchKind) => Promise<ItemWithTags[]>;
 /** visible：可视区间缺页；ahead：相邻页预取；load：按 ID 取（批量操作等） */
-type FetchKind = "visible" | "ahead" | "warm" | "load";
+export type FetchKind = "visible" | "ahead" | "warm" | "load";
 
 export interface ItemStoreOptions {
   maxCached?: number;
@@ -317,7 +318,7 @@ export class ItemStore {
     try {
       this.fetches += 1;
       const t0 = typeof performance === "undefined" ? 0 : performance.now();
-      const items = await this.fetchItems(ids);
+      const items = await this.fetchItems(ids, kind);
       this.fetchedItems += items.length;
       if (typeof performance !== "undefined") {
         this.recentFetches.push({ start: t0, end: performance.now(), count: ids.length, kind });
