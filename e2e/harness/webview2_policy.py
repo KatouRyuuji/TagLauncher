@@ -9,15 +9,17 @@ CI 实测（Runtime 156、elevated=True）msedgewebview2 命令行只有 wry 经
 
 启用条件：Windows + 当前进程已提权 + TL_E2E_WEBVIEW2_HKLM_POLICY=1（只在 workflow 里设）。
 本机非提权运行仍走环境变量，绝不写用户机器的 HKLM。每次启动前把本次端口写入
-HKLM\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments；
+HKLM\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments（值名 tag-launcher.exe）；
 start() 等到 CDP 就绪才返回，下一次启动才会改写，顺序启动互不干扰。会话结束删除该值。
 """
 from __future__ import annotations
 
 import os
 
-KEY = r"Software\Policies\Microsoft\Edge\WebView2"
-VALUE = "AdditionalBrowserArguments"
+# 文档格式（CreateCoreWebView2EnvironmentWithOptions「Globals」）：键 ...\WebView2\AdditionalBrowserArguments，
+# 值名为 AppId（AUMID → 可执行文件名 → "*"），值数据为参数串。值直接挂在 WebView2 键上不会生效（CI 实测）。
+KEY = r"Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments"
+VALUE = "tag-launcher.exe"
 
 
 def is_elevated() -> bool:
