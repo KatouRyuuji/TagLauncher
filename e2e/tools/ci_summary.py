@@ -36,6 +36,9 @@ def render(recs: list[dict], complete: bool, max_fail: int = 40) -> str:
 
 
 def main() -> int:
+    # Windows runner 控制台默认 cp1252，中文会 UnicodeEncodeError（a245b25 实测）
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     run_dir = Path(sys.argv[1] if len(sys.argv) > 1 else ".tmp-test/e2e/ci-run")
     recs, complete = load(run_dir)
     text = render(recs, complete)

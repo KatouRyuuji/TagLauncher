@@ -34,6 +34,8 @@ def pytest_addoption(parser):
                      help="允许跑 visible_window 用例（窗口必须在屏幕上，如最大化）；也可设 TL_E2E_ALLOW_VISIBLE=1")
     parser.addoption("--run-dir", default=os.environ.get("TL_E2E_RUN_DIR"))
     parser.addoption("--window-countdown", type=int, default=5)
+    parser.addoption("--shard", default=None,
+                     help="i/n：按文件分片只跑第 i 片（CI 并行用）；test_zz_err 会话收尾检查每片都跑")
     parser.addoption("--allow-physical-input", action="store_true",
                      help="允许跑 physical_input 用例（接管真实鼠标键盘）；也可设 TL_E2E_ALLOW_PHYSICAL=1")
 
@@ -75,6 +77,41 @@ def pytest_collection_modifyitems(config, items):
         parts = Path(str(item.fspath)).parts
         return min((LAYER_ORDER[p] for p in parts if p in LAYER_ORDER), default=9)
     items.sort(key=key)  # 稳定排序：CLI → UI → 视觉 → 窗口；层内保持文件顺序
+    _apply_shard(config, items)
+
+
+ALWAYS_IN_SHARD = "test_zz_err.py"
+
+
+def shard_files(files: list[tuple[str, int]], index: int, total: int) -> set[str]:
+    """按文件贪心分片：依次把文件分给当前用例数最少的片（确定性，同文件不拆）。"""
+    loads = [0] * total
+    owner: dict[str, int] = {}
+    for f, n in sorted(files, key=lambda x: (-x[1], x[0])):
+        k = min(range(total), key=lambda i: (loads[i], i))
+        owner[f] = k
+        loads[k] += n
+    return {f for f, k in owner.items() if k == index - 1}
+
+
+def _apply_shard(config, items):
+    spec = config.getoption("--shard")
+    if not spec:
+        return
+    index, total = (int(x) for x in spec.split("/"))
+    if not 1 <= index <= total:
+        raise pytest.UsageError(f"--shard {spec} 越界")
+    counts: dict[str, int] = {}
+    for item in items:
+        f = str(item.fspath)
+        if not f.endswith(ALWAYS_IN_SHARD):
+            counts[f] = counts.get(f, 0) + 1
+    mine = shard_files(list(counts.items()), index, total)
+    keep = [i for i in items if str(i.fspath) in mine or str(i.fspath).endswith(ALWAYS_IN_SHARD)]
+    drop = [i for i in items if i not in keep]
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+    items[:] = keep
 
 
 # ---------------------------------------------------------------------- session

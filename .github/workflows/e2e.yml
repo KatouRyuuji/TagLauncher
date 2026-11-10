@@ -17,6 +17,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     continue-on-error: true
+    # 整套 305 例单机 ~80 分钟：按文件分 3 片并行，每片各自完整跑完并上传结果
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
 
@@ -65,17 +70,19 @@ jobs:
           TL_E2E_RUN_DIR: ${{ github.workspace }}/.tmp-test/e2e/ci-run
           # runner 恒为提权：WebView2 150+ 丢弃 WEBVIEW2_* 环境变量，改由 HKLM 策略下发 CDP 端口
           TL_E2E_WEBVIEW2_HKLM_POLICY: '1'
-        run: npm run test:e2e:ci -- --junitxml=.tmp-test/e2e/ci-run/junit.xml
+        run: npm run test:e2e:ci -- --shard ${{ matrix.shard }}/3 --junitxml=.tmp-test/e2e/ci-run/junit.xml
 
       - name: E2E summary
         if: always()
+        env:
+          PYTHONIOENCODING: utf-8
         run: python e2e/tools/ci_summary.py .tmp-test/e2e/ci-run
 
       - name: Upload report and screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-report
+          name: e2e-report-${{ matrix.shard }}
           path: |
             .tmp-test/e2e/ci-run/results.json
             .tmp-test/e2e/ci-run/results.jsonl
