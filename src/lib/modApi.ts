@@ -213,8 +213,19 @@ export function notifySearchInput(q: string) {
 export function notifyItemLaunched(id: number, name: string) {
   for (const cb of itemLaunchedListeners) try { cb(id, name); } catch { /* */ }
 }
-export function notifyItemsChanged(items: ItemWithTags[]) {
-  for (const cb of itemsChangedListeners) try { cb(items); } catch { /* */ }
+// 主窗不再持有全量对象（分页视图）：只在有 Mod 订阅时按需取一次全量并广播，
+// 同一轮内的多次变更合并为一次读取。
+let itemsNotifyPending = false;
+export function notifyItemsChanged() {
+  if (itemsChangedListeners.size === 0 || itemsNotifyPending) return;
+  itemsNotifyPending = true;
+  queueMicrotask(() => {
+    itemsNotifyPending = false;
+    if (itemsChangedListeners.size === 0) return;
+    void db.getItems().then((items) => {
+      for (const cb of itemsChangedListeners) try { cb(items); } catch { /* */ }
+    }).catch(() => {});
+  });
 }
 export function notifyTagsChanged(tags: Tag[]) {
   for (const cb of tagsChangedListeners)  try { cb(tags); } catch { /* */ }

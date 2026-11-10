@@ -45,7 +45,8 @@ import { useStartupMaintenance } from "./hooks/useStartupMaintenance";
 import { useWorkspaceHotkeys } from "./hooks/useWorkspaceHotkeys";
 import { resetWorkspaceSearchInput } from "./lib/workspaceChrome";
 import { isUnderDir, parentBrowseDir } from "./lib/cabinetBrowse";
-import { browseTargetForItem } from "./lib/nestedVisibility";
+import { orderByView } from "./lib/itemView";
+import { useLoadedItem, useLoadedItemState, useLoadedItems } from "./hooks/useLoadedItems";
 import { initModApi, notifySelectionChanged, onModWrite } from "./lib/modApi";
 import { initModRuntime } from "./lib/modRuntime";
 import { ToastContainer } from "./components/ToastContainer";
@@ -64,10 +65,16 @@ const QuickPreview = lazy(() => import("./components/QuickPreview").then((module
 const ShortcutsHelp = lazy(() => import("./components/ShortcutsHelp").then((module) => ({ default: module.ShortcutsHelp })));
 const TagGraphView = lazy(() => import("./components/TagGraphView").then((module) => ({ default: module.TagGraphView })));
 
+const NO_IDS: number[] = [];
+
 function App() {
   const {
-    items,
-    allItems,
+    view,
+    libraryTotal,
+    stats,
+    dataEpoch,
+    loadItems,
+    typeahead,
     loading,
     cabinetPending,
     loadError,
@@ -104,13 +111,14 @@ function App() {
   const shortcutsHelpOpen = useAppStore((state) => state.shortcutsHelpOpen);
   const previewItemId = useAppStore((state) => state.previewItemId);
   const noteEditorItemId = useAppStore((state) => state.noteEditorItemId);
-  const noteEditorItem = noteEditorItemId === null ? undefined : allItems.find((item) => item.id === noteEditorItemId);
+  const noteEditorItem = useLoadedItem(view, noteEditorItemId, dataEpoch);
   const aliasEditorItemId = useAppStore((state) => state.aliasEditorItemId);
-  const aliasEditorItem = aliasEditorItemId === null ? undefined : allItems.find((item) => item.id === aliasEditorItemId);
+  const aliasEditorItem = useLoadedItem(view, aliasEditorItemId, dataEpoch);
   const renameItemId = useAppStore((state) => state.renameItemId);
-  const renameTarget = renameItemId === null ? undefined : allItems.find((item) => item.id === renameItemId);
+  const renameTarget = useLoadedItem(view, renameItemId, dataEpoch);
   const tagEditorItemId = useAppStore((state) => state.tagEditorItemId);
-  const tagEditorTarget = tagEditorItemId === null ? undefined : allItems.find((item) => item.id === tagEditorItemId);
+  const tagEditorTarget = useLoadedItem(view, tagEditorItemId, dataEpoch);
+  const { item: previewItem, settled: previewSettled } = useLoadedItemState(view, previewItemId, dataEpoch);
   const batchRenameOpen = useAppStore((state) => state.batchRenameOpen);
   const hasBatchRenameUndo = useAppStore((state) => state.lastBatchRename !== null);
   const restartOverlay = useAppStore((state) => state.restartOverlay);
@@ -125,10 +133,11 @@ function App() {
 
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   // 快速搜索窗「在主窗定位」：清空筛选后选中并滚动到目标
-  useQuickLocate(items, setSelectedItemIds);
+  useQuickLocate(view, setSelectedItemIds);
+  // 首屏：首页对象数据到达并提交后（不是 ID 列表到达时）
   useEffect(() => {
-    if (!loading) markFirstItems(items.length);
-  }, [loading, items.length]);
+    if (!loading && view.at(0)) markFirstItems(view.ids.length);
+  }, [loading, view]);
 
   useCardPointerHighlight();
 
@@ -143,11 +152,20 @@ function App() {
   useEffect(() => {
     setSelectedItemIds((current) => {
       if (current.length === 0) return current;
-      const visible = new Set(items.map((item) => item.id));
-      const next = current.filter((id) => visible.has(id));
+      const next = current.filter((id) => view.indexOf(id) >= 0);
       return next.length === current.length ? current : next;
     });
-  }, [items]);
+    // 只随视图 ID 列表变化清理（对象页加载不影响选中）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.ids]);
+
+  // 选中对象（按视图顺序）：可能含未缓存对象（全选后批量操作），按 ID 取齐
+  const orderedSelectedIds = useMemo(
+    () => orderByView(view, selectedItemIds),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [view.ids, selectedItemIds],
+  );
+  const selectedItems = useLoadedItems(view, orderedSelectedIds, dataEpoch);
 
   // 桥接 Mod 数据变更到主 UI：mod 调用 api.addTag/removeTag/setItemTags/removeItem 等写操作后，
   // 主界面自动刷新对应数据，避免界面陈旧到重启。
@@ -219,7 +237,7 @@ function App() {
 
   // 单对象标签动作：增删标签、新建并追加、清除当前筛选归类。
   const { addTagToItem, removeTagFromItem, addNewTagToItem, clearCurrentFilter, clearCurrentFilterForItems } = useItemTagActions({
-    findItemById,
+    loadItems,
     setItemTags,
     setManyItemTags,
     addTag,
@@ -232,7 +250,7 @@ function App() {
     removeItems,
     selectedItemIds,
     setSelectedItemIds,
-    items: allItems,
+    loadItems,
   });
 
   // 启动去抖：同一对象 300ms 内只真正启动一次，避免双击重复拉起进程。
@@ -273,7 +291,7 @@ function App() {
     async (itemId: number) => {
       const state = useAppStore.getState();
       const root = state.cabinets.find((cabinet) => cabinet.id === state.selectedCabinetId)?.folder_path;
-      const item = findItemById(itemId);
+      const item = findItemById(itemId) ?? (await loadItems([itemId]))[0];
       if (root && item && item.type === "folder" && !item.is_missing && isUnderDir(item.path, root)) {
         if (state.searchQuery || state.searchInputValue) {
           state.setSearchQuery("");
@@ -287,8 +305,9 @@ function App() {
         setSelectedItemIds([]);
         return;
       }
-      if (item && state.selectedCabinetId === null) {
-        const target = browseTargetForItem(item, allItems);
+      // 只有文件夹与隐藏对象可能需要逐级浏览，其余直接启动（不为每次启动多一次后端查询）
+      if (item && state.selectedCabinetId === null && (item.type === "folder" || item.hide_from_all)) {
+        const target = await db.browseTarget(itemId).catch(() => null);
         if (target) {
           if (state.searchQuery || state.searchInputValue) {
             state.setSearchQuery("");
@@ -305,7 +324,7 @@ function App() {
       }
       await handleLaunchItem(itemId);
     },
-    [allItems, findItemById, handleLaunchItem, setSelectedItemIds],
+    [findItemById, loadItems, handleLaunchItem, setSelectedItemIds],
   );
 
   const handleNavigateUp = useCallback(() => {
@@ -341,14 +360,13 @@ function App() {
 
   // 复选集合的批量动作 + 可移除标签并集。
   const {
-    selectedItems,
     selectedItemsTags,
     batchAddTag,
     batchRemoveTag,
     batchAddToCabinet,
     batchRemoveFromCabinet,
   } = useBatchSelection({
-    items,
+    selectedItems,
     selectedItemIds,
     setSelectedItemIds,
     setManyItemTags,
@@ -380,7 +398,7 @@ function App() {
 
   // AI 自动打标编排（一键打标 + 新对象后台自动打标）
   const { state: aiTagState, cancel: aiTagCancel, reset: aiTagReset } = useAiTagOrchestration({
-    allItems,
+    loadItems,
     addTag,
     setItemTags,
   });
@@ -407,27 +425,35 @@ function App() {
   }, [mobileSidebarOpen]);
 
   // 库内失效对象（文件丢失/跨盘移动）：状态栏待处理列表 + 手动找回
-  const missingItems = useMemo(
-    () => allItems.filter((item) => item.is_missing),
-    [allItems],
-  );
+  const missingIds = stats?.missingIds ?? NO_IDS;
+  const missingItems = useLoadedItems(view, missingIds, dataEpoch);
 
   // 批量收藏（Ctrl+D 与批量工具条共用）：有未收藏项则全部收藏，否则全部取消收藏
-  const selectedNeedsFavorite = useMemo(() => {
-    const idSet = new Set(selectedItemIds);
-    return items.some((item) => idSet.has(item.id) && !item.is_favorite);
-  }, [items, selectedItemIds]);
+  const selectedNeedsFavorite = useMemo(
+    () => selectedItems.some((item) => !item.is_favorite),
+    [selectedItems],
+  );
   const handleToggleSelectedFavorite = useCallback(() => {
-    const idSet = new Set(selectedItemIds);
-    const selected = items.filter((item) => idSet.has(item.id));
-    const ids = idsNeedingFavoriteToggle(selected);
+    const ids = idsNeedingFavoriteToggle(selectedItems);
     void setFavorites(ids, selectedNeedsFavorite);
-  }, [items, selectedItemIds, selectedNeedsFavorite, setFavorites]);
+  }, [selectedItems, selectedNeedsFavorite, setFavorites]);
+
+  // 多选时右键菜单作用于整个选中集（单选/未选为 null，菜单回退单对象语义）
+  const contextSelection = useMemo(() => {
+    if (selectedItemIds.length <= 1) return null;
+    return {
+      ids: orderedSelectedIds,
+      paths: selectedItems.map((item) => item.path),
+      favoriteTarget: selectedNeedsFavorite,
+    };
+  }, [selectedItemIds.length, orderedSelectedIds, selectedItems, selectedNeedsFavorite]);
 
   useWorkspaceHotkeys({
     blocked: overlaysBlocked,
-    items,
-    allItems,
+    view,
+    selectedItems,
+    previewItem,
+    typeahead,
     selectedItemIds,
     setSelectedItemIds,
     onLaunch: (id) => { void handleOpenItem(id); },
@@ -449,7 +475,8 @@ function App() {
   );
 
   const viewProps = {
-    items,
+    view,
+    contextSelection,
     tags,
     cabinets,
     loading: loading || cabinetPending,
@@ -474,7 +501,7 @@ function App() {
     onUpdateThumbnail: updateItemIcon,
     selectedItemIds,
     onSelectItems: handleSelectItems,
-    libraryEmpty: allItems.length === 0,
+    libraryEmpty: libraryTotal === 0,
     onClearFilters: handleClearFilters,
     onAddItems: requestAddPaths,
     onRefreshWorkspace: handleManualRefresh,
@@ -522,7 +549,8 @@ function App() {
         onAddTagToItem={addTagToItem}
         onAddTagRelation={addTagRelation}
         onRemoveTagRelation={removeTagRelation}
-        allItems={allItems}
+        stats={stats}
+        dataEpoch={dataEpoch}
         modPanels={sidebarPanels}
       />
       <main
@@ -536,10 +564,10 @@ function App() {
         <h1 id="workspace-heading" className="sr-only">
           TagLauncher 启动工作台
         </h1>
-        <SearchBar onAddItems={requestAddPaths} onRefresh={handleManualRefresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} hasLibraryItems={allItems.length > 0} />
-        {allItems.length > 0 && <TagFilterBar />}
-        {allItems.length > 0 && <WorkspaceScopeHeader
-            visibleCount={items.length}
+        <SearchBar onAddItems={requestAddPaths} onRefresh={handleManualRefresh} onOpenAbout={handleOpenAbout} onOpenSettings={() => setShowSettings(true)} hasLibraryItems={libraryTotal > 0} />
+        {libraryTotal > 0 && <TagFilterBar />}
+        {libraryTotal > 0 && <WorkspaceScopeHeader
+            visibleCount={view.ids.length}
             pending={cabinetPending}
             browseDir={browseDir}
             missingIds={linkedMissingIds}
@@ -552,7 +580,7 @@ function App() {
           />}
         {/* 加载失败且本地无任何缓存时渲染可重试的错误面板；有缓存时保留旧列表，
             失败已由 toast 提示，避免把可用数据替换成错误页。 */}
-        {loadError && !loading && allItems.length === 0 ? (
+        {loadError && !loading && libraryTotal === 0 ? (
           <WorkspaceLoadError message={loadError} onRetry={() => { void refresh(); }} />
         ) : viewMode === "list" ? (
           <ItemListView {...viewProps} />
@@ -562,7 +590,7 @@ function App() {
         <BatchSelectionToolbar
           suppressed={previewItemId !== null || commandPaletteOpen}
           selectedCount={isDraggingItem ? 0 : selectedItemIds.length}
-          totalCount={items.length}
+          totalCount={view.ids.length}
           tags={tags}
           removableTags={selectedItemsTags}
           selectedItems={selectedItems}
@@ -582,13 +610,10 @@ function App() {
             else if (selectedItems[0]) store.setRenameItemId(selectedItems[0].id);
           }}
           onCopyPaths={() => {
-            const idSet = new Set(selectedItemIds);
-            const payload = formatPathCopy(
-              items.filter((item) => idSet.has(item.id)).map((item) => item.path),
-            );
+            const payload = formatPathCopy(selectedItems.map((item) => item.path));
             if (payload) void copyText(payload.text, payload.message);
           }}
-          onSelectAll={() => setSelectedItemIds(items.map((item) => item.id))}
+          onSelectAll={() => setSelectedItemIds([...view.ids])}
           onClearSelection={() => setSelectedItemIds([])}
         />
         <StatusBar
@@ -620,7 +645,6 @@ function App() {
       </Suspense>
       <Suspense fallback={null}>
         {commandPaletteOpen && <CommandPalette
-          items={allItems}
           selectedItemIds={selectedItemIds}
           onLaunch={(id) => { void handleLaunchItem(id); }}
           onAddItems={requestAddPaths}
@@ -633,7 +657,8 @@ function App() {
       <Suspense fallback={null}>
         {previewItemId !== null && (
           <QuickPreview
-            items={allItems}
+            item={previewItem}
+            gone={previewSettled && previewItem === undefined}
             onLaunch={(id) => { void handleLaunchItem(id); }}
             onAddItems={requestAddPaths}
           />
@@ -703,7 +728,7 @@ function App() {
         }}
       />
       <Suspense fallback={null}>
-        {tagGraphOpen && <TagGraphView allItems={allItems} />}
+        {tagGraphOpen && <TagGraphView dataEpoch={dataEpoch} />}
       </Suspense>
       <FloatingPanels />
       <ToastContainer />

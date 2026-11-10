@@ -55,7 +55,6 @@ import {
   idsNeedingFavoriteToggle,
   itemMatchesType,
   nextSelectionIndex,
-  previewNavigationItems,
   rangeSelectionIds,
   applyPointerSelection,
   applyContextSelection,
@@ -171,13 +170,6 @@ test("selectionStep：网格按列跳转，列表按行", () => {
   assert.equal(selectionStep("list", 4, "PageUp"), -4);
   assert.equal(selectionStep("grid", 3, "Escape"), null);
   assert.equal(selectionStep("icons", 5, "ArrowDown"), 5);
-});
-
-test("previewNavigationItems：可见则走可见列表，否则走全库", () => {
-  const visible = [item({ id: 2, name: "b" }), item({ id: 3, name: "c" })];
-  const all = [item({ id: 1, name: "a" }), ...visible];
-  assert.deepEqual(previewNavigationItems(visible, all, 3).map((entry) => entry.id), [2, 3]);
-  assert.deepEqual(previewNavigationItems(visible, all, 1).map((entry) => entry.id), [1, 2, 3]);
 });
 
 test("rangeSelectionIds：锚点与焦点闭区间，焦点在末尾以便继续向外扩", () => {

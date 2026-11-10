@@ -1,3 +1,5 @@
+import type { ItemView } from "../lib/itemView";
+import type { ContextSelectionInfo } from "../components/ItemCard";
 ﻿export interface Item {
   id: number;
   name: string;
@@ -54,7 +56,10 @@ export interface ItemWithTags extends Item {
 }
 
 export interface ItemViewProps {
-  items: ItemWithTags[];
+  /** 分页视图：全部 ID + 按可视区间取页的对象缓存 */
+  view: ItemView;
+  /** 多选时右键菜单作用的选中集（App 统一按 ID 取齐对象后算出；单选/未选为 null） */
+  contextSelection?: ContextSelectionInfo | null;
   tags: Tag[];
   cabinets: Cabinet[];
   loading: boolean;

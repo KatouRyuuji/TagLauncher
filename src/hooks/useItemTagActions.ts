@@ -14,7 +14,8 @@ import { showToast } from "../lib/toast";
 import type { ItemWithTags, Tag } from "../types";
 
 interface UseItemTagActionsParams {
-  findItemById: (itemId: number) => ItemWithTags | undefined;
+  /** 按 ID 取对象（缓存优先，缺的向后端取；分页视图下选中集可能含未缓存对象） */
+  loadItems: (itemIds: readonly number[]) => Promise<ItemWithTags[]>;
   setItemTags: (itemId: number, tagIds: number[]) => Promise<void>;
   setManyItemTags: (changes: Array<{ itemId: number; tagIds: number[] }>) => Promise<void>;
   addTag: (name: string, color: string) => Promise<Tag>;
@@ -32,7 +33,7 @@ export interface UseItemTagActionsResult {
 }
 
 export function useItemTagActions({
-  findItemById,
+  loadItems,
   setItemTags,
   setManyItemTags,
   addTag,
@@ -44,7 +45,7 @@ export function useItemTagActions({
 
   const addTagToItem = useCallback(
     async (itemId: number, tagId: number) => {
-      const item = findItemById(itemId);
+      const [item] = await loadItems([itemId]);
       if (!item) return;
 
       const existing = item.tags.map((t) => t.id);
@@ -57,12 +58,12 @@ export function useItemTagActions({
 
       await setItemTags(itemId, [...existing, tagId]);
     },
-    [findItemById, setItemTags],
+    [loadItems, setItemTags],
   );
 
   const removeTagFromItem = useCallback(
     async (itemId: number, tagId: number) => {
-      const item = findItemById(itemId);
+      const [item] = await loadItems([itemId]);
       if (!item) return;
 
       await setItemTags(
@@ -70,7 +71,7 @@ export function useItemTagActions({
         item.tags.filter((t) => t.id !== tagId).map((t) => t.id),
       );
     },
-    [findItemById, setItemTags],
+    [loadItems, setItemTags],
   );
 
   // 新建（或复用同名）标签并把它并入 baseTagIds，返回合并后的 id 列表——
@@ -97,17 +98,17 @@ export function useItemTagActions({
         tagId = newTag.id;
       }
 
-      const item = findItemById(itemId);
+      const [item] = await loadItems([itemId]);
       const currentTagIds = item ? item.tags.map((t) => t.id) : [];
       const sourceTagIds = baseTagIds ?? currentTagIds;
       return Array.from(new Set([...sourceTagIds, tagId]));
     },
-    [addTag, findItemById],
+    [addTag, loadItems],
   );
 
   const clearCurrentFilter = useCallback(
     async (itemId: number) => {
-      const item = findItemById(itemId);
+      const [item] = await loadItems([itemId]);
       if (!item) return;
 
       if (selectedTagIds.length > 0) {
@@ -125,7 +126,7 @@ export function useItemTagActions({
         await removeItemFromCabinet(selectedCabinetId, itemId);
       }
     },
-    [findItemById, removeItemFromCabinet, selectedCabinetId, selectedTagIds, setItemTags],
+    [loadItems, removeItemFromCabinet, selectedCabinetId, selectedTagIds, setItemTags],
   );
 
   const clearCurrentFilterForItems = useCallback(
@@ -135,9 +136,8 @@ export function useItemTagActions({
       if (selectedTagIds.length > 0) {
         const activeTagIds = new Set(selectedTagIds);
         const changes: Array<{ itemId: number; tagIds: number[] }> = [];
-        for (const itemId of itemIds) {
-          const item = findItemById(itemId);
-          if (!item) continue;
+        for (const item of await loadItems(itemIds)) {
+          const itemId = item.id;
           const nextTagIds = item.tags
             .filter((tag) => !activeTagIds.has(tag.id))
             .map((tag) => tag.id);
@@ -155,7 +155,7 @@ export function useItemTagActions({
         await removeItemsFromCabinet(selectedCabinetId, itemIds);
       }
     },
-    [findItemById, removeItemsFromCabinet, selectedCabinetId, selectedTagIds, setManyItemTags],
+    [loadItems, removeItemsFromCabinet, selectedCabinetId, selectedTagIds, setManyItemTags],
   );
 
   return { addTagToItem, removeTagFromItem, addNewTagToItem, clearCurrentFilter, clearCurrentFilterForItems };

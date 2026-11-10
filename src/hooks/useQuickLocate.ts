@@ -15,7 +15,7 @@ export const QUICK_LOCATE_EVENT = "quick-locate";
 export const QUICK_LOCATE_TIMEOUT_MS = 3000;
 
 export function useQuickLocate(
-  items: ReadonlyArray<{ id: number }>,
+  view: { ids: readonly number[]; indexOf(id: number): number },
   setSelectedItemIds: (ids: number[]) => void,
 ): void {
   const pending = useRef<{ id: number; timer: ReturnType<typeof setTimeout> } | null>(null);
@@ -55,10 +55,12 @@ export function useQuickLocate(
 
   useEffect(() => {
     const target = pending.current;
-    if (!target || !items.some((item) => item.id === target.id)) return;
+    if (!target || view.indexOf(target.id) < 0) return;
     clearTimeout(target.timer);
     pending.current = null;
     requestSelectionScrollFollow(target.id);
     setSelectedItemIds([target.id]);
-  }, [items, request, setSelectedItemIds]);
+    // 只在视图 ID 列表变化（清空筛选后的新结果）或新请求时检查；对象页加载不影响
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.ids, request, setSelectedItemIds]);
 }

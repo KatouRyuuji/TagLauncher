@@ -10,7 +10,8 @@
 // 被忽略文件夹之下的已入库对象一并移出（见 lib/untrack）。
 // ============================================================================
 
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { isUnderDir } from "../lib/cabinetBrowse";
 import * as db from "../lib/db";
 import { notifyIgnoredPathsChanged, planUntrack, watchRootPaths, type UntrackPlan } from "../lib/untrack";
 import { useAppStore } from "../stores/appStore";
@@ -36,7 +37,8 @@ interface UseItemRemovalParams {
   removeItems: (ids: number[], options?: RemoveItemsOptions) => Promise<void>;
   selectedItemIds: number[];
   setSelectedItemIds: Dispatch<SetStateAction<number[]>>;
-  items: Array<{ id: number; name: string; path: string; type: string }>;
+  /** 按 ID 取对象（缓存优先）；分页视图下前端不持有全量对象 */
+  loadItems: (ids: readonly number[]) => Promise<Array<{ id: number; name: string; path: string; type: string }>>;
 }
 
 export interface RemoveRequestOptions {
@@ -81,7 +83,7 @@ export function useItemRemoval({
   removeItems,
   selectedItemIds,
   setSelectedItemIds,
-  items,
+  loadItems,
 }: UseItemRemovalParams): UseItemRemovalResult {
   const [pendingRemoveItemId, setPendingRemoveItemId] = useState<number | null>(null);
   const [pendingBatchRemoveItemIds, setPendingBatchRemoveItemIds] = useState<number[] | null>(null);
@@ -89,6 +91,7 @@ export function useItemRemoval({
   const [removeBusyLabel, setRemoveBusyLabel] = useState<string | null>(null);
   const [preferDeleteFiles, setPreferDeleteFiles] = useState(false);
   const [untrack, setUntrack] = useState<UntrackPlan>(NO_UNTRACK);
+  const [pendingItems, setPendingItems] = useState<RemoveConfirmItem[]>([]);
 
   const commitRemove = useCallback(
     async (itemIds: number[], deleteFiles: boolean, plan: UntrackPlan = NO_UNTRACK) => {
@@ -101,17 +104,26 @@ export function useItemRemoval({
     [removeItems, setSelectedItemIds],
   );
 
+  // 只取目标与监视根对象；仅当目标里有位于监视目录下的文件夹（要连带移出其下对象）时才临时取全库路径
   const resolveUntrack = useCallback(
-    async (itemIds: number[]): Promise<UntrackPlan> => {
+    async (itemIds: number[]): Promise<{ plan: UntrackPlan; targets: RemoveConfirmItem[] }> => {
       const watchedItemIds = await db.getFolderWatchStatus().then((status) => status.watchedItemIds, () => []);
-      return planUntrack(itemIds, items, watchRootPaths(items, watchedItemIds, useAppStore.getState().cabinets));
+      const [targets, watched] = await Promise.all([loadItems(itemIds), loadItems(watchedItemIds)]);
+      const roots = watchRootPaths(watched, watchedItemIds, useAppStore.getState().cabinets);
+      let plan = planUntrack(itemIds, targets, roots);
+      const untrackedFolder = targets.some(
+        (item) => item.type === "folder" && roots.some((root) => isUnderDir(item.path, root)),
+      );
+      if (untrackedFolder) plan = planUntrack(itemIds, await db.getItems(), roots);
+      const confirmItems = targets.map((item) => ({ name: item.name, path: item.path, type: item.type }));
+      return { plan, targets: confirmItems };
     },
-    [items],
+    [loadItems],
   );
 
   const requestRemoveFromApp = useCallback(
     async (itemId: number, options?: RemoveRequestOptions) => {
-      const plan = await resolveUntrack([itemId]);
+      const { plan, targets } = await resolveUntrack([itemId]);
       const skipConfirm = !options?.forceDialog && !options?.preferDeleteFiles && plan.untrackedCount === 0 && readSkipConfirm();
       if (skipConfirm) {
         await commitRemove([itemId], false);
@@ -121,6 +133,7 @@ export function useItemRemoval({
       setSkipRemoveItemConfirm(false);
       setPreferDeleteFiles(options?.preferDeleteFiles === true);
       setUntrack(plan);
+      setPendingItems(targets);
       setPendingRemoveItemId(itemId);
     },
     [commitRemove, resolveUntrack],
@@ -130,7 +143,7 @@ export function useItemRemoval({
     const itemIds = options?.itemIds ?? selectedItemIds;
     if (itemIds.length === 0) return;
 
-    const plan = await resolveUntrack(itemIds);
+    const { plan, targets } = await resolveUntrack(itemIds);
     const skipConfirm = !options?.forceDialog && !options?.preferDeleteFiles && plan.untrackedCount === 0 && readSkipConfirm();
     if (skipConfirm) {
       await commitRemove(itemIds, false);
@@ -140,6 +153,7 @@ export function useItemRemoval({
     setSkipRemoveItemConfirm(false);
     setPreferDeleteFiles(options?.preferDeleteFiles === true);
     setUntrack(plan);
+    setPendingItems(targets);
     setPendingBatchRemoveItemIds(itemIds);
   }, [commitRemove, resolveUntrack, selectedItemIds]);
 
@@ -194,15 +208,6 @@ export function useItemRemoval({
     window.addEventListener(BATCH_REMOVE_REQUEST_EVENT, handler);
     return () => window.removeEventListener(BATCH_REMOVE_REQUEST_EVENT, handler);
   }, [requestBatchRemoveFromApp]);
-
-  const pendingItems = useMemo(() => {
-    const ids = pendingBatchRemoveItemIds ?? (pendingRemoveItemId === null ? [] : [pendingRemoveItemId]);
-    const byId = new Map(items.map((item) => [item.id, item]));
-    return ids.flatMap((id) => {
-      const item = byId.get(id);
-      return item ? [{ name: item.name, path: item.path, type: item.type }] : [];
-    });
-  }, [items, pendingBatchRemoveItemIds, pendingRemoveItemId]);
 
   return {
     requestRemoveFromApp,

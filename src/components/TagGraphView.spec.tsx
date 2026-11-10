@@ -18,7 +18,7 @@ describe("层级图谱：选中高亮全部后代", () => {
   });
 
   it("点父标签后，孙标签也高亮、无关标签淡化", async () => {
-    const { container } = render(<TagGraphView allItems={[]} />);
+    const { container } = render(<TagGraphView dataEpoch={0} />);
     const node = (id: number) => container.querySelector(`[data-graph-node-id="${id}"]`) as HTMLElement;
     // 打开时默认选中子节点最多的标签（可能就是 1）；未选中才点
     if (node(1).getAttribute("aria-pressed") !== "true") await userEvent.click(node(1));

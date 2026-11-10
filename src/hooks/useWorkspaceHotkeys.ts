@@ -5,8 +5,6 @@ import {
   formatPathCopy,
   isTypingTarget,
   nextSelectionIndex,
-  previewNavigationItems,
-  rangeSelectionIds,
   selectionStep,
 } from "../lib/itemQuery";
 import {
@@ -27,11 +25,18 @@ import { useAppStore } from "../stores/appStore";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { requestSelectionScrollFollow } from "../components/SelectionCanvas";
 import type { ItemWithTags } from "../types";
+import type { ItemView } from "../lib/itemView";
 
 interface WorkspaceHotkeysOptions {
   blocked: boolean;
-  items: ItemWithTags[];
-  allItems: ItemWithTags[];
+  /** 当前分页视图（全部 ID + 已缓存对象） */
+  view: ItemView;
+  /** 选中对象（按视图顺序，已按 ID 取齐）：复制路径、F2 判失效用 */
+  selectedItems: ItemWithTags[];
+  /** 快速预览中的对象（可能不在当前视图里） */
+  previewItem: ItemWithTags | undefined;
+  /** 视图内名称跳转（后端在同一视图里找前缀/子串命中） */
+  typeahead: (text: string) => Promise<number | null>;
   selectedItemIds: number[];
   setSelectedItemIds: (ids: number[]) => void;
   onLaunch: (id: number) => void;
@@ -45,8 +50,10 @@ interface WorkspaceHotkeysOptions {
 
 export function useWorkspaceHotkeys({
   blocked,
-  items,
-  allItems,
+  view,
+  selectedItems,
+  previewItem,
+  typeahead,
   selectedItemIds,
   setSelectedItemIds,
   onLaunch,
@@ -70,10 +77,12 @@ export function useWorkspaceHotkeys({
   const typeaheadRef = useRef({ text: "", ts: 0 });
 
   const refs = useRef({
-    allItems,
     blocked,
     commandPaletteOpen,
-    items,
+    view,
+    selectedItems,
+    previewItem,
+    typeahead,
     onLaunch,
     onNavigateUp,
     onOpenSettings,
@@ -96,10 +105,12 @@ export function useWorkspaceHotkeys({
   // 每次渲染后在布局阶段同步最新值；下方 keydown 监听 effect 挂载晚于首次布局，时序安全。
   useLayoutEffect(() => {
     refs.current = {
-      allItems,
       blocked,
       commandPaletteOpen,
-      items,
+      view,
+      selectedItems,
+      previewItem,
+      typeahead,
       onLaunch,
       onNavigateUp,
       onOpenSettings,
@@ -160,7 +171,7 @@ export function useWorkspaceHotkeys({
         // 否则想点「复制路径」会变成关预览+启动对象
         if (onButton && (event.key === "Enter" || event.key === " ")) return;
         if (ctrl && !typing) {
-          const previewItem = ctx.allItems.find((item) => item.id === ctx.previewItemId);
+          const previewItem = ctx.previewItem?.id === ctx.previewItemId ? ctx.previewItem : ctx.view.get(ctx.previewItemId);
           if (event.key.toLowerCase() === "a") {
             // 预览期间全选背景列表只会造成困惑，明确吞掉
             event.preventDefault();
@@ -183,21 +194,22 @@ export function useWorkspaceHotkeys({
           ctx.setPreviewItemId(null);
           return;
         }
-        const previewList = previewNavigationItems(ctx.items, ctx.allItems, ctx.previewItemId);
+        // 预览对象在当前视图里：沿视图顺序切换；不在（如从命令面板打开）时只预览它自己
+        const previewList: readonly number[] = ctx.view.indexOf(ctx.previewItemId) >= 0 ? ctx.view.ids : [ctx.previewItemId];
         if (event.key === "Home") {
           event.preventDefault();
-          jumpPreview(previewList, ctx.items, 0, ctx.setPreviewItemId, ctx.setSelectedItemIds);
+          jumpPreview(previewList, ctx.view, 0, ctx.setPreviewItemId, ctx.setSelectedItemIds);
           return;
         }
         if (event.key === "End") {
           event.preventDefault();
-          jumpPreview(previewList, ctx.items, previewList.length - 1, ctx.setPreviewItemId, ctx.setSelectedItemIds);
+          jumpPreview(previewList, ctx.view, previewList.length - 1, ctx.setPreviewItemId, ctx.setSelectedItemIds);
           return;
         }
         const previewDelta = selectionStep(ctx.viewMode, getWorkspaceGridLanes(), event.key);
         if (previewDelta != null) {
           event.preventDefault();
-          movePreview(previewList, ctx.items, ctx.previewItemId, previewDelta, ctx.setPreviewItemId, ctx.setSelectedItemIds);
+          movePreview(previewList, ctx.view, ctx.previewItemId, previewDelta, ctx.setPreviewItemId, ctx.setSelectedItemIds);
           return;
         }
         if (event.key === "Enter") {
@@ -237,15 +249,15 @@ export function useWorkspaceHotkeys({
 
       if (ctrl && event.key.toLowerCase() === "a" && !typing) {
         event.preventDefault();
-        ctx.setSelectedItemIds(ctx.items.map((item) => item.id));
-        setWorkspaceSelectionAnchor(ctx.items[0]?.id ?? null);
+        ctx.setSelectedItemIds([...ctx.view.ids]);
+        setWorkspaceSelectionAnchor(ctx.view.ids[0] ?? null);
         return;
       }
 
       if (ctrl && event.key.toLowerCase() === "c" && !typing) {
         const idSet = new Set(ctx.selectedItemIds);
         const payload = formatPathCopy(
-          ctx.items.filter((item) => idSet.has(item.id)).map((item) => item.path),
+          ctx.selectedItems.filter((item) => idSet.has(item.id)).map((item) => item.path),
         );
         if (payload) {
           event.preventDefault();
@@ -278,10 +290,10 @@ export function useWorkspaceHotkeys({
       if (event.altKey) return;
 
       if (!ctrl && (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))) {
-        const item = pickSelectedItem(ctx.items, ctx.selectedItemIds);
-        if (item) {
+        const id = pickSelectedId(ctx.view, ctx.selectedItemIds);
+        if (id != null) {
           event.preventDefault();
-          openItemContextMenu(item.id);
+          openItemContextMenu(id);
         }
         return;
       }
@@ -292,11 +304,12 @@ export function useWorkspaceHotkeys({
           useAppStore.getState().setBatchRenameOpen(true);
           return;
         }
-        const item = pickSelectedItem(ctx.items, ctx.selectedItemIds);
-        if (!item) return;
+        const id = pickSelectedId(ctx.view, ctx.selectedItemIds);
+        if (id == null) return;
         event.preventDefault();
-        if (item.is_missing) showToast("失效对象不能重命名", "warning");
-        else useAppStore.getState().setRenameItemId(item.id);
+        const item = ctx.view.get(id) ?? ctx.selectedItems.find((entry) => entry.id === id);
+        if (item?.is_missing) showToast("失效对象不能重命名", "warning");
+        else useAppStore.getState().setRenameItemId(id);
         return;
       }
 
@@ -363,33 +376,22 @@ export function useWorkspaceHotkeys({
         const now = Date.now();
         const buffer = (now - typeaheadRef.current.ts < 600 ? typeaheadRef.current.text : "") + event.key.toLowerCase();
         typeaheadRef.current = { text: buffer, ts: now };
-        // 单趟扫描：首个前缀命中即定，途中记下首个子串命中兜底；
-        // 小写名经 WeakMap 按对象缓存（对象不可变、随列表更新自然失效），
-        // 避免每击键对全表 name.toLowerCase() 两遍分配
-        const items = ctx.items;
-        let substringMatch: ItemWithTags | undefined;
-        let match: ItemWithTags | undefined;
-        for (const item of items) {
-          const lower = typeaheadLowerName(item);
-          if (lower.startsWith(buffer)) {
-            match = item;
-            break;
-          }
-          if (!substringMatch && lower.includes(buffer)) {
-            substringMatch = item;
-          }
-        }
-        match ??= substringMatch;
-        if (match) {
-          event.preventDefault();
-          useAppStore.getState().setActivityNotice(null);
-          setWorkspaceSelectionAnchor(match.id);
-          selectVisible(items, match, ctx.setSelectedItemIds);
-          requestItemFocus(match.id);
-          return;
-        }
+        // 名称数据不在前端（分页视图），由后端在同一视图里按「首个前缀命中，否则首个子串命中」找；
+        // 结果回来时缓冲已变（继续打字）则丢弃，只认最新一次
         event.preventDefault();
-        useAppStore.getState().setActivityNotice(`没有名称匹配「${buffer}」`);
+        const asked = typeaheadRef.current;
+        void ctx.typeahead(buffer).then((matchId) => {
+          if (typeaheadRef.current !== asked) return;
+          const latest = refs.current;
+          if (matchId != null && latest.view.indexOf(matchId) >= 0) {
+            useAppStore.getState().setActivityNotice(null);
+            setWorkspaceSelectionAnchor(matchId);
+            selectVisible(latest.view, matchId, latest.setSelectedItemIds);
+            requestItemFocus(matchId);
+            return;
+          }
+          useAppStore.getState().setActivityNotice(`没有名称匹配「${buffer}」`);
+        }).catch(() => {});
         return;
       }
       // 非可打印键（方向键/Home/功能键）重置缓冲
@@ -400,21 +402,21 @@ export function useWorkspaceHotkeys({
       if (event.key === "Home") {
         event.preventDefault();
         if (event.shiftKey) {
-          extendSelection(ctx.items, ctx.selectedItemIds, 0, ctx.setSelectedItemIds);
+          extendSelection(ctx.view, ctx.selectedItemIds, 0, ctx.setSelectedItemIds);
         } else {
-          jumpSelection(ctx.items, 0, ctx.setSelectedItemIds);
-          setWorkspaceSelectionAnchor(ctx.items[0]?.id ?? null);
+          jumpSelection(ctx.view, 0, ctx.setSelectedItemIds);
+          setWorkspaceSelectionAnchor(ctx.view.ids[0] ?? null);
         }
         return;
       }
       if (event.key === "End") {
         event.preventDefault();
-        const last = ctx.items.length - 1;
+        const last = ctx.view.ids.length - 1;
         if (event.shiftKey) {
-          extendSelection(ctx.items, ctx.selectedItemIds, last, ctx.setSelectedItemIds);
+          extendSelection(ctx.view, ctx.selectedItemIds, last, ctx.setSelectedItemIds);
         } else {
-          jumpSelection(ctx.items, last, ctx.setSelectedItemIds);
-          setWorkspaceSelectionAnchor(ctx.items[last]?.id ?? null);
+          jumpSelection(ctx.view, last, ctx.setSelectedItemIds);
+          setWorkspaceSelectionAnchor(ctx.view.ids[last] ?? null);
         }
         return;
       }
@@ -424,11 +426,11 @@ export function useWorkspaceHotkeys({
         event.preventDefault();
         if (event.shiftKey) {
           const currentId = ctx.selectedItemIds[ctx.selectedItemIds.length - 1];
-          const currentIndex = currentId == null ? -1 : ctx.items.findIndex((item) => item.id === currentId);
-          const nextIndex = nextSelectionIndex(ctx.items.length, currentIndex, delta);
-          extendSelection(ctx.items, ctx.selectedItemIds, nextIndex, ctx.setSelectedItemIds);
+          const currentIndex = currentId == null ? -1 : ctx.view.indexOf(currentId);
+          const nextIndex = nextSelectionIndex(ctx.view.ids.length, currentIndex, delta);
+          extendSelection(ctx.view, ctx.selectedItemIds, nextIndex, ctx.setSelectedItemIds);
         } else {
-          const nextId = moveSelection(ctx.items, ctx.selectedItemIds, delta, ctx.setSelectedItemIds);
+          const nextId = moveSelection(ctx.view, ctx.selectedItemIds, delta, ctx.setSelectedItemIds);
           if (nextId != null) setWorkspaceSelectionAnchor(nextId);
         }
         return;
@@ -437,20 +439,20 @@ export function useWorkspaceHotkeys({
       if (event.key === "Enter") {
         if (onButton) return;
         // 焦点卡未选中（方向键移动后 Esc 清选）时回退到焦点卡，Enter 不做死键
-        const item = pickSelectedItem(ctx.items, ctx.selectedItemIds) ?? pickFocusedItem(ctx.items);
-        if (item) {
+        const id = pickSelectedId(ctx.view, ctx.selectedItemIds) ?? pickFocusedId(ctx.view);
+        if (id != null) {
           event.preventDefault();
-          ctx.onLaunch(item.id);
+          ctx.onLaunch(id);
         }
         return;
       }
 
       if (event.key === " ") {
         if (onButton) return;
-        const item = pickSelectedItem(ctx.items, ctx.selectedItemIds) ?? pickFocusedItem(ctx.items);
-        if (item) {
+        const id = pickSelectedId(ctx.view, ctx.selectedItemIds) ?? pickFocusedId(ctx.view);
+        if (id != null) {
           event.preventDefault();
-          ctx.setPreviewItemId(item.id);
+          ctx.setPreviewItemId(id);
         }
         return;
       }
@@ -466,116 +468,118 @@ export function useWorkspaceHotkeys({
   }, []);
 }
 
-function pickSelectedItem(items: ItemWithTags[], selectedItemIds: number[]): ItemWithTags | undefined {
+function pickSelectedId(view: ItemView, selectedItemIds: number[]): number | undefined {
   const id = selectedItemIds[selectedItemIds.length - 1];
   if (id == null) return undefined;
-  return items.find((item) => item.id === id);
+  return view.indexOf(id) >= 0 ? id : undefined;
 }
 
 /** 焦点所在卡片/行的对象（roving focus 落点未选中时的回退取项） */
-function pickFocusedItem(items: ItemWithTags[]): ItemWithTags | undefined {
+function pickFocusedId(view: ItemView): number | undefined {
   const host = document.activeElement instanceof HTMLElement
     ? document.activeElement.closest<HTMLElement>("[data-selectable-item-id]")
     : null;
   const raw = host?.dataset.selectableItemId;
   if (!raw) return undefined;
   const id = Number(raw);
-  return items.find((item) => item.id === id);
+  return view.indexOf(id) >= 0 ? id : undefined;
 }
 
-/** typeahead 小写名缓存：对象不可变，列表更新换对象后旧条目随 GC 自然失效 */
-const typeaheadLowerNameCache = new WeakMap<ItemWithTags, string>();
-
-function typeaheadLowerName(item: ItemWithTags): string {
-  let lower = typeaheadLowerNameCache.get(item);
-  if (lower === undefined) {
-    lower = item.name.toLowerCase();
-    typeaheadLowerNameCache.set(item, lower);
+/** 从锚点到焦点的闭区间（含两端），焦点放在末尾（与 itemQuery.rangeSelectionIds 同语义，按视图下标算） */
+function rangeIds(view: ItemView, anchorId: number | null | undefined, focusId: number): number[] {
+  const focusIndex = view.indexOf(focusId);
+  if (focusIndex < 0) return [];
+  const anchorIndex = anchorId == null ? focusIndex : view.indexOf(anchorId);
+  const from = Math.min(anchorIndex < 0 ? focusIndex : anchorIndex, focusIndex);
+  const to = Math.max(anchorIndex < 0 ? focusIndex : anchorIndex, focusIndex);
+  const ids = view.ids.slice(from, to + 1);
+  if (ids.length > 1 && ids[ids.length - 1] !== focusId) {
+    return [...ids.filter((id) => id !== focusId), focusId];
   }
-  return lower;
+  return ids;
 }
 
 function selectVisible(
-  visible: ItemWithTags[],
-  item: ItemWithTags,
+  view: ItemView,
+  id: number,
   setSelectedItemIds: (ids: number[]) => void,
 ): void {
-  if (!visible.some((entry) => entry.id === item.id)) return;
-  requestSelectionScrollFollow(item.id);
-  setSelectedItemIds([item.id]);
-  scrollItemIntoView(item.id);
+  if (view.indexOf(id) < 0) return;
+  requestSelectionScrollFollow(id);
+  setSelectedItemIds([id]);
+  scrollItemIntoView(id);
 }
 
 function jumpSelection(
-  items: ItemWithTags[],
+  view: ItemView,
   index: number,
   setSelectedItemIds: (ids: number[]) => void,
 ): void {
-  const next = items[index];
-  if (!next) return;
-  requestSelectionScrollFollow(next.id);
-  requestItemFocus(next.id);
-  setSelectedItemIds([next.id]);
-  scrollItemIntoView(next.id);
+  const next = view.ids[index];
+  if (next === undefined) return;
+  requestSelectionScrollFollow(next);
+  requestItemFocus(next);
+  setSelectedItemIds([next]);
+  scrollItemIntoView(next);
 }
 
 function moveSelection(
-  items: ItemWithTags[],
+  view: ItemView,
   selectedItemIds: number[],
   delta: number,
   setSelectedItemIds: (ids: number[]) => void,
 ): number | null {
   const currentId = selectedItemIds[selectedItemIds.length - 1];
-  const currentIndex = currentId == null ? -1 : items.findIndex((item) => item.id === currentId);
-  const nextIndex = nextSelectionIndex(items.length, currentIndex, delta);
+  const currentIndex = currentId == null ? -1 : view.indexOf(currentId);
+  const nextIndex = nextSelectionIndex(view.ids.length, currentIndex, delta);
   if (nextIndex < 0) return null;
-  jumpSelection(items, nextIndex, setSelectedItemIds);
-  return items[nextIndex]?.id ?? null;
+  jumpSelection(view, nextIndex, setSelectedItemIds);
+  return view.ids[nextIndex] ?? null;
 }
 
 function extendSelection(
-  items: ItemWithTags[],
+  view: ItemView,
   selectedItemIds: number[],
   focusIndex: number,
   setSelectedItemIds: (ids: number[]) => void,
 ): void {
-  const focus = items[focusIndex];
-  if (!focus) return;
+  const focus = view.ids[focusIndex];
+  if (focus === undefined) return;
   let anchor = getWorkspaceSelectionAnchor();
   if (anchor == null) {
-    anchor = selectedItemIds[0] ?? focus.id;
+    anchor = selectedItemIds[0] ?? focus;
     setWorkspaceSelectionAnchor(anchor);
   }
-  const ids = rangeSelectionIds(items, anchor, focus.id);
+  const ids = rangeIds(view, anchor, focus);
   if (ids.length === 0) return;
-  requestSelectionScrollFollow(focus.id);
-  requestItemFocus(focus.id);
+  requestSelectionScrollFollow(focus);
+  requestItemFocus(focus);
   setSelectedItemIds(ids);
-  scrollItemIntoView(focus.id);
+  scrollItemIntoView(focus);
 }
 
 function jumpPreview(
-  list: ItemWithTags[],
-  visible: ItemWithTags[],
+  list: readonly number[],
+  view: ItemView,
   index: number,
   setPreviewItemId: (id: number | null) => void,
   setSelectedItemIds: (ids: number[]) => void,
 ): void {
   const next = list[index];
-  if (!next) return;
-  setPreviewItemId(next.id);
-  selectVisible(visible, next, setSelectedItemIds);
+  if (next === undefined) return;
+  setPreviewItemId(next);
+  selectVisible(view, next, setSelectedItemIds);
 }
 
 function movePreview(
-  list: ItemWithTags[],
-  visible: ItemWithTags[],
+  list: readonly number[],
+  view: ItemView,
   previewItemId: number,
   delta: number,
   setPreviewItemId: (id: number | null) => void,
   setSelectedItemIds: (ids: number[]) => void,
 ): void {
-  const currentIndex = list.findIndex((item) => item.id === previewItemId);
+  const currentIndex = list.indexOf(previewItemId);
   const nextIndex = nextSelectionIndex(list.length, currentIndex, delta);
-  jumpPreview(list, visible, nextIndex, setPreviewItemId, setSelectedItemIds);
+  jumpPreview(list, view, nextIndex, setPreviewItemId, setSelectedItemIds);
 }

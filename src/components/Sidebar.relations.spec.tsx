@@ -29,6 +29,8 @@ vi.mock("../lib/db", () => ({
   getThemeDirectoryInfo: mocks.getThemeDirectoryInfo,
   setCurrentTheme: mocks.setCurrentTheme,
   getCabinetItemCounts: mocks.getCabinetItemCounts,
+  viewQuery: async () => ({ ids: [], browseDir: null, libraryTotal: 0 }),
+  getItemsByIds: async () => [],
 }));
 
 // 「甲」按名称排在前面，是旧实现打开时默认对准的标签
@@ -54,7 +56,8 @@ function renderSidebar() {
         onAddTagToItem={async () => {}}
         onAddTagRelation={onAddTagRelation}
         onRemoveTagRelation={async () => {}}
-        allItems={[]}
+        stats={null}
+        dataEpoch={0}
       />
     </ThemeProvider>,
   );
