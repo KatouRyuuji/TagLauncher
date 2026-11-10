@@ -1,5 +1,5 @@
 import { assert, test, run } from "./__testutil";
-import { ItemStore, MAX_CACHED, PAGE_SIZE, orderByView } from "./itemView";
+import { ItemStore, MAX_CACHED, PAGE_SIZE, WARM_BATCH, orderByView } from "./itemView";
 import type { ItemWithTags } from "../types";
 
 const make = (id: number, name = `o${id}`): ItemWithTags =>
@@ -90,6 +90,42 @@ test("相邻页预取等可视页返回后才发；预取到达不在可视区�
   pending.shift()!();
   await tick();
   assert.equal(data, 3, "在途预取页已进入可视区间：到达即通知");
+});
+
+test("小视图空闲补齐：分批只取没取过的，可视页在途时让路；补齐到达不通知；超过上限的视图不补齐", async () => {
+  const n = WARM_BATCH * 2 + 10;
+  const b = backend(n);
+  const queue: (() => void)[] = [];
+  const store = new ItemStore(b.fetch, { warm: true, maxCached: n, idle: (fn) => queue.push(fn) });
+  let data = 0;
+  store.getSnapshot().subscribeData(() => data++);
+  store.setIds(Array.from({ length: n }, (_, i) => i + 1));
+  store.ensureRange(0, 10);
+  assert.equal(queue.length, 1);
+  queue.shift()!(); // 可视页在途：本轮让路，重新排队
+  assert.deepEqual(b.calls.map((c) => c.length), [PAGE_SIZE]);
+  await tick();
+  data = 0;
+  while (queue.length) {
+    queue.shift()!();
+    await tick();
+  }
+  const sizes = b.calls.slice(2).map((c) => c.length);
+  assert.deepEqual(sizes, [WARM_BATCH, n - 2 * PAGE_SIZE - WARM_BATCH], "跳过已取过的可视页与预取页");
+  assert.equal(data, 0, "补齐的对象不在可视区间：不重渲染");
+  assert.equal(store.stats().cached, n);
+  // 全量刷新后只是过期：补齐不重取
+  store.invalidateAll();
+  store.setIds(store.getSnapshot().ids);
+  while (queue.length) queue.shift()!();
+  await tick();
+  assert.equal(b.calls.length, 4);
+
+  const big = backend(30);
+  const q2: (() => void)[] = [];
+  const s2 = new ItemStore(big.fetch, { warm: true, maxCached: 20, idle: (fn) => q2.push(fn) });
+  s2.setIds(Array.from({ length: 30 }, (_, i) => i + 1));
+  assert.equal(q2.length, 0, "视图大于上限：不补齐");
 });
 
 test("缓存有上限：超过 MAX_CACHED 时淘汰最久未用的页", async () => {

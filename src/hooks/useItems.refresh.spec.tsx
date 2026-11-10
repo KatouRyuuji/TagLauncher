@@ -4,6 +4,7 @@ import { ITEM_REFRESH_EVENT, useItems } from "./useItems";
 import { useAppStore } from "../stores/appStore";
 import type { ItemWithTags } from "../types";
 import * as db from "../lib/db";
+import { MAX_CACHED } from "../lib/itemView";
 
 const before: ItemWithTags = { id: 1, name: "旧名称", path: "D:/旧名称", type: "folder", created_at: "2026-01-01", is_favorite: false, tags: [] };
 const after: ItemWithTags = { ...before, name: "新名称", path: "D:/新名称" };
@@ -106,13 +107,14 @@ describe("外部改名后的界面刷新", () => {
   });
 
   it("缓存有上限：滚过大列表后只保留最近用到的页，回滚时按需重取", async () => {
-    fake.items = Array.from({ length: 5000 }, (_, i) => ({ ...before, id: i + 1, name: `对象${i + 1}`, path: `D:/o${i + 1}` }));
+    const n = MAX_CACHED + 1000;
+    fake.items = Array.from({ length: n }, (_, i) => ({ ...before, id: i + 1, name: `对象${i + 1}`, path: `D:/o${i + 1}` }));
     const { result } = renderHook(useItems);
-    await waitFor(() => expect(result.current.view.ids.length).toBe(5000));
-    for (let start = 0; start < 5000; start += 50) {
+    await waitFor(() => expect(result.current.view.ids.length).toBe(n));
+    for (let start = 0; start < n; start += 50) {
       await act(async () => { result.current.view.ensureRange(start, start + 50); await Promise.resolve(); });
     }
-    await waitFor(() => expect(result.current.view.get(5000)).toBeDefined());
+    await waitFor(() => expect(result.current.view.get(n)).toBeDefined());
     expect(result.current.view.get(1)).toBeUndefined();
     const calls = vi.mocked(db.getItemsPage).mock.calls;
     expect(calls.length).toBeGreaterThan(0);

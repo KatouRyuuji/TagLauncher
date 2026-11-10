@@ -57,10 +57,10 @@ describe("对象搜索（后端索引）与筛选", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(ids(result)).toEqual([2, 1]);
     expect(db.viewQuery).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "all", query: "", sortMode: "smart", refreeze: true }));
-    // 首屏只取可视页的对象：hook 本身不取（由列表按可视区间 ensureRange），按 ID 取的数据进缓存
+    // 按 ID 取的数据进缓存；视图小于缓存上限时 hook 在空闲里补齐其余对象（不必等列表滚到）
     await act(async () => { await result.current.view.load([2]); });
     expect(result.current.view.get(2)?.name).toBe("Visual Studio Code");
-    expect(result.current.view.get(1)).toBeUndefined();
+    await waitFor(() => expect(result.current.view.get(1)?.name).toBe("项目文档"));
     act(() => useAppStore.setState({ searchQuery: "xmwd" }));
     await waitFor(() => expect(ids(result)).toEqual([1]));
     expect(db.viewQuery).toHaveBeenLastCalledWith(expect.objectContaining({ query: "xmwd", mode: "all", selectedGroups: [], typeFilter: "all", hideMissing: false, refreeze: false }));

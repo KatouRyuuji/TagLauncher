@@ -365,14 +365,14 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
               ├─ search：表达式解析（&& || 空格OR () @ !!）+ 同义词扩展 + 逐项打分
               └─ sort：字段排序 / 智能排序，refreeze=false 时沿用冻结顺序 → 全部有序 ID
               ↓
-  ItemStore：只持有 ID 与 LRU 页缓存（页 50、上限 3000 条）；ItemGrid/ItemListView 在虚拟器滚动回调里
+  ItemStore：只持有 ID 与 LRU 页缓存（页 50、上限 10000 条，≤ 上限的视图空闲补齐）；ItemGrid/ItemListView 在虚拟器滚动回调里
   ensureRange → get_items_page 取可视页，返回后再预取前后各一页；未到的格子渲染占位；
   总数/全选/批量/定位按 ID 进行
 ```
 
 **主窗分页要点**（`src/lib/itemView.ts`、`src/hooks/useItems.ts`、`src/hooks/useLoadedItems.ts`）：
 
-- 视图 = 后端给的有序 ID + 页缓存。页按 50 对齐；缓存超过 3000 条从最久未用的淘汰。
+- 视图 = 后端给的有序 ID + 页缓存。页按 50 对齐；缓存超过 10000 条从最久未用的淘汰。视图总数 ≤ 上限时，空闲里每批 500 条补齐还没取过的对象（过期的不重取），跳转直接命中缓存；更大的视图只按可视区间取。
 - `data-changed` / 刷新：缓存整体标记过期（epoch）但不清空，旧内容先显示，用到时重取；新视图 ID 到达后替换。写操作后按 ID 用 `get_items_by_ids` 回填（`upsert`）。
 - 按 ID 取齐（`view.load` / `useLoadedItems`）：选中集、编辑目标、预览、右键多选；≤100 条顺带进缓存，更大的批量只返回，不挤掉可视页。
 - 通知分两路：ID/代/写入变化换视图快照（工作台重渲染）；页数据到达只通知列表组件（`subscribeData`），落在可视区间外的预取到达不通知。

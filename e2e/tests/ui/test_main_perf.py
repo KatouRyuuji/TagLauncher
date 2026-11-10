@@ -6,7 +6,9 @@
 - 进程树私有内存：5k 不超过基线（263.9 MB → 264 MB）；50k 不超过基线的一半（888.9 MB → 444 MB）——
   基线里 Rust 主进程 512 MB + 渲染进程 297 MB 主要是整表下发，分页的设计目标就是去掉这部分。
 - 首屏：设计目标 5k ≤ 500 ms、50k ≤ 1000 ms（基线 391 / 4107 ms；50k 的整表首屏正是分页要解决的问题）。
-- 前端持有对象数 ≤ 页缓存上限 MAX_CACHED（3000，src/lib/itemView.ts），即与库规模无关。
+- 前端持有对象数 ≤ 缓存上限 MAX_CACHED（10000，src/lib/itemView.ts），即与库规模无关。原为 3000：
+  50bfa35 慢 runner 上 5k 跳转 p95 39.6 ms（取页往返落在滚动帧之后，最快第二帧出齐，余量只有几 ms），
+  改为「视图 ≤ 上限时空闲补齐常驻」，跳转命中缓存在第一帧出齐；上限提高后的内存仍受上面的私有内存阈值约束。
 
 - 内存：进程树（按 WebView2 进程类型归类：browser / renderer / gpu-process / utility / 应用主进程），
   渲染进程 JS 堆（CDP Runtime.getHeapUsage、Performance.getMetrics），图标缓存规模，后端搜索索引估算。
@@ -32,7 +34,7 @@ TARGETS = {
     5000: {"scroll_p95_ms": 2 * FRAME_MS, "private_mb": 264, "first_ms": 500},
     50000: {"scroll_p95_ms": 3 * FRAME_MS, "private_mb": 444, "first_ms": 1000},
 }
-MAX_CACHED = 3000
+MAX_CACHED = 10000
 
 # 滚到 frac 处，等视口内卡片都有名称：返回 {ms, cards}
 SCROLL_JS = """async (frac) => {

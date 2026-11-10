@@ -282,6 +282,11 @@ export function ItemGrid({
     lanesRef.current = lanes;
     fewResultsRef.current = fewResults;
   });
+  // getItemKey 是虚拟器测量表的 memo 依赖：每次渲染换新函数会让它把全部行重算一遍（50k 时每次取页到达都付一次）
+  const getRowKey = useCallback((index: number) => {
+    const first = ids[index * lanes];
+    return first !== undefined ? `${first}@${lanes}@${iconLayout ? "icons" : "grid"}` : index;
+  }, [ids, lanes, iconLayout]);
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
@@ -292,10 +297,7 @@ export function ItemGrid({
     // 行 key 用内容身份（首项 id + 列数）而非默认行索引：换柜/筛选/排序/列数变化后
     // 行 key 随之变化，React 重建行 DOM 触发 measureElement 重测。索引复用的 key
     // 会让行 DOM 滞留旧内容的测量语义，行高与内容错位积累，表现为行间间隙/重叠。
-    getItemKey: (index) => {
-      const first = ids[index * lanes];
-      return first !== undefined ? `${first}@${lanes}@${iconLayout ? "icons" : "grid"}` : index;
-    },
+    getItemKey: getRowKey,
     // 列数自适应 overscan：一行卡片越多预渲染越贵，行数相应减少
     overscan: gridOverscanRows(lanes),
     // 滚动回调里就发起取页（不等 React 提交后的 effect），跳转时省掉一轮渲染

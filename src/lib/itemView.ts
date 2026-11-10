@@ -6,17 +6,30 @@
 // - 写入后按 ID 就地更新缓存；全量刷新把缓存标成过期：旧数据先照常显示，用到时重取；
 // - 两路通知：ID/代/写入变化换新的视图快照（持有方整体重渲染）；只是页数据到达时只通知
 //   订阅了数据版本的列表组件（subscribeData），不让整个工作台为每页重渲染一次；
-// - 相邻页预取排在可视页返回之后（不与可视页抢 IPC），落在可视区间外的预取到达不通知。
+// - 相邻页预取排在可视页返回之后（不与可视页抢 IPC），落在可视区间外的预取到达不通知；
+// - 小视图常驻：视图总数 ≤ 缓存上限时，空闲里分批把还没取过的对象补齐（只补缺、不重取过期的），
+//   跳转就不必等取页往返；大视图仍只按可视区间取，前端持有量始终 ≤ MAX_CACHED。
 // ============================================================================
 import type { ItemWithTags } from "../types";
 import { registerPerfStats } from "./mainPerf";
 
 export const PAGE_SIZE = 50;
-export const MAX_CACHED = 3000;
+/** 前端最多持有的对象数（LRU 上限，与库规模无关）；≤ 此数的视图会在空闲时补齐常驻 */
+export const MAX_CACHED = 10000;
+/** 空闲补齐每批条数 */
+export const WARM_BATCH = 500;
 
 export type FetchItems = (ids: number[]) => Promise<ItemWithTags[]>;
 /** visible：可视区间缺页；ahead：相邻页预取；load：按 ID 取（批量操作等） */
-type FetchKind = "visible" | "ahead" | "load";
+type FetchKind = "visible" | "ahead" | "warm" | "load";
+
+export interface ItemStoreOptions {
+  maxCached?: number;
+  /** 空闲补齐：视图总数 ≤ maxCached 时分批取齐（默认关，测试按需打开） */
+  warm?: boolean;
+  /** 空闲调度（默认 requestIdleCallback，无则 setTimeout） */
+  idle?: (fn: () => void) => void;
+}
 
 /** 只读视图：组件按它渲染（version 变即重渲染）。 */
 export interface ItemView {
@@ -59,7 +72,17 @@ export class ItemStore {
   fetches = 0;
   fetchedItems = 0;
 
-  constructor(private fetchItems: FetchItems, private maxCached = MAX_CACHED) {
+  private readonly maxCached: number;
+  private readonly warm: boolean;
+  private readonly idle: (fn: () => void) => void;
+  private warmScheduled = false;
+  private visibleInflight = 0;
+
+  constructor(private fetchItems: FetchItems, options: ItemStoreOptions | number = {}) {
+    const o = typeof options === "number" ? { maxCached: options } : options;
+    this.maxCached = o.maxCached ?? MAX_CACHED;
+    this.warm = o.warm ?? false;
+    this.idle = o.idle ?? defaultIdle;
     this.snapshot = this.makeView();
   }
 
@@ -130,6 +153,31 @@ export class ItemStore {
     this.ids = ids;
     this.index = new Map(ids.map((id, i) => [id, i] as const));
     this.emit();
+    this.scheduleWarm();
+  }
+
+  /** 安排下一批空闲补齐：视图小于上限、且没有可视页在途时才取 */
+  private scheduleWarm() {
+    if (!this.warm || this.warmScheduled || this.ids.length > this.maxCached) return;
+    this.warmScheduled = true;
+    this.idle(() => {
+      this.warmScheduled = false;
+      if (this.ids.length > this.maxCached) return;
+      if (this.visibleInflight > 0) {
+        this.scheduleWarm();
+        return;
+      }
+      const batch: number[] = [];
+      for (const id of this.ids) {
+        // 只补从没取过的；过期的留给可视区间按需重取，免得每次写入都把整个视图重取一遍
+        if (!this.slots.has(id) && !this.inflight.has(id)) batch.push(id);
+        if (batch.length >= WARM_BATCH) break;
+      }
+      if (batch.length === 0) return;
+      void this.fetch(batch, true, "warm")
+        .catch((e: unknown) => console.error("补齐对象失败:", e))
+        .then(() => this.scheduleWarm());
+    });
   }
 
   /** 全量刷新：缓存整体过期（不清空，避免闪空）。 */
@@ -206,9 +254,13 @@ export class ItemStore {
       return;
     }
     // 可视页先单独取；返回后再预取相邻页，两次请求不并发争 IPC 与后端索引锁
+    this.visibleInflight += 1;
     void this.fetch(missing, true, "visible")
       .catch((e: unknown) => console.error("取对象页失败:", e))
-      .then(() => this.prefetchAround(from, to));
+      .then(() => {
+        this.visibleInflight -= 1;
+        this.prefetchAround(from, to);
+      });
   }
 
   /** 相邻页预取（前后各一页，合成一次请求）：连续滚动到下一页时通常已在缓存。可视区间已变则不再预取旧邻页。 */
@@ -291,9 +343,15 @@ export class ItemStore {
     } finally {
       if (cache) for (const id of ids) this.inflight.delete(id);
       // 预取的页不在可视区间内：数据已进缓存，滚到那里时的渲染自然读到，不必现在重渲染列表
-      if (kind !== "ahead" || this.touchesVisible(ids)) this.emitData();
+      if ((kind !== "ahead" && kind !== "warm") || this.touchesVisible(ids)) this.emitData();
     }
   }
+}
+
+function defaultIdle(fn: () => void) {
+  const w = globalThis as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number };
+  if (typeof w.requestIdleCallback === "function") w.requestIdleCallback(fn, { timeout: 500 });
+  else setTimeout(fn, 16);
 }
 
 /** 全部数据已在手的静态视图（演示/测试与小集合用）。 */

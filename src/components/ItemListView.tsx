@@ -244,6 +244,8 @@ export function ItemListView({
   useLayoutEffect(() => {
     viewRef.current = view;
   });
+  // getItemKey 是虚拟器测量表的 memo 依赖：保持引用稳定，免得每次渲染重算全部行
+  const getRowKey = useCallback((index: number) => ids[index] ?? index, [ids]);
   const virtualizer = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
@@ -252,7 +254,7 @@ export function ItemListView({
     // 行 key 用对象 id 而非默认行索引：筛选/排序/换柜后行 key 变化触发 React
     // 重建行 DOM 并由 measureElement 同步重测；索引复用会让旧行高残留在
     // itemSizeCache（v3 同步测量命中缓存即不读 DOM），表现为行距错乱。
-    getItemKey: (index) => ids[index] ?? index,
+    getItemKey: getRowKey,
     overscan: 6,
     // 滚动回调里就发起取页（不等 React 提交后的 effect），跳转时省掉一轮渲染
     onChange: (instance) => {
