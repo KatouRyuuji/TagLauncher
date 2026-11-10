@@ -104,3 +104,68 @@ fn refresh_before_first_build_is_noop_and_empty_query_keeps_default_order() {
         Vec::<i64>::new()
     );
 }
+
+/// 主窗视图：真实库上的筛选排序、冻结键、柜成员与计数（视图语义本身由 src/view/corpus_tests.rs 对照旧 TS）。
+#[test]
+fn view_query_follows_db_with_frozen_smart_order() {
+    use tag_launcher_lib::services::cabinet_service;
+    use tag_launcher_lib::services::search_index::ViewRequest;
+    use tag_launcher_lib::view::{Scope, ViewParams};
+
+    let t = common::temp_db();
+    let a = add(&t, "file10.txt");
+    let b = add(&t, "file2.txt");
+    let idx = SearchIndex::default();
+    let view = |params: ViewParams, query: &str, refreeze: bool| {
+        let ro = t.db.read_conn().unwrap();
+        let req = ViewRequest {
+            params,
+            query: query.into(),
+            mode: "all".into(),
+            refreeze,
+        };
+        idx.view(ro.conn(), &req, &no_synonyms).unwrap()
+    };
+    let mut by_name = ViewParams::default();
+    by_name.sort_mode = "name".into();
+    assert_eq!(view(by_name, "", true).ids, vec![b, a], "自然数字序");
+
+    // 启动 file10：smart 顺序在下一个显式重排点前不变
+    t.db.get_conn()
+        .execute(
+            "UPDATE items SET last_used_at = '2026-11-10 12:00:00' WHERE id = ?1",
+            [a],
+        )
+        .unwrap();
+    let smart = ViewParams::default();
+    let before = view(smart.clone(), "", false).ids;
+    assert_eq!(view(smart.clone(), "", false).ids, before);
+    assert_eq!(
+        view(smart.clone(), "", true).ids[0],
+        a,
+        "重拍后最近使用升顶"
+    );
+
+    // 搜索走同一入口；文件柜成员由后端解析
+    assert_eq!(view(smart.clone(), "file2", false).ids, vec![b]);
+    let (members, folder) = {
+        let conn = t.db.get_conn();
+        cabinet_service::cabinet_member_ids(&conn, 9999).unwrap()
+    };
+    assert!(
+        members.is_empty() && folder.is_none(),
+        "不存在的柜按空普通柜"
+    );
+    let mut cab = smart.clone();
+    cab.scope = Scope::Cabinet {
+        members: vec![b],
+        linked_folder: None,
+    };
+    assert_eq!(view(cab, "", false).ids, vec![b]);
+
+    let stats = {
+        let ro = t.db.read_conn().unwrap();
+        idx.library_stats(ro.conn(), &[], &no_synonyms).unwrap()
+    };
+    assert_eq!((stats.total, stats.recent, stats.untagged), (2, 1, 2));
+}

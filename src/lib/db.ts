@@ -29,7 +29,7 @@ async function invokeCmd<T>(cmd: string, args?: Record<string, unknown>): Promis
 import type { ModInfo, ModLoadError } from "../types/mod";
 import type { CloseAction, DesktopSettings, HotkeyAction, LaunchMode } from "./desktopShortcut";
 import type { SearchMode } from "../stores/appStore";
-import type { TypeFilter } from "./itemQuery";
+import type { SortMode, TypeFilter } from "./itemQuery";
 import type {
   CustomThemesResult,
   ThemeDefinition,
@@ -319,6 +319,54 @@ export async function searchWarm(): Promise<SearchIndexStats> {
 /** 后端搜索索引统计（诊断 / E2E） */
 export async function searchIndexStats(): Promise<SearchIndexStats> {
   return invokeCmd("search_index_stats");
+}
+
+// ---- 主窗视图（分页：后端给全部 ID，数据按可视区间取） ----
+
+export interface ViewQueryArgs {
+  scope: "all" | "favorites" | "recent" | "cabinet";
+  cabinetId?: number | null;
+  /** 每个正选标签的命中集合（直接标签 = 仅自身；后代模式 = 自身 ∪ 后代） */
+  selectedGroups: number[][];
+  excludedGroups: number[][];
+  typeFilter: TypeFilter;
+  hideMissing: boolean;
+  sortMode: SortMode;
+  showNestedContents: boolean;
+  libraryBrowseRoot: string | null;
+  libraryBrowseDir: string | null;
+  cabinetDir: string | null;
+  cabinetFlat: boolean;
+  query: string;
+  mode: SearchMode;
+  /** 显式重排点：重拍 smart 排序的冻结键 */
+  refreeze: boolean;
+}
+
+export interface ViewQueryResult {
+  ids: number[];
+  browseDir: string | null;
+  libraryTotal: number;
+}
+
+/** 主窗当前视图的全部 ID（已筛选排序；搜索时为命中顺序）。 */
+export async function viewQuery(args: ViewQueryArgs): Promise<ViewQueryResult> {
+  return (await invokeCmd("view_query", { args })) as ViewQueryResult;
+}
+
+export interface LibraryStats {
+  total: number;
+  favorites: number;
+  recent: number;
+  untagged: number;
+  missingIds: number[];
+  /** [标签, 计数]：对象拥有「自身 ∪ 后代」中任一标签即计一次 */
+  tagCounts: [number, number][];
+}
+
+/** 侧栏/状态栏计数（不把全量对象交给前端）。 */
+export async function libraryStats(tagGroups: [number, number[]][]): Promise<LibraryStats> {
+  return (await invokeCmd("library_stats", { tagGroups })) as LibraryStats;
 }
 
 /** 读取同义词分组（每组内词互为同义，供搜索扩展） */

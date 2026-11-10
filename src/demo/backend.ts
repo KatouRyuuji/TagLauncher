@@ -16,6 +16,8 @@ import type { ThemeDefinition } from "../types/theme";
 import pkg from "../../package.json";
 import { demoAlbumCover } from "./assets";
 import { isUnderDir } from "../lib/cabinetBrowse";
+import { demoLibraryStats, demoView } from "./demoView";
+import type { SortMode, TypeFilter } from "../lib/itemQuery";
 import { planUntrack, watchRootPaths } from "../lib/untrack";
 import { applySortOrder, compareSortOrder } from "../lib/sidebarOrder";
 import {
@@ -885,6 +887,35 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       };
     }
     case "search_warm":
+    case "view_query": {
+      const v = (args.args ?? {}) as Record<string, unknown>;
+      const cabinetId = typeof v.cabinetId === "number" ? v.cabinetId : null;
+      const folder = v.scope === "cabinet" ? state.cabinets.find((entry) => entry.id === cabinetId)?.folder_path ?? null : null;
+      const members = v.scope === "cabinet" ? (folder ? new Set(linkedMembers(folder)) : state.cabinetItems.get(cabinetId ?? -1) ?? new Set<number>()) : null;
+      const groups = (x: unknown) => (Array.isArray(x) ? x.map((g) => ids(g)) : []);
+      const strOrNull = (x: unknown) => (typeof x === "string" ? x : null);
+      return demoView(sortItems(state.items).map(withTags), {
+        scope: str(v.scope) || "all",
+        members,
+        linkedFolder: folder,
+        selectedGroups: groups(v.selectedGroups),
+        excludedGroups: groups(v.excludedGroups),
+        typeFilter: (str(v.typeFilter) || "all") as TypeFilter,
+        hideMissing: v.hideMissing === true,
+        sortMode: (str(v.sortMode) || "smart") as SortMode,
+        showNestedContents: v.showNestedContents === true,
+        libraryBrowseRoot: strOrNull(v.libraryBrowseRoot),
+        libraryBrowseDir: strOrNull(v.libraryBrowseDir),
+        cabinetDir: strOrNull(v.cabinetDir),
+        cabinetFlat: v.cabinetFlat === true,
+        query: str(v.query),
+        search: (scope) => demoSearch(str(v.query), scope, v.hideMissing === true, str(v.typeFilter) || "all"),
+      });
+    }
+    case "library_stats": {
+      const groups = Array.isArray(args.tagGroups) ? (args.tagGroups as [number, number[]][]) : [];
+      return demoLibraryStats(state.items.map(withTags), groups);
+    }
     case "search_index_stats":
       return { entries: state.items.length, builds: 0, lastBuildMs: 0, lastBuildNewTexts: 0, cachedTexts: 0, approxBytes: 0 };
     case "wake_data_sync":

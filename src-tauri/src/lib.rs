@@ -484,6 +484,8 @@ pub fn run() {
             quick_search,
             search_warm,
             search_index_stats,
+            view_query,
+            library_stats,
             // 启动/打开
             launch_item,
             open_in_explorer,

@@ -136,3 +136,104 @@ pub fn search_warm(
 pub fn search_index_stats(index: State<SearchIndex>) -> IndexStats {
     index.stats()
 }
+
+// ---------------------------------------------------------------- 主窗视图（分页：只传 ID，数据按页取）
+
+use crate::services::cabinet_service;
+use crate::services::search_index::{LibraryStats, ViewRequest, ViewResponse};
+use crate::view::{Scope, ViewParams};
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewQueryArgs {
+    /// "all" | "favorites" | "recent" | "cabinet"
+    pub scope: String,
+    pub cabinet_id: Option<i64>,
+    #[serde(default)]
+    pub selected_groups: Vec<Vec<i64>>,
+    #[serde(default)]
+    pub excluded_groups: Vec<Vec<i64>>,
+    #[serde(default)]
+    pub type_filter: String,
+    #[serde(default)]
+    pub hide_missing: bool,
+    #[serde(default)]
+    pub sort_mode: String,
+    #[serde(default)]
+    pub show_nested_contents: bool,
+    pub library_browse_root: Option<String>,
+    pub library_browse_dir: Option<String>,
+    pub cabinet_dir: Option<String>,
+    #[serde(default)]
+    pub cabinet_flat: bool,
+    #[serde(default)]
+    pub query: String,
+    #[serde(default)]
+    pub mode: String,
+    /// 显式重排点（全量刷新 / 排序或视图域切换）：重拍 smart 排序的冻结键
+    #[serde(default)]
+    pub refreeze: bool,
+}
+
+/// 主窗当前视图的全部 ID（已筛选排序；搜索时按命中排序）。对象数据由前端按可视区间经
+/// `get_items_by_ids` 分页取，总数、全选、批量与定位都基于这份 ID。
+#[tauri::command(async)]
+pub fn view_query(
+    app: AppHandle,
+    db: State<Database>,
+    index: State<SearchIndex>,
+    args: ViewQueryArgs,
+) -> Result<ViewResponse, String> {
+    let ro = db.read_conn()?;
+    let scope = match args.scope.as_str() {
+        "favorites" => Scope::Favorites,
+        "recent" => Scope::Recent,
+        "cabinet" => {
+            let id = args.cabinet_id.ok_or("cabinet 视图缺少 cabinetId")?;
+            let (members, linked_folder) = cabinet_service::cabinet_member_ids(ro.conn(), id)?;
+            Scope::Cabinet {
+                members,
+                linked_folder,
+            }
+        }
+        _ => Scope::All,
+    };
+    let req = ViewRequest {
+        params: ViewParams {
+            scope,
+            selected_groups: args.selected_groups,
+            excluded_groups: args.excluded_groups,
+            type_filter: if args.type_filter.is_empty() {
+                "all".into()
+            } else {
+                args.type_filter
+            },
+            hide_missing: args.hide_missing,
+            sort_mode: args.sort_mode,
+            show_nested_contents: args.show_nested_contents,
+            library_browse_root: args.library_browse_root,
+            library_browse_dir: args.library_browse_dir,
+            cabinet_dir: args.cabinet_dir,
+            cabinet_flat: args.cabinet_flat,
+            has_search: false,
+        },
+        query: args.query,
+        mode: args.mode,
+        refreeze: args.refreeze,
+    };
+    index.view(ro.conn(), &req, &synonyms_loader(&app))
+}
+
+/// 侧栏/状态栏计数：总数、收藏、最近使用、未打标、失效 ID 与各标签计数。
+/// `tag_groups`：(标签, 自身 ∪ 后代)，与侧栏「选父标签并入后代」口径一致。
+#[tauri::command(async)]
+pub fn library_stats(
+    app: AppHandle,
+    db: State<Database>,
+    index: State<SearchIndex>,
+    tag_groups: Vec<(i64, Vec<i64>)>,
+) -> Result<LibraryStats, String> {
+    let ro = db.read_conn()?;
+    index.library_stats(ro.conn(), &tag_groups, &synonyms_loader(&app))
+}
