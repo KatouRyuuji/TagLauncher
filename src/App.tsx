@@ -425,8 +425,10 @@ function App() {
   }, [mobileSidebarOpen]);
 
   // 库内失效对象（文件丢失/跨盘移动）：状态栏待处理列表 + 手动找回
+  // 状态栏只需计数；对象本体只在审阅对话框打开时取（失效很多时不把整批对象拉进前端）
   const missingIds = stats?.missingIds ?? NO_IDS;
-  const missingItems = useLoadedItems(view, missingIds, dataEpoch);
+  const missingReviewOpen = useAppStore((state) => state.missingReviewOpen);
+  const missingItems = useLoadedItems(view, missingReviewOpen ? missingIds : NO_IDS, dataEpoch);
 
   // 批量收藏（Ctrl+D 与批量工具条共用）：有未收藏项则全部收藏，否则全部取消收藏
   const selectedNeedsFavorite = useMemo(
@@ -617,6 +619,7 @@ function App() {
           onClearSelection={() => setSelectedItemIds([])}
         />
         <StatusBar
+          missingCount={missingIds.length}
           missingItems={missingItems}
           onRelocateMissing={relocateMissing}
           onRemoveMissing={removeItems}
