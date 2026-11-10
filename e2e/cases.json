@@ -704,6 +704,39 @@
 "coverage": "F18"
 },
 {
+"id": "E-DS-01",
+"module": "数据同步",
+"scenario": "tl add 后主窗自动出现",
+"steps": "主窗打开→沙箱 tl add 5 次（不手动刷新）",
+"expect": "每次新对象自动出现，tl 返回到 DOM 出现 ≤300ms（记录中位数/最大值）",
+"layer": "UI",
+"automation": "CDP + tl.exe + MutationObserver",
+"priority": "P0",
+"coverage": "全局极速阶段①"
+},
+{
+"id": "E-DS-02",
+"module": "数据同步",
+"scenario": "tl 打标签/移除后主窗同步",
+"steps": "tl tag add / tag set / remove",
+"expect": "卡片标签、侧栏标签出现；移除后卡片消失",
+"layer": "UI",
+"automation": "CDP + tl.exe",
+"priority": "P1",
+"coverage": "全局极速阶段①"
+},
+{
+"id": "E-DS-03",
+"module": "数据同步",
+"scenario": "空闲 CPU",
+"steps": "启动稳定后静置 10 秒",
+"expect": "主进程 CPU < 1%（单核），检测线程不空转",
+"layer": "UI",
+"automation": "Win32 GetProcessTimes",
+"priority": "P1",
+"coverage": "全局极速阶段①"
+},
+{
 "id": "E-LCH-01",
 "module": "启动对象",
 "scenario": "双击启动 .bat",

@@ -16,6 +16,15 @@ vi.mock("../lib/db", () => ({
   clearIconNoneMarkers: vi.fn(async () => {}),
 }));
 vi.mock("../lib/modApi", () => ({ notifyItemsChanged: vi.fn() }));
+const events = vi.hoisted(() => ({ handlers: new Map<string, Set<(e: { payload: unknown }) => void>>() }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (name: string, handler: (e: { payload: unknown }) => void) => {
+    if (!events.handlers.has(name)) events.handlers.set(name, new Set());
+    events.handlers.get(name)!.add(handler);
+    return () => { events.handlers.get(name)!.delete(handler); };
+  }),
+}));
+const emitEvent = (name: string, payload: unknown) => events.handlers.get(name)?.forEach((h) => h({ payload }));
 
 describe("外部改名后的界面刷新", () => {
   beforeEach(() => {
@@ -69,5 +78,19 @@ describe("外部改名后的界面刷新", () => {
     await act(async () => { release([before]); await Promise.all([first, second, third]); });
     await waitFor(() => expect(result.current.items.map((item) => item.name)).toEqual(["新名称"]));
     expect(db.getItems).toHaveBeenCalledTimes(2);
+  });
+
+  it("外部进程写库（data-changed origin=external）自动重载；本应用写入不重载", async () => {
+    const { result } = renderHook(useItems);
+    await waitFor(() => expect(result.current.items.map((item) => item.name)).toEqual(["旧名称"]));
+    await waitFor(() => expect(events.handlers.get("data-changed")?.size ?? 0).toBeGreaterThan(0));
+    vi.mocked(db.getItems).mockClear();
+    vi.mocked(db.getItems).mockResolvedValue([after]);
+    act(() => { emitEvent("data-changed", { origin: "app", seq: 1, detectedAtMs: 1 }); });
+    await new Promise((r) => setTimeout(r, 80));
+    expect(db.getItems).not.toHaveBeenCalled();
+    act(() => { emitEvent("data-changed", { origin: "external", seq: 2, detectedAtMs: 2 }); });
+    await waitFor(() => expect(result.current.items.map((item) => item.name)).toEqual(["新名称"]));
+    expect(db.getItems).toHaveBeenCalledTimes(1);
   });
 });

@@ -8,6 +8,7 @@
 // 不影响关系边，无需多余的 IPC 往返。
 // ============================================================================
 
+import { onExternalDataChanged } from "../lib/dataSync";
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
@@ -47,6 +48,9 @@ export function useTagRelations() {
       }
     }
   }, [tags, reload]);
+
+  // 外部进程写库（tl 改父子关系等）
+  useEffect(() => onExternalDataChanged(() => { void reload(); }), [reload]);
 
   const addRelation = useCallback(
     async (parentId: number, childId: number) => {

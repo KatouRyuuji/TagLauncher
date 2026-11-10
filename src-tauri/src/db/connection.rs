@@ -10,6 +10,11 @@ use super::schema;
 /// 通过 `app.manage(database)` 注入 Tauri 状态，命令函数通过 `State<Database>` 获取
 pub struct Database {
     conn: Mutex<Connection>,
+    /// 实库路径（只读连接按需打开；内存库/测试库为 None 时不提供只读连接）
+    path: std::path::PathBuf,
+    /// 只读第二连接（WAL 下读不阻塞写）：给外部写入检测与后续快速窗用；首次使用时打开，
+    /// tl CLI 等不用它的场景不付出代价
+    read: Mutex<Option<Connection>>,
 }
 
 impl Database {
@@ -18,6 +23,8 @@ impl Database {
         let conn = open_or_recover(path)?;
         let db = Self {
             conn: Mutex::new(conn),
+            path: path.to_path_buf(),
+            read: Mutex::new(None),
         };
         db.init()?;
         Ok(db)
@@ -54,6 +61,57 @@ impl Database {
     pub fn get_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+
+    /// 写连接的 `PRAGMA data_version`：只在**其他连接**（含其他进程，如 tl）提交后变化，
+    /// 本连接自己的提交不改变它。写连接正被长事务占用时返回 None（不排队等待，下次再查）。
+    pub fn try_write_data_version(&self) -> Option<i64> {
+        let conn = match self.conn.try_lock() {
+            Ok(c) => c,
+            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return None,
+        };
+        data_version(&conn).ok()
+    }
+
+    /// 只读连接（按需打开）。打开失败返回 Err，调用方降级（不影响写路径）。
+    pub fn read_conn(&self) -> Result<ReadConn<'_>, String> {
+        let mut guard = self.read.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if guard.is_none() {
+            *guard = Some(open_read_only(&self.path).map_err(|e| format!("打开只读连接失败：{e}"))?);
+        }
+        Ok(ReadConn(guard))
+    }
+
+    /// 只读连接的 `PRAGMA data_version`：任何其他连接（本进程写连接或外部进程）提交后都会变化。
+    pub fn read_data_version(&self) -> Result<i64, String> {
+        let guard = self.read_conn()?;
+        data_version(guard.conn()).map_err(|e| e.to_string())
+    }
+}
+
+/// 只读连接守卫：持有锁期间 `conn()` 必然可用（`read_conn` 已保证打开）。
+pub struct ReadConn<'a>(std::sync::MutexGuard<'a, Option<Connection>>);
+
+impl ReadConn<'_> {
+    pub fn conn(&self) -> &Connection {
+        self.0.as_ref().expect("read_conn 已打开只读连接")
+    }
+}
+
+fn data_version(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row("PRAGMA data_version", [], |r| r.get(0))
+}
+
+/// 只读打开实库：不建表、不迁移（写连接已完成），query_only 双保险；与写连接同样的 busy_timeout。
+fn open_read_only(path: &Path) -> Result<Connection, rusqlite::Error> {
+    use rusqlite::OpenFlags;
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_URI,
+    )?;
+    conn.busy_timeout(BUSY_TIMEOUT)?;
+    conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY;")?;
+    Ok(conn)
 }
 
 /// 打开实库；quick_check 判定库已损坏时，先用 Backups/ 内最新安全备份做文件级
@@ -173,6 +231,65 @@ fn recover_from_safety_backup(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp_db(tag: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("tl_{tag}_{}.db", std::process::id()));
+        let p = path.to_string_lossy().to_string();
+        for f in [p.clone(), format!("{p}-wal"), format!("{p}-shm")] {
+            let _ = std::fs::remove_file(&f);
+        }
+        path
+    }
+
+    /// data_version 语义：写连接只感知「别的连接」的提交（外部进程写入）；只读连接感知所有提交。
+    #[test]
+    fn data_version_distinguishes_external_from_own_commits() {
+        let path = temp_db("dv");
+        let db = Database::new(&path).expect("db");
+        let w0 = db.try_write_data_version().expect("write dv");
+        let r0 = db.read_data_version().expect("read dv");
+        // 本进程写连接提交：写连接不变，只读连接变化（= 本应用写入，应广播 origin=app）
+        db.get_conn().execute("INSERT INTO tags (name) VALUES ('own')", []).unwrap();
+        assert_eq!(db.try_write_data_version(), Some(w0), "自身提交不改变写连接 data_version");
+        let r1 = db.read_data_version().unwrap();
+        assert_ne!(r1, r0, "只读连接应看到写连接的提交");
+        // 外部连接（模拟 tl 进程）提交：写连接与只读连接都变化（= 外部写入，应刷新主窗）
+        {
+            let other = Connection::open(&path).unwrap();
+            other.busy_timeout(BUSY_TIMEOUT).unwrap();
+            other.execute("INSERT INTO tags (name) VALUES ('external')", []).unwrap();
+        }
+        assert_ne!(db.try_write_data_version(), Some(w0), "外部提交改变写连接 data_version");
+        assert_ne!(db.read_data_version().unwrap(), r1);
+        // 写连接被占用时不阻塞
+        let held = db.get_conn();
+        assert_eq!(db.try_write_data_version(), None, "写连接被占用时立即返回 None");
+        drop(held);
+        drop(db);
+        let p = path.to_string_lossy().to_string();
+        for f in [p.clone(), format!("{p}-wal"), format!("{p}-shm")] {
+            let _ = std::fs::remove_file(&f);
+        }
+    }
+
+    /// 只读连接：能读到写连接已提交的数据，且任何写入都被拒绝。
+    #[test]
+    fn read_connection_sees_commits_and_rejects_writes() {
+        let path = temp_db("ro");
+        let db = Database::new(&path).expect("db");
+        db.get_conn().execute("INSERT INTO tags (name) VALUES ('可见')", []).unwrap();
+        {
+            let ro = db.read_conn().expect("open ro");
+            let n: i64 = ro.conn().query_row("SELECT COUNT(*) FROM tags WHERE name='可见'", [], |r| r.get(0)).unwrap();
+            assert_eq!(n, 1);
+            assert!(ro.conn().execute("INSERT INTO tags (name) VALUES ('x')", []).is_err(), "只读连接必须拒绝写入");
+        }
+        drop(db);
+        let p = path.to_string_lossy().to_string();
+        for f in [p.clone(), format!("{p}-wal"), format!("{p}-shm")] {
+            let _ = std::fs::remove_file(&f);
+        }
+    }
 
     /// 真实文件库初始化路径（内存库不覆盖 WAL）：
     /// 验证 Database::new 在磁盘文件上启用 WAL、跑完 v001..v005 迁移、身份列就位、可读写。

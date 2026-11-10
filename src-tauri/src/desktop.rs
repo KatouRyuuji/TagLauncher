@@ -383,6 +383,8 @@ pub fn show_main_window(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+    // 唤出即检测外部写入：隐藏期间检测间隔较长，唤出时不等下一轮
+    crate::data_sync::poke();
 }
 
 /// 单实例回调：第二次启动转发来的参数（含 exe 本身）按参数路由处理。

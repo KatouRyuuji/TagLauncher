@@ -5,6 +5,7 @@
 // 标签数据存储在 Zustand Store 中，供 Sidebar、SearchBar 等组件使用。
 // ============================================================================
 
+import { onExternalDataChanged } from "../lib/dataSync";
 import { useState, useEffect, useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
@@ -29,8 +30,9 @@ export function useTags() {
   const [loading, setLoading] = useState(true);
 
   /** 从后端加载所有标签并写入 Store */
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    // silent：外部写入触发的后台同步不切 loading（避免标签区闪烁）
+    if (!opts?.silent) setLoading(true);
     try {
       const data = await db.getTags();
       setTags(data);
@@ -48,6 +50,9 @@ export function useTags() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // 外部进程写库（tl 建标签/改名等）
+  useEffect(() => onExternalDataChanged(() => { void refresh({ silent: true }); }), [refresh]);
 
   // 以下 CRUD 用 useCallback 保持引用稳定（仅依赖稳定的 setTags），
   // 避免向下传递时（如 App 的 handleAddNewTagToItem → viewProps）引发整列表重渲染。

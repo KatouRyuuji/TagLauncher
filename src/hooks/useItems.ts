@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } from "react";
+import { onExternalDataChanged } from "../lib/dataSync";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, expandForTagFilter, filterItemsByTags, filterSearchIndex, searchWithIndex } from "../lib/search";
@@ -342,6 +343,9 @@ export function useItems() {
       unlisten?.();
     };
   }, [loadAll]);
+
+  // 外部进程（tl CLI 等）写库：后端 data_version 检测到后广播，纯读 loadAll 同步
+  useEffect(() => onExternalDataChanged(() => { void loadAll(); }), [loadAll]);
 
   // 对账解耦：后台对账（启动首跑/60s 节流/手动刷新）有实际写入时，
   // 走纯读 loadAll 同步失效标记与重定位结果（此时已不含对账成本）
