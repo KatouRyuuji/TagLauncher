@@ -168,6 +168,7 @@ def test_quick_search_and_keyboard_actions(app, sandbox):
 
     # Ctrl+T 打标签 → 主窗按 ID 增量刷新（不整表重载）
     summon(app, qp)
+    card = app.card("项目文档.txt")  # 先取定位器：app.item() 本身会调 get_items
     full_loads = len(app.calls("get_items"))
     inp.press("Control+t")
     tag_inp = qp.get_by_test_id("quick-tag-input")
@@ -175,11 +176,10 @@ def test_quick_search_and_keyboard_actions(app, sandbox):
     tag_inp.press_sequentially("快速")
     tag_inp.press("Enter")
     qp.get_by_test_id("quick-status").filter(has_text="已添加标签「快速标签」").wait_for(timeout=3000)
-    card = app.card("项目文档.txt")
     wait_until(lambda: "快速标签" in card.inner_text(), 2, lambda: card.inner_text())
-    assert [t["id"] for t in app.item("项目文档.txt")["tags"]] == [tag["id"]]
     assert len(app.calls("get_items")) == full_loads, "快速窗打标签后主窗应按 ID 增量刷新，而不是整表重载"
     assert app.calls("get_items_by_ids"), "主窗应按对象 ID 取回变化"
+    assert [t["id"] for t in app.item("项目文档.txt")["tags"]] == [tag["id"]]
     tag_inp.press("Escape")
 
     # Enter 打开（桩掉真实启动），打开后收起

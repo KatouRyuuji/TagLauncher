@@ -1,4 +1,6 @@
-/* 快速搜索窗：无边框小窗，颜色全部取主题变量（主窗快照） */
+/* 快速搜索窗：无边框小窗，颜色全部取主题变量（主窗快照）；不引入主窗 Tailwind 样式与打包字体 */
+*, *::before, *::after { box-sizing: border-box; }
+body.quick-body { font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; }
 html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; background: var(--bg-app, #f7f5f2); }
 .quick-shell { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: 12px; gap: 8px;
   color: var(--text-primary, #222); font-size: calc(14px * var(--ui-font-scale, 1)); }
