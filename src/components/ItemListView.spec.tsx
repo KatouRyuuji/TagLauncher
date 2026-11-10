@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ItemListView } from "./ItemListView";
 import { useAppStore } from "../stores/appStore";
@@ -16,11 +16,30 @@ const offsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "off
 const clientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
 const bounding = HTMLElement.prototype.getBoundingClientRect;
 
+function rowSize(): number {
+  return useAppStore.getState().listDensity === "compact" ? ITEM_LIST_COMPACT_ROW_HEIGHT : ITEM_LIST_BASE_ROW_HEIGHT;
+}
+
+function isVirtualRow(el: HTMLElement): boolean {
+  return el.hasAttribute("data-index") || el.getAttribute("role") === "listitem";
+}
+
+function boxOf(el: HTMLElement, height: number) {
+  return { x: 0, y: 0, top: 0, left: 0, bottom: height, right: 800, width: 800, height, toJSON() { return {}; } };
+}
+
 beforeAll(() => {
-  Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get: () => 400 });
-  Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 400 });
+  // 滚动口 400px；行按当前密度返回真实行高。一律 400 会让 measureElement 把每行当成整屏高。
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get() { return isVirtualRow(this) ? rowSize() : 400; },
+  });
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get() { return isVirtualRow(this) ? rowSize() : 400; },
+  });
   HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
-    return { x: 0, y: 0, top: 0, left: 0, bottom: 400, right: 800, width: 800, height: 400, toJSON() { return {}; } };
+    return boxOf(this, isVirtualRow(this) ? rowSize() : 400);
   };
 });
 afterAll(() => {
@@ -74,6 +93,7 @@ function firstRowTop(container: HTMLElement): number | null {
 
 describe("ItemListView 虚拟列表（F19 可执行检查）", () => {
   beforeEach(() => {
+    cleanup();
     useAppStore.setState({ listDensity: "comfortable", sortMode: "smart", searchQuery: "", selectedTagIds: [] });
   });
 
@@ -110,12 +130,19 @@ describe("ItemListView 虚拟列表（F19 可执行检查）", () => {
 
   it("密度切换后估算行高跟着变", () => {
     const items = Array.from({ length: 12 }, (_, index) => item(index + 1));
-    const { rerender } = render(
+    const { rerender, unmount } = render(
       <ItemListView {...baseProps} items={items} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
     );
     expect(Number.parseFloat(listBox().style.height)).toBe(12 * ITEM_LIST_BASE_ROW_HEIGHT + 12);
     act(() => { useAppStore.setState({ listDensity: "compact" }); });
     rerender(
+      <ItemListView {...baseProps} items={items} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
+    );
+    const row = listBox().querySelector<HTMLElement>('[role="listitem"]');
+    expect(row?.style.minHeight).toBe(`${ITEM_LIST_COMPACT_ROW_HEIGHT}px`);
+    // jsdom 不发 ResizeObserver；虚拟器会保留已测行高。重挂后按紧凑密度重新 measure。
+    unmount();
+    render(
       <ItemListView {...baseProps} items={items} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
     );
     expect(Number.parseFloat(listBox().style.height)).toBe(12 * ITEM_LIST_COMPACT_ROW_HEIGHT + 12);
