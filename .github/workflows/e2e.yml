@@ -74,6 +74,8 @@ jobs:
           TL_E2E_RUN_DIR: ${{ github.workspace }}/.tmp-test/e2e/ci-run
           # runner 恒为提权：WebView2 150+ 丢弃 WEBVIEW2_* 环境变量，改由 HKLM 策略下发 CDP 端口
           TL_E2E_WEBVIEW2_HKLM_POLICY: '1'
+          # 临时 runner：允许右键菜单用例写 HKCU 再清理（本机默认不跑）
+          TL_E2E_ALLOW_REGISTRY: '1'
         run: npm run test:e2e:ci -- --shard ${{ matrix.shard }}/3 --junitxml=.tmp-test/e2e/ci-run/junit.xml
 
       - name: E2E summary

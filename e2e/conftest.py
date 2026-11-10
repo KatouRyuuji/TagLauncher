@@ -36,6 +36,8 @@ def pytest_addoption(parser):
     parser.addoption("--window-countdown", type=int, default=5)
     parser.addoption("--shard", default=None,
                      help="i/n：按文件分片只跑第 i 片（CI 并行用）；test_zz_err 会话收尾检查每片都跑")
+    parser.addoption("--allow-registry", action="store_true",
+                     help="允许跑 real_registry 用例（写当前用户 HKCU 的右键菜单键再清理）；CI 设 TL_E2E_ALLOW_REGISTRY=1")
     parser.addoption("--allow-physical-input", action="store_true",
                      help="允许跑 physical_input 用例（接管真实鼠标键盘）；也可设 TL_E2E_ALLOW_PHYSICAL=1")
 
@@ -44,6 +46,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "case(*ids): 关联用例矩阵 ID")
     config.addinivalue_line("markers", "visible_window: 窗口必须出现在屏幕上（最大化等），默认跳过，需 --allow-visible-window")
     config.addinivalue_line("markers", "physical_input: 接管真实鼠标/键盘（SendInput），默认跳过，需显式 --allow-physical-input")
+    config.addinivalue_line("markers", "real_registry: 写真实 HKCU（右键菜单注册/清理），只在 CI 跑；本机需显式 --allow-registry")
     run_dir = config.getoption("--run-dir")
     run_dir = Path(run_dir).resolve() if run_dir else TMP / f"run-{_git_sha()}-{time.strftime('%Y%m%d-%H%M%S')}"
     config._tl_run_dir = run_dir
@@ -64,6 +67,8 @@ def pytest_collection_modifyitems(config, items):
     allow_vis = allow or config.getoption("--allow-visible-window") or os.environ.get("TL_E2E_ALLOW_VISIBLE") == "1"
     vis_gate = pytest.mark.skip(reason="visible_window：窗口须在屏幕上（会打扰用户），默认不跑，与物理输入用例一起集中跑")
     gate = pytest.mark.skip(reason="physical_input：会接管真实鼠标键盘，默认不跑（需用户同意后用 --allow-physical-input 集中跑）")
+    allow_reg = config.getoption("--allow-registry") or os.environ.get("TL_E2E_ALLOW_REGISTRY") == "1"
+    reg_gate = pytest.mark.skip(reason="real_registry：会写当前用户的 HKCU 右键菜单键，只在 CI（TL_E2E_ALLOW_REGISTRY=1）跑，绝不在用户电脑上跑")
     for item in items:
         parts = Path(str(item.fspath)).parts
         if "window" in parts or PHYSICAL_FIXTURES & set(getattr(item, "fixturenames", ())):
@@ -72,6 +77,8 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(gate)
         elif item.get_closest_marker("visible_window") and not allow_vis:
             item.add_marker(vis_gate)
+        if item.get_closest_marker("real_registry") and not allow_reg:
+            item.add_marker(reg_gate)
 
     def key(item):
         parts = Path(str(item.fspath)).parts
