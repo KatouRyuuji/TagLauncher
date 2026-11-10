@@ -49,13 +49,14 @@ def set_toggle_error(app, shortcut):
 @pytest.mark.case("E-DSK-01")
 def test_defaults_grab_nothing(app, sandbox):
     s = desktop(app)
-    assert [h["action"] for h in s["hotkeys"]] == ["toggle_main"], s
-    assert toggle_main(app)["accelerator"] is None and toggle_main(app)["error"] is None, s
+    # 动作表：显示主窗 + 打开快速搜索窗（阶段②），默认都不绑键
+    assert [h["action"] for h in s["hotkeys"]] == ["toggle_main", "open_quick"], s
+    assert all(h["accelerator"] is None and h["error"] is None for h in s["hotkeys"]), s
     assert s["closeAction"] == "exit" and s["ignoreFullscreen"] is True and s["launchMode"] == "show", s
     assert s["trayActive"] is False, "默认不建托盘"
     assert dbh.meta(sandbox.db_path, "hotkey.toggle_main") in (None, "")
     # 通用 set_setting 不能绕过专用通道
-    for key in ("hotkey.toggle_main", "desktop.close_action", "hotkey.ignore_fullscreen"):
+    for key in ("hotkey.toggle_main", "hotkey.open_quick", "desktop.close_action", "hotkey.ignore_fullscreen"):
         assert app.invoke_error("set_setting", {"key": key, "value": "x"}), key
     assert "未知的快捷键动作" in (app.invoke_error("set_hotkey", {"action": "quick_search", "shortcut": "Ctrl+Alt+KeyQ"}) or "")
     dlg = app.open_settings("桌面驻留")

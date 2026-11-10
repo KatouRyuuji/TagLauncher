@@ -175,7 +175,8 @@ class AppSession:
                     for cand in ctx.pages:
                         url = cand.url or ""
                         seen.add(url)
-                        if url and url != "about:blank" and not url.startswith("chrome-error:"):
+                        # 快速搜索窗（quick.html）也是 page target，主页面只认主窗
+                        if url and url != "about:blank" and not url.startswith("chrome-error:") and "quick.html" not in url:
                             page = cand
                             break
                     if page:

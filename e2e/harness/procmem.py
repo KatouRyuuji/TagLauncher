@@ -1,0 +1,90 @@
+"""进程树内存（Win32 只读）：应用主进程 + 全部子孙进程（WebView2 浏览器/渲染/GPU 进程）。
+
+PrivateUsage = 进程独占的提交内存（与任务管理器「提交大小」同口径），WorkingSet = 常驻物理内存。
+"""
+from __future__ import annotations
+
+import ctypes
+from ctypes import wintypes
+
+k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+psapi = ctypes.WinDLL("psapi", use_last_error=True)
+
+TH32CS_SNAPPROCESS = 0x2
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+PROCESS_VM_READ = 0x0010
+
+
+class PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD),
+                ("cntThreads", wintypes.DWORD), ("th32ParentProcessID", wintypes.DWORD),
+                ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
+                ("szExeFile", ctypes.c_wchar * 260)]
+
+
+class PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):
+    _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t),
+                ("PrivateUsage", ctypes.c_size_t)]
+
+
+k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+k32.OpenProcess.restype = wintypes.HANDLE
+
+
+def _processes() -> list[tuple[int, int, str]]:
+    snap = k32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    out = []
+    try:
+        e = PROCESSENTRY32W()
+        e.dwSize = ctypes.sizeof(e)
+        ok = k32.Process32FirstW(snap, ctypes.byref(e))
+        while ok:
+            out.append((e.th32ProcessID, e.th32ParentProcessID, e.szExeFile))
+            ok = k32.Process32NextW(snap, ctypes.byref(e))
+    finally:
+        k32.CloseHandle(snap)
+    return out
+
+
+def tree(root_pid: int) -> list[tuple[int, str]]:
+    procs = _processes()
+    keep, frontier = {root_pid}, [root_pid]
+    while frontier:
+        parent = frontier.pop()
+        for pid, ppid, _ in procs:
+            if ppid == parent and pid not in keep and pid != ppid:
+                keep.add(pid)
+                frontier.append(pid)
+    return [(pid, exe) for pid, _, exe in procs if pid in keep]
+
+
+def memory(pid: int) -> tuple[int, int] | None:
+    h = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, False, pid)
+    if not h:
+        return None
+    try:
+        c = PROCESS_MEMORY_COUNTERS_EX()
+        c.cb = ctypes.sizeof(c)
+        if not psapi.GetProcessMemoryInfo(h, ctypes.byref(c), c.cb):
+            return None
+        return int(c.PrivateUsage), int(c.WorkingSetSize)
+    finally:
+        k32.CloseHandle(h)
+
+
+def tree_memory(root_pid: int) -> dict:
+    """{private_mb, working_set_mb, processes: [...]}"""
+    rows, priv, ws = [], 0, 0
+    for pid, exe in tree(root_pid):
+        m = memory(pid)
+        if m is None:
+            continue
+        priv += m[0]
+        ws += m[1]
+        rows.append({"pid": pid, "exe": exe, "private_mb": round(m[0] / 2**20, 1), "ws_mb": round(m[1] / 2**20, 1)})
+    return {"private_mb": round(priv / 2**20, 1), "working_set_mb": round(ws / 2**20, 1), "processes": rows}

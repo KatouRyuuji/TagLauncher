@@ -207,6 +207,12 @@ pub fn run() {
                     return;
                 }
             }
+            // 主窗真正关闭（关闭行为 = 退出）：一并销毁隐藏的快速搜索窗，否则它会让进程留在后台
+            if let tauri::WindowEvent::Destroyed = event {
+                if window.label() == "main" {
+                    quick::destroy_window(window.app_handle());
+                }
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main"
                     && window
