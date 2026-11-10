@@ -1,4 +1,4 @@
-//! 集成测试：跨连接（等价于 GUI 与 tl/MCP 跨进程）并发写同一实库。
+//! 集成测试：跨连接（等价于 GUI 与 tl 跨进程）并发写同一实库。
 //! 回归 E2E test_concurrent_gui_and_cli_writes（30a15dd）：add_items 原用 DEFERRED 事务，
 //! WAL 下先读后写遇他人已提交即 SQLITE_BUSY，不走 busy_timeout，整批报 "database is locked"。
 

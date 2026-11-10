@@ -43,7 +43,7 @@ mkdirSync(bundleDir, { recursive: true });
 const zipPath = join(bundleDir, `TagLauncher_${version}_${arch}-portable.zip`);
 
 // 暂存为 TagLauncher/ 再压缩，使 zip 内带固定顶层目录。
-// 含 tl.exe（CLI/TUI/MCP 命令行）：解压覆盖到同一位置时 exe 被替换，
+// 含 tl.exe（CLI/TUI 命令行）：解压覆盖到同一位置时 exe 被替换，
 // 而 exe 同级的 Plugins_Theme/、Plugins_Mods/、synonyms.json、datapath.json
 // （数据目录重定向指针）得以保留。
 const stagingDir = join(releaseDir, '.portable-staging');

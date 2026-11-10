@@ -439,7 +439,7 @@ pub fn add_items_with_context(
             });
             continue;
         }
-        // 不存在的路径不入库（拖放/命令行/MCP 都走这里）：否则会以普通对象落库且无失败反馈（BUG-14）
+        // 不存在的路径不入库（拖放/命令行都走这里）：否则会以普通对象落库且无失败反馈（BUG-14）
         if std::fs::symlink_metadata(&path).is_err() {
             failed.push(AddItemFailure {
                 path,

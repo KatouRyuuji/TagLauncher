@@ -7,7 +7,7 @@ pub use connection::Database;
 use rusqlite::Connection;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// 开写事务一律用 `BEGIN IMMEDIATE`：GUI 与 tl/MCP 跨进程共用实库（WAL）。
+/// 开写事务一律用 `BEGIN IMMEDIATE`：GUI 与 tl 跨进程共用实库（WAL）。
 /// 默认的 DEFERRED 事务先读后写，若读快照之后别的进程已提交，升级写锁时 SQLite 直接返回
 /// SQLITE_BUSY(_SNAPSHOT)，**不走** busy_timeout——表现为 `tl add` 与 GUI 并发时整批
 /// "database is locked"。IMMEDIATE 在 BEGIN 处就拿写锁，冲突时按连接的 busy_timeout 排队。

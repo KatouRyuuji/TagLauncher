@@ -75,7 +75,7 @@ fn open_or_recover(path: &Path) -> Result<Connection, rusqlite::Error> {
     Ok(conn)
 }
 
-/// 遇到其它连接持锁时的最长等待：GUI 与 tl/MCP 跨进程共用实库，写冲突排队而非立即报
+/// 遇到其它连接持锁时的最长等待：GUI 与 tl 跨进程共用实库，写冲突排队而非立即报
 /// "database is locked"。
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
