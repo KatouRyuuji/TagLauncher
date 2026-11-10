@@ -366,7 +366,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
               └─ sort：字段排序 / 智能排序，refreeze=false 时沿用冻结顺序 → 全部有序 ID
               ↓
   ItemStore：只持有 ID 与 LRU 页缓存（页 50、上限 3000 条）；ItemGrid/ItemListView 在虚拟器滚动回调里
-  ensureRange → get_items_page 取可视页，随后单独预取前后各一页；未到的格子渲染占位；
+  ensureRange → get_items_page 取可视页，返回后再预取前后各一页；未到的格子渲染占位；
   总数/全选/批量/定位按 ID 进行
 ```
 
@@ -375,6 +375,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 - 视图 = 后端给的有序 ID + 页缓存。页按 50 对齐；缓存超过 3000 条从最久未用的淘汰。
 - `data-changed` / 刷新：缓存整体标记过期（epoch）但不清空，旧内容先显示，用到时重取；新视图 ID 到达后替换。写操作后按 ID 用 `get_items_by_ids` 回填（`upsert`）。
 - 按 ID 取齐（`view.load` / `useLoadedItems`）：选中集、编辑目标、预览、右键多选；≤100 条顺带进缓存，更大的批量只返回，不挤掉可视页。
+- 通知分两路：ID/代/写入变化换视图快照（工作台重渲染）；页数据到达只通知列表组件（`subscribeData`），落在可视区间外的预取到达不通知。
 - 占位与未测量行按已加载行的真实行高估算（`useLoadedRowHeight`），页到达时行高不变，避免 ResizeObserver 回调里连带挂载新行。
 - 计数不取对象：侧栏/图谱用 `library_stats`；失效对象只在审阅对话框打开时按 `missingIds` 取齐。
 - 命令面板对象结果：同一 `view_query`（面板范围）+ 前 8 条 `get_items_by_ids`；typeahead 走 `view_typeahead`；打开文件夹/隐藏对象的浏览落点走 `browse_target`。
