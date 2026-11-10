@@ -21,7 +21,7 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 - 视图虚拟化：网格与列表视图均经 `@tanstack/react-virtual` 虚拟化（measureElement 动态测高），仅渲染可见项，大库滚动流畅、内存可控。
 - 缩略图：支持手动设置/更换/清除；图片对象直接用图片，视频对象经系统缩略图服务提取首帧画面（`shell_thumbnail.rs`，IShellItemImageFactory + GDI+ 落盘 PNG；取不到时负缓存 10 分钟后重试），快捷方式（.lnk）先解析到目标再取图标（不含 Windows 箭头角标），其余非图片对象提取系统图标缓存为 PNG（缓存在数据目录 `Save/item-icons/`，随 datapath 走），再其余回退到类型图标。
 - 音视频：音频提供 `get_audio_preview`（时长/采样率/封面等元数据）；视频对象在快速预览中走独立播放器皮（首帧 poster 取系统缩略图；解码失败仍保留播放器外观）。
-- AI 集成（CLI/TUI/MCP/AISkill）：随安装包附带 `tl` 命令行（externalBin sidecar），覆盖搜索/启动/添加/移除/标签/收藏/文件柜/统计全功能，全命令支持 `--json` 机器可读输出；`tl tui` 提供终端交互界面；`tl mcp` 以 stdio 暴露 MCP 工具面供 Claude Desktop 等 AI 客户端接入；`skills/tag-launcher/SKILL.md` 为 AI 使用本应用的行为准则。详见 §十七。
+- AI 集成（CLI/TUI/AISkill）：随安装包附带 `tl` 命令行（externalBin sidecar），覆盖搜索/启动/添加/移除/标签/收藏/文件柜/统计全功能，全命令支持 `--json` 机器可读输出；`tl tui` 提供终端交互界面；`skills/tag-launcher/SKILL.md` 为 AI 使用本应用的行为准则。详见 §十七。
 - 主题系统：内置主题 + 自定义 JSON 主题 + Mod 主题，支持变量/分层 token/组件 token/资源/字体/变体/自定义 CSS，以及导入、导出、刷新；启动时等待主题就绪再显示主窗口，避免闪烁。
 - 自定义窗口栏：`decorations: false` 隐藏 Windows 原生标题栏，`TitleBar.tsx` 自绘窗口栏（`data-tauri-drag-region` 拖拽 + 双击最大化 + 最小化/最大化/关闭按钮），配色全部取主题 token 随主题联动；窗口权限见 `src-tauri/capabilities/default.json`。
 - 顶层错误边界：`AppErrorBoundary.tsx` 捕获渲染期崩溃，替代白屏为可操作错误页（复制错误详情/重新加载）；崩溃早于主题就绪时强制移除 FOUC 门控并显示窗口，避免进程挂死不可见。列表加载失败时工作台呈现可重试错误面板而非"暂无项目"假象。
@@ -809,7 +809,7 @@ npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页�
 
 ---
 
-## 十七、CLI / TUI / MCP 与 AI 集成
+## 十七、CLI / TUI 与 AI 集成
 
 应用级 AI 集成：随安装包附带 `tl` 命令行（与 GUI 共享同一 SQLite 实库），AI 客户端与终端脚本可原生驱动本应用。
 
@@ -818,23 +818,19 @@ npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页�
 - **分发**：`tl.exe` 以 Tauri `externalBin` sidecar 形式打进安装包并落入主程序同级目录；便携版 zip 同样附带。sidecar 构建由 `scripts/prepare-cli-bin.mjs` 完成（pack/CI 已接线）；`node scripts/prepare-cli-bin.mjs --placeholder` 在首次编译前只创建占位文件（tauri-build 会校验 externalBin 存在，全新克隆缺它会编译失败，dev.bat/setup.bat/CI 已接线）。
 - **数据库定位**：与 GUI 同一套解析——exe 旁 `datapath.json` 重定向优先，否则 `%LOCALAPPDATA%\TagLauncher\Save\taglauncher.db`（`src-tauri/src/cli/mod.rs`）。数据库不存在时拒绝静默新建并提示先运行主程序。
 - **并发**：WAL 模式下与 GUI 并发安全；两边同时写时后到者最多排队等待 5 秒，超时报「database is locked」且不触发损坏自愈；CLI 的写操作 GUI 需刷新后可见。
-- **命令面**：`search` / `list` / `get` / `add` / `remove` / `launch`（id 或搜索词首命中）/ `tag list|add|set|clear` / `fav [--off]` / `cabinet list|items` / `stats` / `mcp` / `tui`。全局 `--json` 输出机器可读 JSON（脚本与 AI 消费）。实现：`src-tauri/src/bin/tl.rs`（clap derive）。
+- **命令面**：`search` / `list` / `get` / `add` / `remove` / `launch`（id 或搜索词首命中）/ `tag list|add|set|clear` / `fav [--off]` / `cabinet list|items` / `stats` / `tui`。全局 `--json` 输出机器可读 JSON（脚本与 AI 消费）。实现：`src-tauri/src/bin/tl.rs`（clap derive）。
 
 ### 17.2 tl tui 终端界面
 
 `tl tui` 进入 ratatui 单屏界面：顶部搜索框输入即过滤（数据库全文搜索），↑/↓/PgUp/PgDn 选择，Enter 启动，Ctrl+D 收藏切换（对齐 GUI），Esc/Ctrl+C 退出。实现：`src-tauri/src/cli/tui.rs`（ratatui + crossterm）。
 
-### 17.3 MCP 服务
+### 17.3 AISkill
 
-`tl mcp` 以 stdio（newline-delimited JSON-RPC 2.0）提供 MCP 服务。握手支持协议版本 2025-11-25 / 2025-06-18 / 2025-03-26 / 2024-11-05：客户端请求其中之一时按其版本回复，否则回 2025-11-25；握手结果的 `instructions` 下发使用准则。工具面共 9 个，均带 `annotations`（查询类只读，`launch_item` / `remove_items` 标为有副作用）：`search_items`（关键词、标签名、文件柜、类型组合过滤，不给条件即列出全部，返回 `total` 与精简对象）/ `get_item`（完整字段）/ `overview`（统计、全部标签与文件柜）/ `launch_item` / `add_items` / `remove_items` / `add_tag` / `set_item_tags`（`create_missing` 为 true 时自动新建缺少的标签）/ `set_favorite`；结果为紧凑 JSON。同步实现、不引异步运行时（`src-tauri/src/cli/mcp.rs`）；数据库延迟到首个 `tools/call` 才打开，握手/列工具不受主程序未初始化影响。设置页「AI → AI 集成」区块展示 Claude Desktop 配置并一键复制（`get_cli_integration_info` 命令；0 字节 sidecar 占位不算可用）。
+`skills/tag-launcher/SKILL.md` 面向通过 `tl` 命令行操作本应用的 AI：常用命令示例与行为准则（启动前确认、id 优先、标签整体替换、只读优先、失败重试节制），可被 Claude Code 等支持 Skills 的客户端直接装载。设置页「AI 自动打标 → 命令行」展示并允许复制 `tl.exe` 路径（`get_cli_integration_info` 命令；0 字节 sidecar 占位不算可用）。
 
-### 17.4 AISkill
+### 17.4 IM 平台集成（可选扩展）
 
-`skills/tag-launcher/SKILL.md` 面向通过 `tl` 命令行操作本应用的 AI：常用命令示例与行为准则（启动前确认、id 优先、标签整体替换、只读优先、失败重试节制），可被 Claude Code 等支持 Skills 的客户端直接装载。已接入 MCP 的客户端由服务端工具说明与 `instructions` 获得同样的准则，Skill 不重复列出 MCP 工具。
-
-### 17.5 IM 平台集成（可选扩展）
-
-桥接进程经官方机器人通道接入 IM，回调调用 `tl --json` / MCP 工具。飞书/钉钉可行，微信/QQ/网易popo 无合规官方通道不投入。
+桥接进程经官方机器人通道接入 IM，回调调用 `tl --json`。飞书/钉钉可行，微信/QQ/网易popo 无合规官方通道不投入。
 
 ---
 

@@ -499,11 +499,10 @@ export async function getAppVersion(): Promise<string> {
   return invokeCmd("get_app_version");
 }
 
-/** CLI/AI 集成信息（tl 路径与 MCP 配置模板） */
+/** CLI 集成信息（tl 路径） */
 export interface CliIntegrationInfo {
   cli_available: boolean;
   cli_path: string;
-  mcp_config: string;
 }
 
 export async function getCliIntegrationInfo(): Promise<CliIntegrationInfo> {

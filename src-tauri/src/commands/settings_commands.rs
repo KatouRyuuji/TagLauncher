@@ -17,7 +17,7 @@ pub fn get_app_version() -> String {
     settings_service::get_app_version().to_string()
 }
 
-/// CLI/AI 集成信息：tl 二进制的安装位置与 MCP 客户端配置模板。
+/// CLI 集成信息：tl 二进制的安装位置。
 /// tl.exe 由安装包/便携版放在主程序同级目录（externalBin sidecar）。
 #[tauri::command]
 pub fn get_cli_integration_info() -> CliIntegrationInfo {
@@ -29,15 +29,6 @@ pub fn get_cli_integration_info() -> CliIntegrationInfo {
     CliIntegrationInfo {
         // 0 字节是 prepare-cli-bin --placeholder 的占位文件，不能当可用 CLI
         cli_available: is_usable_cli_binary(std::path::Path::new(&cli_path)),
-        mcp_config: serde_json::json!({
-            "mcpServers": {
-                "tag-launcher": {
-                    "command": cli_path,
-                    "args": ["mcp"]
-                }
-            }
-        })
-        .to_string(),
         cli_path,
     }
 }
@@ -54,8 +45,6 @@ pub struct CliIntegrationInfo {
     pub cli_available: bool,
     /// tl.exe 的绝对路径
     pub cli_path: String,
-    /// MCP 客户端配置 JSON（Claude Desktop 等可直接粘贴）
-    pub mcp_config: String,
 }
 
 #[tauri::command]

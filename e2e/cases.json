@@ -2301,13 +2301,13 @@
 {
 "id": "E-AI-13",
 "module": "AI 打标",
-"scenario": "复制 MCP 配置",
-"steps": "点“复制 MCP 配置”",
-"expect": "剪贴板 JSON 指向 tl.exe mcp",
+"scenario": "复制 tl 路径",
+"steps": "设置→AI 打标，点“复制路径”",
+"expect": "剪贴板与输入框均为安装目录下的 tl.exe 绝对路径",
 "layer": "UI",
 "automation": "读剪贴板",
 "priority": "P2",
-"coverage": "无"
+"coverage": "get_cli_integration_info"
 },
 {
 "id": "E-DAT-01",
@@ -2660,28 +2660,6 @@
 "automation": "subprocess + CDP",
 "priority": "P1",
 "coverage": "CLI-03 无"
-},
-{
-"id": "E-CLI-09",
-"module": "CLI tl",
-"scenario": "tl mcp 握手与工具",
-"steps": "stdio 发 initialize/tools/list/tools/call（9 个工具）",
-"expect": "协议版本、schema 与返回结构正确",
-"layer": "CLI",
-"automation": "JSON-RPC stdio 客户端",
-"priority": "P0",
-"coverage": "MCP-01/02 mcp.rs"
-},
-{
-"id": "E-CLI-10",
-"module": "CLI tl",
-"scenario": "tl mcp 写操作",
-"steps": "add_items/set_item_tags/set_favorite/remove_items",
-"expect": "DB 变化正确",
-"layer": "CLI",
-"automation": "同上",
-"priority": "P1",
-"coverage": "mcp.rs"
 },
 {
 "id": "E-CLI-11",
