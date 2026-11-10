@@ -11,11 +11,17 @@ pub fn search_items(
     db: State<Database>,
     query: String,
     tag_ids: Vec<i64>,
+    include_descendants: Option<bool>,
 ) -> Result<Vec<ItemWithTags>, String> {
     // 锁内查询，锁外补图标，避免持锁期间执行图标提取等重 IO。
     let mut items = {
         let conn = db.get_conn();
-        search_service::search_items(&conn, &query, &tag_ids)?
+        search_service::search_items_filtered(
+            &conn,
+            &query,
+            &tag_ids,
+            include_descendants.unwrap_or(true),
+        )?
     };
     item_service::fill_visuals(&app, &mut items);
     crate::services::asset_scope::allow_items(&app, &items);

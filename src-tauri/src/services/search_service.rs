@@ -10,14 +10,24 @@ pub fn search_items(
     query: &str,
     tag_ids: &[i64],
 ) -> Result<Vec<ItemWithTags>, String> {
+    search_items_filtered(conn, query, tag_ids, true)
+}
+
+/// `include_descendants` 默认 true（选父含子）；false 时仅匹配直接标签。
+pub fn search_items_filtered(
+    conn: &Connection,
+    query: &str,
+    tag_ids: &[i64],
+    include_descendants: bool,
+) -> Result<Vec<ItemWithTags>, String> {
     let items: Vec<Item> = if query.is_empty() && tag_ids.is_empty() {
         query_all_items(conn)?
     } else if !query.is_empty() && tag_ids.is_empty() {
         query_items_by_text(conn, query)?
     } else if query.is_empty() && !tag_ids.is_empty() {
-        query_items_by_tags(conn, tag_ids)?
+        query_items_by_tags(conn, tag_ids, include_descendants)?
     } else {
-        query_items_by_text_and_tags(conn, query, tag_ids)?
+        query_items_by_text_and_tags(conn, query, tag_ids, include_descendants)?
     };
 
     tag_service::items_with_tags(conn, items)
@@ -96,12 +106,20 @@ fn query_items_by_text_like(conn: &Connection, query: &str) -> Result<Vec<Item>,
 /// 为每个选中标签构建「对象拥有该标签或其任一后代」的 EXISTS 子句；
 /// 多个选中标签之间为 AND（交集语义，但每个选中项并入其后代）。
 /// 返回 (合并后的 WHERE 片段, 顺序参数)。
-fn tag_group_clauses(conn: &Connection, tag_ids: &[i64]) -> Result<(String, Vec<i64>), String> {
+fn tag_group_clauses(
+    conn: &Connection,
+    tag_ids: &[i64],
+    include_descendants: bool,
+) -> Result<(String, Vec<i64>), String> {
     let mut clauses: Vec<String> = Vec::new();
     let mut params: Vec<i64> = Vec::new();
     for &tid in tag_ids {
         // expand 至少含自身，不会为空
-        let expanded = tag_service::expand_with_descendants(conn, &[tid])?;
+        let expanded = if include_descendants {
+            tag_service::expand_with_descendants(conn, &[tid])?
+        } else {
+            vec![tid]
+        };
         let ph = expanded.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         clauses.push(format!(
             "EXISTS (SELECT 1 FROM item_tags it WHERE it.item_id = i.id AND it.tag_id IN ({}))",
@@ -112,8 +130,12 @@ fn tag_group_clauses(conn: &Connection, tag_ids: &[i64]) -> Result<(String, Vec<
     Ok((clauses.join(" AND "), params))
 }
 
-fn query_items_by_tags(conn: &Connection, tag_ids: &[i64]) -> Result<Vec<Item>, String> {
-    let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
+fn query_items_by_tags(
+    conn: &Connection,
+    tag_ids: &[i64],
+    include_descendants: bool,
+) -> Result<Vec<Item>, String> {
+    let (clause, group_params) = tag_group_clauses(conn, tag_ids, include_descendants)?;
     let sql = format!(
         "SELECT {ITEM_COLS_I}
          FROM items i
@@ -138,13 +160,14 @@ fn query_items_by_text_and_tags(
     conn: &Connection,
     query: &str,
     tag_ids: &[i64],
+    include_descendants: bool,
 ) -> Result<Vec<Item>, String> {
     let search_query = format_fts_query(query);
     if search_query.is_empty() {
-        return query_items_by_text_and_tags_like(conn, query, tag_ids);
+        return query_items_by_text_and_tags_like(conn, query, tag_ids, include_descendants);
     }
 
-    let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
+    let (clause, group_params) = tag_group_clauses(conn, tag_ids, include_descendants)?;
     let sql = format!(
         "SELECT {ITEM_COLS_I}
          FROM items i
@@ -165,11 +188,11 @@ fn query_items_by_text_and_tags(
     let rows: Result<Vec<Item>, rusqlite::Error> =
         match stmt.query_map(params.as_slice(), item_from_row) {
             Ok(rows) => rows.collect(),
-            Err(_) => return query_items_by_text_and_tags_like(conn, query, tag_ids),
+            Err(_) => return query_items_by_text_and_tags_like(conn, query, tag_ids, include_descendants),
         };
     match rows {
         Ok(items) => Ok(items),
-        Err(_) => query_items_by_text_and_tags_like(conn, query, tag_ids),
+        Err(_) => query_items_by_text_and_tags_like(conn, query, tag_ids, include_descendants),
     }
 }
 
@@ -177,9 +200,10 @@ fn query_items_by_text_and_tags_like(
     conn: &Connection,
     query: &str,
     tag_ids: &[i64],
+    include_descendants: bool,
 ) -> Result<Vec<Item>, String> {
     let search_query = like_contains_pattern(query);
-    let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
+    let (clause, group_params) = tag_group_clauses(conn, tag_ids, include_descendants)?;
     let sql = format!(
         "SELECT {ITEM_COLS_I}
          FROM items i
@@ -285,7 +309,7 @@ mod tests {
         )
         .expect("link tag");
 
-        let items = query_items_by_text_and_tags(&conn, "foo(bar)", &[tag_id])
+        let items = query_items_by_text_and_tags(&conn, "foo(bar)", &[tag_id], true)
             .expect("search text and tags");
 
         assert_eq!(items.len(), 1);
@@ -336,7 +360,7 @@ mod tests {
             .expect("link tag");
         }
 
-        let items = query_items_by_tags(&conn, &[tool_tag_id, game_tag_id])
+        let items = query_items_by_tags(&conn, &[tool_tag_id, game_tag_id], true)
             .expect("query items by tags");
 
         assert_eq!(items.len(), 1);
@@ -366,8 +390,11 @@ mod tests {
         .unwrap();
 
         // 选父标签"娱乐"应并入子标签"游戏"的对象 GameA（集合包含语义）
-        let items = query_items_by_tags(&conn, &[ent]).expect("by parent tag");
+        let items = query_items_by_tags(&conn, &[ent], true).expect("by parent tag");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "GameA");
+
+        let direct = query_items_by_tags(&conn, &[ent], false).expect("direct only");
+        assert!(direct.is_empty(), "仅直接标签不应命中只打了子标签的对象");
     }
 }

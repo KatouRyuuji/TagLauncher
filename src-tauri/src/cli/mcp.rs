@@ -155,7 +155,8 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "关键词，匹配名称和路径" },
-                    "tags": { "type": "array", "items": { "type": "string" }, "description": "标签名，需同时具备，含子标签" },
+                    "tags": { "type": "array", "items": { "type": "string" }, "description": "标签名，需同时具备；默认含子标签对象" },
+                    "includeDescendants": { "type": "boolean", "description": "默认 true：选父标签含子标签对象。false 时仅匹配直接打上所选标签的对象。" },
                     "cabinet_id": { "type": "integer" },
                     "type": { "type": "string", "enum": ["folder", "image", "audio", "video", "exe", "bat", "ps1", "text"] },
                     "limit": { "type": "integer", "description": "默认 50" }
@@ -350,7 +351,16 @@ fn call_tool(db: &Database, name: &str, args: &Value) -> ToolResult {
                     }
                 }
             }
-            let mut items = match search_service::search_items(&conn, query, &tag_ids) {
+            let include_descendants = args
+                .get("includeDescendants")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            let mut items = match search_service::search_items_filtered(
+                &conn,
+                query,
+                &tag_ids,
+                include_descendants,
+            ) {
                 Ok(v) => v,
                 Err(e) => return ToolResult::Err(e),
             };
