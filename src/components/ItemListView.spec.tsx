@@ -7,7 +7,8 @@ import type { ItemViewProps, ItemWithTags, Tag } from "../types";
 
 vi.mock("../lib/toast", () => ({ showToast: vi.fn() }));
 vi.mock("../lib/db", () => ({
-  getItemVisual: vi.fn(async () => null),
+  // 与 getItemVisual 契约一致：返回 { path, icon_path }，不能是 null（否则 itemVisualCache 读 visual.path 抛错）
+  getItemVisual: vi.fn(async (id: number) => ({ path: `D:\\Lib\\item-${id}.txt`, icon_path: null })),
   listIgnoredPaths: vi.fn(async () => []),
 }));
 
