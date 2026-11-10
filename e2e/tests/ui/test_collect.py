@@ -137,7 +137,13 @@ def wait_attr(locator, name: str, value: str, timeout: float = 10) -> None:
 def wait_session_done(app, timeout: float = 15) -> None:
     """处理完：会话清空；快速搜索没开时快速窗被销毁（不常驻）。"""
     wait_until(lambda: app.invoke("collect_session") is None, timeout, lambda: app.invoke("collect_session"))
-    wait_until(lambda: quick_pages(app) == [], timeout, "快速搜索没开时，收纳完应销毁快速窗")
+    # 以 Tauri 的窗口表为准（CDP 页面列表只作诊断）
+    wait_until(lambda: "quick" not in window_labels(app), timeout,
+               lambda: f"快速搜索没开时，收纳完应销毁快速窗：{_quick_diag(app)}")
+
+
+def window_labels(app) -> list[str]:
+    return app.page.evaluate("() => window.__TAURI__.window.getAllWindows().then(ws => ws.map(w => w.label))")
 
 
 def result(qp) -> dict:
@@ -177,6 +183,7 @@ def test_shell_integration_toggle_registers_and_cleans(app, sandbox):
             assert v[""] == MENU_TEXT and v["MultiSelectModel"] == "Player", v
             assert v["command"] == f'"{exe}" --collect "{placeholder}"', v
             assert v["Icon"] == f'"{exe}",0', v
+        assert link.exists(), f"「发送到」快捷方式应在沙箱 APPDATA：{link}"
         sc = read_shortcut(link)
         assert same_path(sc["target"], exe) and sc["args"] == "--collect", sc
 

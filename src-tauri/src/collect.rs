@@ -275,7 +275,12 @@ pub fn collect_finish(app: AppHandle, state: State<CollectState>, id: u64, handl
             if app.state::<CollectState>().snapshot().is_none()
                 && !crate::desktop::quick_enabled(&app)
             {
-                crate::quick::destroy_window(&app);
+                // 与关闭快速搜索同一路径：在主线程销毁
+                let handle = app.clone();
+                let destroy = move || crate::quick::destroy_window(&handle);
+                if let Err(e) = app.run_on_main_thread(destroy) {
+                    log::warn!("[collect] 销毁快速窗失败：{e}");
+                }
             }
         });
     }
@@ -308,8 +313,8 @@ pub fn set_collect_preference(
 mod tests {
     use super::*;
 
-    fn tmp_files(n: usize) -> (std::path::PathBuf, Vec<String>) {
-        let dir = std::env::temp_dir().join(format!("tl_collect_{}_{n}", std::process::id()));
+    fn tmp_files(tag: &str, n: usize) -> (std::path::PathBuf, Vec<String>) {
+        let dir = std::env::temp_dir().join(format!("tl_collect_{}_{tag}_{n}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let files = (0..n)
             .map(|i| {
@@ -333,7 +338,7 @@ mod tests {
 
     #[test]
     fn merge_dedupes_drops_invalid_and_keeps_one_session() {
-        let (dir, files) = tmp_files(3);
+        let (dir, files) = tmp_files("merge", 3);
         let mut inner = Inner::default();
         // 每项一进程：三次到达并入同一会话
         let a1 = inner.merge(&[files[0].clone()], 1);
@@ -364,7 +369,7 @@ mod tests {
 
     #[test]
     fn merge_caps_session_size() {
-        let (dir, files) = tmp_files(3);
+        let (dir, files) = tmp_files("finish", 3);
         let mut inner = Inner::default();
         inner.session.paths = (0..MAX_COLLECT).map(|i| format!("X:\\{i}")).collect();
         inner.session.id = 1;

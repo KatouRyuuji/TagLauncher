@@ -48,7 +48,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 [target.'cfg(windows)'.dependencies]
 # 资源管理器右键菜单（HKCU 动词）与「发送到」快捷方式（阶段③）
 winreg = "0.56"
-mslnk = "0.1"
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
 # 用于按 NTFS 文件ID重定位对象当前路径（OpenFileById / GetFinalPathNameByHandleW），
 # 用关联程序打开对象（ShellExecuteW，替代经 cmd.exe 的启动，杜绝命令注入），
 # 以及视频等内容的系统缩略图提取（IShellItemImageFactory + GDI+ 落盘 PNG）。

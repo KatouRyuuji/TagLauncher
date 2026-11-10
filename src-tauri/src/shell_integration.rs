@@ -162,14 +162,40 @@ mod platform {
         if let Some(dir) = link.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("创建「发送到」目录失败：{e}"))?;
         }
-        let mut sl = mslnk::ShellLink::new(exe).map_err(|e| format!("创建快捷方式失败：{e}"))?;
-        sl.set_arguments(Some(COLLECT_ARG.to_string()));
-        sl.set_name(Some(MENU_TEXT.to_string()));
-        sl.set_icon_location(Some(exe.to_string()));
-        sl.create_lnk(&link)
-            .map_err(|e| format!("写「发送到」快捷方式失败：{e}"))?;
+        write_shortcut(&link, exe).map_err(|e| format!("写「发送到」快捷方式失败：{e}"))?;
         notify_shell();
         Ok(())
+    }
+
+    /// 用系统 IShellLinkW 写快捷方式（mslnk 手拼的 .lnk 在 CI 上被 WScript 读成空目标）
+    fn write_shortcut(link: &std::path::Path, exe: &str) -> Result<(), String> {
+        use windows::core::{Interface, HSTRING};
+        use windows::Win32::System::Com::{
+            CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+            COINIT_APARTMENTTHREADED,
+        };
+        use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+        // SAFETY: COM 调用都在本线程内完成；只有本次初始化成功（含 S_FALSE）才配对反初始化，
+        // 线程已按其他模式初始化（RPC_E_CHANGED_MODE）时沿用现有套间。
+        unsafe {
+            let init = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            let result = (|| -> windows::core::Result<()> {
+                let sl: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
+                sl.SetPath(&HSTRING::from(exe))?;
+                sl.SetArguments(&HSTRING::from(COLLECT_ARG))?;
+                sl.SetDescription(&HSTRING::from(MENU_TEXT))?;
+                sl.SetIconLocation(&HSTRING::from(exe), 0)?;
+                if let Some(dir) = std::path::Path::new(exe).parent() {
+                    sl.SetWorkingDirectory(&HSTRING::from(dir))?;
+                }
+                let file: IPersistFile = sl.cast()?;
+                file.Save(&HSTRING::from(link), true)
+            })();
+            if init.is_ok() {
+                CoUninitialize();
+            }
+            result.map_err(|e| e.to_string())
+        }
     }
 
     /// 删除全部注册项与快捷方式；不存在的视为已删除。逐项尝试，汇总失败。
