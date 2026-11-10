@@ -36,7 +36,21 @@ vi.mock("../lib/db", () => ({
   openInExplorerById: vi.fn(async () => {}),
   getTags: vi.fn(async () => [{ id: 1, name: "工作", color: "#5064d8" }, { id: 2, name: "工具", color: "#999" }]),
   setItemTags: vi.fn(async () => {}),
+  collectSession: vi.fn(async () => collect.pending),
+  collectFinish: vi.fn(async () => {}),
+  getCollectPreference: vi.fn(async () => collect.pref),
+  setCollectPreference: vi.fn(async (pref: unknown) => { collect.pref = pref; return pref; }),
+  getCabinets: vi.fn(async () => [{ id: 10, name: "项目", color: "#123", folder_path: null }, { id: 11, name: "关联", color: "#456", folder_path: "D:/Linked" }]),
+  classifyImportPaths: vi.fn(async (paths: string[]) => ({ files: paths.filter((p) => !p.endsWith("Dir")), folders: paths.filter((p) => p.endsWith("Dir")) })),
+  expandFolderImport: vi.fn(async () => ({ paths: ["D:\\Dir\\sub\\in.txt"], truncated: false })),
+  addItems: vi.fn(async (paths: string[]) => ({
+    items: paths.map((path, i) => ({ id: 100 + i, path })),
+    failed: [],
+    createdCount: paths.length - 1,
+  })),
 }));
+
+const collect = vi.hoisted(() => ({ pending: null as unknown, pref: null as unknown }));
 
 const { QuickApp, QUICK_SHOWN_EVENT } = await import("./QuickApp");
 
@@ -57,6 +71,8 @@ beforeEach(() => {
   bus.handlers.clear();
   bus.emitted = [];
   localStorage.clear();
+  collect.pending = null;
+  collect.pref = null;
 });
 
 describe("QuickApp", () => {
@@ -129,5 +145,75 @@ describe("QuickApp", () => {
     await setup();
     expect(document.documentElement.style.getPropertyValue("--bg-app")).toBe("#123456");
     expect(document.documentElement.getAttribute("data-scheme")).toBe("dark");
+  });
+});
+
+describe("QuickApp 收纳模式", () => {
+  const session = (over: Record<string, unknown> = {}) => ({ id: 7, paths: ["D:/a.txt", "D:/b.txt"], invocations: 2, invalid: 0, truncated: false, startedMs: 0, ...over });
+
+  it("挂载时取到会话就显示收纳界面；打标签多选后一次写入并记住选择", async () => {
+    collect.pending = session();
+    const user = userEvent.setup();
+    render(<QuickApp />);
+    const summary = await screen.findByTestId("collect-summary");
+    expect(summary).toHaveAttribute("data-count", "2");
+    expect(summary).toHaveTextContent("合并了 2 次右键调用");
+    expect(screen.queryByTestId("quick-input")).toBeNull();
+    await user.click(screen.getByTestId("collect-remember"));
+    await user.click(screen.getByTestId("collect-action-tag"));
+    const options = await screen.findAllByTestId("collect-tag-option");
+    await user.click(options[0]);
+    await user.click(options[1]);
+    await user.click(screen.getByTestId("collect-confirm"));
+    await waitFor(() => expect(db.addItems).toHaveBeenCalledWith(["D:/a.txt", "D:/b.txt"], { tagIds: [1, 2] }));
+    const result = await screen.findByTestId("collect-result");
+    expect(result).toHaveAttribute("data-created", "1");
+    expect(result).toHaveAttribute("data-existing", "1");
+    expect(result).toHaveTextContent("已打标签「工作、工具」");
+    expect(db.setCollectPreference).toHaveBeenCalledWith({ action: "tag", tagIds: [1, 2], cabinetId: null, folderMode: null });
+    expect(bus.emitted).toContainEqual({ name: "window-data-written", payload: { source: "quick", itemIds: [100, 101], tagsChanged: false } });
+    await waitFor(() => expect(db.collectFinish).toHaveBeenCalledWith(7, 2), { timeout: 3000 });
+    await waitFor(() => expect(screen.getByTestId("quick-input")).toBeInTheDocument());
+  });
+
+  it("文件柜只列普通柜；含文件夹时按所选方式展开并把夹内内容藏出总览", async () => {
+    const user = userEvent.setup();
+    render(<QuickApp />);
+    await screen.findByTestId("quick-input");
+    fire("quick-collect", session({ id: 8, paths: ["D:\\Dir", "D:\\x.txt"], invocations: 1 }));
+    await screen.findByTestId("collect-folder-mode-both");
+    await user.click(screen.getByTestId("collect-folder-mode-both"));
+    await user.click(screen.getByTestId("collect-action-cabinet"));
+    const cabinets = await screen.findAllByTestId("collect-cabinet-option");
+    expect(cabinets.map((el) => el.dataset.cabinetId)).toEqual(["10"]);
+    await user.click(cabinets[0]);
+    await waitFor(() => expect(db.addItems).toHaveBeenCalled());
+    const [paths, context] = vi.mocked(db.addItems).mock.calls[0];
+    expect(paths).toEqual(expect.arrayContaining(["D:\\Dir", "D:\\Dir\\sub", "D:\\Dir\\sub\\in.txt", "D:\\x.txt"]));
+    expect(context).toEqual({ cabinetId: 10, hideFromAllPaths: expect.arrayContaining(["D:\\Dir\\sub", "D:\\Dir\\sub\\in.txt"]) });
+    expect(context!.hideFromAllPaths).not.toContain("D:\\Dir");
+    expect(db.setCollectPreference).not.toHaveBeenCalled();
+  });
+
+  it("记住的选择直接执行，可改为每次询问；Esc 取消不写入", async () => {
+    collect.pref = { action: "import", tagIds: [], cabinetId: null, folderMode: null };
+    collect.pending = session({ id: 9, paths: ["D:/a.txt"], invocations: 1 });
+    const user = userEvent.setup();
+    const { unmount } = render(<QuickApp />);
+    const result = await screen.findByTestId("collect-result");
+    expect(result).toHaveAttribute("data-auto", "true");
+    expect(db.addItems).toHaveBeenCalledWith(["D:/a.txt"], {});
+    await user.click(screen.getByTestId("collect-forget"));
+    await waitFor(() => expect(db.setCollectPreference).toHaveBeenCalledWith(null));
+    expect(await screen.findByTestId("collect-result")).toHaveTextContent("已改为每次询问");
+    unmount();
+
+    vi.mocked(db.addItems).mockClear();
+    collect.pending = session({ id: 10, paths: ["D:/b.txt"], invocations: 1 });
+    render(<QuickApp />);
+    await screen.findByTestId("collect-action-import");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(db.collectFinish).toHaveBeenCalledWith(10, 1));
+    expect(db.addItems).not.toHaveBeenCalled();
   });
 });

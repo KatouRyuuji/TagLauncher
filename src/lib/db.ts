@@ -654,6 +654,50 @@ export async function quickLocateInMain(id: number): Promise<void> {
   return invokeCmd("quick_locate_in_main", { id });
 }
 
+// ---- 收纳与资源管理器右键菜单（阶段③） ----
+
+/** 当前收纳会话（右键菜单 / 发送到合并后的一批路径）；没有时为 null */
+export async function collectSession(): Promise<import("./collect").CollectSession | null> {
+  return invokeCmd("collect_session");
+}
+
+/** 处理完（或取消）会话的前 handled 条；之后到达的路径后端会作为下一个会话再弹出 */
+export async function collectFinish(id: number, handled: number): Promise<void> {
+  return invokeCmd("collect_finish", { id, handled });
+}
+
+export async function getCollectPreference(): Promise<import("./collect").CollectPreference | null> {
+  return invokeCmd("get_collect_preference");
+}
+
+/** 保存（或 null 清除）「记住本次选择」 */
+export async function setCollectPreference(
+  preference: import("./collect").CollectPreference | null,
+): Promise<import("./collect").CollectPreference | null> {
+  return invokeCmd("set_collect_preference", { preference });
+}
+
+export interface ShellIntegrationStatus {
+  supported: boolean;
+  enabled: boolean;
+  partial: boolean;
+  registeredExe: string | null;
+  currentExe: string;
+  exeMatches: boolean;
+  sendTo: boolean;
+  verbs: boolean[];
+}
+
+/** 资源管理器右键菜单与「发送到」的实际注册状态 */
+export async function getShellIntegration(): Promise<ShellIntegrationStatus> {
+  return invokeCmd("get_shell_integration");
+}
+
+/** 开启（也用于修复为当前位置）/ 关闭并清理右键菜单与「发送到」 */
+export async function setShellIntegration(enabled: boolean): Promise<ShellIntegrationStatus> {
+  return invokeCmd("set_shell_integration", { enabled });
+}
+
 /** 首个实例的启动方式：background 时主题就绪后不显示主窗 */
 export async function getLaunchMode(): Promise<LaunchMode> {
   return invokeCmd("get_launch_mode");
