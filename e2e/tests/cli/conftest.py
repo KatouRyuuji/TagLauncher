@@ -35,11 +35,6 @@ class Tl:
     def json(self, *args):
         return json.loads(self.run("--json", *args).out)
 
-    def mcp(self, messages: list[dict], timeout: float = 30) -> list[dict]:
-        text = "\n".join(json.dumps(m, ensure_ascii=False) for m in messages) + "\n"
-        proc = self.run("mcp", input=text, timeout=timeout)
-        return [json.loads(line) for line in proc.out.splitlines() if line.strip()]
-
 
 @pytest.fixture
 def tl(sandbox, cli_path):

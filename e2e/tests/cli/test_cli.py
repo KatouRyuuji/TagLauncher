@@ -1,4 +1,4 @@
-"""CLI 层：tl.exe 与 MCP（E-CLI-*、E-SEC-03、E-ENV-14）。"""
+"""CLI 层：tl.exe（E-CLI-*、E-SEC-03、E-ENV-14）。"""
 from __future__ import annotations
 
 import json
@@ -195,73 +195,6 @@ def test_concurrent_gui_and_cli_writes(tl, sandbox, app_factory):
     assert dbh.scalar(sandbox.db_path, "SELECT COUNT(*) FROM items") == 120, (
         f"缺失 {missing}；GUI failed={gui_failed}；CLI stdout/err={[(r.out[-400:], r.err[-400:]) for r in results]}")
     assert len(app.items()) == 120
-
-
-def _mcp_init(tl, extra):
-    msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize",
-             "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}},
-            {"jsonrpc": "2.0", "method": "notifications/initialized"}] + extra
-    return {r["id"]: r for r in tl.mcp(msgs)}
-
-
-def _tool(resp):
-    assert not resp["result"].get("isError"), resp
-    return json.loads(resp["result"]["content"][0]["text"])
-
-
-@pytest.mark.case("E-CLI-09")
-def test_mcp_handshake_and_read_tools(tl, sandbox):
-    tl.ensure_db()
-    zoo = _zoo(sandbox)
-    tl.json("add", zoo["txt"], zoo["png"], zoo["bat"])
-    ids = [i["id"] for i in tl.json("list")]
-    out = _mcp_init(tl, [
-        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "overview", "arguments": {}}},
-        {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "search_items", "arguments": {"query": "笔记"}}},
-        {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "get_item", "arguments": {"id": ids[0]}}},
-        {"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "get_item", "arguments": {}}},
-        {"jsonrpc": "2.0", "id": 7, "method": "ping"},
-        {"jsonrpc": "2.0", "id": 8, "method": "nope"},
-    ])
-    init = out[1]["result"]
-    assert init["protocolVersion"] == "2025-06-18"
-    assert init["serverInfo"]["name"] == "tag-launcher" and "tools" in init["capabilities"]
-    tools = {t["name"]: t for t in out[2]["result"]["tools"]}
-    assert set(tools) == {"search_items", "get_item", "overview", "launch_item", "add_items", "remove_items",
-                          "add_tag", "set_item_tags", "set_favorite"}
-    assert all(t["inputSchema"]["type"] == "object" for t in tools.values())
-    ov = _tool(out[3])
-    assert ov["tags"] == [] and ov["cabinets"] == []
-    found = _tool(out[4])
-    assert found["total"] == 1 and found["items"][0]["name"] == "笔记.txt"
-    assert _tool(out[5])["id"] == ids[0]
-    assert out[6]["result"]["isError"] is True and "id" in out[6]["result"]["content"][0]["text"]
-    assert out[7]["result"] == {}
-    assert out[8]["error"]["code"] == -32601
-
-
-@pytest.mark.case("E-CLI-10")
-def test_mcp_write_tools(tl, sandbox):
-    tl.ensure_db()
-    zoo = _zoo(sandbox)
-    out = _mcp_init(tl, [
-        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "add_items", "arguments": {"paths": [str(zoo["txt"]), str(zoo["md"])]}}},
-    ])
-    assert _tool(out[2])["created"] == 2
-    ids = [i["id"] for i in tl.json("list")]
-    out = _mcp_init(tl, [
-        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "set_item_tags", "arguments": {"item_id": ids[0], "tag_names": ["新标签"], "create_missing": True}}},
-        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "set_favorite", "arguments": {"ids": ids, "favorite": True}}},
-        {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "remove_items", "arguments": {"ids": [ids[1]]}}},
-        {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "set_item_tags", "arguments": {"item_id": ids[0], "tag_names": ["缺失"]}}},
-    ])
-    for i in (2, 3, 4):
-        _tool(out[i])
-    assert out[5]["result"].get("isError") is True
-    assert dbh.query(sandbox.db_path, "SELECT t.name FROM item_tags it JOIN tags t ON t.id=it.tag_id WHERE it.item_id=?", (ids[0],)) == [("新标签",)]
-    assert dbh.query(sandbox.db_path, "SELECT id, is_favorite FROM items") == [(ids[0], 1)]
-    assert zoo["md"].exists()
 
 
 @pytest.mark.case("E-SEC-03")
