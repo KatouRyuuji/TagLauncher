@@ -33,7 +33,7 @@ pub fn recolor_tags_and_cabinets(
         reject_bad_hex(patch.color)?;
     }
 
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     {
         let mut tag_stmt = tx
             .prepare("UPDATE tags SET color = ?1 WHERE id = ?2")

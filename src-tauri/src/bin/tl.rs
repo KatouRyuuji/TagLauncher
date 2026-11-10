@@ -168,6 +168,11 @@ fn run(args: CliArgs) -> Result<(), String> {
                     eprintln!("  失败: {} ({})", f.path, f.error);
                 }
             }
+            // 部分失败也按错误退出（退出码 1、stderr「错误: …」），与其它子命令约定一致；
+            // --json 时 stdout 仍是完整结果（含 failed 明细），脚本可据退出码判断后再读明细。
+            if !result.failed.is_empty() {
+                return Err(format!("{} 个路径添加失败（共 {} 个）", result.failed.len(), result.failed.len() + result.items.len()));
+            }
         }
         Cmd::Remove { ids } => {
             if ids.is_empty() {

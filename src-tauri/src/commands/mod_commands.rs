@@ -196,7 +196,7 @@ pub fn delete_mod(
     // 不留"enabled_mods 已改但 mod_kv 残留"的半截状态。
     {
         let conn = db.get_conn();
-        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
         let (mut enabled, _) = settings_service::get_enabled_mods(&tx);
         if enabled.contains(&mod_id) {
             enabled.retain(|id| id != &mod_id);

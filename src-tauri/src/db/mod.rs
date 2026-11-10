@@ -7,6 +7,14 @@ pub use connection::Database;
 use rusqlite::Connection;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// 开写事务一律用 `BEGIN IMMEDIATE`：GUI 与 tl/MCP 跨进程共用实库（WAL）。
+/// 默认的 DEFERRED 事务先读后写，若读快照之后别的进程已提交，升级写锁时 SQLite 直接返回
+/// SQLITE_BUSY(_SNAPSHOT)，**不走** busy_timeout——表现为 `tl add` 与 GUI 并发时整批
+/// "database is locked"。IMMEDIATE 在 BEGIN 处就拿写锁，冲突时按连接的 busy_timeout 排队。
+pub fn write_tx(conn: &Connection) -> rusqlite::Result<rusqlite::Transaction<'_>> {
+    rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+}
+
 /// 写入冻结标志：切换数据目录 / 导入数据 / 云端恢复成功后、重启前的窗口内，
 /// 对旧库的一切写入都将在重启后丢失，故冻结并由各写入口统一报错（读不受影响）。
 /// 用全局标志而非 Database 实例字段：service 层写路径只持有 &Connection，拿不到实例。

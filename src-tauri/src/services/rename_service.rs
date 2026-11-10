@@ -202,7 +202,7 @@ fn move_error_text(code: u32, new_name: &str) -> String {
 
 /// 在已持有的连接上写库：对象本身按原路径守卫；文件夹同时替换库内子对象的路径前缀。
 fn write_rename(conn: &mut rusqlite::Connection, p: &Planned) -> Result<(), String> {
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(conn).map_err(|e| e.to_string())?;
     let changed = tx
         .execute(
             "UPDATE items SET path = ?1, name = ?2, type = ?3 WHERE id = ?4 AND rtrim(path, '\\/') = ?5 AND is_missing = 0",

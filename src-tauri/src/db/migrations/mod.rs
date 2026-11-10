@@ -238,7 +238,7 @@ pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
         // 用闭包收敛结果，确保 foreign_keys 在**失败路径也能恢复**——UP 失败时 tx 随 Drop
         // 回滚，外键 PRAGMA 必须在事务结束后重新开启，避免连接在外键关闭状态下继续使用。
         let result: Result<(), rusqlite::Error> = (|| {
-            let tx = conn.unchecked_transaction()?;
+            let tx = crate::db::write_tx(&conn)?;
             migration.up(&tx)?;
             record_migration(&tx, migration.as_ref())?;
             set_schema_version(&tx, migration.version())?;

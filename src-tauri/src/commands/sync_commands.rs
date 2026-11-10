@@ -96,7 +96,7 @@ pub fn sync_set_config(db: State<Database>, config: SyncConfig) -> Result<(), St
 
     let conn = db.get_conn();
     // 多键写入包在一个事务里，防止半截配置（与 ai_set_config 同一策略）
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     set_setting(&tx, KEY_URL, url)?;
     set_setting(&tx, KEY_USERNAME, config.username.trim())?;
     // 密码留空 = 不修改（前端不持有明文，回存整份配置时不能清掉已存密码）
@@ -791,7 +791,7 @@ pub fn read_local_secrets(db: &Database) -> Result<Vec<(String, String)>, String
 /// pub 以便集成测试验证「恢复保留本机凭据」这一原语。
 pub fn reapply_local_secrets(db: &Database, secrets: &[(String, String)]) -> Result<(), String> {
     let conn = db.get_conn();
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     tx.execute_batch("DELETE FROM app_meta WHERE key LIKE 'ai.%' OR key LIKE 'sync.%'")
         .map_err(|e| e.to_string())?;
     for (key, value) in secrets {

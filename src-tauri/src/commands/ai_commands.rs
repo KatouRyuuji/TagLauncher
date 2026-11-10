@@ -104,7 +104,7 @@ pub fn ai_set_config(db: State<Database>, config: AiConfig) -> Result<(), String
     let conn = db.get_conn();
     // 七项配置写入包在一个事务里：中途失败（DB 锁/磁盘错误）整体回滚，
     // 不留"地址已写但模型没写"之类的半截配置（用户无法分辨哪些键已落库）。
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     set_setting(&tx, KEY_BASE_URL, config.base_url.trim())?;
     // 密钥留空 = 不修改：前端不再持有明文，回存整份配置时不能把已存密钥清空。
     let new_key = config.api_key.trim();

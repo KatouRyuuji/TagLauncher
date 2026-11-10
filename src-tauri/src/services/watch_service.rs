@@ -320,7 +320,7 @@ pub fn list_ignored_paths(conn: &Connection, under: Option<&str>) -> Result<Vec<
 /// 恢复追踪：从忽略名单删除这些路径（整批一个事务）。
 pub fn restore_ignored_paths(conn: &Connection, paths: &[String]) -> Result<(), String> {
     crate::db::ensure_writes_allowed()?;
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     for path in paths {
         tx.execute("DELETE FROM ignored_paths WHERE path_key = ?1", [path_key(path)])
             .map_err(|e| e.to_string())?;

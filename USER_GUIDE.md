@@ -143,7 +143,7 @@ TagLauncher 用「标签 + 文件柜 + 收藏 + 搜索」管理你的本地文�
 
 - `tl search "关键词"` / `tl list` / `tl get 42`：查询对象；加 `--json` 输出 JSON；
 - `tl launch 42` 或 `tl launch "关键词"`：启动对象；
-- `tl add <路径...>` / `tl remove <id...>` / `tl fav <id...>`：添加 / 移除 / 收藏；
+- `tl add <路径...>` / `tl remove <id...>` / `tl fav <id...>`：添加 / 移除 / 收藏；`add` 只要有路径失败（如路径不存在）就以退出码 1 结束，失败明细见 stderr（`--json` 时在输出的 `failed` 字段）；
 - `tl tag list` / `tl tag add "设计"` / `tl tag set 42 "设计" "参考"`：标签管理；
 - `tl cabinet list` / `tl stats`：文件柜与库统计；
 - `tl tui`：终端交互界面（输入即搜索，Enter 启动，Ctrl+D 收藏，Esc 退出）；

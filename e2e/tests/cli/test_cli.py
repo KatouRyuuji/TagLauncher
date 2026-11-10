@@ -113,6 +113,22 @@ def test_fav_tag_cabinet(tl, sandbox):
 
 
 @pytest.mark.case("E-CLI-06")
+def test_add_partial_failure_exits_nonzero(tl, sandbox):
+    """部分路径失败：退出码 1 + stderr「错误」，--json 的 stdout 仍是完整结果并列出失败明细。"""
+    tl.ensure_db()
+    good = files.write(sandbox.files / "部分" / "在.txt", "ok")
+    gone = sandbox.files / "部分" / "不存在.txt"
+    r = tl.run("--json", "add", good, gone, check=False)
+    assert r.returncode == 1, (r.returncode, r.out, r.err)
+    assert "错误" in r.err and "1 个路径添加失败" in r.err, r.err
+    out = json.loads(r.out)
+    assert out["created"] == 1 and [f["path"] for f in out["failed"]] == [str(gone)], out
+    assert dbh.scalar(sandbox.db_path, "SELECT COUNT(*) FROM items") == 1
+    plain = tl.run("add", gone, check=False)
+    assert plain.returncode == 1 and "失败" in plain.err and str(gone) in plain.err, plain.err
+
+
+@pytest.mark.case("E-CLI-06")
 def test_argument_errors(tl, sandbox):
     tl.ensure_db()
     for args in (["get"], ["get", "abc"], ["remove"], ["fav"], ["add"], ["get", "999999"], ["launch", "没有这个"]):
