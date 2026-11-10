@@ -1,5 +1,5 @@
 import type { ItemViewProps, ItemWithTags } from "../types";
-import { ItemPlaceholder } from "./ItemPlaceholder";
+import { ItemPlaceholder, useLoadedRowHeight } from "./ItemPlaceholder";
 import { ItemCard } from "./ItemCard";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
@@ -268,10 +268,12 @@ export function ItemGrid({
     return () => setWorkspaceGridLanes(1);
   }, [fewResults, count, lanes]);
 
+  // 已加载行的真实行高（含 paddingBottom 行间距）：未测量行与占位都按它估算，跳转/取页时行高不再骤变
+  const loadedRowHeight = useLoadedRowHeight(scrollRef, rowEstimate);
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowEstimate,
+    estimateSize: () => loadedRowHeight,
     // 行高测量走自定义 measureGridRow：挂载与尺寸变化都读真实 DOM 高度，
     // 不信任 itemSizeCache 的残留值（见 measureGridRow 注释）。
     measureElement: measureGridRow,
@@ -368,7 +370,7 @@ export function ItemGrid({
     const item = view.get(id);
     if (!item) {
       return (
-        <ItemPlaceholder key={id} height={Math.max(40, rowEstimate - GRID_GAP)} />
+        <ItemPlaceholder key={id} height={Math.max(40, loadedRowHeight - GRID_GAP)} />
       );
     }
     const isSelected = selectedItemIdSet.has(item.id);

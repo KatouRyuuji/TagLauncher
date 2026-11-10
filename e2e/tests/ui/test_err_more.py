@@ -20,7 +20,7 @@ def stub_raw(app, cmd, spec):
 @pytest.mark.expected_js_errors
 @pytest.mark.case("E-ERR-02")
 def test_list_load_failure_and_retry(app):
-    stub_raw(app, "get_items", {"queue": [{"error": INJECT + "：列表"}, {"passthrough": True}]})
+    stub_raw(app, "view_query", {"queue": [{"error": INJECT + "：列表"}, {"passthrough": True}]})
     app.refresh_items()
     panel = app.page.get_by_role("heading", name="对象列表加载失败")
     panel.wait_for(timeout=8000)

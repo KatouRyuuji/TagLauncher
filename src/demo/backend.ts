@@ -76,9 +76,25 @@ interface DemoState {
   ignoredPaths: string[];
 }
 
+/** URL 加 ?demo-extra=<n> 追加 n 个合成文本对象（分页/滚动巡检用，不改动任何命令契约） */
+function extraDemoItems(): DemoItemSeed[] {
+  const raw = Number(new URLSearchParams(window.location.search).get("demo-extra"));
+  const n = Number.isFinite(raw) ? Math.min(Math.max(0, Math.floor(raw)), 100_000) : 0;
+  return Array.from({ length: n }, (_, i) => ({
+    id: 100_000 + i,
+    name: `合成对象 ${String(i).padStart(5, "0")}`,
+    path: `D:\\Demo\\合成\\${String(Math.floor(i / 1000)).padStart(2, "0")}\\obj${i}.txt`,
+    type: "text",
+    icon_path: null,
+    created_at: "2025-01-01T00:00:00Z",
+    is_favorite: false,
+    tagIds: [],
+  }));
+}
+
 function seedState(): DemoState {
   return {
-    items: DEMO_ITEMS.map((item) => ({ ...item, tagIds: [...item.tagIds] })),
+    items: [...DEMO_ITEMS, ...extraDemoItems()].map((item) => ({ ...item, tagIds: [...item.tagIds] })),
     tags: DEMO_TAGS.map((tag) => ({ ...tag })),
     relations: DEMO_TAG_RELATIONS.map((rel) => ({ ...rel })),
     cabinets: DEMO_CABINETS.map((cabinet) => ({ ...cabinet })),

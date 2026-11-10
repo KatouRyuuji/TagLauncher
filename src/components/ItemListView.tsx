@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { ItemViewProps, ItemWithTags } from "../types";
-import { ItemPlaceholder } from "./ItemPlaceholder";
+import { ItemPlaceholder, useLoadedRowHeight } from "./ItemPlaceholder";
 import { useAppStore } from "../stores/appStore";
 import { scaledRowEstimate } from "../lib/uiFontScale";
 import { isHeaderSortActive, isHeaderSortDesc, toggleHeaderSort, type ListHeaderColumn } from "../lib/itemQuery";
@@ -236,10 +236,12 @@ export function ItemListView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowMetricsRef = useRef<Map<number, { start: number; size: number }>>(new Map());
 
+  const loadedRowHeight = useLoadedRowHeight(scrollRef, rowHeightEstimate);
   const virtualizer = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowHeightEstimate,
+    // 未测量行按已加载行的真实行高估算（见 useLoadedRowHeight）
+    estimateSize: () => loadedRowHeight,
     // 行 key 用对象 id 而非默认行索引：筛选/排序/换柜后行 key 变化触发 React
     // 重建行 DOM 并由 measureElement 同步重测；索引复用会让旧行高残留在
     // itemSizeCache（v3 同步测量命中缓存即不读 DOM），表现为行距错乱。
@@ -421,7 +423,7 @@ export function ItemListView({
                   role="presentation"
                   style={{ position: "absolute", top: vRow.start, left: 0, right: 0 }}
                 >
-                  <ItemPlaceholder height={rowHeightEstimate} />
+                  <ItemPlaceholder height={loadedRowHeight} />
                 </div>
               );
             }

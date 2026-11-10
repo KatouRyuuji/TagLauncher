@@ -423,7 +423,7 @@ class AppSession:
         self.page.reload(wait_until="domcontentloaded")
         self.page.locator('[data-region="root"]').wait_for(state="attached", timeout=60_000)
         self.page.wait_for_function("() => window.__e2e && window.__e2e.calls.some((c) => c.cmd === 'get_tags')"
-                                    " && window.__e2e.calls.some((c) => c.cmd === 'get_items')", timeout=30_000)
+                                    " && window.__e2e.calls.some((c) => c.cmd === 'view_query')", timeout=30_000)
         self.page.wait_for_timeout(300)
         if self.dismiss_welcome:
             self.close_welcome(timeout_ms=2500)
