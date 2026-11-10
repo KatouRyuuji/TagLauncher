@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import * as db from "../lib/db";
+import { latestOnly, SKIPPED } from "../lib/latestOnly";
 import { announceWindowWrite, onAnyDataChanged } from "../lib/dataSync";
 import { formatPathCopy } from "../lib/itemQuery";
 import { itemDisplayName } from "../lib/itemDisplay";
@@ -65,6 +66,8 @@ export function QuickApp() {
   const [picker, setPicker] = useState<TagPickerState | null>(null);
   const pendingQueryStart = useRef<{ q: string; start: number } | null>(null);
   const searchSeq = useRef(0);
+  // 同一时刻只一个搜索在途，打字期间只保留最后一个词（后端索引锁串行，避免慢机排队）
+  const [runQuickSearch] = useState(() => latestOnly((args: Parameters<typeof db.quickSearch>[0]) => db.quickSearch(args)));
   // 数据版本：任何来源的写入（主窗、tl CLI、本窗口）都重查当前词，隐藏期间也做，唤出时即是最新
   const [dataTick, setDataTick] = useState(0);
   useEffect(() => onAnyDataChanged(() => setDataTick((t) => t + 1)), []);
@@ -81,9 +84,9 @@ export function QuickApp() {
   useEffect(() => {
     const seq = ++searchSeq.current;
     const started = performance.now();
-    db.quickSearch({ query, mode: prefs.searchMode, hideMissing: prefs.hideMissing, limit: QUICK_RESULT_LIMIT })
+    runQuickSearch({ query, mode: prefs.searchMode, hideMissing: prefs.hideMissing, limit: QUICK_RESULT_LIMIT })
       .then((r) => {
-        if (seq !== searchSeq.current) return;
+        if (r === SKIPPED || seq !== searchSeq.current) return;
         setRes({ query, total: r.total, indexed: r.indexed, items: r.items });
         // 「加载」= 空查询结果就绪（含后端首次建索引），E2E 据此等待预热完成
         if (!query.trim()) recordQuickLoad(r.indexed, performance.now() - started);

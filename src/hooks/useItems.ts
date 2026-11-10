@@ -12,6 +12,7 @@ import type { AddItemsContext } from "../lib/db";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
 import { markSearchResult } from "../lib/searchPerf";
+import { latestOnly, SKIPPED } from "../lib/latestOnly";
 import { TAGS_WRITTEN_EVENT } from "./useTags";
 
 /** 主题换色后的就地改色事件：detail.tagColors = { tagId: color }。
@@ -460,6 +461,8 @@ export function useItems() {
   );
   const [searchHits, setSearchHits] = useState<{ query: string; ids: number[] } | null>(null);
   const searchSeqRef = useRef(0);
+  // 同一时刻只一个搜索在途，期间的新词只保留最后一个（后端索引锁串行，避免慢机排队）
+  const [runSearch] = useState(() => latestOnly((args: db.SearchQueryArgs) => db.searchQuery(args)));
   useEffect(() => {
     const seq = ++searchSeqRef.current;
     if (!hasSearchQuery) {
@@ -467,9 +470,9 @@ export function useItems() {
       return;
     }
     const query = deferredSearchQuery;
-    db.searchQuery({ query, mode: searchMode, scopeIds: searchScopeIds, typeFilter, hideMissing })
+    runSearch({ query, mode: searchMode, scopeIds: searchScopeIds, typeFilter, hideMissing })
       .then((ids) => {
-        if (seq === searchSeqRef.current) setSearchHits({ query, ids });
+        if (ids !== SKIPPED && seq === searchSeqRef.current) setSearchHits({ query, ids });
       })
       .catch((error: unknown) => {
         if (seq !== searchSeqRef.current) return;

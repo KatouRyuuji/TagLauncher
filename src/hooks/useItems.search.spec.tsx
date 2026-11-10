@@ -84,7 +84,7 @@ describe("对象搜索（后端索引）与筛选", () => {
     await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([1]));
   });
 
-  it("新结果到达前沿用上一次结果，过期响应被丢弃", async () => {
+  it("新结果到达前沿用上一次结果；在途期间只保留最新查询，过期响应被丢弃", async () => {
     const { result } = renderHook(useItems);
     await waitFor(() => expect(result.current.loading).toBe(false));
     act(() => useAppStore.setState({ searchQuery: "xmwd" }));
@@ -94,9 +94,14 @@ describe("对象搜索（后端索引）与筛选", () => {
     act(() => useAppStore.setState({ searchQuery: "vs" }));
     expect(result.current.items.map((item) => item.id)).toEqual([1]);
     act(() => useAppStore.setState({ searchQuery: "vsc" }));
-    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([2]));
+    // 在途的 "vs" 未返回前不再发新请求；"vsc" 排队，界面仍是上一次结果
+    await new Promise((r) => setTimeout(r, 50));
+    expect(vi.mocked(db.searchQuery).mock.calls.map(([args]) => args.query)).toEqual(["xmwd", "vs"]);
+    expect(result.current.items.map((item) => item.id)).toEqual([1]);
+    // "vs" 返回后其结果作废，紧接着只发出 "vsc"
     await act(async () => releaseSlow([1, 2]));
-    expect(result.current.items.map((item) => item.id)).toEqual([2]);
+    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([2]));
+    expect(vi.mocked(db.searchQuery).mock.calls.map(([args]) => args.query)).toEqual(["xmwd", "vs", "vsc"]);
   });
 
   it("隐藏失效同时作用于浏览与搜索结果", async () => {
