@@ -4,6 +4,7 @@ mod data_sync;
 mod desktop;
 mod quick;
 pub mod search;
+pub mod view;
 // 集成测试（tests/ 目录把本 crate 当外部 rlib 使用）与 CLI 二进制（src/bin/tl.rs）
 // 只能访问 pub 项，故将以下模块公开，使其 service/db/model/extension/cli 层可被直接调用。
 // 仅放宽可见性，不改变任何业务逻辑。
