@@ -304,8 +304,9 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 |--------|------|--------|------|
 | `add_item` | path: String | Item | 添加项目，自动检测类型 |
 | `remove_item` | id: i64 | () | 删除项目；位于监视或关联文件夹内的路径记入忽略列表（`ignored_paths`），文件夹连同其下对象一起移出 |
-| `get_items` | include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 获取所有项目及标签；自动图标默认开启，工作台传 false 后按可见项目加载 |
-| `get_items_by_ids` | ids: Vec\<i64\>, include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 批量获取指定项目；自动图标默认开启 |
+| `get_items` | include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 获取所有项目及标签；自动图标默认开启。主窗浏览不再调用（分页见 6.1），仅 Mod 接口（`getItems` / `onItemsChanged`）、AI 全部打标与 AI 设置页、含未登记文件夹的移出规划临时整表取 |
+| `get_items_by_ids` | ids: Vec\<i64\>, include_visuals: Option\<bool\> | Vec\<ItemWithTags\> | 批量获取指定项目（SQL，写连接）；自动图标默认开启。写操作后的按 ID 增量刷新、命令面板前 8 条、标签图谱/关系编辑器用 |
+| `get_items_page` | ids: Vec\<i64\> | Vec\<ItemWithTags\> | 主窗取页：从内存索引按请求顺序组装（不含自动图标，已不存在的略去）；经只读连接校验 data_version，不争写连接 |
 | `get_item_visual` | id: i64 | { path, icon_path } | 获取已登记对象图标，返回对象路径供异步请求核对 |
 | `toggle_favorite` | id: i64 | bool | 切换收藏状态 |
 | `set_item_note` | id: i64, note: String | () | 设置对象备注（去首尾空白，空白存 NULL，最多 2000 字） |
@@ -364,9 +365,20 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
               ├─ search：表达式解析（&& || 空格OR () @ !!）+ 同义词扩展 + 逐项打分
               └─ sort：字段排序 / 智能排序，refreeze=false 时沿用冻结顺序 → 全部有序 ID
               ↓
-  ItemStore：只持有 ID 与 LRU 页缓存（页 50、上限 3000 条）；ItemGrid/ItemListView 按可视区间
-  ensureRange → get_items_by_ids 取页，未到的格子渲染占位；总数/全选/批量/定位按 ID 进行
+  ItemStore：只持有 ID 与 LRU 页缓存（页 50、上限 3000 条）；ItemGrid/ItemListView 在虚拟器滚动回调里
+  ensureRange → get_items_page 取可视页，随后单独预取前后各一页；未到的格子渲染占位；
+  总数/全选/批量/定位按 ID 进行
 ```
+
+**主窗分页要点**（`src/lib/itemView.ts`、`src/hooks/useItems.ts`、`src/hooks/useLoadedItems.ts`）：
+
+- 视图 = 后端给的有序 ID + 页缓存。页按 50 对齐；缓存超过 3000 条从最久未用的淘汰。
+- `data-changed` / 刷新：缓存整体标记过期（epoch）但不清空，旧内容先显示，用到时重取；新视图 ID 到达后替换。写操作后按 ID 用 `get_items_by_ids` 回填（`upsert`）。
+- 按 ID 取齐（`view.load` / `useLoadedItems`）：选中集、编辑目标、预览、右键多选；≤100 条顺带进缓存，更大的批量只返回，不挤掉可视页。
+- 占位与未测量行按已加载行的真实行高估算（`useLoadedRowHeight`），页到达时行高不变，避免 ResizeObserver 回调里连带挂载新行。
+- 计数不取对象：侧栏/图谱用 `library_stats`；失效对象只在审阅对话框打开时按 `missingIds` 取齐。
+- 命令面板对象结果：同一 `view_query`（面板范围）+ 前 8 条 `get_items_by_ids`；typeahead 走 `view_typeahead`；打开文件夹/隐藏对象的浏览落点走 `browse_target`。
+- 测量：E2E `E-PERF-MAIN-MEM`（`e2e/tests/ui/test_main_perf.py`）记录分进程内存、JS 堆、首屏、跳转滚动（含每次跳转的取页起点与往返），阈值依据见该文件说明。
 
 索引在首屏后 `search_warm` 预建；data_sync 发出 `data-changed` 后调用 `refresh_if_built`，本进程写入经 data_version 变化在下次搜索前刷新。拼音由 `pinyin.rs` 移植 pinyin-pro 的分词与多音字规则，字典 `pinyin_data.txt` 由 `scripts/search-corpus/export-pinyin-data.mjs` 从 pinyin-pro 导出；`src-tauri/tests/fixtures/search_corpus.json` 是旧 TS 实现生成的逐查询对照语料（`corpus_tests.rs`）。
 
