@@ -29,6 +29,11 @@ def test_folder_menu(app, sandbox):
     assert "打开此文件夹" in labels and "监视此文件夹" in labels and "打开上一级" in labels, labels
     menu.get_by_role("menuitem", name="监视此文件夹").click()
     app.wait_toast("已打开监视")
+    # toast 在 set_folder_watch 返回时即弹，监视状态随后才由 get_folder_watch_status 刷新
+    # （885a0c6 实测晚 ~140ms）；等刷新回来再开菜单，否则读到的是旧状态
+    t_set = app.wait_ipc("set_folder_watch")[-1]["t"]
+    wait_until(lambda: any(c["t"] >= t_set and c.get("done") for c in app.calls("get_folder_watch_status")), 5,
+               lambda: app.calls("get_folder_watch_status"))
     labels = menu_labels(app.context_menu("菜单夹"))
     assert any(l.startswith("停止监视此文件夹") for l in labels), labels
     app.page.get_by_role("menuitem").filter(has_text="停止监视此文件夹").click()
