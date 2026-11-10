@@ -58,8 +58,11 @@ SCROLL_JS = """async (frac) => {
       const ms = performance.now() - t0;
       const after = store();
       // 本次跳转的第一次取页（可视页）相对滚动的起点与往返耗时：拆分渲染与取页
-      const f = after && (after.recentFetches || []).find((x) => x.start >= t0);
-      return { ms, cards: n, fetched: !!f, fetchStartMs: f ? f.start - t0 : null, fetchMs: f ? f.end - f.start : null };
+      const f = after && (after.recentFetches || []).find((x) => x.start >= t0 && x.kind === 'visible');
+      // 页数据到达后列表提交的时刻：取页结束 → 提交 → 下一帧（本次返回）三段可分
+      const c = (window.__tlMainPerf || {}).lastDataCommitMs;
+      return { ms, cards: n, fetched: !!f, fetchStartMs: f ? f.start - t0 : null, fetchMs: f ? f.end - f.start : null,
+               commitMs: f && c >= f.end ? c - t0 : null };
     }
     if (performance.now() - t0 > 10000) return { ms: null, cards: 0 };
   }

@@ -54,6 +54,44 @@ test("取页到达只通知数据订阅者、不换视图快照；ID/写入变�
   assert.equal(full, 1);
 });
 
+test("相邻页预取等可视页返回后才发；预取到达不在可视区间时不通知列表", async () => {
+  const db = new Map(Array.from({ length: 500 }, (_, i) => [i + 1, make(i + 1)] as const));
+  const calls: number[][] = [];
+  const pending: (() => void)[] = [];
+  const store = new ItemStore((ids) => {
+    calls.push(ids);
+    return new Promise((resolve) => pending.push(() => resolve(ids.flatMap((id) => db.get(id) ?? []))));
+  });
+  store.setIds(Array.from({ length: 500 }, (_, i) => i + 1));
+  const snap = store.getSnapshot();
+  let data = 0;
+  snap.subscribeData(() => data++);
+  store.ensureRange(260, 270);
+  await tick();
+  assert.deepEqual(calls.map((c) => [c[0], c.length]), [[251, 50]], "可视页未返回前不发预取");
+  pending.shift()!();
+  await tick();
+  assert.equal(data, 1, "可视页到达通知一次");
+  assert.deepEqual(calls.map((c) => [c[0], c.length]), [[251, 50], [201, 100]]);
+  pending.shift()!();
+  await tick();
+  assert.equal(data, 1, "预取页在可视区间外：不重渲染");
+  assert.equal(snap.get(201)?.name, "o201", "但已进缓存");
+  // 预取在途时滚到预取页：到达时在可视区间内，照常通知
+  store.ensureRange(400, 410);
+  await tick();
+  pending.shift()!();
+  await tick();
+  assert.equal(data, 2);
+  store.ensureRange(350, 360);
+  await tick();
+  assert.deepEqual(calls.at(-1)!.slice(0, 1), [351], "上一页预取在途");
+  store.ensureRange(350, 360);
+  pending.shift()!();
+  await tick();
+  assert.equal(data, 3, "在途预取页已进入可视区间：到达即通知");
+});
+
 test("缓存有上限：超过 MAX_CACHED 时淘汰最久未用的页", async () => {
   const n = MAX_CACHED + 500;
   const b = backend(n);

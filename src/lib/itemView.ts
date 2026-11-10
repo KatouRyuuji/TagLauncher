@@ -5,7 +5,8 @@
 // - 对象数据只缓存最近用到的若干页（LRU，上限 MAX_CACHED），可视区间变化时补取缺页；
 // - 写入后按 ID 就地更新缓存；全量刷新把缓存标成过期：旧数据先照常显示，用到时重取；
 // - 两路通知：ID/代/写入变化换新的视图快照（持有方整体重渲染）；只是页数据到达时只通知
-//   订阅了数据版本的列表组件（subscribeData），不让整个工作台为每页重渲染一次。
+//   订阅了数据版本的列表组件（subscribeData），不让整个工作台为每页重渲染一次；
+// - 相邻页预取排在可视页返回之后（不与可视页抢 IPC），落在可视区间外的预取到达不通知。
 // ============================================================================
 import type { ItemWithTags } from "../types";
 import { registerPerfStats } from "./mainPerf";
@@ -14,6 +15,8 @@ export const PAGE_SIZE = 50;
 export const MAX_CACHED = 3000;
 
 export type FetchItems = (ids: number[]) => Promise<ItemWithTags[]>;
+/** visible：可视区间缺页；ahead：相邻页预取；load：按 ID 取（批量操作等） */
+type FetchKind = "visible" | "ahead" | "load";
 
 /** 只读视图：组件按它渲染（version 变即重渲染）。 */
 export interface ItemView {
@@ -47,7 +50,10 @@ export class ItemStore {
   private ids: readonly number[] = [];
   private index = new Map<number, number>();
   private version = 0;
-  private readonly recentFetches: { start: number; end: number; count: number }[] = [];
+  private readonly recentFetches: { start: number; end: number; count: number; kind: FetchKind }[] = [];
+  /** 最近一次 ensureRange 的页对齐区间（含 overscan 行）：判断预取到达是否需要重渲染 */
+  private visibleFrom = 0;
+  private visibleTo = 0;
   private snapshot: ItemView;
   /** 统计：页请求次数与取回对象数 */
   fetches = 0;
@@ -187,14 +193,27 @@ export class ItemStore {
   ensureRange(start: number, end: number) {
     const from = Math.max(0, Math.floor(start / PAGE_SIZE) * PAGE_SIZE);
     const to = Math.min(this.ids.length, Math.ceil(end / PAGE_SIZE) * PAGE_SIZE);
+    this.visibleFrom = from;
+    this.visibleTo = to;
     const missing: number[] = [];
     for (let i = from; i < to; i++) {
       const id = this.ids[i];
       if (this.needs(id)) missing.push(id);
       else this.touch(id);
     }
-    if (missing.length > 0) void this.fetch(missing, true).catch((e: unknown) => console.error("取对象页失败:", e));
-    // 相邻页预取（前后各一页，单独一次请求，排在可视页之后）：连续滚动到下一页时通常已在缓存
+    if (missing.length === 0) {
+      this.prefetchAround(from, to);
+      return;
+    }
+    // 可视页先单独取；返回后再预取相邻页，两次请求不并发争 IPC 与后端索引锁
+    void this.fetch(missing, true, "visible")
+      .catch((e: unknown) => console.error("取对象页失败:", e))
+      .then(() => this.prefetchAround(from, to));
+  }
+
+  /** 相邻页预取（前后各一页，合成一次请求）：连续滚动到下一页时通常已在缓存。可视区间已变则不再预取旧邻页。 */
+  private prefetchAround(from: number, to: number) {
+    if (from !== this.visibleFrom || to !== this.visibleTo) return;
     const ahead: number[] = [];
     const lo = Math.max(0, from - PAGE_SIZE);
     const hi = Math.min(this.ids.length, to + PAGE_SIZE);
@@ -204,7 +223,16 @@ export class ItemStore {
       const id = this.ids[i];
       if (this.needs(id)) ahead.push(id);
     }
-    if (ahead.length > 0) void this.fetch(ahead, true).catch((e: unknown) => console.error("预取对象页失败:", e));
+    if (ahead.length > 0) void this.fetch(ahead, true, "ahead").catch((e: unknown) => console.error("预取对象页失败:", e));
+  }
+
+  /** 这批对象里是否有落在当前可视区间（含 overscan）内的 */
+  private touchesVisible(ids: readonly number[]) {
+    for (const id of ids) {
+      const i = this.index.get(id);
+      if (i !== undefined && i >= this.visibleFrom && i < this.visibleTo) return true;
+    }
+    return false;
   }
 
   /**
@@ -220,7 +248,7 @@ export class ItemStore {
       else missing.push(id);
     }
     if (missing.length > 0) {
-      const items = await this.fetch(missing, missing.length <= PAGE_SIZE * 2);
+      const items = await this.fetch(missing, missing.length <= PAGE_SIZE * 2, "load");
       for (const item of items) got.set(item.id, item);
     }
     const out: ItemWithTags[] = [];
@@ -231,7 +259,7 @@ export class ItemStore {
     return out;
   }
 
-  private async fetch(ids: number[], cache: boolean): Promise<ItemWithTags[]> {
+  private async fetch(ids: number[], cache: boolean, kind: FetchKind): Promise<ItemWithTags[]> {
     if (cache) for (const id of ids) this.inflight.add(id);
     const epoch = this.epoch;
     try {
@@ -240,7 +268,7 @@ export class ItemStore {
       const items = await this.fetchItems(ids);
       this.fetchedItems += items.length;
       if (typeof performance !== "undefined") {
-        this.recentFetches.push({ start: t0, end: performance.now(), count: ids.length });
+        this.recentFetches.push({ start: t0, end: performance.now(), count: ids.length, kind });
         if (this.recentFetches.length > 8) this.recentFetches.shift();
       }
       const got = new Set(items.map((item) => item.id));
@@ -262,7 +290,8 @@ export class ItemStore {
       return items;
     } finally {
       if (cache) for (const id of ids) this.inflight.delete(id);
-      this.emitData();
+      // 预取的页不在可视区间内：数据已进缓存，滚到那里时的渲染自然读到，不必现在重渲染列表
+      if (kind !== "ahead" || this.touchesVisible(ids)) this.emitData();
     }
   }
 }

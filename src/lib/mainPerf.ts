@@ -8,6 +8,8 @@
 interface MainPerf {
   firstItemsMs?: number;
   firstItemsCount?: number;
+  /** 最近一次页数据到达后列表提交的时刻（performance.now）：E2E 拆分跳转耗时用 */
+  lastDataCommitMs?: number;
   stats: Record<string, () => unknown>;
 }
 
@@ -27,6 +29,12 @@ export function markFirstItems(count: number) {
     p.firstItemsMs = performance.now();
     p.firstItemsCount = count;
   });
+}
+
+/** 列表因页数据到达而提交（layout effect 中调用）：只写一个时间戳 */
+export function markDataCommit() {
+  if (typeof window === "undefined") return;
+  perf().lastDataCommitMs = performance.now();
 }
 
 /** 登记一个缓存统计函数（E2E 经 __tlMainPerf.stats[name]() 读取）。 */
