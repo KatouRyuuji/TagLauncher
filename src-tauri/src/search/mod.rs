@@ -6,3 +6,5 @@ pub mod pinyin;
 
 #[cfg(test)]
 mod corpus_tests;
+#[cfg(test)]
+mod design_tests;

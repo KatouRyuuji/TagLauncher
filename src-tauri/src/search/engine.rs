@@ -840,3 +840,52 @@ impl Entry {
             + self.tags.capacity() * std::mem::size_of::<Arc<Text>>()
     }
 }
+
+#[cfg(test)]
+mod synonym_tests {
+    //! 由迁移前的 src/lib/synonyms.design.test.ts 移植（期望值不变）。
+    use super::Synonyms;
+
+    fn syn(gs: &[&[&str]]) -> Synonyms {
+        Synonyms::from_groups(
+            &gs.iter()
+                .map(|g| g.iter().map(|s| s.to_string()).collect())
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    #[test]
+    fn expand_rules() {
+        let s = syn(&[&["忍者神龟", "四小王八"]]);
+        assert_eq!(s.expand("忍者神龟"), ["忍者神龟", "四小王八"]);
+        assert_eq!(s.expand("四小王八"), ["四小王八", "忍者神龟"]);
+        assert_eq!(s.expand("无关词"), ["无关词"]);
+        let s = syn(&[&["a", "b"]]);
+        assert_eq!(s.expand(""), [""]);
+        assert_eq!(s.expand("   "), ["   "]);
+        let s = syn(&[&["abc", "xyz"]]);
+        assert_eq!(s.expand("ABC"), ["ABC", "xyz"]);
+        assert_eq!(s.expand("  abc  "), ["  abc  ", "xyz"]);
+        assert_eq!(syn(&[&["a", "b", "c"]]).expand("a"), ["a", "b", "c"]);
+        assert_eq!(syn(&[&[" Foo ", "Bar"]]).expand("foo"), ["foo", "bar"]);
+        assert_eq!(
+            syn(&[&["foo", "", "  ", "bar"]]).expand("foo"),
+            ["foo", "bar"]
+        );
+        assert_eq!(
+            syn(&[&["", "  "], &["keep", "me"]]).expand("keep"),
+            ["keep", "me"]
+        );
+    }
+
+    #[test]
+    fn overlapping_groups_merge_into_equivalence_classes() {
+        let s = syn(&[&["游戏", "game"], &["game", "电竞"]]);
+        assert_eq!(s.expand("游戏"), ["游戏", "game", "电竞"]);
+        assert_eq!(s.expand("电竞"), ["电竞", "游戏", "game"]);
+        assert_eq!(s.expand("game"), ["game", "游戏", "电竞"]);
+        let s = syn(&[&["a", "b"], &["c", "d"], &["b", "c"]]);
+        assert_eq!(s.expand("a"), ["a", "b", "c", "d"]);
+        assert_eq!(s.expand("d"), ["d", "a", "b", "c"]);
+    }
+}
