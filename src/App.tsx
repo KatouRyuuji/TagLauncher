@@ -53,7 +53,6 @@ import { ToastContainer } from "./components/ToastContainer";
 import { FloatingPanels } from "./components/FloatingPanels";
 import * as db from "./lib/db";
 import { showToast } from "./lib/toast";
-import { markFirstItems } from "./lib/mainPerf";
 
 const WELCOME_HIDE_KEY = "taglauncher.hide_welcome_modal";
 
@@ -134,10 +133,7 @@ function App() {
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   // 快速搜索窗「在主窗定位」：清空筛选后选中并滚动到目标
   useQuickLocate(view, setSelectedItemIds);
-  // 首屏：首页对象数据到达并提交后（不是 ID 列表到达时）
-  useEffect(() => {
-    if (!loading && view.at(0)) markFirstItems(view.ids.length);
-  }, [loading, view]);
+  // 首屏标记在列表组件里（useViewData：首页对象数据提交后）
 
   useCardPointerHighlight();
 

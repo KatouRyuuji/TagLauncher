@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { ItemViewProps, ItemWithTags } from "../types";
 import { ItemPlaceholder, useLoadedRowHeight } from "./ItemPlaceholder";
+import { useViewData } from "../hooks/useViewData";
 import { useAppStore } from "../stores/appStore";
 import { scaledRowEstimate } from "../lib/uiFontScale";
 import { isHeaderSortActive, isHeaderSortDesc, toggleHeaderSort, type ListHeaderColumn } from "../lib/itemQuery";
@@ -222,6 +223,8 @@ export function ItemListView({
   ]);
 
   const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
+  // 页数据到达只重渲染列表（返回值仅用于触发重渲染）
+  useViewData(view);
   const ids = view.ids;
   const count = ids.length;
   const itemIds = ids;

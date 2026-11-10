@@ -1,5 +1,6 @@
 import type { ItemViewProps, ItemWithTags } from "../types";
 import { ItemPlaceholder, useLoadedRowHeight } from "./ItemPlaceholder";
+import { useViewData } from "../hooks/useViewData";
 import { ItemCard } from "./ItemCard";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
@@ -181,6 +182,8 @@ export function ItemGrid({
   const sizeScale = iconLayout ? iconSizeScale : cardSizeScale;
   const rowEstimate = iconLayout ? ICONS_ROW_EST : GRID_ROW_EST;
   /** 少结果旁路：1–3 张卡顶左一组（与满网格同锚点）；icons 仍走虚拟化主路径 */
+  // 页数据到达只重渲染列表（返回值仅用于触发重渲染）
+  useViewData(view);
   const ids = view.ids;
   const count = ids.length;
   const fewResults = Boolean(!libraryEmpty && count > 0 && count <= 3 && !iconLayout);

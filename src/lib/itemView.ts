@@ -3,7 +3,9 @@
 // ----------------------------------------------------------------------------
 // - ids：当前视图（已筛选排序 / 搜索命中）的全部 ID，总数、全选、批量与定位都基于它；
 // - 对象数据只缓存最近用到的若干页（LRU，上限 MAX_CACHED），可视区间变化时补取缺页；
-// - 写入后按 ID 就地更新缓存；全量刷新把缓存标成过期：旧数据先照常显示，用到时重取。
+// - 写入后按 ID 就地更新缓存；全量刷新把缓存标成过期：旧数据先照常显示，用到时重取；
+// - 两路通知：ID/代/写入变化换新的视图快照（持有方整体重渲染）；只是页数据到达时只通知
+//   订阅了数据版本的列表组件（subscribeData），不让整个工作台为每页重渲染一次。
 // ============================================================================
 import type { ItemWithTags } from "../types";
 import { registerPerfStats } from "./mainPerf";
@@ -24,6 +26,9 @@ export interface ItemView {
   ensureRange(start: number, end: number): void;
   /** 取指定对象（缓存优先，缺的向后端取），批量操作用 */
   load(ids: readonly number[]): Promise<ItemWithTags[]>;
+  /** 页数据到达（快照不变）时通知；配合 dataVersion 用于 useSyncExternalStore */
+  subscribeData(fn: () => void): () => void;
+  dataVersion(): number;
 }
 
 interface Slot {
@@ -37,6 +42,8 @@ export class ItemStore {
   private inflight = new Set<number>();
   private epoch = 0;
   private listeners = new Set<() => void>();
+  private dataListeners = new Set<() => void>();
+  private dataVer = 0;
   private ids: readonly number[] = [];
   private index = new Map<number, number>();
   private version = 0;
@@ -73,10 +80,25 @@ export class ItemStore {
 
   getSnapshot = () => this.snapshot;
 
+  private subscribeData = (fn: () => void) => {
+    this.dataListeners.add(fn);
+    return () => this.dataListeners.delete(fn);
+  };
+
+  private getDataVersion = () => this.dataVer;
+
   private emit() {
     this.version += 1;
+    this.dataVer += 1;
     this.snapshot = this.makeView();
     for (const fn of this.listeners) fn();
+    for (const fn of this.dataListeners) fn();
+  }
+
+  /** 只有缓存内容变了（取页到达）：快照不换，只通知列表组件 */
+  private emitData() {
+    this.dataVer += 1;
+    for (const fn of this.dataListeners) fn();
   }
 
   private makeView(): ItemView {
@@ -93,6 +115,8 @@ export class ItemStore {
       },
       ensureRange: (start, end) => this.ensureRange(start, end),
       load: (want) => this.load(want),
+      subscribeData: this.subscribeData,
+      dataVersion: this.getDataVersion,
     };
   }
 
@@ -238,7 +262,7 @@ export class ItemStore {
       return items;
     } finally {
       if (cache) for (const id of ids) this.inflight.delete(id);
-      this.emit();
+      this.emitData();
     }
   }
 }
@@ -256,6 +280,8 @@ export function staticView(items: readonly ItemWithTags[]): ItemView {
     at: (i) => items[i],
     ensureRange: () => {},
     load: async (want) => want.flatMap((id) => byId.get(id) ?? []),
+    subscribeData: () => () => {},
+    dataVersion: () => 0,
   };
 }
 

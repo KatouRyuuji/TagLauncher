@@ -33,6 +33,27 @@ test("按页对齐补取可视区间，已缓存的页不重取；可视页先�
   assert.deepEqual(b.calls.slice(3).map((c) => [c[0], c.length]), [[251, 50], [201, 100]], "跳转：可视页在前，上一页与下一页合并在后");
 });
 
+test("取页到达只通知数据订阅者、不换视图快照；ID/写入变化换快照", async () => {
+  const b = backend(100);
+  const store = new ItemStore(b.fetch);
+  store.setIds(Array.from({ length: 100 }, (_, i) => i + 1));
+  const snap = store.getSnapshot();
+  let full = 0;
+  let data = 0;
+  store.subscribe(() => full++);
+  snap.subscribeData(() => data++);
+  const v0 = snap.dataVersion();
+  snap.ensureRange(0, 10);
+  await tick();
+  assert.equal(store.getSnapshot(), snap, "快照不变（工作台不因每页重渲染）");
+  assert.equal(full, 0);
+  assert.ok(data >= 1 && snap.dataVersion() > v0);
+  assert.equal(snap.get(1)?.name, "o1");
+  store.upsert([make(1, "改名")]);
+  assert.notEqual(store.getSnapshot(), snap);
+  assert.equal(full, 1);
+});
+
 test("缓存有上限：超过 MAX_CACHED 时淘汰最久未用的页", async () => {
   const n = MAX_CACHED + 500;
   const b = backend(n);
