@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } from "react";
-import { isScanCancelled, scanErrorMessage } from "../lib/relocateScan";
+import { autoRelocateFailureNotice } from "../lib/relocateScan";
 import { onExternalDataChanged } from "../lib/dataSync";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
@@ -291,13 +291,10 @@ export function useItems() {
   useEffect(() => {
     relocateMissingRef.current = () => {
       void relocateMissing().catch((error: unknown) => {
-        // 用户在失效对话框里停止了自动扫描：不是故障，安静说明即可
-        if (isScanCancelled(error)) {
-          showToast(scanErrorMessage(error), "info");
-          return;
-        }
-        console.error("跨盘找回失败:", error);
-        showToast(`跨盘找回失败：${error instanceof Error ? error.message : String(error)}`, "error");
+        // 停止（用户主动）→ 安静说明；超过 5 分钟上限 → 警告并引导限定文件夹；其余才算故障
+        const notice = autoRelocateFailureNotice(error);
+        if (notice.tone === "error") console.error("跨盘找回失败:", error);
+        showToast(notice.message, notice.tone);
       });
     };
   }, [relocateMissing]);

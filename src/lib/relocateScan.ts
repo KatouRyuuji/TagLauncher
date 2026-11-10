@@ -37,6 +37,16 @@ export function scanErrorMessage(err: unknown): string {
   return errorText(err).replace(/^\[[a-z_]+\]\s*/, "");
 }
 
+/**
+ * 自动触发的全盘找回（发现对象丢失后）没有成功时给用户的提示。自动扫描同样受 5 分钟上限约束：
+ * 停止 → info（用户主动）；超时 → warning（未完成核验，引导到限定文件夹）；其余 → error。
+ */
+export function autoRelocateFailureNotice(err: unknown): { message: string; tone: "info" | "warning" | "error" } {
+  if (isScanCancelled(err)) return { message: scanErrorMessage(err), tone: "info" };
+  if (isScanTimedOut(err)) return { message: `自动跨盘找回未完成：${scanErrorMessage(err)}`, tone: "warning" };
+  return { message: `跨盘找回失败：${scanErrorMessage(err)}`, tone: "error" };
+}
+
 function formatCount(n: number): string {
   if (n < 10_000) return `${n} 项`;
   return `${(n / 10_000).toFixed(n < 1_000_000 ? 1 : 0)} 万项`;
