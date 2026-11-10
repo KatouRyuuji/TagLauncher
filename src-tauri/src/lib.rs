@@ -421,6 +421,7 @@ pub fn run() {
             // 收藏
             toggle_favorite,
             set_item_note,
+            set_item_alias,
             rename_items,
             set_favorites,
             clear_recent_items,

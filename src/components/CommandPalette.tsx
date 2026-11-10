@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { itemDisplayName } from "../lib/itemDisplay";
 import { createPortal } from "react-dom";
 import {
   ArrowDownUp,
@@ -460,7 +461,7 @@ export function CommandPalette({
               >
                 <PackageOpen aria-hidden="true" size={17} strokeWidth={1.8} className="row-sub shrink-0 text-[var(--text-faint)]" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate">{row.item.name}</span>
+                  <span className="block truncate">{itemDisplayName(row.item)}</span>
                   {/* 第二行展示中段折叠的路径：同名对象靠位置区分（盘符 + 文件名信息量最高） */}
                   <span className="row-sub mt-0.5 block truncate text-[length:calc(13px*var(--ui-font-scale,1))] leading-4 text-[var(--text-faint)]">
                     {truncatePathMiddle(row.item.path)}

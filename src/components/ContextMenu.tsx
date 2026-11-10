@@ -11,6 +11,7 @@ import {
   ImagePlus,
   ImageOff,
   PencilLine,
+  Type as TypeIcon,
   Radar,
   Play,
   Star,
@@ -583,6 +584,16 @@ export function ContextMenu({
             label="编辑备注…"
             onClick={() => {
               useAppStore.getState().setNoteEditorItemId(item.id);
+              onClose();
+            }}
+          />
+        )}
+        {!multi && (
+          <MenuItem
+            icon={TypeIcon}
+            label="设置显示别名…"
+            onClick={() => {
+              useAppStore.getState().setAliasEditorItemId(item.id);
               onClose();
             }}
           />

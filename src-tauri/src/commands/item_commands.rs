@@ -221,6 +221,13 @@ pub fn set_item_note(db: State<Database>, id: i64, note: String) -> Result<(), S
     item_service::set_item_note(&conn, id, &note)
 }
 
+/// 设置对象显示别名（只改显示，不改磁盘名；空白清除，超长报错）
+#[tauri::command]
+pub fn set_item_alias(db: State<Database>, id: i64, alias: String) -> Result<(), String> {
+    let conn = db.get_conn();
+    item_service::set_item_alias(&conn, id, &alias)
+}
+
 /// 重命名对象（磁盘真实名称与库内记录一起改）；dry_run 只校验不执行。
 /// 校验含文件系统 IO，用 (async) 放到工作线程；每个对象只在改磁盘与写库这一小段持锁。
 #[tauri::command(async)]

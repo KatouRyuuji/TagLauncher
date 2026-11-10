@@ -110,6 +110,7 @@ fn upgrade_from_v4_preserves_cascading_relations() {
     assert_eq!(ci, 1, "cabinet_items 关联应存活");
     assert!(has_column(&conn, "items", "file_id"), "身份列应补齐");
     assert!(has_column(&conn, "items", "hide_from_all"), "v021 应补上 hide_from_all");
+    assert!(has_column(&conn, "items", "alias"), "v022 应补上显示别名 alias");
     let hidden: i64 = conn
         .query_row("SELECT hide_from_all FROM items WHERE id=1", [], |r| r.get(0))
         .unwrap();

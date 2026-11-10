@@ -494,6 +494,13 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       requireItem(num(args.id)).note = note || null;
       return null;
     }
+    case "set_item_alias": {
+      const alias = str(args.alias).trim();
+      if ([...alias].length > 120) throw new Error(`别名最多 120 字，当前 ${[...alias].length} 字`);
+      if (/[\u0000-\u001f\u007f]/.test(alias)) throw new Error("别名不能包含换行或控制字符");
+      requireItem(num(args.id)).alias = alias || null;
+      return null;
+    }
     case "rename_items": {
       // 演示版按后端主要规则校验，不触碰磁盘；目标正好是同批另一对象的原名时允许（互换、链式、成环），
       // 内存中一次性计算所有新路径，文件夹改名时其下对象的路径前缀随之替换。

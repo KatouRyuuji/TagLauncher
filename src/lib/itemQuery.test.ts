@@ -355,4 +355,13 @@ test("文件创建 / 修改时间：双方向，取不到时间的始终排最�
   assert.deepEqual(ids("fs-modified-asc"), [4, 3, 1, 2, 5]);
 });
 
+test("名称排序按显示名（有别名用别名），磁盘名不变", () => {
+  const items = [
+    item({ id: 1, name: "aaa.exe", alias: "zz 别名" }),
+    item({ id: 2, name: "mmm.exe" }),
+  ];
+  assert.deepEqual(sortItemsByMode(items, "name").map((entry) => entry.id), [2, 1]);
+  assert.equal(items[0].name, "aaa.exe");
+});
+
 await run("itemQuery");

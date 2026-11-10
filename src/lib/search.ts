@@ -10,6 +10,8 @@ interface SearchIndexEntry {
 
 interface SearchableFields {
   nameEntry: SearchableText;
+  /** 显示别名（F07）：与名称同权参与匹配 */
+  aliasEntry: SearchableText | null;
   pathWithoutDrive: string;
   tagEntries: SearchableText[];
   noteText: string;
@@ -49,6 +51,7 @@ export interface SearchIndex {
 interface SearchFieldsCacheEntry {
   name: string;
   path: string;
+  alias: string;
   tagsKey: string;
   note: string;
   fields: SearchableFields;
@@ -146,11 +149,13 @@ function getTagSearchText(name: string): SearchableText {
 function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
   const tagsKey = item.tags.map((tag) => `${tag.id}:${tag.name}`).join("|");
   const note = item.note ?? "";
+  const alias = item.alias?.trim() ?? "";
   const cached = searchFieldsCache.get(item.id);
   if (
     cached &&
     cached.name === item.name &&
     cached.path === item.path &&
+    cached.alias === alias &&
     cached.tagsKey === tagsKey &&
     cached.note === note
   ) {
@@ -163,6 +168,14 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
   const tagEntries = item.tags.map((tag) => getTagSearchText(tag.name));
 
   const fields = {
+    aliasEntry: alias
+      ? {
+          name: normalize(alias),
+          pinyinName: normalize(toPinyinText(alias)),
+          pinyinInitials: normalize(toPinyinInitials(alias)),
+          englishName: deriveEnglishFields(alias),
+        }
+      : null,
     nameEntry: {
       name: normalize(item.name),
       pinyinName: normalize(toPinyinText(item.name)),
@@ -184,7 +197,7 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
       evictCount -= 1;
     }
   }
-  searchFieldsCache.set(item.id, { name: item.name, path: item.path, tagsKey, note, fields });
+  searchFieldsCache.set(item.id, { name: item.name, path: item.path, alias, tagsKey, note, fields });
 
   return {
     item,
@@ -572,7 +585,10 @@ function scoreText(text: SearchableText, query: string, strict: boolean): MatchS
 }
 
 function scoreName(entry: SearchIndexEntry, query: string, strict: boolean): MatchScore {
-  const score = scoreText(entry.fields.nameEntry, query, strict);
+  let score = scoreText(entry.fields.nameEntry, query, strict);
+  if (score !== 2 && entry.fields.aliasEntry) {
+    score = Math.max(score, scoreText(entry.fields.aliasEntry, query, strict)) as MatchScore;
+  }
   if (strict || score === 2) return score;
 
   // path 作为弱辅助字段：使用 createSearchEntry 缓存的去盘符路径，降低单个盘符字母的噪声命中。

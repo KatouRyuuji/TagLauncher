@@ -242,6 +242,8 @@ interface AppState {
   previewItemId: number | null;
   /** 备注编辑弹窗的目标对象（右键 / 快速预览共用，由 App 统一挂载） */
   noteEditorItemId: number | null;
+  /** 显示别名编辑弹窗的对象（F07） */
+  aliasEditorItemId: number | null;
   renameItemId: number | null;
   /** 单选热键 / 命令面板打开的条目标签编辑器（由 App 统一挂载，避免虚拟化未挂载） */
   tagEditorItemId: number | null;
@@ -301,6 +303,7 @@ interface AppState {
   setShortcutsHelpOpen: (open: boolean) => void;
   setPreviewItemId: (id: number | null) => void;
   setNoteEditorItemId: (id: number | null) => void;
+  setAliasEditorItemId: (id: number | null) => void;
   setRenameItemId: (id: number | null) => void;
   setTagEditorItemId: (id: number | null) => void;
   setBatchAddTagOpen: (open: boolean) => void;
@@ -365,6 +368,7 @@ export const useAppStore = create<AppState>((set, get) => {
   shortcutsHelpOpen: false,
   previewItemId: null,
   noteEditorItemId: null,
+  aliasEditorItemId: null,
   renameItemId: null,
   tagEditorItemId: null,
   batchAddTagOpen: false,
@@ -551,6 +555,7 @@ export const useAppStore = create<AppState>((set, get) => {
   setShortcutsHelpOpen: (open) => set((state) => state.shortcutsHelpOpen === open ? state : { shortcutsHelpOpen: open }),
   setPreviewItemId: (id) => set((state) => state.previewItemId === id ? state : { previewItemId: id }),
   setNoteEditorItemId: (id) => set((state) => state.noteEditorItemId === id ? state : { noteEditorItemId: id }),
+  setAliasEditorItemId: (id) => set((state) => state.aliasEditorItemId === id ? state : { aliasEditorItemId: id }),
   setRenameItemId: (id) => set((state) => state.renameItemId === id ? state : { renameItemId: id }),
   setTagEditorItemId: (id) => set((state) => state.tagEditorItemId === id ? state : { tagEditorItemId: id }),
   setBatchAddTagOpen: (open) => set((state) => state.batchAddTagOpen === open ? state : { batchAddTagOpen: open }),

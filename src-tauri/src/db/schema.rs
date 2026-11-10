@@ -35,7 +35,8 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             note TEXT,
             fs_created_at INTEGER,
             fs_modified_at INTEGER,
-            hide_from_all INTEGER NOT NULL DEFAULT 0
+            hide_from_all INTEGER NOT NULL DEFAULT 0,
+            alias TEXT
         );
 
         -- 注意: idx_items_identity（身份唯一索引）不能放在此批处理中,

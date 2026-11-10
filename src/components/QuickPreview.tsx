@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { itemDisplayName, itemNameTitle } from "../lib/itemDisplay";
 import { createPortal } from "react-dom";
 import { Copy, FolderOpen, Play, ScanSearch, StickyNote, TriangleAlert, X } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
@@ -70,8 +71,8 @@ export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps)
             </div>
             <div className="min-w-0">
               <p className="instrument-label">{getTypeLabel(item.type)}</p>
-              <h2 className="mt-1 truncate text-base font-semibold text-[var(--text-primary)]" title={item.name}>
-                {item.name}
+              <h2 className="mt-1 truncate text-base font-semibold text-[var(--text-primary)]" title={itemNameTitle(item)}>
+                {itemDisplayName(item)}
               </h2>
               <div className="mt-1 flex min-w-0 items-center gap-1.5">
                 <p className="data-readout min-w-0 flex-1 truncate text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]" title={item.path}>

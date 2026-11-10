@@ -6,7 +6,7 @@ import pytest
 from harness import files
 from harness.app import wait_until
 
-FILE_MENU = {"快速预览", "复制路径", "加入收藏", "管理标签", "编辑备注…", "重命名…", "添加到文件柜",
+FILE_MENU = {"快速预览", "复制路径", "加入收藏", "管理标签", "编辑备注…", "设置显示别名…", "重命名…", "添加到文件柜",
              "从库中移除", "删除本地文件", "缩略图"}
 
 

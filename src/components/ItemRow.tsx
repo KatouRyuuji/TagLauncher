@@ -1,4 +1,5 @@
 import { memo, useState } from "react";
+import { itemDisplayName, itemNameTitle } from "../lib/itemDisplay";
 import { TriangleAlert } from "lucide-react";
 import { ContextMenu } from "./ContextMenu";
 import { DraggableTagList } from "./DraggableTagList";
@@ -136,9 +137,9 @@ function ItemRowComponent({
             />
           </div>
           <div className="min-w-0">
-            <h3 className="flex items-center gap-1.5 truncate text-[length:calc(14px*var(--ui-font-scale,1))] font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
+            <h3 className="flex items-center gap-1.5 truncate text-[length:calc(14px*var(--ui-font-scale,1))] font-semibold leading-5 text-[var(--text-primary)]" title={itemNameTitle(item)}>
               <span className="truncate">
-                <SearchHighlightText text={item.name} query={searchQuery} />
+                <SearchHighlightText text={itemDisplayName(item)} query={searchQuery} />
               </span>
               <ItemNoteIcon note={item.note} />
               {item.is_missing && (

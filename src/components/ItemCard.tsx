@@ -1,4 +1,5 @@
 import { memo, useState, useRef, useEffect } from "react";
+import { itemDisplayName, itemNameTitle } from "../lib/itemDisplay";
 import { FolderOpen, Play, TriangleAlert } from "lucide-react";
 import { ContextMenu } from "./ContextMenu";
 import { DraggableTagList } from "./DraggableTagList";
@@ -205,7 +206,7 @@ function ItemCardComponent({
         data-selectable-item-id={item.id}
         data-selected={selected ? "true" : "false"}
         role="listitem"
-        aria-label={`${item.name}${selected ? "，已选择" : ""}`}
+        aria-label={`${itemDisplayName(item)}${selected ? "，已选择" : ""}`}
         className={`card-hover-lift item-card-render-scope item-focus-ring group relative flex cursor-pointer flex-col rounded-[var(--radius-lg)] border ${
           iconLayout ? "items-center p-2.5" : "p-4"
         } ${
@@ -256,9 +257,9 @@ function ItemCardComponent({
             </div>
             <h3
               className="mt-2 line-clamp-2 w-full text-center text-[length:calc(13px*var(--ui-font-scale,1))] font-medium leading-4 text-[var(--text-primary)]"
-              title={item.name}
+              title={itemNameTitle(item)}
             >
-              <SearchHighlightText text={item.name} query={searchQuery} />
+              <SearchHighlightText text={itemDisplayName(item)} query={searchQuery} />
             </h3>
             {iconSizeScale >= 1.5 && (
               <>
@@ -282,8 +283,8 @@ function ItemCardComponent({
           {/* 文本列为右上角的星标/选中勾预留安全间距，任何状态下文字不与控件重叠 */}
           <div className="min-w-0 flex-1 pr-9">
             <div className="flex min-w-0 items-center gap-1.5">
-              <h3 className="min-w-0 flex-1 truncate text-[length:calc(15px*var(--ui-font-scale,1))] font-semibold leading-5 text-[var(--text-primary)]" title={item.name}>
-                <SearchHighlightText text={item.name} query={searchQuery} />
+              <h3 className="min-w-0 flex-1 truncate text-[length:calc(15px*var(--ui-font-scale,1))] font-semibold leading-5 text-[var(--text-primary)]" title={itemNameTitle(item)}>
+                <SearchHighlightText text={itemDisplayName(item)} query={searchQuery} />
               </h3>
               <ItemNoteIcon note={item.note} />
               {item.is_missing && (

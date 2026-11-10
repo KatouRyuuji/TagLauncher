@@ -638,6 +638,17 @@
 "coverage": "CLI-02 tl.rs"
 },
 {
+"id": "E-OBJ-25",
+"module": "导入与对象",
+"scenario": "显示别名只改显示",
+"steps": "右键设置显示别名→搜索别名→清除",
+"expect": "卡片显示别名、搜索命中、磁盘文件名与库内 name 不变；清除后恢复磁盘名",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P1",
+"coverage": "F07"
+},
+{
 "id": "E-LCH-01",
 "module": "启动对象",
 "scenario": "双击启动 .bat",

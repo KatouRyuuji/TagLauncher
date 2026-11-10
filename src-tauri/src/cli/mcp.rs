@@ -317,6 +317,9 @@ fn brief_item(it: &ItemWithTags) -> Value {
     if it.item.hide_from_all {
         obj.insert("hide_from_all".into(), json!(true));
     }
+    if let Some(alias) = it.item.alias.as_deref().filter(|a| !a.is_empty()) {
+        obj.insert("alias".into(), json!(alias));
+    }
     if let Some(note) = it.item.note.as_deref().filter(|n| !n.is_empty()) {
         obj.insert("note".into(), json!(note));
     }

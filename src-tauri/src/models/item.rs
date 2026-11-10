@@ -25,6 +25,9 @@ pub struct Item {
     /// 默认不出现在 All 总览（递归导入的夹内文件 / 中间目录）。旧行默认 false。
     #[serde(default)]
     pub hide_from_all: bool,
+    /// 显示别名（F07）：只影响显示与搜索；磁盘名仍是 `name`。未设为 None。
+    #[serde(default)]
+    pub alias: Option<String>,
 }
 
 /// 带标签的项目（用于前端展示）

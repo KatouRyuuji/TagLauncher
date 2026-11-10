@@ -362,6 +362,11 @@ export async function setItemNote(id: number, note: string): Promise<void> {
   return invokeCmd("set_item_note", { id, note });
 }
 
+/** 设置显示别名（只改显示，不改磁盘名）；空白即清除 */
+export async function setItemAlias(id: number, alias: string): Promise<void> {
+  return invokeCmd("set_item_alias", { id, alias });
+}
+
 // ---- 重命名 ----
 
 export interface RenameRequest {
