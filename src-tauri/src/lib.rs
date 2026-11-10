@@ -414,6 +414,7 @@ pub fn run() {
             // 桌面驻留（F18）
             get_desktop_settings,
             get_launch_mode,
+            wake_data_sync,
             set_hotkey,
             set_close_action,
             set_hotkey_ignore_fullscreen,

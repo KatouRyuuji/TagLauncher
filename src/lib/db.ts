@@ -526,6 +526,11 @@ export async function getDesktopSettings(): Promise<DesktopSettings> {
   return invokeCmd("get_desktop_settings");
 }
 
+/** 主窗刚显示：通知后端立即检测外部写入（无焦点显示不触发获焦检测） */
+export async function wakeDataSync(): Promise<void> {
+  return invokeCmd("wake_data_sync");
+}
+
 /** 首个实例的启动方式：background 时主题就绪后不显示主窗 */
 export async function getLaunchMode(): Promise<LaunchMode> {
   return invokeCmd("get_launch_mode");

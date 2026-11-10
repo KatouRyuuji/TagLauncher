@@ -582,6 +582,13 @@ pub fn get_desktop_settings(app: AppHandle) -> DesktopSettings {
     app.state::<DesktopState>().snapshot(&app)
 }
 
+/// 窗口刚被前端显示（启动时主题就绪后的 show）：立即检测一次外部写入。
+/// 没有焦点的显示不会触发 Focused 事件，隐藏期的检测间隔又较长，冷路径靠这里补上。
+#[tauri::command]
+pub fn wake_data_sync() {
+    crate::data_sync::poke();
+}
+
 /// 首个实例的启动方式：前端据此决定主题就绪后是否显示主窗（后台启动不显示）。
 #[tauri::command]
 pub fn get_launch_mode() -> LaunchMode {

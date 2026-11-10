@@ -843,6 +843,8 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return structuredClone(state.desktop);
     case "get_launch_mode":
       return "show";
+    case "wake_data_sync":
+      return null;
     case "set_hotkey": {
       const action = str(args.action);
       const entry = state.desktop.hotkeys.find((h) => h.action === action);
