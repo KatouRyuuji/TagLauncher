@@ -131,9 +131,12 @@ def test_virtualization_50k(sandbox, app_factory):
     app.page.get_by_role("button", name="列表视图", exact=True).click()
     # 点名称：行中心在窄窗口落在「+ 添加标签」上
     app.page.locator("[data-selectable-item-id]").first.get_by_role("heading", level=3).click()
-    app.page.keyboard.press("End")
+    # 先确认首项已选中、记下它，再按 End（原写法按 End 后才取 first_id，End 已生效时
+    # first_id 就是末项，后面"选中应变化"永远等不到——30a15dd/571a9ee 截图里末项其实已选中）
+    wait_until(lambda: len(app.selected_ids()) == 1, 5, app.selected_ids)
     first_id = app.selected_ids()
-    wait_until(lambda: app.selected_ids() and app.selected_ids() != first_id, 10)
+    app.page.keyboard.press("End")
+    wait_until(lambda: app.selected_ids() and app.selected_ids() != first_id, 10, lambda: (first_id, app.selected_ids()))
     sel = app.selected_ids()[0]
     card = app.card_by_id(sel)
     card.wait_for(timeout=10_000)
