@@ -161,6 +161,9 @@ for (const base of BASE_NAMES) {
   if (/[a-z]{4,}/.test(full)) for (const m of mutate(full.slice(0, 6))) queries.add(m);
 }
 
+// 切片可能把 🎮 之类的代理对切开：Rust 侧字符串必为合法 UTF-8，这类查询不可能出现，剔除
+for (const q of [...queries]) if (!q.isWellFormed()) queries.delete(q);
+
 const MODES: SearchMode[] = ["all", "name", "tag"];
 const cases: Array<{ q: string; mode: SearchMode; ids: number[] }> = [];
 for (const mode of MODES) {
