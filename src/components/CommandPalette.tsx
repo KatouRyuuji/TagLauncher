@@ -28,7 +28,9 @@ import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
 import { filterCommandsByQuery, isImeKeyboardEvent, SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter, applyTypeFilter } from "../lib/itemQuery";
-import { buildSearchIndex, filterItemsByTags, searchWithIndex } from "../lib/search";
+import { buildSearchIndex, expandForTagFilter, filterItemsByTags, searchWithIndex } from "../lib/search";
+import { requestEditItemTags } from "../lib/tagEditIntent";
+import { showToast } from "../lib/toast";
 import { ensurePinyin } from "../lib/pinyinProvider";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { getCabinetItems } from "../lib/db";
@@ -51,6 +53,7 @@ const PALETTE_PRIMARY = new Set([
   "add-folders",
   "settings",
   "shortcuts",
+  "edit-tags",
 ]);
 
 interface CommandDef {
@@ -64,6 +67,7 @@ interface CommandDef {
 
 interface CommandPaletteProps {
   items: ItemWithTags[];
+  selectedItemIds: number[];
   onLaunch: (id: number) => void;
   onAddItems: (paths: string[]) => Promise<void>;
   onRefresh: () => Promise<void>;
@@ -75,6 +79,7 @@ interface CommandPaletteProps {
 
 export function CommandPalette({
   items,
+  selectedItemIds,
   onLaunch,
   onAddItems,
   onRefresh,
@@ -100,6 +105,7 @@ export function CommandPalette({
   const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
   const tagRelations = useAppStore((state) => state.tagRelations);
+  const tagFilterMode = useAppStore((state) => state.tagFilterMode);
 
   const [query, setQuery] = useState("");
   const [filterQuery, setFilterQuery] = useState("");
@@ -155,9 +161,14 @@ export function CommandPalette({
     } else if (selectedCabinetId !== null) {
       base = cabinetItemIds ? items.filter((item) => cabinetItemIds.has(item.id)) : [];
     }
-    const tagScoped = filterItemsByTags(base, selectedTagIds, (id) => descendantsMap.get(id) ?? new Set([id]), excludedTagIds);
+    const tagScoped = filterItemsByTags(
+      base,
+      selectedTagIds,
+      expandForTagFilter(tagFilterMode !== "direct", descendantsMap),
+      excludedTagIds,
+    );
     return applyTypeFilter(tagScoped, typeFilter);
-  }, [items, showFavorites, showRecent, selectedCabinetId, cabinetItemIds, selectedTagIds, excludedTagIds, descendantsMap, typeFilter]);
+  }, [items, showFavorites, showRecent, selectedCabinetId, cabinetItemIds, selectedTagIds, excludedTagIds, descendantsMap, tagFilterMode, typeFilter]);
 
   const commands = useMemo<CommandDef[]>(() => [
     { id: "search", title: "聚焦搜索", hint: "/", keywords: "search 搜索 find", icon: Search, run: () => focusWorkspaceSearch() },
@@ -190,6 +201,9 @@ export function CommandPalette({
     { id: "refresh", title: "刷新", keywords: "refresh 刷新 reload", icon: RefreshCw, run: () => { void onRefresh(); } },
     { id: "settings", title: "打开设置", hint: "Ctrl+,", keywords: "settings 设置 偏好", icon: Settings2, run: onOpenSettings },
     { id: "graph", title: "打开标签图谱", keywords: "graph 图谱 关系", icon: Tags, run: () => setTagGraphOpen(true) },
+    { id: "edit-tags", title: selectedItemIds.length > 1 ? "为选中项加入标签" : "管理选中项标签", hint: "Ctrl+T", keywords: "tag 标签 打标 批量", icon: Tags, run: () => {
+      if (!requestEditItemTags(selectedItemIds)) showToast("先选中要打标的对象", "info");
+    } },
     { id: "shortcuts", title: "快捷键一览", hint: "?", keywords: "shortcut 快捷键 help", icon: Keyboard, run: () => setShortcutsHelpOpen(true) },
     { id: "about", title: "关于 TagLauncher", keywords: "about 关于 欢迎", icon: Info, run: onOpenAbout },
   ], [
@@ -209,6 +223,7 @@ export function CommandPalette({
     typeFilter,
     setShortcutsHelpOpen,
     setViewMode,
+    selectedItemIds,
   ]);
 
   const matchedCommands = useMemo(() => {

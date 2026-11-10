@@ -13,6 +13,7 @@ import { InternalDragGhost, ItemDropActions } from "./components/InternalDragOve
 import { BatchSelectionToolbar } from "./components/BatchSelectionToolbar";
 import { RemoveFromAppConfirmDialog } from "./components/RemoveFromAppConfirmDialog";
 import { NoteEditorDialog } from "./components/NoteEditorDialog";
+import { ItemTagsEditor } from "./components/ItemTagsEditor";
 import { RenameDialog } from "./components/RenameDialog";
 import { BatchRenameDialog } from "./components/BatchRenameDialog";
 import { AddFolderImportDialog } from "./components/AddFolderImportDialog";
@@ -103,6 +104,8 @@ function App() {
   const noteEditorItem = noteEditorItemId === null ? undefined : allItems.find((item) => item.id === noteEditorItemId);
   const renameItemId = useAppStore((state) => state.renameItemId);
   const renameTarget = renameItemId === null ? undefined : allItems.find((item) => item.id === renameItemId);
+  const tagEditorItemId = useAppStore((state) => state.tagEditorItemId);
+  const tagEditorTarget = tagEditorItemId === null ? undefined : allItems.find((item) => item.id === tagEditorItemId);
   const batchRenameOpen = useAppStore((state) => state.batchRenameOpen);
   const hasBatchRenameUndo = useAppStore((state) => state.lastBatchRename !== null);
   const restartOverlay = useAppStore((state) => state.restartOverlay);
@@ -609,6 +612,7 @@ function App() {
       <Suspense fallback={null}>
         {commandPaletteOpen && <CommandPalette
           items={allItems}
+          selectedItemIds={selectedItemIds}
           onLaunch={(id) => { void handleLaunchItem(id); }}
           onAddItems={requestAddPaths}
           onRefresh={handleManualRefresh}
@@ -640,6 +644,20 @@ function App() {
           item={renameTarget}
           onSave={(newName) => renameItem(renameTarget.id, newName)}
           onClose={() => useAppStore.getState().setRenameItemId(null)}
+        />
+      )}
+      {tagEditorTarget && (
+        <ItemTagsEditor
+          key={tagEditorTarget.id}
+          item={tagEditorTarget}
+          tags={tags}
+          onSave={async (tagIds) => {
+            await setItemTags(tagEditorTarget.id, tagIds);
+            useAppStore.getState().setTagEditorItemId(null);
+          }}
+          onAddNewTag={async (name, baseTagIds) => addNewTagToItem(tagEditorTarget.id, name, baseTagIds)}
+          onRecycleNewTags={recycleNewTags}
+          onClose={() => useAppStore.getState().setTagEditorItemId(null)}
         />
       )}
       {batchRenameOpen && (

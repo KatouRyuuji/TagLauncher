@@ -557,7 +557,19 @@ export function ContextMenu({
           onClick={handleToggleFavoriteClick}
           accent={(multi ? !multi.favoriteTarget : item.is_favorite) ? "favorite" : undefined}
         />
-        <MenuItem icon={Tags} label="管理标签" onClick={() => { onEditTags(); onClose(); }} />
+        <MenuItem
+          icon={Tags}
+          label={multi ? "加入标签" : "管理标签"}
+          onClick={() => {
+            if (multi) {
+              onClose();
+              useAppStore.getState().setBatchAddTagOpen(true);
+              return;
+            }
+            onEditTags();
+            onClose();
+          }}
+        />
         {!multi && (
           <MenuItem
             icon={StickyNote}

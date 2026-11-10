@@ -9,6 +9,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BatchSelectionToolbar } from "./BatchSelectionToolbar";
+import { useAppStore } from "../stores/appStore";
 
 function deferred() {
   let resolve!: () => void;
@@ -64,6 +65,15 @@ describe("BatchSelectionToolbar 重命名", () => {
     renderToolbar({ onRename });
     await userEvent.click(screen.getByRole("button", { name: "重命名" }));
     expect(onRename).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("BatchSelectionToolbar 热键打开加入标签", () => {
+  it("batchAddTagOpen 时展开加入标签菜单且不覆写入口", async () => {
+    useAppStore.setState({ batchAddTagOpen: true });
+    renderToolbar({ selectedCount: 3 });
+    expect(await screen.findByText("将加到 3 个对象")).toBeInTheDocument();
+    expect(useAppStore.getState().batchAddTagOpen).toBe(false);
   });
 });
 

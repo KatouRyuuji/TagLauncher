@@ -142,6 +142,48 @@ describe("useWorkspaceHotkeys · F2 重命名", () => {
   });
 });
 
+describe("useWorkspaceHotkeys · Ctrl+T 打标", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    useAppStore.setState({
+      previewItemId: null,
+      noteEditorItemId: null,
+      tagEditorItemId: null,
+      batchAddTagOpen: false,
+      commandPaletteOpen: false,
+      shortcutsHelpOpen: false,
+    });
+  });
+
+  it("单选打开条目标签编辑", () => {
+    setup({ items: [previewItem(1), previewItem(2)], selectedItemIds: [2] });
+    fireEvent.keyDown(window, { key: "t", ctrlKey: true });
+    expect(useAppStore.getState().tagEditorItemId).toBe(2);
+    expect(useAppStore.getState().batchAddTagOpen).toBe(false);
+  });
+
+  it("多选打开批量加入标签", () => {
+    setup({ items: [previewItem(1), previewItem(2)], selectedItemIds: [1, 2] });
+    fireEvent.keyDown(window, { key: "t", ctrlKey: true });
+    expect(useAppStore.getState().batchAddTagOpen).toBe(true);
+    expect(useAppStore.getState().tagEditorItemId).toBeNull();
+  });
+
+  it("输入中按 Ctrl+T 不触发", () => {
+    const input = setup({ items: [previewItem(1)], selectedItemIds: [1] });
+    input.focus();
+    fireEvent.keyDown(input, { key: "t", ctrlKey: true });
+    expect(useAppStore.getState().tagEditorItemId).toBeNull();
+    expect(useAppStore.getState().batchAddTagOpen).toBe(false);
+  });
+
+  it("IME 组合中不触发", () => {
+    setup({ items: [previewItem(1)], selectedItemIds: [1] });
+    fireEvent.keyDown(window, { key: "t", ctrlKey: true, isComposing: true });
+    expect(useAppStore.getState().tagEditorItemId).toBeNull();
+  });
+});
+
 describe("useWorkspaceHotkeys · Backspace 返回上一级", () => {
   beforeEach(() => {
     document.body.innerHTML = "";

@@ -68,6 +68,16 @@ describe("TagFilterBar 右键反选", () => {
     expect(screen.queryByText("且非")).not.toBeInTheDocument();
   });
 
+  it("可切换仅直接标签并写入偏好", async () => {
+    useAppStore.setState({ tagFilterMode: "descendants" });
+    render(<TagFilterBar />);
+    const toggle = screen.getByRole("button", { name: "含后代" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(toggle);
+    expect(useAppStore.getState().tagFilterMode).toBe("direct");
+    expect(screen.getByRole("button", { name: "仅直接标签" })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("排除芯片前写「且非」", () => {
     useAppStore.setState({
       tags: [

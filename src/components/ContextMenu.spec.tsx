@@ -75,6 +75,62 @@ describe("右键「打开所在文件夹」后刷新对象", () => {
   });
 });
 
+describe("右键标签入口", () => {
+  beforeEach(() => useAppStore.setState({ batchAddTagOpen: false }));
+
+  it("单选仍是管理当前行标签", async () => {
+    const onEditTags = vi.fn();
+    render(
+      <ContextMenu
+        item={item}
+        cabinets={[]}
+        currentCabinetId={null}
+        currentCabinetName={null}
+        position={{ x: 10, y: 10 }}
+        onClose={vi.fn()}
+        onLaunch={vi.fn()}
+        onRemove={vi.fn()}
+        onEditTags={onEditTags}
+        onToggleFavorite={vi.fn()}
+        onAddItemToCabinet={noop}
+        onRemoveItemFromCabinet={noop}
+        onUpdateThumbnail={noop}
+      />,
+    );
+    await userEvent.click(screen.getByRole("menuitem", { name: "管理标签" }));
+    expect(onEditTags).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().batchAddTagOpen).toBe(false);
+  });
+
+  it("多选改为加入标签，不打开当前行编辑器", async () => {
+    const onEditTags = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <ContextMenu
+        item={item}
+        cabinets={[]}
+        currentCabinetId={null}
+        currentCabinetName={null}
+        contextSelection={{ ids: [5, 6], paths: ["D:/a", "D:/b"], favoriteTarget: true }}
+        position={{ x: 10, y: 10 }}
+        onClose={onClose}
+        onLaunch={vi.fn()}
+        onRemove={vi.fn()}
+        onEditTags={onEditTags}
+        onToggleFavorite={vi.fn()}
+        onAddItemToCabinet={noop}
+        onRemoveItemFromCabinet={noop}
+        onUpdateThumbnail={noop}
+      />,
+    );
+    expect(screen.queryByRole("menuitem", { name: "管理标签" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("menuitem", { name: "加入标签" }));
+    expect(onEditTags).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+    expect(useAppStore.getState().batchAddTagOpen).toBe(true);
+  });
+});
+
 describe("右键「重命名…」", () => {
   beforeEach(() => useAppStore.setState({ renameItemId: null }));
 

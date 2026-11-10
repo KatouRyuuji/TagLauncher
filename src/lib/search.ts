@@ -196,8 +196,16 @@ function createSearchEntry(item: ItemWithTags): SearchIndexEntry {
  * 按标签筛选：正选为 AND 交集，反选为排除（命中任一反选标签即剔除）。
  * 传入 `expand` 时支持图状层级：每个正选标签的命中条件 = 对象拥有 {该标签 ∪ 其后代} 中任一标签
  * （选中父标签即并入所有后代对象）；反选对称地走同一后代闭包（排除父标签同时排除后代对象）。
- * 不传 `expand` 时退化为精确标签匹配。
+ * 不传 `expand` 时退化为精确标签匹配（仅直接标签，不把祖先写入 item_tags）。
  */
+export function expandForTagFilter(
+  includeDescendants: boolean,
+  descendantsMap: Map<number, Set<number>>,
+): ((tagId: number) => Set<number>) | undefined {
+  if (!includeDescendants) return undefined;
+  return (id) => descendantsMap.get(id) ?? new Set([id]);
+}
+
 export function filterItemsByTags(
   items: ItemWithTags[],
   selectedTagIds: number[],

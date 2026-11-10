@@ -50,7 +50,7 @@ interface SidebarProps {
   loading?: boolean;
   tags: Tag[];
   cabinets: Cabinet[];
-  onAddTag: (name: string, color: string) => Promise<unknown>;
+  onAddTag: (name: string, color: string) => Promise<Tag>;
   onUpdateTag: (id: number, name: string, color: string) => Promise<void>;
   onRemoveTag: (id: number) => Promise<void>;
   onAddCabinet: (name: string, color: string) => Promise<unknown>;
@@ -747,6 +747,8 @@ export function Sidebar({
           allItems={allItems}
           onAddRelation={onAddTagRelation}
           onRemoveRelation={onRemoveTagRelation}
+          onAddTag={onAddTag}
+          onRemoveTag={onRemoveTag}
           onClose={() => setShowRelationsEditor(false)}
         />
       )}

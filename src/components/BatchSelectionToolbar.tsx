@@ -26,6 +26,7 @@ import {
   tagFilterPlaceholder,
 } from "../lib/itemActionCopy";
 import { summarizeTagOwnership, type TaggableItem } from "../lib/tagOwnership";
+import { useAppStore } from "../stores/appStore";
 
 const TAG_MENU_FILTER_THRESHOLD = 8;
 
@@ -78,9 +79,20 @@ export function BatchSelectionToolbar({
 }) {
   const [openMenu, setOpenMenu] = useState<"add-tag" | "remove-tag" | "cabinet" | null>(null);
   const contextMenuOpen = useOverlayOpen();
+  const batchAddTagOpen = useAppStore((state) => state.batchAddTagOpen);
   // 批量操作进行中：禁用全部操作入口防止重复提交（大批量写库有可感知耗时），
   // 并以 aria-busy + spinner 让用户知道操作正在执行而非无响应。
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!batchAddTagOpen) return;
+    if (selectedCount === 0 || suppressed) {
+      useAppStore.getState().setBatchAddTagOpen(false);
+      return;
+    }
+    setOpenMenu("add-tag");
+    useAppStore.getState().setBatchAddTagOpen(false);
+  }, [batchAddTagOpen, selectedCount, suppressed]);
 
   useEscapeKey(() => setOpenMenu(null), openMenu !== null);
 

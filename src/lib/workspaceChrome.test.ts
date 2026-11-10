@@ -51,6 +51,7 @@ test("欢迎页与命令面板眉题为中文，快捷键完整显示", () => {
   // 键盘提示收在底栏状态行；输入行的 Ctrl+K 徽章已移除（面板已打开，提示冗余）
   assert.ok(palette.includes("↑↓ 选择 · Enter 执行 · Esc 关闭"), "命令面板底栏应显示键盘提示");
   assert.ok(!palette.includes(">Ctrl K<"), "不得使用缺加号的 Ctrl K");
+  assert.ok(palette.includes("Ctrl+T"), "命令面板应列出 Ctrl+T 打标");
 });
 
 test("gridOverscanRows：列数越多 overscan 行数越少，且始终 ≥2", () => {

@@ -22,6 +22,7 @@ import {
   scrollItemIntoView,
   setWorkspaceSelectionAnchor,
 } from "../lib/workspaceChrome";
+import { requestEditItemTags } from "../lib/tagEditIntent";
 import { useAppStore } from "../stores/appStore";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { requestSelectionScrollFollow } from "../components/SelectionCanvas";
@@ -296,6 +297,11 @@ export function useWorkspaceHotkeys({
         event.preventDefault();
         if (item.is_missing) showToast("失效对象不能重命名", "warning");
         else useAppStore.getState().setRenameItemId(item.id);
+        return;
+      }
+
+      if (ctrl && event.key.toLowerCase() === "t" && !event.shiftKey) {
+        if (requestEditItemTags(ctx.selectedItemIds)) event.preventDefault();
         return;
       }
 

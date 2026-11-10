@@ -35,6 +35,7 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir 
   const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const tags = useAppStore((state) => state.tags);
   const tagRelations = useAppStore((state) => state.tagRelations);
+  const tagFilterMode = useAppStore((state) => state.tagFilterMode);
   const typeFilter = useAppStore((state) => state.typeFilter);
   // 直订阅 searchQuery：经 useSearch 会连坐 searchInputValue，每击键白跑一次 resolve
   const searchQuery = useAppStore((state) => state.searchQuery);
@@ -56,6 +57,7 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir 
         excludedTagIds,
         tags,
         tagRelations,
+        tagFilterMode,
         typeFilter,
         searchQuery,
         visibleCount,
@@ -69,6 +71,7 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir 
       excludedTagIds,
       tags,
       tagRelations,
+      tagFilterMode,
       typeFilter,
       searchQuery,
       visibleCount,

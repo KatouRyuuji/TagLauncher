@@ -7,7 +7,7 @@
 
 import type { TagRelation } from "../types";
 import { truncateQueryForDisplay } from "./emptyStateCopy";
-import { typeFilterLabel, type TypeFilter } from "./itemQuery";
+import { typeFilterLabel, type TagFilterMode, type TypeFilter } from "./itemQuery";
 import { buildChildrenMap } from "./tagGraph";
 
 export interface WorkspaceScopeInput {
@@ -23,6 +23,8 @@ export interface WorkspaceScopeInput {
   typeFilter: TypeFilter;
   searchQuery: string;
   visibleCount: number;
+  /** 默认含后代；仅直接标签时范围标题写出该模式 */
+  tagFilterMode?: TagFilterMode;
 }
 
 export interface WorkspaceScope {
@@ -68,7 +70,10 @@ export function resolveWorkspaceScope(input: WorkspaceScopeInput): WorkspaceScop
     const tagTitle = resolveTagTitle(input);
     if (tagTitle) qualifiers.push(tagTitle);
   }
-  if (input.selectedTagIds.length === 1) {
+  const filteringTags = input.selectedTagIds.length > 0 || input.excludedTagIds.length > 0;
+  if (input.tagFilterMode === "direct" && filteringTags) {
+    qualifiers.push("仅直接标签");
+  } else if (input.selectedTagIds.length === 1) {
     const children = buildChildrenMap(input.tagRelations).get(input.selectedTagIds[0]);
     if (children && children.length > 0) qualifiers.push("含下级");
   }

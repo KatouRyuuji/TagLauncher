@@ -16,6 +16,8 @@ export function TagFilterBar() {
   const toggleTagSelection = useAppStore((state) => state.toggleTagSelection);
   const toggleTagExclusion = useAppStore((state) => state.toggleTagExclusion);
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
+  const tagFilterMode = useAppStore((state) => state.tagFilterMode);
+  const setTagFilterMode = useAppStore((state) => state.setTagFilterMode);
   const showFavorites = useAppStore((state) => state.showFavorites);
   const showRecent = useAppStore((state) => state.showRecent);
   const tagFilterAvailable = !showFavorites && !showRecent;
@@ -75,6 +77,17 @@ export function TagFilterBar() {
           className="control-chip h-7 min-h-7 shrink-0 px-2.5 text-[13px] font-medium"
         >
           清除标签筛选
+        </button>
+        <button
+          type="button"
+          aria-pressed={tagFilterMode === "direct"}
+          title={tagFilterMode === "direct" ? "当前仅匹配直接打上所选标签的对象，不含后代。点击改回含后代。" : "当前选父标签会并入后代对象。点击改为仅直接标签。"}
+          onClick={() => setTagFilterMode(tagFilterMode === "direct" ? "descendants" : "direct")}
+          className={`control-chip h-7 min-h-7 shrink-0 px-2.5 text-[13px] font-medium ${
+            tagFilterMode === "direct" ? "control-chip-active" : ""
+          }`}
+        >
+          {tagFilterMode === "direct" ? "仅直接标签" : "含后代"}
         </button>
 
         {activeTags.map((tag, index) => {

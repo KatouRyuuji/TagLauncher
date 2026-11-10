@@ -57,6 +57,12 @@ test("单标签含下级", () => {
   assert.equal(scope.count, 4);
 });
 
+test("仅直接标签模式写出限定语，不再写含下级", () => {
+  const scope = resolveWorkspaceScope(base({ selectedTagIds: [10], tagFilterMode: "direct", visibleCount: 2 }));
+  assert.equal(scope.title, "娱乐");
+  assert.deepEqual(scope.qualifiers, ["仅直接标签"]);
+});
+
 test("双标签且", () => {
   const scope = resolveWorkspaceScope(base({ selectedTagIds: [20, 21], visibleCount: 2 }));
   assert.equal(scope.title, "开发 且 自动化");

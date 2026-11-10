@@ -11,12 +11,16 @@ import { DialogHeader } from "./DialogHeader";
 import { buildDescendantsMap } from "../lib/tagGraph";
 import { flattenTagTree } from "../lib/tagTree";
 import { compareNames } from "../lib/itemQuery";
+import { findTagByNameInsensitive } from "../lib/tagNames";
+import { pickRandomTagColor } from "../lib/tagColors";
 
 interface TagRelationsEditorProps {
   tags: Tag[];
   allItems: ItemWithTags[];
   onAddRelation: (parentId: number, childId: number) => Promise<void>;
   onRemoveRelation: (parentId: number, childId: number) => Promise<void>;
+  onAddTag: (name: string, color: string) => Promise<Tag>;
+  onRemoveTag: (id: number) => Promise<void>;
   onClose: () => void;
 }
 
@@ -24,7 +28,7 @@ interface TagRelationsEditorProps {
  * 标签关系编辑器：为每个标签维护父标签（多继承），并预览该标签关联的对象。
  * 父标签是子标签的超集；筛选时选中父标签会并入其所有后代对象。后端拒绝成环关系。
  */
-export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRelation, onClose }: TagRelationsEditorProps) {
+export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRelation, onAddTag, onRemoveTag, onClose }: TagRelationsEditorProps) {
   const relations = useAppStore((s) => s.tagRelations);
   const tagRows = useMemo(() => flattenTagTree(tags, relations, (a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name), { uniqueIds: true }), [tags, relations]);
   const [focusedId, setFocusedId] = useState<number | null>(tags[0]?.id ?? null);
@@ -48,9 +52,11 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
     ? relations.filter((r) => r.childId === focused.id).map((r) => r.parentId)
     : [];
   const parentSet = new Set(parentIds);
-  const childCount = focused
-    ? relations.filter((r) => r.parentId === focused.id).length
-    : 0;
+  const childIds = focused
+    ? relations.filter((r) => r.parentId === focused.id).map((r) => r.childId)
+    : [];
+  const childSet = new Set(childIds);
+  const childCount = childIds.length;
 
   // 候选父标签：排除自身、已是父级的、以及会形成环的（focused 的后代不能再做其父）。
   // 主动过滤而非事后报错，避免用户做无效操作。
@@ -63,6 +69,14 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
         (t) => t.id !== focused.id && !parentSet.has(t.id) && !focusedDescendants.has(t.id),
       )
     : [];
+  const ancestorIds = focused
+    ? new Set(tags.filter((t) => (descendantsMap.get(t.id) ?? new Set()).has(focused.id)).map((t) => t.id))
+    : new Set<number>();
+  const childCandidates = focused
+    ? tags.filter(
+        (t) => t.id !== focused.id && !childSet.has(t.id) && !ancestorIds.has(t.id),
+      )
+    : [];
   // 候选超出一屏时给过滤框，不再靠肉眼扫描 pill 墙
   const [candidateFilter, setCandidateFilter] = useState("");
   // IME 组合中只更新文本，组合结束才过滤（appliedFilter）
@@ -72,6 +86,22 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
   const visibleCandidates = candidateQuery
     ? candidates.filter((t) => t.name.toLowerCase().includes(candidateQuery))
     : candidates;
+  const [childFilter, setChildFilter] = useState("");
+  const [appliedChildFilter, setAppliedChildFilter] = useState("");
+  const childFilterIme = useImeComposition<string>(setAppliedChildFilter);
+  const childQuery = appliedChildFilter.trim().toLowerCase();
+  const visibleChildCandidates = childQuery
+    ? childCandidates.filter((t) => t.name.toLowerCase().includes(childQuery))
+    : childCandidates;
+  const [childName, setChildName] = useState("");
+
+  useEffect(() => {
+    setChildName("");
+    setChildFilter("");
+    setAppliedChildFilter("");
+    setCandidateFilter("");
+    setAppliedFilter("");
+  }, [focusedId]);
 
   // 当前标签关联的对象（直接打了该标签的对象）
   const focusedItems = useMemo(
@@ -85,6 +115,40 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
     try {
       await action();
     } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitNewChild = async () => {
+    if (!focused || busy) return;
+    const name = childName.trim();
+    if (!name) return;
+    setError(null);
+    setBusy(true);
+    let createdId: number | null = null;
+    try {
+      const existing = findTagByNameInsensitive(tags, name);
+      let childId: number;
+      if (existing) {
+        childId = existing.id;
+      } else {
+        const created = await onAddTag(name, pickRandomTagColor());
+        createdId = created.id;
+        childId = created.id;
+      }
+      if (childId === focused.id) {
+        throw new Error("不能把标签设为自己的子标签");
+      }
+      await onAddRelation(focused.id, childId);
+      setChildName("");
+      setChildFilter("");
+      setAppliedChildFilter("");
+    } catch (e) {
+      if (createdId != null) {
+        await onRemoveTag(createdId).catch(() => {});
+      }
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
@@ -109,7 +173,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
         aria-label="标签关系"
         onClick={(event) => event.stopPropagation()}
       >
-        <DialogHeader title="管理父子层级" description="筛选父标签会包含其后代对象。每个标签可以关联多个父标签。" onClose={onClose} />
+        <DialogHeader title="管理父子层级" description="可为当前标签添加父标签或子标签。筛选父标签默认包含后代对象。每个标签可以关联多个父标签。" onClose={onClose} />
 
         <div className="dialog-body flex-1">
         {tags.length === 0 ? (
@@ -229,6 +293,99 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                           type="button"
                           disabled={busy}
                           onClick={() => runMutation(() => onAddRelation(c.id, focused.id))}
+                          aria-label={`添加父标签「${c.name}」`}
+                          className="flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-hover)] px-2.5 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] disabled:opacity-50"
+                        >
+                          <span className="max-w-[120px] truncate">{c.name}</span>
+                          <span className="text-[var(--text-faint)]">＋</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="text-label">子标签（点击移除）</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {childIds.length === 0 ? (
+                      <span className="text-xs text-[var(--text-faint)]">暂无子标签</span>
+                    ) : (
+                      childIds.map((cid) => {
+                        const child = tagById.get(cid);
+                        if (!child) return null;
+                        return (
+                          <button
+                            key={cid}
+                            type="button"
+                            disabled={busy}
+                            onClick={() => runMutation(() => onRemoveRelation(focused.id, cid))}
+                            className="tag-pill group gap-1.5 px-2.5 py-1 text-xs disabled:opacity-50"
+                            style={{ "--tag-color": child.color } as CSSProperties}
+                            aria-label={`移除子标签「${child.name}」`}
+                            title="点击移除该子标签关系"
+                          >
+                            <span className="max-w-[120px] truncate">{child.name}</span>
+                            <svg className="h-3 w-3 opacity-60 group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />
+                            </svg>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="text-label">添加子标签</div>
+                  <form
+                    className="mt-2 flex gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void submitNewChild();
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={childName}
+                      onChange={(event) => setChildName(event.target.value)}
+                      placeholder="新建或复用同名标签"
+                      aria-label="新建子标签"
+                      disabled={busy}
+                      className="input-frame min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={busy || childName.trim() === ""}
+                      className="action-button h-8 min-h-8 shrink-0 px-2.5 text-xs disabled:opacity-50"
+                    >
+                      添加
+                    </button>
+                  </form>
+                  {childCandidates.length > 8 && (
+                    <input
+                      type="search"
+                      value={childFilter}
+                      onChange={(event) => { setChildFilter(event.target.value); childFilterIme.onChange(event.target.value); }}
+                      onCompositionStart={childFilterIme.onCompositionStart}
+                      onCompositionEnd={childFilterIme.onCompositionEnd}
+                      placeholder="搜索已有标签"
+                      aria-label="搜索已有子标签"
+                      className="input-frame mt-2 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
+                    />
+                  )}
+                  <div className="mt-2 flex max-h-[120px] flex-wrap gap-2 overflow-y-auto">
+                    {visibleChildCandidates.length === 0 ? (
+                      <span className="text-xs text-[var(--text-faint)]">
+                        {childCandidates.length === 0 ? "没有可添加的子标签" : "无匹配标签"}
+                      </span>
+                    ) : (
+                      visibleChildCandidates.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => runMutation(() => onAddRelation(focused.id, c.id))}
+                          aria-label={`添加子标签「${c.name}」`}
                           className="flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-hover)] px-2.5 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] disabled:opacity-50"
                         >
                           <span className="max-w-[120px] truncate">{c.name}</span>

@@ -12,10 +12,12 @@ import * as db from "../lib/db";
 import {
   isListDensity,
   isSortMode,
+  isTagFilterMode,
   isTypeFilter,
   isViewMode,
   type ListDensity,
   type SortMode,
+  type TagFilterMode,
   type TypeFilter,
   type ViewMode,
 } from "../lib/itemQuery";
@@ -114,6 +116,7 @@ interface WorkspacePrefs {
   cardSizeScale?: number;
   iconSizeScale?: number;
   listDensity?: ListDensity;
+  tagFilterMode?: TagFilterMode;
 }
 
 /** 读取持久化的缩放值：非法值丢弃（回退默认 1），合法值夹取到允许范围 */
@@ -142,6 +145,7 @@ function loadWorkspacePrefs(): WorkspacePrefs {
       cardSizeScale: loadSizeScale(parsed.cardSizeScale, CARD_SIZE_SCALE_RANGE),
       iconSizeScale: loadSizeScale(parsed.iconSizeScale, ICON_SIZE_SCALE_RANGE),
       listDensity: isListDensity(parsed.listDensity) ? parsed.listDensity : undefined,
+      tagFilterMode: isTagFilterMode(parsed.tagFilterMode) ? parsed.tagFilterMode : undefined,
     };
   } catch {
     return {};
@@ -212,6 +216,8 @@ interface AppState {
   viewMode: ViewMode;
   /** 列表行密度（仅 list 视图生效）：紧凑档一屏更多行 */
   listDensity: ListDensity;
+  /** 标签筛选是否展开后代；默认含后代，与历史行为兼容 */
+  tagFilterMode: TagFilterMode;
   sortMode: SortMode;
   typeFilter: TypeFilter;
   /** 隐藏失效对象（持久化）：只影响主区列表，失效计数与复核入口不受影响 */
@@ -231,6 +237,10 @@ interface AppState {
   /** 备注编辑弹窗的目标对象（右键 / 快速预览共用，由 App 统一挂载） */
   noteEditorItemId: number | null;
   renameItemId: number | null;
+  /** 单选热键 / 命令面板打开的条目标签编辑器（由 App 统一挂载，避免虚拟化未挂载） */
+  tagEditorItemId: number | null;
+  /** 请求打开批量栏「加入标签」菜单（多选热键 / 右键） */
+  batchAddTagOpen: boolean;
   /** 批量重命名弹窗是否打开（目标为打开时的选中项，由 App 按显示顺序传入） */
   batchRenameOpen: boolean;
   /** 最近一次批量重命名成功项的原名，供撤销使用；仅存内存，重启后清空 */
@@ -265,6 +275,7 @@ interface AppState {
   setSearchMode: (mode: SearchMode) => void;
   setViewMode: (mode: ViewMode) => void;
   setListDensity: (density: ListDensity) => void;
+  setTagFilterMode: (mode: TagFilterMode) => void;
   setSortMode: (mode: SortMode) => void;
   setTypeFilter: (filter: TypeFilter) => void;
   setHideMissing: (hide: boolean) => void;
@@ -284,6 +295,8 @@ interface AppState {
   setPreviewItemId: (id: number | null) => void;
   setNoteEditorItemId: (id: number | null) => void;
   setRenameItemId: (id: number | null) => void;
+  setTagEditorItemId: (id: number | null) => void;
+  setBatchAddTagOpen: (open: boolean) => void;
   setBatchRenameOpen: (open: boolean) => void;
   setLastBatchRename: (entries: Array<{ id: number; oldName: string }> | null) => void;
   setMissingReviewOpen: (open: boolean) => void;
@@ -306,6 +319,7 @@ export const useAppStore = create<AppState>((set, get) => {
       cardSizeScale: state.cardSizeScale,
       iconSizeScale: state.iconSizeScale,
       listDensity: state.listDensity,
+      tagFilterMode: state.tagFilterMode,
     });
   };
 
@@ -329,6 +343,7 @@ export const useAppStore = create<AppState>((set, get) => {
   searchMode: initialPrefs.searchMode ?? "all",
   viewMode: initialPrefs.viewMode ?? "grid",
   listDensity: initialPrefs.listDensity ?? "comfortable",
+  tagFilterMode: initialPrefs.tagFilterMode ?? "descendants",
   sortMode: initialPrefs.sortMode ?? "smart",
   typeFilter: initialPrefs.typeFilter ?? "all",
   hideMissing: initialPrefs.hideMissing ?? false,
@@ -342,6 +357,8 @@ export const useAppStore = create<AppState>((set, get) => {
   previewItemId: null,
   noteEditorItemId: null,
   renameItemId: null,
+  tagEditorItemId: null,
+  batchAddTagOpen: false,
   batchRenameOpen: false,
   lastBatchRename: null,
   activityNotice: null,
@@ -447,6 +464,11 @@ export const useAppStore = create<AppState>((set, get) => {
     set({ listDensity: density });
     persistNow();
   },
+  setTagFilterMode: (mode) => {
+    if (get().tagFilterMode === mode) return;
+    set({ tagFilterMode: mode });
+    persistNow();
+  },
   setSortMode: (mode) => {
     if (get().sortMode === mode) return;
     set({ sortMode: mode });
@@ -515,6 +537,8 @@ export const useAppStore = create<AppState>((set, get) => {
   setPreviewItemId: (id) => set((state) => state.previewItemId === id ? state : { previewItemId: id }),
   setNoteEditorItemId: (id) => set((state) => state.noteEditorItemId === id ? state : { noteEditorItemId: id }),
   setRenameItemId: (id) => set((state) => state.renameItemId === id ? state : { renameItemId: id }),
+  setTagEditorItemId: (id) => set((state) => state.tagEditorItemId === id ? state : { tagEditorItemId: id }),
+  setBatchAddTagOpen: (open) => set((state) => state.batchAddTagOpen === open ? state : { batchAddTagOpen: open }),
   setBatchRenameOpen: (open) => set((state) => state.batchRenameOpen === open ? state : { batchRenameOpen: open }),
   setLastBatchRename: (entries) => set({ lastBatchRename: entries && entries.length > 0 ? entries : null }),
   setMissingReviewOpen: (open) => set((state) => state.missingReviewOpen === open ? state : { missingReviewOpen: open }),
