@@ -137,7 +137,14 @@ def test_virtualization_50k(sandbox, app_factory):
     sel = app.selected_ids()[0]
     card = app.card_by_id(sel)
     card.wait_for(timeout=10_000)
-    wait_until(lambda: card.evaluate("el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }"), 10)
+    # 可见＝落在列表滚动容器的可视区内（用户看到的范围）；失败时带出几何数据便于分诊
+    geo_js = """el => { const r = el.getBoundingClientRect();
+      let sc = el.parentElement;
+      while (sc && !(sc.scrollHeight > sc.clientHeight && /(auto|scroll)/.test(getComputedStyle(sc).overflowY))) sc = sc.parentElement;
+      const v = sc ? sc.getBoundingClientRect() : { top: 0, bottom: innerHeight };
+      return { top: Math.round(r.top), bottom: Math.round(r.bottom), vTop: Math.round(v.top), vBottom: Math.round(v.bottom),
+               innerHeight, scrollTop: sc ? Math.round(sc.scrollTop) : null, ok: r.height > 0 && r.top >= v.top - 1 && r.bottom <= v.bottom + 1 }; }"""
+    wait_until(lambda: card.evaluate(geo_js)["ok"], 10, lambda: card.evaluate(geo_js))
     # End 后应在最末项：继续 End/ArrowDown 不再改变选中
     app.page.keyboard.press("ArrowDown")
     assert app.selected_ids() == [sel]
