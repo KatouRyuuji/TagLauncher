@@ -106,7 +106,7 @@ def test_ime_composition_does_not_search(app, sandbox):
     app.seed([files.write(sandbox.files / "sr9" / n, n) for n in ("中文名.txt", "other.txt")])
     box = app.page.locator("#workspace-search")
     box.click()
-    calls0 = len(app.calls("search_query"))
+    calls0 = len(app.calls("view_query"))
     app.page.evaluate("""() => {
       const el = document.getElementById('workspace-search');
       el.dispatchEvent(new CompositionEvent('compositionstart', {bubbles: true, data: ''}));
@@ -119,7 +119,7 @@ def test_ime_composition_does_not_search(app, sandbox):
     }""")
     time.sleep(0.8)
     assert sorted(app.visible_names()) == ["other.txt", "中文名.txt"], "组合输入期间提前搜索了"
-    assert len(app.calls("search_query")) == calls0, "组合输入期间调用了后端搜索"
+    assert len(app.calls("view_query")) == calls0, "组合输入期间调用了后端搜索"
     assert app.page.get_by_role("dialog", name="快捷键").count() == 0
     assert app.page.locator('[aria-labelledby="shortcuts-help-title"]').count() == 0
     app.page.evaluate("""() => {
@@ -130,7 +130,7 @@ def test_ime_composition_does_not_search(app, sandbox):
       el.dispatchEvent(new InputEvent('input', {bubbles: true, data: '中文', inputType: 'insertText'}));
     }""")
     app.wait_names(["中文名.txt"])
-    assert len(app.calls("search_query")) > calls0, "组合结束后应走后端搜索"
+    assert len(app.calls("view_query")) > calls0, "组合结束后应走后端搜索"
 
 
 @pytest.mark.case("E-SR-10")

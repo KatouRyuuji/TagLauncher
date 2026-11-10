@@ -1,4 +1,4 @@
-//! 集成测试：内存搜索索引（主窗 search_query 与快速窗 quick_search 共用）。
+//! 集成测试：内存搜索索引（主窗 view_query 与快速窗 quick_search 共用）。
 //! 真实文件库：写连接写入，经只读连接的 data_version 让索引自动跟上；
 //! 打分语义本身由 src/search/corpus_tests.rs 与旧 TS 实现逐条对照。
 

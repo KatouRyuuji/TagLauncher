@@ -480,7 +480,6 @@ pub fn run() {
             recolor_tags_and_cabinets,
             // 搜索
             search_items,
-            search_query,
             quick_search,
             search_warm,
             search_index_stats,

@@ -900,10 +900,6 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "quick_locate_in_main":
       return null;
     // 演示模式没有 Rust 后端：搜索只做名称/别名/标签名的不分大小写子串匹配（演示桩，不是产品搜索语义）
-    case "search_query": {
-      const scope = Array.isArray(args.scopeIds) ? ids(args.scopeIds) : null;
-      return { ids: demoSearch(str(args.query), scope, args.hideMissing === true, str(args.typeFilter) || "all") };
-    }
     case "quick_search": {
       const hits = demoSearch(str(args.query), null, args.hideMissing === true, "all");
       const limit = typeof args.limit === "number" ? args.limit : 50;
@@ -914,7 +910,6 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         items: hits.slice(0, limit).map((id) => withTags(byId.get(id)!)),
       };
     }
-    case "search_warm":
     case "view_query":
       return demoViewQuery(args.args);
     case "view_typeahead": {
@@ -938,6 +933,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       const groups = Array.isArray(args.tagGroups) ? (args.tagGroups as [number, number[]][]) : [];
       return demoLibraryStats(state.items.map(withTags), groups);
     }
+    case "search_warm":
     case "search_index_stats":
       return { entries: state.items.length, builds: 0, lastBuildMs: 0, lastBuildNewTexts: 0, cachedTexts: 0, approxBytes: 0 };
     case "wake_data_sync":

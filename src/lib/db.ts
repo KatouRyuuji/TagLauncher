@@ -265,30 +265,6 @@ export async function searchItems(
   return invokeCmd("search_items", { query, tagIds, includeDescendants });
 }
 
-export interface SearchQueryArgs {
-  query: string;
-  mode: SearchMode;
-  /** 限定范围（文件柜 / 收藏 / 最近 / 标签筛选后的对象），按其顺序作为结果基础顺序；不传 = 全部对象 */
-  scopeIds?: number[] | null;
-  typeFilter?: TypeFilter;
-  hideMissing?: boolean;
-}
-
-/**
- * 主窗搜索：后端内存索引（与快速窗同一实现，见 src-tauri/src/search）返回全部命中 ID，
- * 已按「收藏强 → 收藏弱 → 其余强 → 其余弱」排序并应用类型/丢失筛选。对象本体主窗已有，不重复传输。
- */
-export async function searchQuery(args: SearchQueryArgs): Promise<number[]> {
-  const res = (await invokeCmd("search_query", {
-    query: args.query,
-    mode: args.mode,
-    scopeIds: args.scopeIds ?? null,
-    typeFilter: args.typeFilter ?? "all",
-    hideMissing: args.hideMissing ?? false,
-  })) as { ids: number[] };
-  return res.ids;
-}
-
 export interface QuickSearchResult {
   /** 命中总数（items 只含前 limit 条） */
   total: number;

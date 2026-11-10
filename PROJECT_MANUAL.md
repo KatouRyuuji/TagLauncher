@@ -110,7 +110,8 @@ tag-launcher/
 │   ├── stores/
 │   │   └── appStore.ts           # Zustand 全局状态
 │   ├── hooks/
-│   │   ├── useItems.ts           # 项目数据管理 + 客户端搜索
+│   │   ├── useItems.ts           # 主窗视图（后端 view_query 取有序 ID + ItemStore 分页缓存）与对象写操作
+│   │   ├── useLoadedItems.ts     # 按 ID 从页缓存/后端取齐对象（选中集、编辑目标、预览）
 │   │   ├── useTags.ts            # 标签 CRUD
 │   │   ├── useCabinets.ts        # 文件柜 CRUD + 关联文件夹（随监视事件刷新状态）
 │   │   ├── useSearch.ts          # 搜索防抖（清空立即生效）
@@ -319,7 +320,10 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `set_item_tags` | item_id, tag_ids | () | 设置项目的标签列表 |
 | `recolor_tags_and_cabinets` | tags, cabinets | () | 切官方家族时按色位批量写回 `tags.color` / `cabinets.color`（单事务） |
 | `search_items` | query, tag_ids | Vec\<ItemWithTags\> | CLI 辅助搜索（FTS5 + LIKE 回退）；GUI 不经过此命令 |
-| `search_query` | query, mode?, scope_ids?, type_filter?, hide_missing? | {ids: Vec\<i64\>} | 主窗/命令面板对象搜索：内存索引，返回全部命中 ID（已排序）；scope_ids 为标签/文件柜/库内范围（按其顺序输出） |
+| `view_query` | args: ViewQueryArgs | {ids, browseDir, libraryTotal} | 主窗视图：范围（全部/收藏/最近/文件柜/标签组/目录浏览）+ 搜索 + 类型/丢失筛选 + 排序（含冻结顺序）全在 Rust，返回该视图全部有序 ID |
+| `library_stats` | tag_groups | LibraryStats | 侧栏/图谱计数：库内总数、收藏/最近/未打标、每个标签组（自身∪后代）的对象数、失效对象 ID |
+| `view_typeahead` | args, text | Option\<i64\> | 视图内名称跳转：先前缀后子串，返回第一个命中 ID |
+| `browse_target` | id | {root, dir} | 打开文件夹/隐藏对象时的逐级浏览落点 |
 | `quick_search` | query, mode?, hide_missing?, limit? | {total, indexed, items} | 快速窗：同一索引，只回传前 limit（默认 50）条对象 |
 | `search_warm` / `search_index_stats` | — | IndexStats | 预建索引 / 读取索引统计（条目数、构建次数与耗时、估算内存） |
 | `launch_item` | id: i64 | () | 启动项目（`ShellExecuteW` "open" 动词，不经 cmd.exe，防 shell 元字符注入） |
@@ -353,14 +357,15 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 ```
 用户输入 → 150ms 防抖 → useSearch → appStore.searchQuery
               ↓
-  useItems：filterItemsByTags 得到范围（标签/文件柜/库内层级；无筛选时为 null）
-              ↓ invoke("search_query", {query, mode, scopeIds, typeFilter, hideMissing})
+  useItems：把范围/标签组/搜索/类型/排序/浏览目录拼成 ViewQueryArgs
+              ↓ invoke("view_query", {args})（latestOnly：只认最后一次请求）
   SearchIndex（Mutex）：读连接 PRAGMA data_version 变了 → 重读行、复用未变字符串的派生文本
-              ├─ compile：表达式解析（&& || 空格OR () @ !!）+ 同义词扩展（synonyms.json，启动加载一次）
-              ├─ run：逐项打分（前缀 / 拼音 / 英文低容错 / 缩写弱命中 / 严格 / 备注）
-              └─ 收藏置顶，同组内强命中先于弱命中 → 全部命中 ID
+              ├─ view：范围 → 标签组筛选 → 目录可见性 → 类型/丢失筛选
+              ├─ search：表达式解析（&& || 空格OR () @ !!）+ 同义词扩展 + 逐项打分
+              └─ sort：字段排序 / 智能排序，refreeze=false 时沿用冻结顺序 → 全部有序 ID
               ↓
-  主窗按 ID 映射已加载对象（总数/全选/批量/定位不变）；快速窗 quick_search 只取前 50 条对象
+  ItemStore：只持有 ID 与 LRU 页缓存（页 50、上限 3000 条）；ItemGrid/ItemListView 按可视区间
+  ensureRange → get_items_by_ids 取页，未到的格子渲染占位；总数/全选/批量/定位按 ID 进行
 ```
 
 索引在首屏后 `search_warm` 预建；data_sync 发出 `data-changed` 后调用 `refresh_if_built`，本进程写入经 data_version 变化在下次搜索前刷新。拼音由 `pinyin.rs` 移植 pinyin-pro 的分词与多音字规则，字典 `pinyin_data.txt` 由 `scripts/search-corpus/export-pinyin-data.mjs` 从 pinyin-pro 导出；`src-tauri/tests/fixtures/search_corpus.json` 是旧 TS 实现生成的逐查询对照语料（`corpus_tests.rs`）。

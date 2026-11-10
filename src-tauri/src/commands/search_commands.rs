@@ -45,38 +45,6 @@ fn synonyms_loader(app: &AppHandle) -> impl Fn() -> Vec<Vec<String>> + '_ {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SearchQueryResult {
-    /// 全部命中 ID（已排序、已筛选）：主窗据此取总数、全选、批量操作与定位
-    pub ids: Vec<i64>,
-}
-
-/// 主窗搜索：返回全部命中 ID（数据本体主窗已有，不重复传输）。
-/// `scope_ids` 给出时只在这些对象里搜，并以其顺序为基础顺序（文件柜/收藏/最近/标签筛选）。
-#[tauri::command(async)]
-pub fn search_query(
-    app: AppHandle,
-    db: State<Database>,
-    index: State<SearchIndex>,
-    query: String,
-    mode: Option<String>,
-    scope_ids: Option<Vec<i64>>,
-    type_filter: Option<String>,
-    hide_missing: Option<bool>,
-) -> Result<SearchQueryResult, String> {
-    let params = SearchParams {
-        query,
-        mode: mode.unwrap_or_default(),
-        scope: scope_ids,
-        type_filter: type_filter.unwrap_or_default(),
-        hide_missing: hide_missing.unwrap_or(false),
-    };
-    let ro = db.read_conn()?;
-    let ids = index.search(ro.conn(), &params, &synonyms_loader(&app))?;
-    Ok(SearchQueryResult { ids })
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct QuickSearchResult {
     /// 命中总数（items 只含前 limit 条）
     pub total: usize,
