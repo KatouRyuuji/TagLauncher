@@ -781,6 +781,17 @@
 "coverage": "全局极速阶段②"
 },
 {
+"id": "E-PERF-MAIN-SEARCH",
+"module": "搜索",
+"scenario": "主窗搜索耗时（5k/50k，只测量）",
+"steps": "主窗搜索框逐字输入 10 组查询（每字间隔超过防抖）",
+"expect": "记录搜索词生效→结果提交后下一帧、输入→结果的 p50/p95，写入 artifacts/main-search-perf-*.json；不设阈值，用于搜索后端迁移前后对比",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P2",
+"coverage": "搜索挪到 Rust 前后对比"
+},
+{
 "id": "E-LCH-01",
 "module": "启动对象",
 "scenario": "双击启动 .bat",

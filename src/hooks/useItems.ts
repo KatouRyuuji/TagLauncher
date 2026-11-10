@@ -13,6 +13,7 @@ import { applyNestedVisibility, libraryBrowseDirOf, shouldRevealNested } from ".
 import type { AddItemsContext } from "../lib/db";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
+import { markSearchResult } from "../lib/searchPerf";
 import { TAGS_WRITTEN_EVENT } from "./useTags";
 
 /** 搜索索引闲时预热的单片大小（1000 条/片，片间让出主线程） */
@@ -552,6 +553,10 @@ export function useItems() {
           : { lastUsedAt: frozenSortKeysRef.current ?? undefined },
     });
   }, [searchIndex, tagFiltered, browseDir, libraryDir, revealNested, deferredSearchQuery, typeFilter, hideMissing, sortMode, showRecent]);
+
+  useEffect(() => {
+    if (searchIndex) markSearchResult(deferredSearchQuery, filtered.length);
+  }, [searchIndex, deferredSearchQuery, filtered]);
 
   // 关联柜内的失效对象（「清理失效」用）：取整个关联文件夹，不受当前目录与筛选影响
   const linkedMissingIds = useMemo(
