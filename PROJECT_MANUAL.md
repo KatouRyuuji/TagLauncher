@@ -61,8 +61,8 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 │  ┌────────────────┴────────────────────────┐  │
 │  │         lib 工具层                       │  │
 │  │  db.ts (Tauri invoke 封装)              │  │
-│  │  search.ts (自研搜索引擎 + pinyin-pro)  │  │
-│  │  synonyms.ts (同义词扩展)               │  │
+│  │  tagFilter.ts (标签筛选)                │  │
+│  │  nameMatch.ts (列表名称匹配/拼音)       │  │
 │  └────────────────┬────────────────────────┘  │
 │                   │ invoke()                  │
 ├───────────────────┼───────────────────────────┤
@@ -117,13 +117,13 @@ tag-launcher/
 │   │   └── useWorkspaceHotkeys.ts # 键盘优先（IME/弹层让路）
 │   ├── lib/
 │   │   ├── db.ts                 # Tauri invoke 封装层
-│   │   ├── search.ts             # 自研搜索引擎（前缀/拼音/低容错/英文缩写/同义词/表达式）
+│   │   ├── tagFilter.ts          # 标签筛选（DAG 后代并入、AND 逻辑）；对象搜索在 Rust（src-tauri/src/search）
+│   │   ├── nameMatch.ts          # 侧栏/标签列表的名称与拼音匹配（不用于对象搜索）
 │   │   ├── itemQuery.ts          # 排序 / 类型筛选 / 键盘选择 / 点选
 │   │   ├── batchRename.ts        # 批量重命名规则纯函数（查找替换 / 模板）
 │   │   ├── cabinetBrowse.ts      # 关联柜按目录浏览（当前层过滤、上一级、面包屑）
 │   │   ├── untrack.ts            # 移除时判断哪些对象将不再追踪及连带移出项
 │   │   ├── workspaceChrome.ts    # 工作台遮罩、选中锚点、网格列数
-│   │   └── synonyms.ts           # 同义词字典加载
 │   ├── components/
 │   │   ├── TitleBar.tsx          # 自绘窗口栏（decorations: false，拖拽/最小化/最大化/关闭）
 │   │   ├── AppErrorBoundary.tsx  # 顶层错误边界（崩溃时强制显示窗口 + 可复制错误详情）
@@ -318,7 +318,10 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | `reorder_tags` | ids: Vec\<i64\> | () | 按给定顺序写回全部标签的 `sort_order`（单事务）；新建标签排在末尾 |
 | `set_item_tags` | item_id, tag_ids | () | 设置项目的标签列表 |
 | `recolor_tags_and_cabinets` | tags, cabinets | () | 切官方家族时按色位批量写回 `tags.color` / `cabinets.color`（单事务） |
-| `search_items` | query, tag_ids | Vec\<ItemWithTags\> | 后端辅助搜索（FTS5 + LIKE 回退）；前端主搜索使用自研 search.ts，不经过此命令 |
+| `search_items` | query, tag_ids | Vec\<ItemWithTags\> | CLI 辅助搜索（FTS5 + LIKE 回退）；GUI 不经过此命令 |
+| `search_query` | query, mode?, scope_ids?, type_filter?, hide_missing? | {ids: Vec\<i64\>} | 主窗/命令面板对象搜索：内存索引，返回全部命中 ID（已排序）；scope_ids 为标签/文件柜/库内范围（按其顺序输出） |
+| `quick_search` | query, mode?, hide_missing?, limit? | {total, indexed, items} | 快速窗：同一索引，只回传前 limit（默认 50）条对象 |
+| `search_warm` / `search_index_stats` | — | IndexStats | 预建索引 / 读取索引统计（条目数、构建次数与耗时、估算内存） |
 | `launch_item` | id: i64 | () | 启动项目（`ShellExecuteW` "open" 动词，不经 cmd.exe，防 shell 元字符注入） |
 | `open_in_explorer` | path: String | () | 在资源管理器中打开 |
 | `open_object_path` | path: String | () | 用默认程序打开文件夹预览中的文件（`ShellExecuteW`）；路径须位于库内文件夹对象之下，含 `.` / `..` 段一律拒绝 |
@@ -345,29 +348,29 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 
 ### 6.1 搜索流程
 
-主搜索在前端执行，使用自研 `src/lib/search.ts`（非 Fuse.js）：
+对象搜索在 Rust 执行（`src-tauri/src/search/` 引擎 + `services/search_index.rs` 内存索引），主窗、命令面板与快速窗共用同一实现：
 
 ```
-用户输入 → 150ms 防抖 → useSearch → appStore.searchQuery 更新
-                                          ↓
-                                    useItems.filtered (useMemo)
-                                          ↓
-                          filterItemsByTags → buildSearchIndex → searchWithIndex
-                                          ↓
-                              ┌─── 1. filterItemsByTags：按 selectedTagIds 筛选（AND 逻辑）
-                              ├─── 2. buildSearchIndex：pinyin-pro 生成拼音全拼/首字母字段
-                              ├─── 3. parseQuery：解析表达式（&& || 空格OR () @ !!）
-                              ├─── 4. 对每个非严格子项 expandQuery() 做同义词扩展
-                              ├─── 5. 逐项匹配：前缀匹配 / 拼音 / 英文低容错 / 英文缩写弱命中 / 严格匹配
-                              └─── 6. 收藏项置顶；同组内强命中先于弱命中
+用户输入 → 150ms 防抖 → useSearch → appStore.searchQuery
+              ↓
+  useItems：filterItemsByTags 得到范围（标签/文件柜/库内层级；无筛选时为 null）
+              ↓ invoke("search_query", {query, mode, scopeIds, typeFilter, hideMissing})
+  SearchIndex（Mutex）：读连接 PRAGMA data_version 变了 → 重读行、复用未变字符串的派生文本
+              ├─ compile：表达式解析（&& || 空格OR () @ !!）+ 同义词扩展（synonyms.json，启动加载一次）
+              ├─ run：逐项打分（前缀 / 拼音 / 英文低容错 / 缩写弱命中 / 严格 / 备注）
+              └─ 收藏置顶，同组内强命中先于弱命中 → 全部命中 ID
+              ↓
+  主窗按 ID 映射已加载对象（总数/全选/批量/定位不变）；快速窗 quick_search 只取前 50 条对象
 ```
 
-### 6.2 搜索引擎能力（自研 search.ts）
+索引在首屏后 `search_warm` 预建；data_sync 发出 `data-changed` 后调用 `refresh_if_built`，本进程写入经 data_version 变化在下次搜索前刷新。拼音由 `pinyin.rs` 移植 pinyin-pro 的分词与多音字规则，字典 `pinyin_data.txt` 由 `scripts/search-corpus/export-pinyin-data.mjs` 从 pinyin-pro 导出；`src-tauri/tests/fixtures/search_corpus.json` 是旧 TS 实现生成的逐查询对照语料（`corpus_tests.rs`）。
+
+### 6.2 搜索引擎能力（src-tauri/src/search/engine.rs）
 
 不依赖第三方模糊搜索库，匹配策略：
 
 - 前缀匹配：从词首开始的包含匹配（`prefixMatches`），大小写不敏感；CJK 查询词放宽为子串匹配（中文名常以品牌/艺术家等前缀开头）。
-- 中文拼音：拼音全拼与拼音首字母前缀匹配（pinyin-pro 生成）。
+- 中文拼音：拼音全拼与拼音首字母前缀匹配（pinyin.rs，移植自 pinyin-pro）。
 - 英文低容错：基于编辑距离（`isEnglishTypoMatch`），查询为 ≥3 的 `[a-z0-9_.-]+` 时生效；整名前缀编辑距离 ≤1，后段英文词（空格/CJK 为分隔）编辑距离恰好为 1。查询长度 <5 时要求前缀首字母一致。含空格、扩展名或中英文混合的名称走同一通道。
 - 英文缩写弱命中：多词英文名的首字母前缀（`vsc`）与连写子序列（`vscode`），排序低于强命中。
 - 同义词整词扩展：每个非严格子项命中同义词组时一并搜索同组词。
@@ -601,7 +604,7 @@ npm run test:migrate      # 真实 exe 的数据目录迁移与自愈场景
 |------|------|------|
 | react | 19.x | UI 框架 |
 | zustand | 5.x | 状态管理 |
-| pinyin-pro | 3.x | 中文拼音转换（搜索引擎为自研 search.ts，未使用 fuse.js） |
+| pinyin-pro | 3.x | 前端侧栏/标签列表、高亮与命令过滤的拼音匹配；对象搜索的拼音在 Rust（字典自 pinyin-pro 导出） |
 | tailwindcss | 4.x | CSS 工具类 |
 | @tauri-apps/api | 2.x | Tauri 前端 API |
 | @tauri-apps/plugin-dialog | 2.x | 系统文件/目录选择器 |
@@ -818,7 +821,7 @@ npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页�
 - **分发**：`tl.exe` 以 Tauri `externalBin` sidecar 形式打进安装包并落入主程序同级目录；便携版 zip 同样附带。sidecar 构建由 `scripts/prepare-cli-bin.mjs` 完成（pack/CI 已接线）；`node scripts/prepare-cli-bin.mjs --placeholder` 在首次编译前只创建占位文件（tauri-build 会校验 externalBin 存在，全新克隆缺它会编译失败，dev.bat/setup.bat/CI 已接线）。
 - **数据库定位**：与 GUI 同一套解析——exe 旁 `datapath.json` 重定向优先，否则 `%LOCALAPPDATA%\TagLauncher\Save\taglauncher.db`（`src-tauri/src/cli/mod.rs`）。数据库不存在时拒绝静默新建并提示先运行主程序。
 - **并发**：WAL 模式下与 GUI 并发安全；两边同时写时后到者最多排队等待 5 秒，超时报「database is locked」且不触发损坏自愈；CLI 的写操作由 GUI 的 data_sync 线程经 `PRAGMA data_version` 检测（主窗可见时 100ms 一轮，隐藏时 2s，获焦/唤出立即检测），广播 `data-changed`（origin=external）后各数据 hook 自动重载；本应用自身提交以 origin=app 广播，主窗忽略。只读第二连接 `Database::read_conn()` 按需打开，供检测与快速窗使用。
-- **快速搜索窗（阶段②）**：`src-tauri/src/quick.rs` + `quick.html`/`src/quick/`（Vite 第二入口）。热键动作 `open_quick`（设置键 `hotkey.open_quick`，默认空）绑定即在启动后 1.5s 预创建隐藏窗口 `quick`（无边框、置顶、不进任务栏，能力文件 `capabilities/quick.json`），清除即销毁；主窗销毁时一并销毁。唤出：定位到鼠标所在显示器工作区 → show → focus → 发 `quick-shown {t0Ms}`；失焦/CloseRequested 只隐藏。数据走 `quick_get_items`（只读连接），搜索与主窗共用 `runSearchPipeline`（`src/lib/searchPipeline.ts`）；快速窗监听任意来源的 `data-changed` 重载；它的写入（打标签、启动）发 `window-data-written {source, itemIds, tagsChanged}`，主窗按 ID 用 `get_items_by_ids` 增量刷新。主题经 `taglauncher.theme_snapshot`（localStorage，applyTheme 末尾写入）跟随，不跑 useTheme。「在主窗定位」由 `quick_locate_in_main` 显示主窗并发 `quick-locate {id}`，主窗 `useQuickLocate` 清空筛选后选中滚动。
+- **快速搜索窗（阶段②）**：`src-tauri/src/quick.rs` + `quick.html`/`src/quick/`（Vite 第二入口）。热键动作 `open_quick`（设置键 `hotkey.open_quick`，默认空）绑定即在启动后 1.5s 预创建隐藏窗口 `quick`（无边框、置顶、不进任务栏，能力文件 `capabilities/quick.json`），清除即销毁；主窗销毁时一并销毁。唤出：定位到鼠标所在显示器工作区 → show → focus → 发 `quick-shown {t0Ms}`；失焦/CloseRequested 只隐藏。搜索走 `quick_search`（与主窗同一 Rust 索引，只回传前 50 条对象，前端不加载全量）；快速窗监听任意来源的 `data-changed` 重新查询；它的写入（打标签、启动）发 `window-data-written {source, itemIds, tagsChanged}`，主窗按 ID 用 `get_items_by_ids` 增量刷新。主题经 `taglauncher.theme_snapshot`（localStorage，applyTheme 末尾写入）跟随，不跑 useTheme。「在主窗定位」由 `quick_locate_in_main` 显示主窗并发 `quick-locate {id}`，主窗 `useQuickLocate` 清空筛选后选中滚动。
 - **命令面**：`search` / `list` / `get` / `add` / `remove` / `launch`（id 或搜索词首命中）/ `tag list|add|set|clear` / `fav [--off]` / `cabinet list|items` / `stats` / `tui`。全局 `--json` 输出机器可读 JSON（脚本与 AI 消费）。实现：`src-tauri/src/bin/tl.rs`（clap derive）。
 
 ### 17.2 tl tui 终端界面
@@ -846,7 +849,7 @@ npm run demo:shots  # 自动截图：功能巡演 + 全部内置主题主要页�
 
 ### 18.2 调整搜索权重
 
-入口在 `src/lib/search.ts`：匹配强度 `MatchScore` 2 为强命中（前缀 / 拼音 / 英文容错 / CJK 子串 / 严格），1 为弱命中（英文首字母缩写 / 连写子序列）；`searchWithIndex` 按收藏置顶、同组内强命中先于弱命中分桶输出。调整后手测中文、拼音、英文容错与同义词检索。
+入口在 `src-tauri/src/search/engine.rs`：`Scorer` 打分 2 为强命中（前缀 / 拼音 / 英文容错 / CJK 子串 / 严格），1 为弱命中（英文首字母缩写 / 连写子序列 / 备注）；`run` 按收藏置顶、同组内强命中先于弱命中分桶输出。调整语义后需同步对照语料（`scripts/search-corpus/gen-corpus.ts` 依赖已删除的旧实现，需从迁移前提交取回后运行，或直接修改 `search_corpus.json` 期望并说明原因），并跑 `cargo test --lib search`。
 
 ### 18.3 欢迎弹窗
 

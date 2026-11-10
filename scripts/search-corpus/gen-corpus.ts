@@ -3,7 +3,7 @@
 // ----------------------------------------------------------------------------
 // 一次性生成、提交为 fixture：Rust 端 search 模块逐条比对（同一输入 → 同一组、同一顺序的 id）。
 // 生成时使用的是迁移前的 src/lib/search.ts + pinyin-pro；TS 实现删除后此脚本保留作溯源记录，
-// 不再可运行（git show <迁移前提交>:src/lib/search.ts 可取回）。
+// 不再可运行（git show d5a6725:src/lib/search.ts 可取回）。
 // 用法（迁移前）：npx jiti scripts/search-corpus/gen-corpus.ts
 // ============================================================================
 import { writeFileSync, readFileSync } from "node:fs";
