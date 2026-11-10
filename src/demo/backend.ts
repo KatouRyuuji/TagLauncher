@@ -82,7 +82,13 @@ function seedState(): DemoState {
     cabinetItems: new Map(
       Object.entries(DEMO_CABINET_ITEMS).map(([id, ids]) => [Number(id), new Set(ids)]),
     ),
-    desktop: { globalShortcut: null, closeAction: "exit", shortcutError: null },
+    desktop: {
+      hotkeys: [{ action: "toggle_main", label: "显示 / 隐藏主窗口", accelerator: null, error: null }],
+      closeAction: "exit",
+      ignoreFullscreen: true,
+      launchMode: "show",
+      trayActive: false,
+    },
     settings: new Map([
       // 演示主用主题：樱花粉（功能巡演与截图全覆盖）
       ["theme", "7f47aab2-74bb-4c77-b99b-550f0acf3c9c"],
@@ -831,21 +837,31 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       state.settings.set("theme", str(args.themeId));
       return null;
     case "get_desktop_settings":
-      return { ...state.desktop };
-    case "set_global_shortcut": {
+      return structuredClone(state.desktop);
+    case "get_launch_mode":
+      return "show";
+    case "set_hotkey": {
+      const action = str(args.action);
+      const entry = state.desktop.hotkeys.find((h) => h.action === action);
+      if (!entry) throw new Error(`未知的快捷键动作「${action}」`);
       const next = typeof args.shortcut === "string" && args.shortcut.trim() ? args.shortcut.trim() : null;
       if (next && !/(^|\+)(Ctrl|Control|Alt|Super)(\+|$)/i.test(next)) {
         throw new Error(`全局快捷键「${next}」至少要包含 Ctrl、Alt 或 Win 之一，避免拦截日常输入`);
       }
-      state.desktop = { ...state.desktop, globalShortcut: next, shortcutError: null };
-      return { ...state.desktop };
+      entry.accelerator = next;
+      entry.error = null;
+      return structuredClone(state.desktop);
     }
     case "set_close_action": {
       const action = str(args.action);
       if (action !== "exit" && action !== "tray") throw new Error(`未知的关闭行为「${action}」，只能是 exit 或 tray`);
-      state.desktop = { ...state.desktop, closeAction: action };
-      return { ...state.desktop };
+      state.desktop.closeAction = action;
+      state.desktop.trayActive = action === "tray";
+      return structuredClone(state.desktop);
     }
+    case "set_hotkey_ignore_fullscreen":
+      state.desktop.ignoreFullscreen = Boolean(args.enabled);
+      return structuredClone(state.desktop);
     case "get_setting":
       return state.settings.get(str(args.key)) ?? null;
     case "set_setting":

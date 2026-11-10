@@ -7,13 +7,29 @@
 // ============================================================================
 
 export type CloseAction = "exit" | "tray";
+/** 可绑定全局快捷键的动作（本批只开放 toggle_main）；与后端 HotkeyAction 一致 */
+export type HotkeyAction = "toggle_main";
+export type LaunchMode = "show" | "background";
+
+export interface HotkeyInfo {
+  action: HotkeyAction;
+  label: string;
+  accelerator: string | null;
+  /** 设置里保存、但本次启动注册失败的原因（例如被其他程序占用） */
+  error: string | null;
+}
 
 export interface DesktopSettings {
-  globalShortcut: string | null;
+  hotkeys: HotkeyInfo[];
   closeAction: CloseAction;
-  /** 设置里保存、但本次启动注册失败的原因（例如被其他程序占用） */
-  shortcutError: string | null;
+  /** 前台全屏时忽略全局快捷键（默认开，2 秒内连按 3 次强制） */
+  ignoreFullscreen: boolean;
+  launchMode: LaunchMode;
+  trayActive: boolean;
 }
+
+/** 后端设置变化广播的事件名（托盘菜单与设置页同步） */
+export const DESKTOP_SETTINGS_CHANGED_EVENT = "desktop-settings-changed";
 
 export type ShortcutCapture =
   | { kind: "pending" }

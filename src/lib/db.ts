@@ -27,7 +27,7 @@ async function invokeCmd<T>(cmd: string, args?: Record<string, unknown>): Promis
   }
 }
 import type { ModInfo, ModLoadError } from "../types/mod";
-import type { CloseAction, DesktopSettings } from "./desktopShortcut";
+import type { CloseAction, DesktopSettings, HotkeyAction, LaunchMode } from "./desktopShortcut";
 import type {
   CustomThemesResult,
   ThemeDefinition,
@@ -521,18 +521,27 @@ export async function setCurrentTheme(themeId: string): Promise<void> {
 }
 
 /** 获取设置值 */
-/** 桌面驻留（F18）：全局快捷键与关闭行为，只能经专用命令修改 */
+/** 桌面驻留（F18）：「动作 → 快捷键」表、关闭行为、全屏忽略，只能经专用命令修改 */
 export async function getDesktopSettings(): Promise<DesktopSettings> {
   return invokeCmd("get_desktop_settings");
 }
 
-/** 设置/清除（null）全局快捷键；注册失败或冲突时报错，后端保持旧值 */
-export async function setGlobalShortcut(shortcut: string | null): Promise<DesktopSettings> {
-  return invokeCmd("set_global_shortcut", { shortcut });
+/** 首个实例的启动方式：background 时主题就绪后不显示主窗 */
+export async function getLaunchMode(): Promise<LaunchMode> {
+  return invokeCmd("get_launch_mode");
+}
+
+/** 设置/清除（null）某动作的全局快捷键；注册失败或冲突时报错，后端保持旧值 */
+export async function setHotkey(action: HotkeyAction, shortcut: string | null): Promise<DesktopSettings> {
+  return invokeCmd("set_hotkey", { action, shortcut });
 }
 
 export async function setCloseAction(action: CloseAction): Promise<DesktopSettings> {
   return invokeCmd("set_close_action", { action });
+}
+
+export async function setHotkeyIgnoreFullscreen(enabled: boolean): Promise<DesktopSettings> {
+  return invokeCmd("set_hotkey_ignore_fullscreen", { enabled });
 }
 
 export async function getSetting(key: string): Promise<string | null> {
