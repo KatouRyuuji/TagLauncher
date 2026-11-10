@@ -549,7 +549,15 @@ fn is_english_typo_match(source: &str, query: &str) -> bool {
         return false;
     }
     let s = source.as_bytes();
-    if english_prefix_edit_distance(s, q).is_some_and(|d| d <= 1) {
+    // 快速排除（与完整计算等价，三个候选前缀都从 w[0] 开始）：
+    // - 查询短于 5：首字节不同必为 None；
+    // - 否则距离 ≤1 时首个失配若在 0 位，剩余必须对齐，故 w0=q0 / w1=q1 / w1=q0 / w0=q1 至少一个成立。
+    let first_ok = |w: &[u8]| match (w.first(), w.get(1)) {
+        (Some(&w0), _) if q.len() < 5 => w0 == q[0],
+        (Some(&w0), Some(&w1)) => w0 == q[0] || w1 == q[1] || w1 == q[0] || w0 == q[1],
+        _ => false, // 空串，或单字节而查询 ≥5（候选前缀长度 ≥4）
+    };
+    if first_ok(s) && english_prefix_edit_distance(s, q).is_some_and(|d| d <= 1) {
         return true;
     }
     // source.match(/[a-z][a-z0-9_.-]*/g) 的每个词：编辑距离恰好为 1
@@ -561,7 +569,12 @@ fn is_english_typo_match(source: &str, query: &str) -> bool {
             while i < s.len() && is_typo_byte(s[i]) {
                 i += 1;
             }
-            if english_prefix_edit_distance(&s[start..i], q) == Some(1) {
+            let word = &s[start..i];
+            // 候选前缀长度 q-1..=q+1 都超过词长时必为 None
+            if word.len() + 1 < q.len() || !first_ok(word) {
+                continue;
+            }
+            if english_prefix_edit_distance(word, q) == Some(1) {
                 return true;
             }
         } else {
