@@ -401,6 +401,11 @@ export async function renameItems(renames: RenameRequest[], dryRun: boolean): Pr
 
 /** 对失效对象按内容签名做跨盘找回，返回成功找回数量（扫描在后端锁外进行） */
 /** 失效对象按内容签名找回；`roots` 省略 = 全部盘符，给定 = 只在这些文件夹内找回并核验唯一性。 */
+/** 停止所有在途的找回扫描（不回写）；返回被停止的扫描数 */
+export async function cancelRelocate(): Promise<number> {
+  return invokeCmd("cancel_relocate");
+}
+
 export async function relocateMissing(roots?: string[]): Promise<number> {
   return invokeCmd("relocate_missing", roots ? { roots } : undefined);
 }

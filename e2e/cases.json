@@ -946,6 +946,17 @@
 "coverage": "无"
 },
 {
+"id": "E-ID-12",
+"module": "文件身份",
+"scenario": "全盘找回进度与停止",
+"steps": "制造失效→自动全盘找回→失效对话框看进度→停止扫描",
+"expect": "显示已扫描项数/当前盘/用时与 5 分钟上限；停止后不回写，说明未完成唯一性核验（超时路径由 Rust 单测覆盖）",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P1",
+"coverage": "item_commands.rs cancel_relocate"
+},
+{
 "id": "E-WAT-01",
 "module": "文件夹监视",
 "scenario": "右键监视此文件夹",

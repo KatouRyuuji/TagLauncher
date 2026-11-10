@@ -6,6 +6,7 @@ import { relocateNoneCopy, relocateRecoveredCopy } from "../lib/itemActionCopy";
 import { compareNames } from "../lib/itemQuery";
 import { truncatePathMiddle } from "../lib/itemUtils";
 import { showToast } from "../lib/toast";
+import { formatScanProgress, type RelocateProgress } from "../lib/relocateScan";
 import type { ItemWithTags } from "../types";
 import { DialogHeader } from "./DialogHeader";
 import { ItemVisualIcon } from "./ItemVisualIcon";
@@ -18,6 +19,9 @@ export function MissingItemsReviewDialog({
   onClose,
   onRelocate,
   onPickRelocateRoots,
+  scanProgress = null,
+  relocateNote = null,
+  onStopScan,
   onRemove,
 }: {
   open: boolean;
@@ -29,6 +33,11 @@ export function MissingItemsReviewDialog({
   onRelocate: (roots?: string[]) => Promise<void>;
   /** 选择找回范围（原生文件夹对话框）；返回 null 表示取消 */
   onPickRelocateRoots: () => Promise<string[] | null>;
+  /** 在途找回扫描的最新进度（自动或手动触发均会显示）；null = 没有在扫描 */
+  scanProgress?: RelocateProgress | null;
+  /** 停止 / 超时 / 失败说明 */
+  relocateNote?: { kind: "info" | "warning"; text: string } | null;
+  onStopScan?: () => Promise<void> | void;
   onRemove: (ids: number[]) => Promise<void>;
 }) {
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open });
@@ -124,6 +133,38 @@ export function MissingItemsReviewDialog({
               >
                 {lastRelocateResult === 0 ? relocateNoneCopy() : relocateRecoveredCopy(lastRelocateResult)}
               </p>
+            )}
+            {relocateNote && (
+              <p
+                role={relocateNote.kind === "warning" ? "alert" : "status"}
+                data-testid="relocate-note"
+                className={
+                  relocateNote.kind === "warning"
+                    ? "mt-3 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-warning)_28%,transparent)] bg-[var(--status-warning-bg)] px-3 py-2 text-sm text-[var(--color-warning-ink)]"
+                    : "mt-3 rounded-[var(--radius-md)] border border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-secondary)]"
+                }
+              >
+                {relocateNote.text}
+              </p>
+            )}
+            {scanProgress && (
+              <div
+                role="status"
+                aria-live="polite"
+                data-testid="relocate-progress"
+                className="mt-3 flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--line-hairline)] px-3 py-2 text-sm text-[var(--text-secondary)]"
+              >
+                <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate">
+                  {scanProgress.scoped ? "正在选定文件夹中找回：" : "正在全盘找回："}
+                  {formatScanProgress(scanProgress)}
+                </span>
+                {onStopScan && (
+                  <button type="button" className="action-button shrink-0" onClick={() => void onStopScan()}>
+                    停止扫描
+                  </button>
+                )}
+              </div>
             )}
           </div>
 

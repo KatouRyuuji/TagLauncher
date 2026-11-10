@@ -253,13 +253,97 @@ pub fn clear_recent_items(db: State<Database>) -> Result<usize, String> {
     item_service::clear_recent(&conn)
 }
 
+/// 找回扫描进度事件（节流约 250ms 一次）与结束事件：任何窗口都能据此显示进度与「停止扫描」，
+/// 不论扫描是用户点的还是失效后自动触发的。
+pub const RELOCATE_PROGRESS_EVENT: &str = "relocate-progress";
+pub const RELOCATE_FINISHED_EVENT: &str = "relocate-finished";
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocateProgress {
+    pub scan_id: u64,
+    pub scanned: u64,
+    pub root: String,
+    pub scoped: bool,
+    pub elapsed_ms: u64,
+    pub limit_ms: u64,
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocateFinished {
+    pub scan_id: u64,
+    /// done / cancelled / timed_out / failed
+    pub status: &'static str,
+    pub recovered: usize,
+}
+
+/// 在途扫描登记表：停止扫描时把所有在途扫描的取消标志置位。
+struct ScanRegistry {
+    next: std::sync::atomic::AtomicU64,
+    active: std::sync::Mutex<Vec<(u64, std::sync::Arc<std::sync::atomic::AtomicBool>)>>,
+}
+
+static SCANS: ScanRegistry = ScanRegistry {
+    next: std::sync::atomic::AtomicU64::new(1),
+    active: std::sync::Mutex::new(Vec::new()),
+};
+
+struct ScanTicket {
+    id: u64,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl ScanTicket {
+    fn register() -> Self {
+        let id = SCANS
+            .next
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        SCANS
+            .active
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push((id, cancel.clone()));
+        Self { id, cancel }
+    }
+}
+
+impl Drop for ScanTicket {
+    fn drop(&mut self) {
+        SCANS
+            .active
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .retain(|(id, _)| *id != self.id);
+    }
+}
+
+/// 停止所有在途的找回扫描；返回被停止的扫描数。被停止的扫描不回写任何对象。
+#[tauri::command]
+pub fn cancel_relocate() -> usize {
+    let active = SCANS.active.lock().unwrap_or_else(|p| p.into_inner());
+    for (_, flag) in active.iter() {
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    active.len()
+}
+
 /// 对失效对象按内容签名做跨盘符兜底找回，返回成功找回数量。
 /// `roots` 省略时扫描全部盘符；给定时只在这些文件夹内找回并核验唯一性。
+/// 扫描可被 `cancel_relocate` 停止，超过 [`item_service::SCAN_TIME_LIMIT`] 自动停止；两者都**不回写**，
+/// 以错误返回说明「未完成唯一性核验」（唯一性规则不变：只有完整扫完范围才可能回写）。
 /// 扫描阶段在锁外执行：先取数据释放锁 → 扫描候选盘 → 再加锁回写，避免长扫描阻塞其它命令。
 /// 全盘扫描是重 IO，用 (async) 放到工作线程；函数体无 await，DB 锁只在取数据/回写两小段内持有。
 #[tauri::command(async)]
-pub fn relocate_missing(db: State<Database>, roots: Option<Vec<String>>) -> Result<usize, String> {
+pub fn relocate_missing(
+    app: AppHandle,
+    db: State<Database>,
+    roots: Option<Vec<String>>,
+) -> Result<usize, String> {
+    use tauri::Emitter;
     // 先校验范围：选错文件夹应立即报错，而不是在读库之后才失败
+    let scoped = roots.is_some();
     let scan_roots = item_service::resolve_scan_roots(roots.as_deref())?;
     let rows = {
         let conn = db.get_conn();
@@ -268,11 +352,68 @@ pub fn relocate_missing(db: State<Database>, roots: Option<Vec<String>>) -> Resu
     if rows.is_empty() {
         return Ok(0);
     }
-    let found = item_service::scan_for_signatures(&rows, &scan_roots)?;
-    if found.is_empty() {
-        return Ok(0);
+    let ticket = ScanTicket::register();
+    let started = std::time::Instant::now();
+    let limit_ms = item_service::SCAN_TIME_LIMIT.as_millis() as u64;
+    let last_emit = std::sync::Mutex::new(None::<std::time::Instant>);
+    let progress = |scanned: u64, root: &str| {
+        let mut last = last_emit.lock().unwrap_or_else(|p| p.into_inner());
+        let now = std::time::Instant::now();
+        if last.is_some_and(|t| now.duration_since(t) < std::time::Duration::from_millis(250)) {
+            return;
+        }
+        *last = Some(now);
+        let _ = app.emit(
+            RELOCATE_PROGRESS_EVENT,
+            RelocateProgress {
+                scan_id: ticket.id,
+                scanned,
+                root: root.to_string(),
+                scoped,
+                elapsed_ms: started.elapsed().as_millis() as u64,
+                limit_ms,
+            },
+        );
+    };
+    let ctl = item_service::ScanControl {
+        cancel: &ticket.cancel,
+        deadline: Some(started + item_service::SCAN_TIME_LIMIT),
+        progress: &progress,
+    };
+    let finish = |status: &'static str, recovered: usize| {
+        let _ = app.emit(
+            RELOCATE_FINISHED_EVENT,
+            RelocateFinished {
+                scan_id: ticket.id,
+                status,
+                recovered,
+            },
+        );
+    };
+    let found = match item_service::scan_for_signatures(&rows, &scan_roots, &ctl) {
+        Ok(found) => found,
+        Err(e) => {
+            let status = if e == item_service::SCAN_CANCELLED_MSG {
+                "cancelled"
+            } else if e.starts_with(item_service::SCAN_TIMED_OUT_PREFIX) {
+                "timed_out"
+            } else {
+                "failed"
+            };
+            finish(status, 0);
+            return Err(e);
+        }
+    };
+    let result = if found.is_empty() {
+        Ok(0)
+    } else {
+        let writes = item_service::plan_signature_relocations(&rows, &found);
+        let conn = db.get_conn();
+        item_service::apply_signature_relocations(&conn, &writes)
+    };
+    match &result {
+        Ok(n) => finish("done", *n),
+        Err(_) => finish("failed", 0),
     }
-    let writes = item_service::plan_signature_relocations(&rows, &found);
-    let conn = db.get_conn();
-    item_service::apply_signature_relocations(&conn, &writes)
+    result
 }

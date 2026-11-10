@@ -469,6 +469,7 @@ pub fn run() {
             clear_recent_items,
             // 跨盘符兜底找回
             relocate_missing,
+            cancel_relocate,
             // 文件柜
             get_cabinets,
             add_cabinet,

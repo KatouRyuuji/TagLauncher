@@ -583,6 +583,8 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       }
       return report;
     }
+    case "cancel_relocate":
+      return 0;
     case "relocate_missing":
       // 演示集中没有可找回的盘符/文件夹，模拟「未找到」；范围参数与桌面端同形（可省略）
       if (args.roots !== undefined && (!Array.isArray(args.roots) || args.roots.length === 0)) {

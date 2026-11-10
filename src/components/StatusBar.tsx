@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { isScanCancelled, isScanTimedOut, scanErrorMessage, useRelocateScan } from "../lib/relocateScan";
 import { pickRelocateRoots } from "../lib/importDialogs";
 import { LoaderCircle, TriangleAlert, ZoomIn, ZoomOut } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
@@ -37,6 +38,9 @@ export function StatusBar({
   const persistWorkspacePrefsNow = useAppStore((state) => state.persistWorkspacePrefsNow);
   const [relocating, setRelocating] = useState(false);
   const [lastRelocateResult, setLastRelocateResult] = useState<number | null>(null);
+  // 停止 / 超时 / 失败的说明（显示在失效对话框横幅里）
+  const [relocateNote, setRelocateNote] = useState<{ kind: "info" | "warning"; text: string } | null>(null);
+  const scan = useRelocateScan();
   const [watchCount, setWatchCount] = useState(0);
   const missingCount = missingItems.length;
 
@@ -67,12 +71,22 @@ export function StatusBar({
   useEffect(() => {
     if (!reviewOpen) {
       setLastRelocateResult(null);
+      setRelocateNote(null);
     }
   }, [reviewOpen]);
+
+  const handleStopScan = async () => {
+    try {
+      await db.cancelRelocate();
+    } catch (err) {
+      showToast(`停止扫描失败：${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  };
 
   const handleRelocate = async (roots?: string[]) => {
     if (relocating) return;
     setLastRelocateResult(null);
+    setRelocateNote(null);
     setRelocating(true);
     try {
       const recovered = await onRelocateMissing(roots);
@@ -83,7 +97,14 @@ export function StatusBar({
         showToast(relocateRecoveredCopy(recovered), "success");
       }
     } catch (err) {
-      showToast(`找回失效项目失败：${err instanceof Error ? err.message : String(err)}`, "error");
+      if (isScanCancelled(err)) {
+        setRelocateNote({ kind: "info", text: scanErrorMessage(err) });
+      } else if (isScanTimedOut(err)) {
+        setRelocateNote({ kind: "warning", text: scanErrorMessage(err) });
+      } else {
+        setRelocateNote({ kind: "warning", text: `找回失效项目失败：${scanErrorMessage(err)}` });
+        showToast(`找回失效项目失败：${scanErrorMessage(err)}`, "error");
+      }
     } finally {
       setRelocating(false);
     }
@@ -259,6 +280,9 @@ export function StatusBar({
       onClose={() => setReviewOpen(false)}
       onRelocate={handleRelocate}
       onPickRelocateRoots={pickRelocateRoots}
+      scanProgress={scan}
+      relocateNote={relocateNote}
+      onStopScan={handleStopScan}
       onRemove={onRemoveMissing}
     />
     </>

@@ -103,3 +103,30 @@ def test_ambiguous_candidates_not_written_back(app, sandbox):
 @pytest.mark.case("E-ID-11")
 def test_manual_relocate():
     pytest.skip("产品未提供“手动定位失效项”入口（仅有 relocate_missing 全量找回，已由 E-ID-04 覆盖）")
+
+
+@pytest.mark.case("E-ID-12")
+def test_full_relocate_shows_progress_and_can_be_stopped(app, sandbox):
+    """全盘找回：显示进度（已扫描 N 项 / 当前盘），可停止；停止后不回写、说明未完成核验。"""
+    a = files.write(sandbox.files / "停扫" / "停止我.txt", "stop-full-scan-" * 40)
+    app.seed([a])
+    iid = app.item("停止我.txt")["id"]
+    a.unlink()
+    app.refresh_items()
+    wait_until(lambda: app.item("停止我.txt")["is_missing"], 10)
+    # 新失效会自动触发一次全盘找回；打开失效对话框应看到它的进度
+    btn = app.page.get_by_role("button", name="1 个失效项目，打开待处理")
+    btn.wait_for(timeout=8000)
+    btn.click()
+    dlg = app.dialog("失效项目")
+    progress = dlg.get_by_test_id("relocate-progress")
+    progress.wait_for(timeout=15_000)
+    wait_until(lambda: "已扫描" in progress.inner_text() and "/ 5:00" in progress.inner_text(), 10, lambda: progress.inner_text())
+    dlg.get_by_role("button", name="停止扫描").click()
+    progress.wait_for(state="detached", timeout=10_000)
+    calls = app.calls("relocate_missing")
+    wait_until(lambda: app.calls("relocate_missing")[-1].get("done"), 10, lambda: app.calls("relocate_missing"))
+    err = str(app.calls("relocate_missing")[-1].get("error") or "")
+    assert "已停止扫描" in err and "未完成唯一性核验" in err, (err, calls)
+    it = next(i for i in app.items() if i["id"] == iid)
+    assert it["is_missing"] and it["path"].lower() == str(a).lower(), "停止后不回写"
