@@ -360,8 +360,11 @@ static RUNTIME: Mutex<Runtime> = Mutex::new(Runtime {
 static ANIM_GEN: AtomicU64 = AtomicU64::new(0);
 static MOVE_GEN: AtomicU64 = AtomicU64::new(0);
 static LEAVE_GEN: AtomicU64 = AtomicU64::new(0);
-/// 诊断计数（pin_diag.dragEvents）：[拖动开始, 拖动结束, 抽屉 Moved, 抽屉吸附]
-static DRAG_EVENTS: [std::sync::atomic::AtomicU32; 4] = [
+/// 诊断计数（pin_diag.dragEvents）：[拖动开始, 拖动结束, 抽屉 Moved, 抽屉吸附, 失焦收回, 轮询收回, 前端离开收回]
+static DRAG_EVENTS: [std::sync::atomic::AtomicU32; 7] = [
+    std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0),
     std::sync::atomic::AtomicU32::new(0),
     std::sync::atomic::AtomicU32::new(0),
     std::sync::atomic::AtomicU32::new(0),
@@ -710,7 +713,9 @@ fn fullscreen_on_drawer_monitor(app: &AppHandle) -> bool {
 }
 
 /// 把手收到鼠标进入：滑出。返回是否展开（全屏 / 非抽屉 / 已展开时 false）。
-pub fn expand(app: &AppHandle) -> Result<bool, String> {
+/// 展开抽屉。`by_hover`：由把手悬停触发（光标此刻就在边缘、即面板里）——离开轮询从一开始就计离开；
+/// 程序化展开（pin_expand 命令）要等光标先进入过面板才计。
+pub fn expand(app: &AppHandle, by_hover: bool) -> Result<bool, String> {
     let Some(window) = app.get_webview_window(crate::quick::QUICK_LABEL) else {
         return Ok(false);
     };
@@ -748,7 +753,7 @@ pub fn expand(app: &AppHandle) -> Result<bool, String> {
     show_no_activate(&window);
     crate::pin_strip::hide(app);
     animate(app, &window, start, pw);
-    watch_leave(app);
+    watch_leave(app, by_hover);
     Ok(true)
 }
 
@@ -816,13 +821,13 @@ fn left_button_down() -> bool {
 
 /// 展开期间每 100ms 看一次光标：离开窗口满 [`LEAVE_COLLAPSE`] 就收回。
 /// 不只靠前端 mouseleave——碰边滑出时面板出现在光标下，光标若直接跳走 WebView 收不到 enter/leave。
-fn watch_leave(app: &AppHandle) {
+fn watch_leave(app: &AppHandle, by_hover: bool) {
     let gen = LEAVE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let app = app.clone();
     std::thread::spawn(move || {
         let mut outside_since: Option<Instant> = None;
         // 光标先进入过面板才开始计离开（程序化展开 / 键盘展开时光标本就不在面板上，不能立刻收回）
-        let mut seen_inside = false;
+        let mut seen_inside = by_hover;
         loop {
             std::thread::sleep(Duration::from_millis(100));
             if LEAVE_GEN.load(Ordering::SeqCst) != gen {
@@ -847,7 +852,9 @@ fn watch_leave(app: &AppHandle) {
                 continue;
             }
             if outside_since.get_or_insert_with(Instant::now).elapsed() >= LEAVE_COLLAPSE {
-                let _ = collapse(&app, true);
+                if collapse(&app, true) == Ok(true) {
+                    count(5);
+                }
                 return;
             }
         }
@@ -888,8 +895,33 @@ pub fn on_blur(app: &AppHandle) {
     if expanded {
         let app = app.clone();
         std::thread::spawn(move || {
-            let _ = collapse(&app, false);
+            // WebView2 子窗口拿焦点（点面板 / 开始拖标题栏）时顶层窗口也会报失焦；
+            // 前台仍是本窗口就不是真失焦，不收（真正离开由离开轮询 / mouseleave 处理）
+            std::thread::sleep(Duration::from_millis(60));
+            if let Some(w) = app.get_webview_window(crate::quick::QUICK_LABEL) {
+                if is_foreground(&w) {
+                    return;
+                }
+            }
+            if collapse(&app, false) == Ok(true) {
+                count(4);
+            }
         });
+    }
+}
+
+fn is_foreground(window: &WebviewWindow) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+        // SAFETY：只读查询
+        let fg = unsafe { GetForegroundWindow() } as isize;
+        window.hwnd().ok().is_some_and(|h| h.0 as isize == fg)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        false
     }
 }
 
@@ -1342,7 +1374,7 @@ pub struct PinDiag {
     pub handle_visible: bool,
     pub handle_rect: [i64; 4],
     /// [拖动开始, 拖动结束, 抽屉 Moved, 抽屉吸附] 累计次数
-    pub drag_events: [u32; 4],
+    pub drag_events: [u32; 7],
 }
 
 #[tauri::command]
@@ -1366,12 +1398,17 @@ pub fn pin_items(db: tauri::State<Database>) -> Result<PinItems, String> {
 
 #[tauri::command]
 pub async fn pin_expand(app: AppHandle) -> Result<bool, String> {
-    expand(&app)
+    expand(&app, false)
 }
 
 #[tauri::command]
 pub async fn pin_collapse(app: AppHandle, from_leave: Option<bool>) -> Result<bool, String> {
-    collapse(&app, from_leave.unwrap_or(false))
+    let from_leave = from_leave.unwrap_or(false);
+    let r = collapse(&app, from_leave);
+    if from_leave && r == Ok(true) {
+        count(6);
+    }
+    r
 }
 
 /// 前端告知主题强调色，用于原生把手

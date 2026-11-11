@@ -259,7 +259,7 @@ mod win {
                 if let Some(app) = APP.get() {
                     let app = app.clone();
                     std::thread::spawn(move || {
-                        let _ = crate::pin::expand(&app);
+                        let _ = crate::pin::expand(&app, true);
                     });
                 }
                 0

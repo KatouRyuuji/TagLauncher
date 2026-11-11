@@ -147,7 +147,7 @@ def test_drawer_hides_and_never_pops_over_fullscreen(app, sandbox):
         hit_edge(h)
         wait_until(lambda: drawer(app) == "expanded", 3, "恢复后应能再次滑出")
         park_mouse(h)
-        wait_until(lambda: drawer(app) == "collapsed", 3)
+        wait_until(lambda: drawer(app) == "collapsed", 3, lambda: f"移开后应收回：diag={app.invoke('pin_diag')}")
 
 
 @pytest.mark.case("D-PIN-03")
