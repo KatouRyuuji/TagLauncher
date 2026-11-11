@@ -103,6 +103,18 @@ export function QuickCollect({ session, onClose }: { session: CollectSession; on
     }
   }, [finish]);
 
+  // 收纳时延埋点（E2E 读取）：会话每次到达/更新都记一次，startedMs 是后端收到首个调用的时刻
+  useEffect(() => {
+    const w = window as unknown as { __tlCollectPerf?: unknown[] };
+    (w.__tlCollectPerf ??= []).push({
+      id: session.id,
+      count: session.paths.length,
+      invocations: session.invocations,
+      startedMs: session.startedMs,
+      renderedMs: Date.now(),
+    });
+  }, [session.id, session.paths.length, session.invocations, session.startedMs]);
+
   // 会话到达 / 更新：读标签、文件柜、分类；有可用的记住选择时直接执行（每个会话只试一次）
   useEffect(() => {
     let disposed = false;

@@ -43,13 +43,27 @@ def _cdp_targets(app) -> list[dict]:
 
 def _quick_diag(app) -> str:
     labels = app.page.evaluate("() => window.__TAURI__.window.getAllWindows().then(ws => ws.map(w => w.label))")
+    # 应用日志（tauri-plugin-log，<LOCALAPPDATA>/com.taglauncher.app/logs）；WebView2 的 leveldb LOG 不是文本，跳过
     logs = []
-    for f in app.sb.root.rglob("*.log"):
+    for f in sorted((app.sb.root / "LocalAppData").glob("com.taglauncher.app/logs/*.log")):
         try:
-            logs += [ln.strip() for ln in f.read_text(encoding="utf-8", errors="replace").splitlines() if "quick" in ln.lower()]
+            logs += [ln.strip() for ln in f.read_text(encoding="utf-8", errors="replace").splitlines()
+                     if any(k in ln.lower() for k in ("quick", "collect", "desktop", "warn", "error"))]
         except OSError:
             pass
-    return f"windows={labels} cdp={_cdp_targets(app)} logs={logs[-8:]}"
+    try:
+        session = app.invoke("collect_session")
+    except Exception as e:  # noqa: BLE001
+        session = f"<{e}>"
+    pages = []
+    for p in quick_pages(app):
+        try:
+            pages.append(p.evaluate("() => ({ready: document.readyState, collect: !!document.querySelector('[data-testid=quick-collect]'),"
+                                    " input: !!document.querySelector('[data-testid=quick-input]'), text: document.body.innerText.slice(0, 160),"
+                                    " perf: (window.__tlCollectPerf || []).length})"))
+        except Exception as e:  # noqa: BLE001
+            pages.append(f"<{type(e).__name__}: {str(e)[:120]}>")
+    return f"windows={labels} cdp={_cdp_targets(app)} quick_pages={pages} collect_session={session} logs={logs[-12:]}"
 
 
 def quick_page(app, timeout: float = 20):

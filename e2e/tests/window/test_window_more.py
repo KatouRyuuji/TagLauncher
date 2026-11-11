@@ -95,23 +95,45 @@ def test_snap_top_maximize(win):
 
 @pytest.mark.case("E-WIN-20")
 def test_resize_no_blank_flash(win):
-    import numpy as np  # noqa: F401  # capture_window 依赖
-    ex, ey = win32.find_edge(win.hwnd, "right")
+    """拖右边缘连续改尺寸，逐帧截屏：没重绘的空白帧（整片纯色填充）≤ 2。
+
+    - 截屏幕上窗口所在区域（用户实际看到的），不用 PrintWindow：无 GPU 的虚拟机上
+      PrintWindow(PW_RENDERFULLCONTENT) 抓 WebView2 合成内容整帧为黑（CI 实测 40/40）。
+    - 判据是「同一颜色占 ≥ 97% 像素」：WebView 来不及重绘时露出的是纯白/纯黑底色。原先的
+      「亮度 > 250 占 60%」在浅色主题下静止画面就命中（背景 #fcfdfe，CI 实测 76%），不能区分空白。
+    - 先截一帧静止画面，确认它不被判为空白（截图方式与判据有效）。"""
+    import numpy as np
+    from PIL import ImageGrab
+
+    def grab():
+        # GetWindowRect 含不可见的 8px 缩放边框（露出桌面），各边内缩 10px 只取窗口内容
+        l, t, r, b = win32.rect(win.hwnd)
+        return ImageGrab.grab(bbox=(l + 10, t + 10, r - 10, b - 10), all_screens=True)
+
+    def solid_share(img) -> float:
+        a = np.asarray(img.convert("RGB")).reshape(-1, 3)
+        _, counts = np.unique(a, axis=0, return_counts=True)
+        return float(counts.max() / len(a))
+
+    win.front()
+    time.sleep(0.3)
+    base = solid_share(grab())
+    print(f"E-WIN-20 baseline solid_share={base:.3f}")
+    assert base < 0.97, f"静止画面已判为空白，截图方式无效：{base}"
+    ex, ey = win32.find_edge(win.hwnd, "RIGHT")
     frames = []
     win32.mouse_move(ex, ey); win32.mouse_down()
     try:
         for i in range(40):
             win32.mouse_move(ex + (i % 20) * 8 - 80, ey)
             time.sleep(0.05)
-            frames.append(win32.capture_window(win.hwnd))
+            frames.append(grab())
     finally:
         win32.mouse_up()
-    bad = 0
-    for f in frames:
-        a = np.asarray(f.convert("L"))
-        if (a > 250).mean() > 0.6 or (a < 5).mean() > 0.6:
-            bad += 1
-    assert bad <= 2, f"{bad}/{len(frames)} 帧为大面积纯白/纯黑"
+    shares = [solid_share(f) for f in frames]
+    bad = sum(1 for x in shares if x >= 0.97)
+    print(f"E-WIN-20 frames={len(frames)} bad={bad} max_solid_share={max(shares):.3f} median={sorted(shares)[len(shares) // 2]:.3f}")
+    assert bad <= 2, f"{bad}/{len(frames)} 帧为整片纯色（未重绘）"
 
 
 @pytest.mark.case("E-ENV-07")

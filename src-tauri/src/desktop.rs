@@ -405,7 +405,8 @@ pub fn handle_second_instance(app: &AppHandle, args: &[String]) {
     }
     match parse_launch_args(args.iter().skip(1)) {
         LaunchMode::Show => show_main_window(app),
-        // 已在运行：后台启动请求不打扰用户，只确认托盘可用
+        // 已在运行：后台启动请求不打扰用户（不动窗口），托盘按现有设置重新同步（幂等）；
+        // 是否需要托盘只看首个实例的启动方式与「关闭到托盘」，不因二次 --background 新增
         LaunchMode::Background => sync_tray(app),
     }
 }
@@ -988,5 +989,16 @@ mod tests {
             [HotkeyAction::ToggleMain, HotkeyAction::OpenQuick]
         );
         assert_eq!(HotkeyAction::OpenQuick.label(), "打开快速搜索窗");
+    }
+}
+
+/// 见 lib.rs `run()`：第二个实例把前台权让出，首个实例弹快速窗 / 唤主窗时能拿到前台。
+pub fn allow_foreground_handoff() {
+    #[cfg(windows)]
+    // SAFETY: 无参数指针；ASFW_ANY 允许任意进程下一次 SetForegroundWindow，失败只是没有前台权。
+    unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(
+            windows_sys::Win32::UI::WindowsAndMessaging::ASFW_ANY,
+        );
     }
 }
