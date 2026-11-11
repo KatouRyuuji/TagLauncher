@@ -38,6 +38,9 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
 .quick-collect-title { font-weight: var(--font-weight-semibold); display: flex; gap: var(--spacing-sm); align-items: baseline; }
 .quick-collect-note { color: var(--text-muted); font-size: 0.85em; font-weight: var(--font-weight-normal); }
 .quick-collect-paths { flex: 1; }
+/* 待收纳列表没有图标列：文件名占整行、路径在下一行（沿用结果行网格会把名字挤进 1.6em 的图标列） */
+.quick-collect-paths .quick-row { grid-template-columns: minmax(0, 1fr); }
+.quick-collect-paths .quick-path { grid-column: 1; }
 .quick-collect-modes { display: flex; flex-wrap: wrap; gap: var(--spacing-xs) var(--spacing-md); font-size: 0.9em; }
 .quick-collect-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
 .quick-collect-remember { font-size: 0.85em; color: var(--text-muted); display: flex; gap: calc(var(--spacing-xs) * 1.5); align-items: center; }
