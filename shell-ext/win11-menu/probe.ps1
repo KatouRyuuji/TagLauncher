@@ -64,6 +64,11 @@ New-Item -ItemType Directory -Force -Path (Join-Path $pkgDir 'win11-menu') | Out
 Copy-Item (Join-Path $res 'tl_menu_logo.png') (Join-Path $pkgDir 'win11-menu') -Force
 $manifest = Get-Content (Join-Path $Here 'AppxManifest.xml') -Raw -Encoding UTF8
 $manifest = $manifest.Replace('@ARCH@', $arch).Replace('@VERSION@', '1.0.0.0')
+# noexe：Application 不声明 Executable（未签名包含「可执行激活」时只能由管理员为所有用户安装）
+if ($Variant -eq 'noexe') {
+    $manifest = $manifest -replace '\s+Executable="[^"]*"', '' -replace '\s+uap10:TrustLevel="[^"]*"', '' -replace '\s+uap10:RuntimeBehavior="[^"]*"', ''
+}
+Log 'manifest_application' ((([regex]::Match($manifest, '<Application [^>]*>')).Value) -replace '\s+', ' ')
 [IO.File]::WriteAllText((Join-Path $pkgDir 'AppxManifest.xml'), $manifest, (New-Object Text.UTF8Encoding $false))
 
 # ---- 打包（未签名）----

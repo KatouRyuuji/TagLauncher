@@ -21,7 +21,7 @@ $leaf = Split-Path -Leaf $Folder
 foreach ($d in $A::RootElement.FindAll($T::Children, (New-Object System.Windows.Automation.PropertyCondition($A::ClassNameProperty, '#32770')))) {
     $ok = $d.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, 'OK')))
     try {
-        if ($ok) { $ok.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); Log 'dismissed_dialog' $d.Current.Name }
+        $d.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close(); Log 'dismissed_dialog' ($d.Current.Name + ' ok=' + [bool]$ok)
     } catch { Log 'dismissed_dialog' "fail $($_.Exception.Message -replace '\s+',' ')" }
 }
 
