@@ -253,6 +253,14 @@ export async function addTagRelation(parentId: number, childId: number): Promise
   return invokeCmd("add_tag_relation", { parentId, childId });
 }
 
+/**
+ * 拖动改层级（F14）：把 child 从 fromParentId 挪到 toParentId（一个事务）。
+ * from=null 为加边（多父）；to=null 为移到顶层（只删 from 边）。成环 / 自环 / 原边已不存在时抛错且不改任何边。
+ */
+export async function moveTagParent(childId: number, fromParentId: number | null, toParentId: number | null): Promise<void> {
+  return invokeCmd("move_tag_parent", { childId, fromParentId, toParentId });
+}
+
 /** 删除父子关系 */
 export async function removeTagRelation(parentId: number, childId: number): Promise<void> {
   return invokeCmd("remove_tag_relation", { parentId, childId });

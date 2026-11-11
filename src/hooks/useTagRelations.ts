@@ -68,5 +68,13 @@ export function useTagRelations() {
     [reload],
   );
 
-  return { relations, addRelation, removeRelation, reload };
+  const moveParent = useCallback(
+    async (childId: number, fromParentId: number | null, toParentId: number | null) => {
+      await db.moveTagParent(childId, fromParentId, toParentId);
+      await reload();
+    },
+    [reload],
+  );
+
+  return { relations, addRelation, removeRelation, moveParent, reload };
 }

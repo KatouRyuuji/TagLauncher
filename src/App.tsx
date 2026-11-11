@@ -103,7 +103,7 @@ function App() {
   } = useItems();
   const { tags, addTag, updateTag, removeTag, reorderTags, refresh: refreshTags } = useTags();
   const { addCabinet, updateCabinet, removeCabinet, setCabinetFolder, reorderCabinets, refresh: refreshCabinets } = useCabinets();
-  const { addRelation: addTagRelation, removeRelation: removeTagRelation } = useTagRelations();
+  const { addRelation: addTagRelation, removeRelation: removeTagRelation, moveParent: moveTagParent } = useTagRelations();
   const viewMode = useAppStore((state) => state.viewMode);
   const tagGraphOpen = useAppStore((state) => state.tagGraphOpen);
   const commandPaletteOpen = useAppStore((state) => state.commandPaletteOpen);
@@ -547,6 +547,7 @@ function App() {
         onAddTagToItem={addTagToItem}
         onAddTagRelation={addTagRelation}
         onRemoveTagRelation={removeTagRelation}
+        onMoveTagParent={moveTagParent}
         stats={stats}
         dataEpoch={dataEpoch}
         modPanels={sidebarPanels}

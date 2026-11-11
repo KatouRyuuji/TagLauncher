@@ -773,6 +773,26 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       }
       return null;
     }
+    case "move_tag_parent": {
+      const childId = num(args.childId);
+      const from = args.fromParentId == null ? null : num(args.fromParentId);
+      const to = args.toParentId == null ? null : num(args.toParentId);
+      if (from === to) return null;
+      requireTag(childId);
+      if (to !== null) {
+        if (to === childId) throw new Error("标签不能成为自己的父级");
+        requireTag(to);
+        if (createsCycle(to, childId)) throw new Error("该关系会形成循环（目标标签是被拖标签的后代）");
+      }
+      if (from !== null && !state.relations.some((rel) => rel.parentId === from && rel.childId === childId)) {
+        throw new Error("原父子关系已不存在，请刷新后重试");
+      }
+      state.relations = state.relations.filter((rel) => !(from !== null && rel.parentId === from && rel.childId === childId));
+      if (to !== null && !state.relations.some((rel) => rel.parentId === to && rel.childId === childId)) {
+        state.relations.push({ parentId: to, childId });
+      }
+      return null;
+    }
     case "remove_tag_relation": {
       const parentId = num(args.parentId);
       const childId = num(args.childId);

@@ -521,6 +521,7 @@ pub fn run() {
             set_item_tags,
             get_tag_relations,
             add_tag_relation,
+            move_tag_parent,
             remove_tag_relation,
             recolor_tags_and_cabinets,
             // 搜索

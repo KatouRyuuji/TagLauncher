@@ -56,6 +56,7 @@ function renderSidebar() {
         onAddTagToItem={async () => {}}
         onAddTagRelation={onAddTagRelation}
         onRemoveTagRelation={async () => {}}
+        onMoveTagParent={async () => {}}
         stats={null}
         dataEpoch={0}
       />
@@ -111,5 +112,22 @@ describe("侧栏添加子标签入口", () => {
     await userEvent.click(screen.getByRole("button", { name: "管理标签父子关系" }));
     const again = await screen.findByRole("dialog", { name: "标签关系" });
     expect(currentRow(again)).toHaveTextContent("甲");
+  });
+
+  it("编辑层级开关：显示拖动说明与「移出当前父级」落点，再按退出", async () => {
+    useAppStore.setState({ tagRelations: [{ parentId: 2, childId: 1 }] });
+    renderSidebar();
+    const toggle = await screen.findByRole("button", { name: "编辑层级" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByTestId("tag-root-drop")).toBeNull();
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("tag-hierarchy-hint")).toHaveTextContent("按住 Alt 放下");
+    expect(screen.getByTestId("tag-root-drop")).toHaveTextContent("移出当前父级");
+    // 行带路径上的父级，拖动据此决定「从哪个父级移出」（空库时父级默认折叠，先展开）
+    await userEvent.click(screen.getByRole("button", { name: "展开 游戏的下级标签" }));
+    expect(document.querySelector('[data-tag-row-id="1"]')).toHaveAttribute("data-tag-parent-id", "2");
+    await userEvent.click(toggle);
+    expect(screen.queryByTestId("tag-root-drop")).toBeNull();
   });
 });

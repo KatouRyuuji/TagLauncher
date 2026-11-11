@@ -412,6 +412,55 @@ pub fn add_tag_relation(conn: &Connection, parent_id: i64, child_id: i64) -> Res
     Ok(())
 }
 
+/// 拖动改层级（F14）：把 `child` 从父级 `from` 挪到 `to`，一个事务内完成。
+/// - `from = None, to = Some(p)`：加边（多父，保留原有父级）；
+/// - `from = Some(q), to = Some(p)`：换边（删 q→child、加 p→child）；
+/// - `from = Some(q), to = None`：移到顶层（只删 q→child；仍有其他父级时它留在那些父级下）。
+/// 校验与 [`add_tag_relation`] 相同（自环、成环、存在性）；`from` 边必须存在（界面数据过期时拒绝，不做半步）。
+pub fn move_tag_parent(
+    conn: &Connection,
+    child_id: i64,
+    from_parent_id: Option<i64>,
+    to_parent_id: Option<i64>,
+) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
+    if from_parent_id == to_parent_id {
+        return Ok(());
+    }
+    let tx = crate::db::write_tx(conn).map_err(|e| e.to_string())?;
+    ensure_exists(&tx, "tags", child_id, "子标签")?;
+    if let Some(to) = to_parent_id {
+        if to == child_id {
+            return Err("标签不能成为自己的父级".to_string());
+        }
+        ensure_exists(&tx, "tags", to, "父标签")?;
+        // 删 from→child 不改变 child 的后代集合，所以先删后加与先查后改等价
+        if descendants_of(&tx, child_id)?.contains(&to) {
+            return Err("该关系会形成循环（目标标签是被拖标签的后代）".to_string());
+        }
+    }
+    if let Some(from) = from_parent_id {
+        let n = tx
+            .execute(
+                "DELETE FROM tag_relations WHERE parent_id = ?1 AND child_id = ?2",
+                params![from, child_id],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("原父子关系已不存在，请刷新后重试".to_string());
+        }
+    }
+    if let Some(to) = to_parent_id {
+        tx.execute(
+            "INSERT OR IGNORE INTO tag_relations (parent_id, child_id) VALUES (?1, ?2)",
+            params![to, child_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 删除父子关系。
 pub fn remove_tag_relation(conn: &Connection, parent_id: i64, child_id: i64) -> Result<(), String> {
     crate::db::ensure_writes_allowed()?;
@@ -534,6 +583,57 @@ mod tests {
         let other = add_tag(&conn, "游戏", "#fff").expect("second add");
         let err = update_tag(&conn, other.id, "工具", "#fff").expect_err("rename clash");
         assert_eq!(err, "已存在同名标签，请换一个名称");
+    }
+
+    #[test]
+    fn move_tag_parent_adds_moves_detaches_and_rejects_cycles() {
+        let conn = setup_conn();
+        for n in ["a", "b", "c", "d"] {
+            conn.execute("INSERT INTO tags (name,color) VALUES (?1,'#fff')", params![n]).unwrap();
+        }
+        let (a, b, c, d) = (tag_id(&conn, "a"), tag_id(&conn, "b"), tag_id(&conn, "c"), tag_id(&conn, "d"));
+        let edges = |conn: &Connection| {
+            let mut e = get_tag_relations(conn).unwrap();
+            e.sort();
+            e
+        };
+        add_tag_relation(&conn, a, c).unwrap();
+        add_tag_relation(&conn, c, d).unwrap();
+        // 加边 = 多父：c 同时在 a、b 下
+        move_tag_parent(&conn, c, None, Some(b)).unwrap();
+        assert_eq!(edges(&conn), {
+            let mut w = vec![(a, c), (b, c), (c, d)];
+            w.sort();
+            w
+        });
+        // 成环：c 拖到自己的后代 d 下；自环；失败不改任何边
+        let before = edges(&conn);
+        assert!(move_tag_parent(&conn, c, Some(a), Some(d)).unwrap_err().contains("循环"));
+        assert!(move_tag_parent(&conn, c, None, Some(c)).is_err());
+        assert_eq!(edges(&conn), before, "失败时整体回滚");
+        // 换边：c 从 a 挪到 d 的兄弟位置——这里挪到 b 已有，等价于只删 a→c
+        move_tag_parent(&conn, c, Some(a), Some(b)).unwrap();
+        assert_eq!(edges(&conn), {
+            let mut w = vec![(b, c), (c, d)];
+            w.sort();
+            w
+        });
+        // 原边不存在：拒绝且不加新边
+        assert!(move_tag_parent(&conn, c, Some(a), Some(d)).is_err());
+        assert!(move_tag_parent(&conn, d, Some(a), Some(b)).unwrap_err().contains("不存在"));
+        assert_eq!(edges(&conn), {
+            let mut w = vec![(b, c), (c, d)];
+            w.sort();
+            w
+        });
+        // 换边到新父
+        move_tag_parent(&conn, d, Some(c), Some(a)).unwrap();
+        // 移到顶层
+        move_tag_parent(&conn, c, Some(b), None).unwrap();
+        assert_eq!(edges(&conn), vec![(a, d)]);
+        // 同父 = 无操作
+        move_tag_parent(&conn, d, Some(a), Some(a)).unwrap();
+        assert_eq!(edges(&conn), vec![(a, d)]);
     }
 
     #[test]

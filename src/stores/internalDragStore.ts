@@ -12,6 +12,9 @@ export type InternalDragHoverTarget =
   // 侧栏排序：落在该行的上半区插到其前，下半区（after）插到其后
   | { kind: "sidebar-tag"; tagId: number; after: boolean }
   | { kind: "sidebar-cabinet"; cabinetId: number; after: boolean }
+  // 侧栏「编辑层级」（F14）：落到某标签上 = 成为它的子标签（move=按住 Alt 换边）；blocked 为不可放的原因
+  | { kind: "tag-parent"; tagId: number; move: boolean; blocked: string | null }
+  | { kind: "tag-root"; blocked: string | null }
   | null;
 
 export type InternalDragPayload =
@@ -66,6 +69,10 @@ function sameHoverTarget(a: InternalDragHoverTarget, b: InternalDragHoverTarget)
       return b.kind === "sidebar-tag" && a.tagId === b.tagId && a.after === b.after;
     case "sidebar-cabinet":
       return b.kind === "sidebar-cabinet" && a.cabinetId === b.cabinetId && a.after === b.after;
+    case "tag-parent":
+      return b.kind === "tag-parent" && a.tagId === b.tagId && a.move === b.move && a.blocked === b.blocked;
+    case "tag-root":
+      return b.kind === "tag-root" && a.blocked === b.blocked;
   }
 }
 
