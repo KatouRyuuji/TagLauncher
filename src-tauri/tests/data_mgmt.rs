@@ -141,6 +141,84 @@ fn validate_importable_db_accepts_valid_rejects_invalid() {
     assert!(validate_importable_db(Path::new("Z:/nope/missing.db")).is_err());
 }
 
+/// hide_from_all 随整库备份/导出走：快照与覆盖导入后取值不变。
+#[test]
+fn hide_from_all_survives_backup_snapshot_and_overwrite() {
+    let live = common::temp_db();
+    let hidden_path = common::write_file(&live.dir, "nested.txt", b"n");
+    let visible_path = common::write_file(&live.dir, "loose.exe", b"l");
+    {
+        let conn = live.db.get_conn();
+        let hidden = item_service::add_item(&conn, &hidden_path).unwrap();
+        item_service::add_item(&conn, &visible_path).unwrap();
+        conn.execute("UPDATE items SET hide_from_all = 1 WHERE id = ?1", [hidden.id])
+            .unwrap();
+    }
+    let backup = live.dir.join("hide_backup.db");
+    snapshot_live_db(&live.db, &backup).expect("snapshot");
+
+    {
+        let copy = rusqlite::Connection::open(&backup).unwrap();
+        let hidden: i64 = copy
+            .query_row(
+                "SELECT hide_from_all FROM items WHERE name = 'nested.txt'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let visible: i64 = copy
+            .query_row(
+                "SELECT hide_from_all FROM items WHERE name = 'loose.exe'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(hidden, 1);
+        assert_eq!(visible, 0);
+        let ver: i64 = copy
+            .query_row(
+                "SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='schema_version'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            ver,
+            i64::from(tag_launcher_lib::db::migrations::latest_schema_version())
+        );
+    }
+
+    let src = common::TempDir::new("hide_src");
+    let src_path = src.db_path();
+    {
+        let src_db = Database::new(&src_path).unwrap();
+        let conn = src_db.get_conn();
+        let item = item_service::add_item(&conn, &common::write_file(&src, "from_src.txt", b"s")).unwrap();
+        conn.execute("UPDATE items SET hide_from_all = 1 WHERE id = ?1", [item.id])
+            .unwrap();
+    }
+    overwrite_live_from(&live.db, &src_path).expect("overwrite");
+    {
+        let conn = live.db.get_conn();
+        let hidden: i64 = conn
+            .query_row(
+                "SELECT hide_from_all FROM items WHERE name = 'from_src.txt'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(hidden, 1);
+        let leftover: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM items WHERE name = 'nested.txt'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(leftover, 0);
+    }
+}
+
 /// 导入覆盖与回滚原语：覆盖使实库变为来源内容；再从安全备份覆盖可回滚到导入前状态。
 #[test]
 fn import_overwrite_and_rollback_via_safety_backup() {

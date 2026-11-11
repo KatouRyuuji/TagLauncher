@@ -91,6 +91,43 @@ describe("WorkspaceScopeHeader · 关联文件夹的文件柜", () => {
   });
 });
 
+describe("WorkspaceScopeHeader · 目录内文件", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      cabinets: [],
+      selectedCabinetId: null,
+      cabinetDir: null,
+      selectedTagIds: [],
+      excludedTagIds: [],
+      showFavorites: false,
+      showRecent: false,
+      searchQuery: "",
+      showNestedContents: false,
+      libraryBrowseRoot: null,
+      libraryBrowseDir: null,
+    });
+  });
+
+  it("全部项目可切换显示或隐藏目录内文件", async () => {
+    render(<WorkspaceScopeHeader visibleCount={2} />);
+    await userEvent.click(screen.getByRole("button", { name: "显示目录内文件" }));
+    expect(useAppStore.getState().showNestedContents).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "隐藏目录内文件" }));
+    expect(useAppStore.getState().showNestedContents).toBe(false);
+  });
+
+  it("库内浏览显示面包屑，点击全部项目退出目录", async () => {
+    useAppStore.setState({ libraryBrowseRoot: "D:\\Lib\\Docs", libraryBrowseDir: "D:\\Lib\\Docs\\Sub" });
+    render(<WorkspaceScopeHeader visibleCount={1} />);
+    const nav = screen.getByRole("navigation", { name: "文件夹路径" });
+    expect(nav).toHaveTextContent("全部项目");
+    expect(nav).toHaveTextContent("Docs");
+    expect(nav).toHaveTextContent("Sub");
+    await userEvent.click(screen.getByRole("button", { name: "全部项目" }));
+    expect(useAppStore.getState().libraryBrowseRoot).toBeNull();
+  });
+});
+
 describe("WorkspaceScopeHeader · 最近使用", () => {
   beforeEach(() => {
     useAppStore.setState({

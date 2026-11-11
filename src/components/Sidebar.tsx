@@ -22,7 +22,7 @@ import { TagRelationsEditor } from "./TagRelationsEditor";
 import { SidebarThemeSwitcher } from "./SidebarThemeSwitcher";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
 import { buildDescendantsMap } from "../lib/tagGraph";
-import { flattenTagTree } from "../lib/tagTree";
+import { filterCollapsedTagRows, flattenTagTree } from "../lib/tagTree";
 import { compareSortOrder, moveBeside } from "../lib/sidebarOrder";
 import { compareNames } from "../lib/itemQuery";
 import { matchesNameQuery } from "../lib/search";
@@ -129,7 +129,7 @@ export function Sidebar({
   const [editingCabinet, setEditingCabinet] = useState<Cabinet | null>(null);
   const [showAddCabinet, setShowAddCabinet] = useState(false);
   const [showRelationsEditor, setShowRelationsEditor] = useState(false);
-  const [collapsedTagIds, setCollapsedTagIds] = useState<Set<number>>(() => new Set());
+  const [collapsedTagPaths, setCollapsedTagPaths] = useState<Set<string>>(() => new Set());
   const initializedTagTreeRef = useRef(false);
   const wasLibraryEmptyRef = useRef(allItems.length === 0);
   const visibleSection = activeDragKind === "item" ? "cabinets" : sidebarTab;
@@ -203,9 +203,9 @@ export function Sidebar({
     if (tags.length === 0) return;
     const libraryEmpty = allItems.length === 0;
     if (!initializedTagTreeRef.current || libraryEmpty !== wasLibraryEmptyRef.current) {
-      setCollapsedTagIds(
+      setCollapsedTagPaths(
         libraryEmpty
-          ? new Set(tagRows.filter((row) => row.hasChildren).map((row) => row.tag.id))
+          ? new Set(tagRows.filter((row) => row.hasChildren).map((row) => row.pathKey))
           : new Set(),
       );
       initializedTagTreeRef.current = true;
@@ -215,16 +215,8 @@ export function Sidebar({
 
   const visibleTagRows = useMemo(() => {
     if (appliedTagQuery.trim()) return filteredTagRows;
-    const visible: typeof filteredTagRows = [];
-    const ancestorIds: number[] = [];
-    for (const row of filteredTagRows) {
-      const hidden = ancestorIds.slice(0, row.depth).some((id) => collapsedTagIds.has(id));
-      ancestorIds.length = row.depth;
-      ancestorIds[row.depth] = row.tag.id;
-      if (!hidden) visible.push(row);
-    }
-    return visible;
-  }, [appliedTagQuery, collapsedTagIds, filteredTagRows]);
+    return filterCollapsedTagRows(filteredTagRows, collapsedTagPaths);
+  }, [appliedTagQuery, collapsedTagPaths, filteredTagRows]);
 
   // 已选标签滚出可视区时自动定位：侧栏既是选择器也是状态显示器
   const tagScrollRef = useRef<HTMLDivElement>(null);
@@ -473,10 +465,10 @@ export function Sidebar({
                 />
               )}
               <div className="mt-1 space-y-0.5">
-                {visibleTagRows.map(({ tag, depth, hasChildren, parentId }) => {
+                {visibleTagRows.map(({ tag, depth, hasChildren, parentId, pathKey }) => {
                   const active = selectedTagIds.includes(tag.id);
                   const excluded = excludedTagIds.includes(tag.id);
-                  const collapsed = collapsedTagIds.has(tag.id);
+                  const collapsed = collapsedTagPaths.has(pathKey);
                   const canCollapse = hasChildren && !appliedTagQuery.trim();
                   const activeTagStyle = active
                     ? {
@@ -486,7 +478,7 @@ export function Sidebar({
                     : undefined;
                   return (
                     <div
-                      key={tag.id}
+                      key={pathKey}
                       className={`relative flex h-8 min-w-0 items-center gap-0.5 ${depth === 1 ? "ml-3" : depth === 2 ? "ml-6" : ""}`}
                     >
                       {tagInsert?.tagId === tag.id && <InsertLine after={tagInsert.after} />}
@@ -495,10 +487,10 @@ export function Sidebar({
                           type="button"
                           aria-label={`${collapsed ? "展开" : "折叠"} ${tag.name}的下级标签`}
                           aria-expanded={!collapsed}
-                          onClick={() => setCollapsedTagIds((current) => {
+                          onClick={() => setCollapsedTagPaths((current) => {
                             const next = new Set(current);
-                            if (next.has(tag.id)) next.delete(tag.id);
-                            else next.add(tag.id);
+                            if (next.has(pathKey)) next.delete(pathKey);
+                            else next.add(pathKey);
                             return next;
                           })}
                           className="flex h-7 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"

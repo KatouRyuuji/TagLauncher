@@ -116,7 +116,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
 
   // 标签按侧栏的父子关系呈现，名称和层级是识别主线；过滤时保留原层级。
   const tagQuery = appliedTagFilter.trim().toLowerCase();
-  const tagRows = flattenTagTree(tags, tagRelations, (a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name));
+  const tagRows = flattenTagTree(tags, tagRelations, (a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name), { uniqueIds: true });
   const visibleTagRows = tagQuery
     ? tagRows.filter(({ tag }) => tag.name.toLowerCase().includes(tagQuery))
     : tagRows;

@@ -193,11 +193,14 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "add_items",
-            "description": "把文件或文件夹加入库，已在库中的不重复添加。",
+            "description": "把文件或文件夹加入库，已在库中的不重复添加。可选 cabinetId 加入普通柜、tagIds 追加直接标签、hideFromAllPaths 将新建项藏出 All 总览；重复项保留已有标签与可见性，只追加新标签，柜可叠加。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "paths": { "type": "array", "items": { "type": "string" }, "description": "绝对路径" }
+                    "paths": { "type": "array", "items": { "type": "string" }, "description": "绝对路径" },
+                    "cabinetId": { "type": "integer", "description": "普通柜 id；关联目录柜会被拒绝" },
+                    "tagIds": { "type": "array", "items": { "type": "integer" }, "description": "追加的直接标签；新建与重复项都只追加、不覆盖已有" },
+                    "hideFromAllPaths": { "type": "array", "items": { "type": "string" }, "description": "仅新建项默认不出现在 All 的路径；重复项不改可见性" }
                 },
                 "required": ["paths"]
             },
@@ -309,6 +312,9 @@ fn brief_item(it: &ItemWithTags) -> Value {
     }
     if it.item.is_missing {
         obj.insert("missing".into(), json!(true));
+    }
+    if it.item.hide_from_all {
+        obj.insert("hide_from_all".into(), json!(true));
     }
     if let Some(note) = it.item.note.as_deref().filter(|n| !n.is_empty()) {
         obj.insert("note".into(), json!(note));
@@ -429,7 +435,16 @@ fn call_tool(db: &Database, name: &str, args: &Value) -> ToolResult {
                 return ToolResult::Err("add_items 需要 paths 数组".to_string());
             }
             drop(conn);
-            let result = item_service::add_items(db, paths);
+            let context = item_service::AddItemsContext {
+                cabinet_id: args.get("cabinetId").and_then(json_i64),
+                tag_ids: json_i64_vec(args.get("tagIds")),
+                hide_from_all_paths: args
+                    .get("hideFromAllPaths")
+                    .and_then(Value::as_array)
+                    .map(|arr| arr.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                    .unwrap_or_default(),
+            };
+            let result = item_service::add_items_with_context(db, paths, context);
             ToolResult::Ok(json!({
                 "created": result.created_count,
                 "touched": result.items.len(),
@@ -607,6 +622,7 @@ mod tests {
         assert_eq!(v["id"], item.id);
         assert_eq!(v["type"], "video");
         assert!(v.get("created_at").is_some(), "get_item 保留完整字段");
+        assert_eq!(v["hide_from_all"], false, "get_item 带上 hide_from_all");
 
         let v = ok("search_items", json!({ "query": "clip", "type": "video" }));
         assert_eq!(v["total"], 1);

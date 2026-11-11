@@ -18,6 +18,7 @@ mod v017_cabinet_folder;
 mod v018_ignored_paths;
 mod v019_sidebar_order;
 mod v020_text_type;
+mod v021_hide_from_all;
 
 use rusqlite::Connection;
 
@@ -191,6 +192,7 @@ fn all_migrations() -> Vec<Box<dyn Migration>> {
         Box::new(v018_ignored_paths::V018IgnoredPaths),
         Box::new(v019_sidebar_order::V019SidebarOrder),
         Box::new(v020_text_type::V020TextType),
+        Box::new(v021_hide_from_all::V021HideFromAll),
     ]
 }
 

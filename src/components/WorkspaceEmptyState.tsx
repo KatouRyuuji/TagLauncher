@@ -49,6 +49,7 @@ export function WorkspaceEmptyState({
   const showRecent = useAppStore((state) => state.showRecent);
   const typeFilter = useAppStore((state) => state.typeFilter);
   const hideMissing = useAppStore((state) => state.hideMissing);
+  const libraryBrowseRoot = useAppStore((state) => state.libraryBrowseRoot);
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const tags = useAppStore((state) => state.tags);
@@ -95,7 +96,8 @@ export function WorkspaceEmptyState({
     excludedTagIds.length > 0 ||
     selectedCabinetId !== null ||
     showFavorites ||
-    showRecent;
+    showRecent ||
+    libraryBrowseRoot !== null;
   const showClearFilters = copy.showClearFilters && Boolean(onClearFilters) && hasActiveFilters;
   const showActions = showAddCta || copy.showClearSearch || showClearFilters;
 

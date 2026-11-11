@@ -9,7 +9,7 @@
 
 import { Fragment, useMemo } from "react";
 import { ChevronRight, Eraser, FolderTree, History, Rows3 } from "lucide-react";
-import { browseCrumbs } from "../lib/cabinetBrowse";
+import { browseCrumbs, parentDir } from "../lib/cabinetBrowse";
 import { IgnoredPathsButton } from "./IgnoredPathsButton";
 import { resolveWorkspaceScope } from "../lib/workspaceScope";
 import { useAppStore } from "../stores/appStore";
@@ -39,6 +39,11 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir 
   // 直订阅 searchQuery：经 useSearch 会连坐 searchInputValue，每击键白跑一次 resolve
   const searchQuery = useAppStore((state) => state.searchQuery);
   const linkedCabinet = cabinets.find((cabinet) => cabinet.id === selectedCabinetId && cabinet.folder_path) ?? null;
+  const showNestedContents = useAppStore((state) => state.showNestedContents);
+  const setShowNestedContents = useAppStore((state) => state.setShowNestedContents);
+  const libraryBrowseRoot = useAppStore((state) => state.libraryBrowseRoot);
+  const inAll =
+    !showFavorites && !showRecent && selectedCabinetId === null;
 
   const scope = useMemo(
     () =>
@@ -88,6 +93,17 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir 
             清除记录
           </button>
         )}
+        {inAll && !libraryBrowseRoot && (
+          <button
+            type="button"
+            aria-pressed={showNestedContents}
+            onClick={() => setShowNestedContents(!showNestedContents)}
+            className="control-chip ml-auto h-7 min-h-7 shrink-0 gap-1.5 self-center px-2.5 text-[13px]"
+          >
+            {showNestedContents ? <FolderTree aria-hidden="true" size={14} strokeWidth={1.8} /> : <Rows3 aria-hidden="true" size={14} strokeWidth={1.8} />}
+            {showNestedContents ? "隐藏目录内文件" : "显示目录内文件"}
+          </button>
+        )}
       </div>
       {linkedCabinet && (
         <LinkedCabinetBar
@@ -97,6 +113,7 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir 
           onCleanMissing={onCleanMissing}
         />
       )}
+      {inAll && libraryBrowseRoot && <LibraryBrowseBar root={libraryBrowseRoot} />}
     </div>
   );
 }
@@ -171,6 +188,49 @@ function LinkedCabinetBar({
         {cabinetFlat ? <FolderTree aria-hidden="true" size={14} strokeWidth={1.8} /> : <Rows3 aria-hidden="true" size={14} strokeWidth={1.8} />}
         {cabinetFlat ? "按目录浏览" : "平铺显示"}
       </button>
+    </div>
+  );
+}
+
+function folderLabel(path: string): string {
+  const parent = parentDir(path);
+  if (!parent) return path;
+  return path.slice(parent.length).replace(/^\\/, "") || path;
+}
+
+function LibraryBrowseBar({ root }: { root: string }) {
+  const libraryBrowseDir = useAppStore((state) => state.libraryBrowseDir);
+  const setLibraryBrowseRoot = useAppStore((state) => state.setLibraryBrowseRoot);
+  const setLibraryBrowseDir = useAppStore((state) => state.setLibraryBrowseDir);
+  const crumbs = browseCrumbs(folderLabel(root), root, libraryBrowseDir);
+
+  return (
+    <div data-region="library-browse-bar" className="mt-2 flex min-h-7 flex-wrap items-center gap-2 text-[13px]">
+      <nav aria-label="文件夹路径" title={root} className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[var(--text-muted)]">
+        <button
+          type="button"
+          onClick={() => setLibraryBrowseRoot(null)}
+          className="truncate rounded-[var(--radius-sm)] px-1 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        >
+          全部项目
+        </button>
+        {crumbs.map((crumb) => (
+          <Fragment key={crumb.dir ?? "root"}>
+            <ChevronRight aria-hidden="true" size={13} strokeWidth={1.8} className="shrink-0 text-[var(--text-faint)]" />
+            {crumb.dir === libraryBrowseDir || (crumb.dir === null && libraryBrowseDir === null) ? (
+              <span aria-current="page" className="truncate font-medium text-[var(--text-primary)]">{crumb.label}</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setLibraryBrowseDir(crumb.dir)}
+                className="truncate rounded-[var(--radius-sm)] px-1 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              >
+                {crumb.label}
+              </button>
+            )}
+          </Fragment>
+        ))}
+      </nav>
     </div>
   );
 }

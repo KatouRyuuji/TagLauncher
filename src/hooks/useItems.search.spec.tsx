@@ -7,7 +7,11 @@ import { ensurePinyin } from "../lib/pinyinProvider";
 import type { ItemWithTags } from "../types";
 import * as db from "../lib/db";
 
-vi.mock("../lib/db", () => ({ getItems: vi.fn(async () => fixtures), relocateMissing: vi.fn() }));
+vi.mock("../lib/db", () => ({
+  getItems: vi.fn(async () => fixtures),
+  getCabinetItems: vi.fn(async () => []),
+  relocateMissing: vi.fn(),
+}));
 vi.mock("../lib/modApi", () => ({ notifyItemsChanged: vi.fn() }));
 vi.mock("../lib/search", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/search")>();
@@ -27,7 +31,7 @@ describe("对象搜索按需索引", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    useAppStore.setState({ searchQuery: "", searchMode: "all", selectedTagIds: [], excludedTagIds: [], selectedCabinetId: null, showFavorites: false, showRecent: false, typeFilter: "all", hideMissing: false, sortMode: "smart", tagRelations: [] });
+    useAppStore.setState({ searchQuery: "", searchMode: "all", selectedTagIds: [], excludedTagIds: [], selectedCabinetId: null, showFavorites: false, showRecent: false, typeFilter: "all", hideMissing: false, showNestedContents: false, libraryBrowseRoot: null, libraryBrowseDir: null, sortMode: "smart", tagRelations: [] });
   });
 
   it("并发找回共享结果，扫描错误保留为失败状态并允许重试", async () => {
@@ -87,5 +91,68 @@ describe("对象搜索按需索引", () => {
     await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([1]));
     act(() => useAppStore.setState({ hideMissing: false }));
     await waitFor(() => expect(result.current.items.map((item) => item.id).sort()).toEqual([1, 3]));
+  });
+
+  it("All 默认隐藏目录内文件，搜索仍能命中，打开显示开关不丢内容", async () => {
+    const nested: ItemWithTags[] = [
+      { id: 10, name: "资料库", path: "D:\\Lib", type: "folder", created_at: "2026-01-01", is_favorite: false, tags: [] },
+      { id: 11, name: "隐藏笔记", path: "D:\\Lib\\notes.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [{ id: 1, name: "工作", color: "#5064d8" }] },
+      { id: 12, name: "散文件", path: "D:\\loose.exe", type: "exe", created_at: "2026-01-01", is_favorite: false, tags: [] },
+    ];
+    vi.mocked(db.getItems).mockResolvedValueOnce(nested);
+    const { result } = renderHook(useItems);
+    await waitFor(() => expect(result.current.items.map((item) => item.id).sort()).toEqual([10, 12]));
+    act(() => useAppStore.setState({ searchQuery: "隐藏笔记" }));
+    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([11]));
+    act(() => useAppStore.setState({ searchQuery: "", showNestedContents: true }));
+    await waitFor(() => expect(result.current.items.map((item) => item.id).sort()).toEqual([10, 11, 12]));
+    act(() => useAppStore.setState({ showNestedContents: false }));
+    expect(result.current.items.map((item) => item.id).sort()).toEqual([10, 12]);
+  });
+
+  it("标签筛选与柜视图能看到 hide_from_all 对象，总览隐藏不是全局抹除", async () => {
+    const nested: ItemWithTags[] = [
+      { id: 10, name: "资料库", path: "D:\\Lib", type: "folder", created_at: "2026-01-01", is_favorite: false, tags: [] },
+      { id: 11, name: "隐藏笔记", path: "D:\\Lib\\notes.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [{ id: 1, name: "工作", color: "#5064d8" }] },
+    ];
+    vi.mocked(db.getItems).mockResolvedValueOnce(nested);
+    vi.mocked(db.getCabinetItems).mockResolvedValueOnce([nested[1]]);
+    const { result } = renderHook(useItems);
+    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([10]));
+    act(() => useAppStore.setState({ selectedTagIds: [1] }));
+    expect(result.current.items.map((item) => item.id)).toEqual([11]);
+    act(() => useAppStore.setState({ selectedTagIds: [], selectedCabinetId: 3 }));
+    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([11]));
+  });
+
+  it("库内浏览只列出当前层，含被 All 隐藏的子文件", async () => {
+    const nested: ItemWithTags[] = [
+      { id: 10, name: "资料库", path: "D:\\Lib", type: "folder", created_at: "2026-01-01", is_favorite: false, tags: [] },
+      { id: 11, name: "隐藏笔记", path: "D:\\Lib\\notes.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
+      { id: 12, name: "子目录", path: "D:\\Lib\\Sub", type: "folder", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
+      { id: 13, name: "深层", path: "D:\\Lib\\Sub\\deep.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
+    ];
+    vi.mocked(db.getItems).mockResolvedValueOnce(nested);
+    const { result } = renderHook(useItems);
+    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([10]));
+    act(() => useAppStore.setState({ libraryBrowseRoot: "D:\\Lib", libraryBrowseDir: null }));
+    expect(result.current.items.map((item) => item.id).sort()).toEqual([11, 12]);
+    act(() => useAppStore.setState({ libraryBrowseDir: "D:\\Lib\\Sub" }));
+    expect(result.current.items.map((item) => item.id)).toEqual([13]);
+  });
+
+  it("contents 没有可见投放根时，按路径浏览仍能列出隐藏的中间目录和文件", async () => {
+    const nested: ItemWithTags[] = [
+      { id: 21, name: "Sub", path: "D:\\Lib\\Docs\\Sub", type: "folder", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
+      { id: 22, name: "a.txt", path: "D:\\Lib\\Docs\\Sub\\a.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
+      { id: 23, name: "b.txt", path: "D:\\Lib\\Docs\\b.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
+    ];
+    vi.mocked(db.getItems).mockResolvedValueOnce(nested);
+    const { result } = renderHook(useItems);
+    await waitFor(() => expect(result.current.items).toEqual([]));
+    act(() => useAppStore.setState({ libraryBrowseRoot: "D:\\Lib\\Docs", libraryBrowseDir: null }));
+    expect(result.current.items.map((item) => item.id).sort()).toEqual([21, 23]);
+    act(() => useAppStore.setState({ libraryBrowseDir: "D:\\Lib\\Docs\\Sub" }));
+    expect(result.current.items.map((item) => item.id)).toEqual([22]);
   });
 });

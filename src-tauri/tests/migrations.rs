@@ -109,6 +109,11 @@ fn upgrade_from_v4_preserves_cascading_relations() {
     let ci: i64 = conn.query_row("SELECT COUNT(*) FROM cabinet_items", [], |r| r.get(0)).unwrap();
     assert_eq!(ci, 1, "cabinet_items 关联应存活");
     assert!(has_column(&conn, "items", "file_id"), "身份列应补齐");
+    assert!(has_column(&conn, "items", "hide_from_all"), "v021 应补上 hide_from_all");
+    let hidden: i64 = conn
+        .query_row("SELECT hide_from_all FROM items WHERE id=1", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(hidden, 0, "旧行升级后保持可见，不能静默隐藏");
     let items: i64 = conn.query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0)).unwrap();
     assert_eq!(items, 1, "数据无损");
 }

@@ -1,5 +1,5 @@
 use crate::models::{Item, ItemWithTags};
-use crate::services::item_service::{item_from_row, ITEM_COLS, ITEM_ORDER};
+use crate::services::item_service::{item_from_row, ITEM_COLS, ITEM_COLS_I, ITEM_ORDER};
 use crate::services::tag_service;
 use rusqlite::Connection;
 
@@ -40,11 +40,13 @@ fn query_items_by_text(conn: &Connection, query: &str) -> Result<Vec<Item>, Stri
         return query_items_by_text_like(conn, query);
     }
 
-    let sql = "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note, i.fs_created_at, i.fs_modified_at
+    let sql = format!(
+        "SELECT {ITEM_COLS_I}
          FROM items i
          INNER JOIN items_fts ON i.id = items_fts.rowid
          WHERE items_fts MATCH ?1
-         ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name";
+         ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name"
+    );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     // query_map 返回的是惰性迭代器，FTS 的 MATCH 运行期错误要在迭代取行时才会暴露，
     // 不能用 filter_map(|r| r.ok()) 吞掉（会把运行期错误变成空结果而不触发 LIKE 回退）。
@@ -113,11 +115,10 @@ fn tag_group_clauses(conn: &Connection, tag_ids: &[i64]) -> Result<(String, Vec<
 fn query_items_by_tags(conn: &Connection, tag_ids: &[i64]) -> Result<Vec<Item>, String> {
     let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
     let sql = format!(
-        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note, i.fs_created_at, i.fs_modified_at
+        "SELECT {ITEM_COLS_I}
          FROM items i
-         WHERE {}
-         ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
-        clause
+         WHERE {clause}
+         ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name"
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let params: Vec<&dyn rusqlite::ToSql> = group_params
@@ -145,13 +146,12 @@ fn query_items_by_text_and_tags(
 
     let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
     let sql = format!(
-        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note, i.fs_created_at, i.fs_modified_at
+        "SELECT {ITEM_COLS_I}
          FROM items i
          INNER JOIN items_fts ON i.id = items_fts.rowid
          WHERE items_fts MATCH ?1
-         AND {}
-         ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
-        clause
+         AND {clause}
+         ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name"
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
@@ -181,12 +181,11 @@ fn query_items_by_text_and_tags_like(
     let search_query = like_contains_pattern(query);
     let (clause, group_params) = tag_group_clauses(conn, tag_ids)?;
     let sql = format!(
-        "SELECT i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note, i.fs_created_at, i.fs_modified_at
+        "SELECT {ITEM_COLS_I}
          FROM items i
          WHERE (i.name LIKE ?1 ESCAPE '\\' OR i.path LIKE ?1 ESCAPE '\\')
-         AND {}
-         ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name",
-        clause
+         AND {clause}
+         ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name"
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 

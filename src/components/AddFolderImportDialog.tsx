@@ -21,13 +21,13 @@ const MODE_OPTIONS: {
     value: "contents",
     icon: Files,
     title: "只加入里面的文件",
-    description: "递归收入夹内文件（跳过隐藏/系统项，最多先导入 2000 个），不把文件夹本身加入库。",
+    description: "递归把夹内文件和中间目录收入库；有文件时投放的文件夹作为浏览入口（空文件夹不会单独入库）。默认不在「全部项目」里铺开子文件，可逐级点进或打开「显示目录内文件」。",
   },
   {
     value: "both",
     icon: Library,
     title: "两者都加入",
-    description: "文件夹作为入口，里面的文件也能被标签检索。文件同样最多先导入 2000 个。",
+    description: "文件夹作为入口，里面的文件也能被搜索和打标签。默认同样藏出总览，可逐级浏览或切换显示。文件最多先导入 2000 个。",
   },
 ];
 
@@ -93,6 +93,9 @@ export function AddFolderImportDialog({
               附带的 {fileCount} 个文件不受添加方式影响，将直接入库。
             </p>
           )}
+          <p className="mt-2 text-[13px] leading-5 text-[var(--text-muted)]">
+            内容会留在对象库里，可搜索、打标签、逐级浏览。不会移动或删除磁盘上的文件。
+          </p>
           {shownNames.length > 0 && (
             <ul className="mt-2 space-y-1">
               {shownNames.map((name, index) => (

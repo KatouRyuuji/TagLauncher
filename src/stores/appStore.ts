@@ -109,6 +109,7 @@ interface WorkspacePrefs {
   sortMode?: SortMode;
   typeFilter?: TypeFilter;
   hideMissing?: boolean;
+  showNestedContents?: boolean;
   workspaceFiltersOpen?: boolean;
   cardSizeScale?: number;
   iconSizeScale?: number;
@@ -134,6 +135,7 @@ function loadWorkspacePrefs(): WorkspacePrefs {
       sortMode: isSortMode(parsed.sortMode) ? parsed.sortMode : undefined,
       typeFilter: isTypeFilter(parsed.typeFilter) ? parsed.typeFilter : undefined,
       hideMissing: typeof parsed.hideMissing === "boolean" ? parsed.hideMissing : undefined,
+      showNestedContents: typeof parsed.showNestedContents === "boolean" ? parsed.showNestedContents : undefined,
       workspaceFiltersOpen: typeof parsed.workspaceFiltersOpen === "boolean"
         ? parsed.workspaceFiltersOpen
         : undefined,
@@ -188,6 +190,15 @@ interface AppState {
   cabinetDir: string | null;
   /** 关联文件夹的文件柜平铺显示全部层级（关闭时按目录逐层浏览） */
   cabinetFlat: boolean;
+  /**
+   * All 总览是否列出 hide_from_all 的目录内文件。
+   * 关闭只影响默认总览，不删库；搜索 / 打标 / 柜视图仍能看到这些对象。
+   */
+  showNestedContents: boolean;
+  /** 库内逐级浏览的根目录（投放文件夹）；null 表示不在目录浏览 */
+  libraryBrowseRoot: string | null;
+  /** 库内浏览的当前子目录；null 表示根 */
+  libraryBrowseDir: string | null;
 
   // ---- UI 状态 ----
   sidebarTab: SidebarTab;
@@ -257,6 +268,9 @@ interface AppState {
   setSortMode: (mode: SortMode) => void;
   setTypeFilter: (filter: TypeFilter) => void;
   setHideMissing: (hide: boolean) => void;
+  setShowNestedContents: (show: boolean) => void;
+  setLibraryBrowseRoot: (root: string | null) => void;
+  setLibraryBrowseDir: (dir: string | null) => void;
   setCardSizeScale: (scale: number, options?: { persist?: boolean }) => void;
   setIconSizeScale: (scale: number, options?: { persist?: boolean }) => void;
   /** 立即持久化当前视图偏好（尺寸滑杆等 persist:false 写入后的显式落盘；值未变也可用） */
@@ -287,6 +301,7 @@ export const useAppStore = create<AppState>((set, get) => {
       sortMode: state.sortMode,
       typeFilter: state.typeFilter,
       hideMissing: state.hideMissing,
+      showNestedContents: state.showNestedContents,
       workspaceFiltersOpen: state.workspaceFiltersOpen,
       cardSizeScale: state.cardSizeScale,
       iconSizeScale: state.iconSizeScale,
@@ -303,6 +318,9 @@ export const useAppStore = create<AppState>((set, get) => {
   selectedCabinetId: null,
   cabinetDir: null,
   cabinetFlat: false,
+  showNestedContents: initialPrefs.showNestedContents ?? false,
+  libraryBrowseRoot: null,
+  libraryBrowseDir: null,
   sidebarTab: "tags",
   showFavorites: false,
   showRecent: false,
@@ -377,7 +395,7 @@ export const useAppStore = create<AppState>((set, get) => {
     !state.showFavorites &&
     !state.showRecent
       ? state
-      : { selectedCabinetId: id, selectedTagIds: [], excludedTagIds: [], showFavorites: false, showRecent: false, cabinetDir: null },
+      : { selectedCabinetId: id, selectedTagIds: [], excludedTagIds: [], showFavorites: false, showRecent: false, cabinetDir: null, libraryBrowseRoot: null, libraryBrowseDir: null },
   ),
 
   setCabinetDir: (dir) => set((state) => (state.cabinetDir === dir ? state : { cabinetDir: dir })),
@@ -393,7 +411,7 @@ export const useAppStore = create<AppState>((set, get) => {
     state.excludedTagIds.length === 0 &&
     !state.showRecent
       ? state
-      : { showFavorites: v, selectedCabinetId: null, selectedTagIds: [], excludedTagIds: [], showRecent: false },
+      : { showFavorites: v, selectedCabinetId: null, selectedTagIds: [], excludedTagIds: [], showRecent: false, libraryBrowseRoot: null, libraryBrowseDir: null },
   ),
 
   setShowRecent: (v) => set((state) =>
@@ -403,7 +421,7 @@ export const useAppStore = create<AppState>((set, get) => {
     state.excludedTagIds.length === 0 &&
     !state.showFavorites
       ? state
-      : { showRecent: v, selectedCabinetId: null, selectedTagIds: [], excludedTagIds: [], showFavorites: false },
+      : { showRecent: v, selectedCabinetId: null, selectedTagIds: [], excludedTagIds: [], showFavorites: false, libraryBrowseRoot: null, libraryBrowseDir: null },
   ),
 
   // 直接设置搜索词（跳过防抖）时同步即时输入值，保证"防抖待生效"指示不会误亮。
@@ -444,6 +462,20 @@ export const useAppStore = create<AppState>((set, get) => {
     set({ hideMissing: hide });
     persistNow();
   },
+  setShowNestedContents: (show) => {
+    if (get().showNestedContents === show) return;
+    set({ showNestedContents: show });
+    persistNow();
+  },
+  setLibraryBrowseRoot: (root) => set((state) => {
+    if (state.libraryBrowseRoot === root) {
+      return root === null && state.libraryBrowseDir !== null
+        ? { libraryBrowseRoot: null, libraryBrowseDir: null }
+        : state;
+    }
+    return { libraryBrowseRoot: root, libraryBrowseDir: null };
+  }),
+  setLibraryBrowseDir: (dir) => set((state) => (state.libraryBrowseDir === dir ? state : { libraryBrowseDir: dir })),
   setCardSizeScale: (scale, options) => {
     const next = clampSizeScale(scale, CARD_SIZE_SCALE_RANGE);
     if (get().cardSizeScale === next) return;
@@ -508,6 +540,8 @@ export const useAppStore = create<AppState>((set, get) => {
       showRecent: false,
       typeFilter: "all",
       hideMissing: false,
+      libraryBrowseRoot: null,
+      libraryBrowseDir: null,
       searchMode: "all",
       searchQuery: "",
       searchInputValue: "",
