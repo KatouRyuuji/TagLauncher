@@ -144,8 +144,33 @@ jobs:
         run: |
           $os = Get-CimInstance Win32_OperatingSystem
           "OS: $($os.Caption) $($os.Version)  Session: $([Environment]::UserInteractive) user=$env:USERNAME"
-          Add-Type -AssemblyName System.Windows.Forms
-          "Screens: " + (([System.Windows.Forms.Screen]::AllScreens | ForEach-Object { "$($_.Bounds) primary=$($_.Primary)" }) -join '; ')
+          # runner 默认 1024×768：窗口层用例（拖边、Aero Snap、记住位置）按常见桌面尺寸编写，切到 1920×1080
+          Add-Type -TypeDefinition @"
+          using System; using System.Runtime.InteropServices;
+          public static class Disp {
+            [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+            public struct DEVMODE {
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+              public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra; public int dmFields;
+              public int dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+              public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+              public short dmLogPixels; public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+              public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+            }
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplaySettings(string d, int m, ref DEVMODE dm);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettings(ref DEVMODE dm, int f);
+            public static int Set(int w, int h) {
+              var dm = new DEVMODE(); dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+              if (!EnumDisplaySettings(null, -1, ref dm)) return -100;
+              dm.dmPelsWidth = w; dm.dmPelsHeight = h; dm.dmFields = 0x80000 | 0x100000;
+              return ChangeDisplaySettings(ref dm, 1);
+            }
+          }
+          "@
+          "ChangeDisplaySettings(1920x1080) = $([Disp]::Set(1920, 1080))  (0 = 成功)"
+          Start-Sleep -Seconds 2
+          Get-CimInstance Win32_VideoController | ForEach-Object { "Display: $($_.Name) $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)" }
           # 通知区图标不折叠进溢出区（Win10 系有效；Win11 系由用例按需处理）
           New-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer' -Name EnableAutoTray -Value 0 -PropertyType DWord -Force | Out-Null
           Get-Process explorer -ErrorAction SilentlyContinue | Format-Table Id, SessionId, StartTime

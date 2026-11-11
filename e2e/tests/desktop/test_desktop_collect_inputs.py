@@ -14,7 +14,7 @@ from harness.app import wait_until
 from tests.desktop import oswin
 from tests.desktop.test_desktop_shell import QUICK_TITLE, foreground_report
 from tests.ui.test_collect import collect_page, result, same_path, wait_attr, wait_session_done
-from tests.ui.test_quick import quick_pages
+from tests.ui.test_quick import is_visible, quick_page, quick_pages
 from win import win32
 
 pytestmark = [pytest.mark.physical_input, pytest.mark.visible_window]
@@ -97,8 +97,9 @@ def test_quick_window_offers_clipboard_collect(app, sandbox):
     oswin.set_clipboard_files([str(a), str(b)])
     with oswin.FgHelper(env=sandbox.env(None)) as fg:
         fg.focus()
+        qp = quick_page(app, timeout=20)  # 绑定即预创建（隐藏）；新 WebView 可能要另开 CDP 连接才挂得上
         oswin.press(*QUICK_VKS)
-        qp = wait_until(lambda: next(iter(quick_pages(app)), None), 15, "快速窗没出现")
+        wait_until(lambda: is_visible(qp), 10, lambda: f"按快速搜索热键后快速窗没显示：{foreground_report(app)}")
         banner = qp.get_by_test_id("quick-clipboard")
         banner.wait_for(timeout=10000)
         assert banner.get_attribute("data-count") == "2", banner.inner_text()
@@ -112,7 +113,8 @@ def test_quick_window_offers_clipboard_collect(app, sandbox):
         oswin.set_clipboard_text(f'"{a}"\r\n不是路径\r\n')
         fg.focus()
         oswin.press(*QUICK_VKS)
-        qp = wait_until(lambda: next((p for p in quick_pages(app) if p.get_by_test_id("quick-input").count()), None), 15)
+        qp = quick_page(app, timeout=20)
+        wait_until(lambda: is_visible(qp), 10, lambda: f"再次唤出快速窗没显示：{foreground_report(app)}")
         wait_until(lambda: qp.get_by_test_id("quick-clipboard").get_attribute("data-count") == "1", 10,
                    lambda: qp.get_by_test_id("quick-clipboard").count())
     oswin.clear_clipboard()

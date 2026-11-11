@@ -340,3 +340,94 @@ foreach ($n in @($env:TL_NAME, [IO.Path]::GetFileNameWithoutExtension($env:TL_NA
 
     def __exit__(self, *exc):
         self.close()
+
+# ---------------------------------------------------------------- 通知区溢出（Win11 系任务栏）
+OVERFLOW_CLASS = "TopLevelWindowForOverflowXamlIsland"
+NOTIFY_SETTINGS = r"Control Panel\NotifyIconSettings"
+
+
+def promote_tray_icon(exe: str) -> list[str]:
+    """Win11 系任务栏：新图标默认收进溢出区（EnableAutoTray 不再生效）。等同用户在设置里把它
+    「显示在任务栏上」：HKCU\\Control Panel\\NotifyIconSettings\\<id> 的 IsPromoted=1（资源管理器实时读取）。
+    返回改动的子键；没有该键（Win10 系）返回空。"""
+    import winreg
+    changed = []
+    try:
+        root = winreg.OpenKey(winreg.HKEY_CURRENT_USER, NOTIFY_SETTINGS)
+    except OSError:
+        return changed
+    with root:
+        i = 0
+        while True:
+            try:
+                name = winreg.EnumKey(root, i)
+            except OSError:
+                break
+            i += 1
+            try:
+                with winreg.OpenKey(root, name, 0, winreg.KEY_READ | winreg.KEY_SET_VALUE) as k:
+                    path = str(winreg.QueryValueEx(k, "ExecutablePath")[0])
+                    if path.replace('/', '\\').rsplit('\\', 1)[-1].lower() == Path(exe).name.lower():
+                        winreg.SetValueEx(k, "IsPromoted", 0, winreg.REG_DWORD, 1)
+                        changed.append(name)
+            except OSError:
+                continue
+    return changed
+
+
+_UIA_FIND = r'''
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+$root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]{hwnd})
+$all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+foreach ($e in $all) {{
+  if ($e.Current.Name -like '*{name}*') {{
+    $r = $e.Current.BoundingRectangle
+    if ($r.Width -gt 0) {{ "{{0}},{{1}},{{2}},{{3}}" -f [int]$r.Left, [int]$r.Top, [int]$r.Right, [int]$r.Bottom; break }}
+  }}
+}}
+'''
+
+
+def overflow_icon_rect(name: str = "TagLauncher") -> tuple[int, int, int, int] | None:
+    """溢出区浮层打开时，经 UI Automation 找到名称含 name 的图标按钮。"""
+    fg = foreground_info()
+    if fg["class"] != OVERFLOW_CLASS:
+        return None
+    out = subprocess.run(["powershell", "-NoProfile", "-Command", _UIA_FIND.format(hwnd=fg["hwnd"], name=name)],
+                         capture_output=True, text=True, timeout=30).stdout.strip()
+    if not out:
+        return None
+    l, t, r, b = (int(x) for x in out.splitlines()[0].split(","))
+    return l, t, r, b
+
+
+def click_tray_icon(pid: int, right: bool = False, overflow: bool | None = None) -> dict:
+    """点托盘图标。图标收在溢出区时 Shell_NotifyIconGetRect 给的是溢出箭头：左键点它打开浮层，
+    再经 UIA 点浮层里的图标。overflow=None 时由左键结果判断（只用于左键）；右键须传入已知的 overflow。"""
+    rect = tray_icon_rect(pid)
+    assert rect, "通知区没有找到图标"
+    x, y = center(rect)
+    info = {"rect": rect, "overflow": bool(overflow)}
+    if right and not overflow:
+        right_click(x, y)
+        return info
+    win32.click(x, y)
+    if overflow is False:
+        return info
+    time.sleep(0.8)
+    if foreground_info()["class"] != OVERFLOW_CLASS:
+        assert not right, f"溢出浮层没有打开：{foreground_info()}"
+        return info
+    r = wait_overflow_icon()
+    info.update(overflow=True, overflow_rect=r)
+    (right_click if right else win32.click)(*center(r))
+    return info
+
+
+def wait_overflow_icon(timeout: float = 8) -> tuple[int, int, int, int]:
+    end = time.time() + timeout
+    while time.time() < end:
+        if r := overflow_icon_rect():
+            return r
+        time.sleep(0.3)
+    raise AssertionError(f"溢出浮层里没有找到 TagLauncher 图标：{foreground_info()}")

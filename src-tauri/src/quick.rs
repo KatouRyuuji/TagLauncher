@@ -57,6 +57,10 @@ fn quick_window(app: &AppHandle) -> Option<WebviewWindow> {
 
 /// 创建隐藏的快速窗（已存在则直接返回）。不要在主线程同步命令里调用（Windows 上会死锁）。
 pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    // 串行化创建：窗口要等主线程建完才登记标签，多个线程（收纳会话的多次弹出、预创建）
+    // 同时看到「不存在」会各建一个同名窗口（D-SHELL-04 实测出现两个 quick.html）
+    static CREATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = CREATE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(w) = quick_window(app) {
         return Ok(w);
     }
