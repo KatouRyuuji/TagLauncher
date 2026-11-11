@@ -459,7 +459,8 @@ def test_idle_cpu_with_both_windows_hidden(app_factory, sandbox):
 
 CONSISTENCY_NAMES = ("report-2026.txt", "Report Final.txt", "设计稿.txt", "设计说明.md", "项目文档.txt",
                      "repo-notes.txt", "notes report.txt", "代码 review.txt", "季度报告.txt", "预算表.txt")
-CONSISTENCY_QUERIES = ("rep", "re", "设计", "sj", "notes", "2026", "报告", "-notes rep")
+# 搜索语义是前缀 / 词首缩写 / 拼音（CJK 才做子串），所以不用 "2026" 这种词中子串
+CONSISTENCY_QUERIES = ("rep", "re", "设计", "sj", "notes", "rf", "季度", "报告", "-notes rep")
 
 
 def main_view_ids(app, query: str, mode: str) -> list[int]:
