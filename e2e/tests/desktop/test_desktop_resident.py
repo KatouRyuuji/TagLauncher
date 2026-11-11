@@ -53,17 +53,23 @@ def test_tray_click_and_menu(app, sandbox):
     assert s["trayActive"], s
     hotkey(app)
     rect = wait_until(lambda: oswin.tray_icon_rect(app.proc.pid), 10, "通知区没有找到 TagLauncher 图标")
-    print(f"TRAY rect={rect}")
+    # Win11 系任务栏把新图标收进溢出区：先按用户操作「显示在任务栏上」，没生效再走溢出浮层
+    promoted = []
+    for _ in range(10):
+        if promoted := oswin.promote_tray_icon(str(sandbox.exe)):
+            break
+        time.sleep(0.5)
+    time.sleep(1.5)
+    print(f"TRAY rect={rect} promoted={promoted} rect_after={oswin.tray_icon_rect(app.proc.pid)}")
     h = main_hwnd(app)
     oswin.user32.PostMessageW(h, WM_CLOSE, 0, 0)
     wait_until(lambda: not win32.is_visible(h), 8, "关闭到托盘应隐藏主窗")
     assert app.proc.poll() is None
-    # 托盘图标可能在溢出区：重新取一次矩形
-    rect = oswin.tray_icon_rect(app.proc.pid) or rect
-    win32.click(*oswin.center(rect))
-    wait_until(lambda: main_in_front(app), 8, lambda: f"左键单击托盘应唤回主窗到前台：{fg_state(app)} rect={rect}")
+    click = oswin.click_tray_icon(app.proc.pid)
+    print(f"TRAY_CLICK {json.dumps(click)}")
+    wait_until(lambda: main_in_front(app), 8, lambda: f"左键单击托盘应唤回主窗到前台：{fg_state(app)} {click}")
 
-    oswin.right_click(*oswin.center(rect))
+    oswin.click_tray_icon(app.proc.pid, right=True, overflow=click["overflow"])
     menu = wait_until(lambda: (oswin.popup_menus(app.proc.pid) or [None])[0], 8, "右键托盘没有弹出菜单")
     items = oswin.menu_items(menu)
     print(f"TRAY_MENU {json.dumps(items, ensure_ascii=False)}")
@@ -126,11 +132,13 @@ def test_second_launch_restores_and_background_does_not_disturb(app, sandbox):
 
         win32.show(h, 6)
         wait_until(lambda: win32.is_iconic(h), 5)
+        tray_before = app.invoke("get_desktop_settings")["trayActive"]
         fg.focus()
         fg.startfile(sandbox.exe, "open", "--background")
         time.sleep(3)
         assert win32.is_iconic(h) and win32.foreground() == fg.hwnd, f"--background 不应打扰：{fg_state(app)}"
-        assert app.invoke("get_desktop_settings")["trayActive"] is True, "--background 二次启动应确保托盘可用"
+        # 托盘需要与否看首个实例的启动方式和「关闭到托盘」设置；二次 --background 不改变它
+        assert app.invoke("get_desktop_settings")["trayActive"] == tray_before, "--background 二次启动不应改变托盘状态"
 
 
 def _run_values(path: str) -> dict:

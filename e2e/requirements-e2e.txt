@@ -2,3 +2,4 @@ pytest>=8,<10
 pytest-asyncio>=0.23
 playwright>=1.45
 Pillow>=10
+numpy>=1.26
