@@ -16,6 +16,7 @@ jobs:
           - { os: windows-2025, variant: default }
           - { os: windows-2025, variant: novirt }
           - { os: windows-2022, variant: default }
+          - { os: windows-11-arm, variant: novirt }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:

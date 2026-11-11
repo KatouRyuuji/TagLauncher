@@ -37,10 +37,12 @@ Log 'allowunsigned_param' ((Get-Command Add-AppxPackage).Parameters.ContainsKey(
 
 # ---- 构建 COM DLL ----
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-$vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-$vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+$vs = & $vswhere -latest -products * -property installationPath
+$arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+Log 'arch' $arch
+$vcvars = Join-Path $vs $(if ($arch -eq 'arm64') { 'VC\Auxiliary\Build\vcvarsarm64.bat' } else { 'VC\Auxiliary\Build\vcvars64.bat' })
 Push-Location $Work
-cmd /c "`"$vcvars`" >nul && cl /nologo /LD /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE /DTL_MENU_PROBE `"$Here\tl_menu.cpp`" /Fe:tl_menu.dll /link /DEF:`"$Here\tl_menu.def`" shlwapi.lib shell32.lib ole32.lib && cl /nologo /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE `"$Here\child_probe.cpp`" /Fe:child_probe.exe /link shell32.lib ole32.lib kernel32.lib" | Out-Host
+cmd /c "`"$vcvars`" >nul && cl /nologo /LD /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE /DTL_MENU_PROBE `"$Here\tl_menu.cpp`" /Fe:tl_menu.dll /link /DEF:`"$Here\tl_menu.def`" shlwapi.lib shell32.lib ole32.lib oleaut32.lib user32.lib && cl /nologo /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE `"$Here\child_probe.cpp`" /Fe:child_probe.exe /link shell32.lib ole32.lib kernel32.lib" | Out-Host
 Pop-Location
 Log 'dll_built' (Test-Path (Join-Path $Work 'tl_menu.dll'))
 Copy-Item (Join-Path $Work 'tl_menu.dll') $ext -Force
@@ -52,13 +54,14 @@ $g = [System.Drawing.Graphics]::FromImage($bmp); $g.Clear([System.Drawing.Color]
 $bmp.Save((Join-Path $ext 'tl_menu_logo.png'), [System.Drawing.Imaging.ImageFormat]::Png)
 Copy-Item (Join-Path $ext 'tl_menu_logo.png') $pkgDir -Force
 $manifest = Get-Content (Join-Path $Here 'AppxManifest.xml') -Raw -Encoding UTF8
+$manifest = $manifest.Replace('ProcessorArchitecture="x64"', "ProcessorArchitecture=`"$arch`"")
 if ($Variant -eq 'novirt') {
     $manifest = $manifest.Replace('xmlns:com=', 'xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6" xmlns:com=').Replace('IgnorableNamespaces="uap uap10', 'IgnorableNamespaces="desktop6 uap uap10').Replace('</Properties>', "  <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>`n    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>`n  </Properties>")
 }
 [IO.File]::WriteAllText((Join-Path $pkgDir 'AppxManifest.xml'), $manifest, (New-Object Text.UTF8Encoding $false))
 
 # ---- 打包（未签名）----
-$sdkBin = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64\makeappx.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+$sdkBin = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\*\makeappx.exe" | Sort-Object FullName -Descending | Select-Object -First 1
 $msix = Join-Path $Work "$PkgName.msix"
 & $sdkBin.FullName pack /o /nv /d $pkgDir /p $msix | Out-Host
 Log 'msix_built' (Test-Path $msix)
@@ -67,6 +70,7 @@ function Report-Invoke($tag) {
     Start-Sleep -Seconds 2
     $pub = 'C:\Users\Public\tl-menu-invoked.txt'
     Log "${tag}_dll_public_marker" ((Test-Path $pub) -and ((Get-Content $pub -Raw -Encoding UTF8) -like '*probe-target*'))
+    if (Test-Path $pub) { Log "${tag}_dll_notes" (((Get-Content $pub -Encoding UTF8) | Where-Object { $_ -like 'via_*' }) -join ',') }
     $p = Get-Pkg
     if ($p) {
         $virt = Join-Path $env:LOCALAPPDATA "Packages\$($p.PackageFamilyName)\LocalCache\Local\TagLauncher"
@@ -148,8 +152,8 @@ if ($pkg -and -not $SkipUi) {
 
 # ---- 标准用户（非管理员）注册 ----
 if ($pkg) {
-    $user = 'tlstd'; $pw = 'Tl-' + [Guid]::NewGuid().ToString('N').Substring(0, 12) + '!a'
-    net user $user $pw /add | Out-Null
+    $user = 'tlstd'; $pw = 'Tl-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '!a'
+    net user $user $pw /add | Out-Host
     $cred = New-Object Management.Automation.PSCredential ($user, (ConvertTo-SecureString $pw -AsPlainText -Force))
     $outFile = 'C:\Users\Public\tl-menu-std.txt'
     $cmd = "try { Add-AppxPackage -Path '$msix' -ExternalLocation '$ext' -AllowUnsigned -ErrorAction Stop; `$p = Get-AppxPackage -Name $PkgName; 'ok ' + `$p.PackageFullName; Remove-AppxPackage `$p.PackageFullName; 'removed ' + [bool](Get-AppxPackage -Name $PkgName) } catch { 'fail ' + `$_.Exception.Message }"

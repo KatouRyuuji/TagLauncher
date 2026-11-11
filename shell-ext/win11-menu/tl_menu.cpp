@@ -7,6 +7,8 @@
 #include <shobjidl_core.h>
 #include <shlwapi.h>
 #include <shlobj_core.h>
+#include <exdisp.h>
+#include <shldisp.h>
 #include <new>
 #include <string>
 
@@ -43,6 +45,57 @@ static void AppendMarker(const std::wstring& text) {
     HANDLE p = CreateFileW(L"C:\\Users\\Public\\tl-menu-invoked.txt", FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (p != INVALID_HANDLE_VALUE) { WriteFile(p, utf8.data(), (DWORD)utf8.size(), &written, nullptr); CloseHandle(p); }
 #endif
+}
+
+// 经桌面 explorer 启动：子进程挂在 explorer 下，不继承本 dllhost 的包标识与 AppData 虚拟化。
+// 做法同 Raymond Chen《How can I launch an unelevated process from my elevated process》。
+static HRESULT ShellExecuteViaExplorer(const std::wstring& file, const std::wstring& args) {
+    IShellWindows* windows = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_ShellWindows, nullptr, CLSCTX_LOCAL_SERVER, IID_PPV_ARGS(&windows));
+    if (FAILED(hr)) return hr;
+    VARIANT empty = {};
+    long hwnd = 0;
+    IDispatch* desktop = nullptr;
+    hr = windows->FindWindowSW(&empty, &empty, SWC_DESKTOP, &hwnd, SWFO_NEEDDISPATCH, &desktop);
+    windows->Release();
+    if (hr != S_OK || !desktop) return FAILED(hr) ? hr : E_FAIL;
+    IServiceProvider* sp = nullptr;
+    hr = desktop->QueryInterface(IID_PPV_ARGS(&sp));
+    desktop->Release();
+    if (FAILED(hr)) return hr;
+    IShellBrowser* browser = nullptr;
+    hr = sp->QueryService(SID_STopLevelBrowser, IID_PPV_ARGS(&browser));
+    sp->Release();
+    if (FAILED(hr)) return hr;
+    IShellView* view = nullptr;
+    hr = browser->QueryActiveShellView(&view);
+    browser->Release();
+    if (FAILED(hr)) return hr;
+    IDispatch* bg = nullptr;
+    hr = view->GetItemObject(SVGIO_BACKGROUND, IID_PPV_ARGS(&bg));
+    view->Release();
+    if (FAILED(hr)) return hr;
+    IShellFolderViewDual* folderView = nullptr;
+    hr = bg->QueryInterface(IID_PPV_ARGS(&folderView));
+    bg->Release();
+    if (FAILED(hr)) return hr;
+    IDispatch* app = nullptr;
+    hr = folderView->get_Application(&app);
+    folderView->Release();
+    if (FAILED(hr)) return hr;
+    IShellDispatch2* shell = nullptr;
+    hr = app->QueryInterface(IID_PPV_ARGS(&shell));
+    app->Release();
+    if (FAILED(hr)) return hr;
+    BSTR bFile = SysAllocString(file.c_str());
+    VARIANT vArgs; VariantInit(&vArgs); vArgs.vt = VT_BSTR; vArgs.bstrVal = SysAllocString(args.c_str());
+    VARIANT vDir; VariantInit(&vDir);
+    VARIANT vOp; VariantInit(&vOp); vOp.vt = VT_BSTR; vOp.bstrVal = SysAllocString(L"open");
+    VARIANT vShow; VariantInit(&vShow); vShow.vt = VT_I4; vShow.lVal = SW_SHOWNORMAL;
+    hr = shell->ShellExecute(bFile, vArgs, vDir, vOp, vShow);
+    SysFreeString(bFile); VariantClear(&vArgs); VariantClear(&vOp);
+    shell->Release();
+    return hr;
 }
 
 class TagLauncherCommand final : public IExplorerCommand {
@@ -100,7 +153,18 @@ public:
         AppendMarker(marker);
         std::wstring exe = ModuleDir() + L"\\tag-launcher.exe";
         if (GetFileAttributesW(exe.c_str()) != INVALID_FILE_ATTRIBUTES) {
-            ShellExecuteW(nullptr, L"open", exe.c_str(), args.c_str(), nullptr, SW_SHOWNORMAL);
+#ifdef TL_MENU_PROBE
+            // 探针：两条启动路径都走一遍，子进程替身记录各自是否带包标识
+            ShellExecuteW(nullptr, L"open", exe.c_str(), (L"--via=direct " + args).c_str(), nullptr, SW_SHOWNORMAL);
+            HRESULT viaHr = ShellExecuteViaExplorer(exe, L"--via=explorer " + args);
+            wchar_t note[64];
+            wsprintfW(note, L"via_explorer_hr=0x%08X\n", (unsigned)viaHr);
+            AppendMarker(note);
+#else
+            if (FAILED(ShellExecuteViaExplorer(exe, args))) {
+                ShellExecuteW(nullptr, L"open", exe.c_str(), args.c_str(), nullptr, SW_SHOWNORMAL);
+            }
+#endif
         }
         return S_OK;
     }

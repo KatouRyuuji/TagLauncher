@@ -50,10 +50,12 @@ $tops = New-Object System.Collections.Generic.List[string]
 foreach ($top in $A::RootElement.FindAll($T::Children, $C)) {
     $cls = $top.Current.ClassName
     $tops.Add($cls)
-    if ($cls -eq 'CabinetWClass' -or $cls -eq 'Shell_TrayWnd' -or $cls -eq 'ConsoleWindowClass' -or $cls -eq 'CASCADIA_HOSTING_WINDOW_CLASS') { continue }
+    if ($cls -eq 'Shell_TrayWnd' -or $cls -eq 'ConsoleWindowClass' -or $cls -eq 'CASCADIA_HOSTING_WINDOW_CLASS') { continue }
     foreach ($mi in $top.FindAll($T::Descendants, $C)) {
         $n = $mi.Current.Name
         if (-not $n) { continue }
+        $ct = $mi.Current.ControlType
+        if ($cls -eq 'CabinetWClass' -and $ct -ne [System.Windows.Automation.ControlType]::MenuItem -and $ct -ne [System.Windows.Automation.ControlType]::Button) { continue }
         $names.Add("$cls|$($mi.Current.ControlType.ProgrammaticName -replace 'ControlType.', '')|$n")
         if ($n -eq $Title -and -not $ours) { $ours = $mi }
     }
