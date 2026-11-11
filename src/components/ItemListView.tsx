@@ -1,5 +1,7 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { measureElement as measureRowElement, useVirtualizer } from "@tanstack/react-virtual";
+import { createMeasuredSizes } from "../lib/virtualMeasure";
+import { registerVirtualDiag } from "../lib/virtualDiag";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { ItemViewProps, ItemWithTags } from "../types";
 import { ItemPlaceholder, useLoadedRowHeight } from "./ItemPlaceholder";
@@ -246,11 +248,18 @@ export function ItemListView({
   });
   // getItemKey 是虚拟器测量表的 memo 依赖：保持引用稳定，免得每次渲染重算全部行
   const getRowKey = useCallback((index: number) => ids[index] ?? index, [ids]);
+  // F19：测过的行按实测值估算（见 lib/virtualMeasure.ts 根因说明）
+  const [measured] = useState(createMeasuredSizes);
+  const measureRow = useMemo(() => measured.wrap(measureRowElement), [measured]);
   const virtualizer = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
-    // 未测量行按已加载行的真实行高估算（见 useLoadedRowHeight）
-    estimateSize: () => loadedRowHeight,
+    // 未测量行按已加载行的真实行高估算（见 useLoadedRowHeight）；测过的行用实测值
+    estimateSize: (index) => measured.estimate(getRowKey(index), loadedRowHeight),
+    measureElement: measureRow,
+    // ResizeObserver 回调推迟到下一帧处理：同步处理时测量→提交在 RO 回调里挂载新行并开始观察，
+    // 浏览器报「ResizeObserver loop completed with undelivered notifications」（F19-MATRIX 改视口时实测 7–8 次）
+    useAnimationFrameWithResizeObserver: true,
     // 行 key 用对象 id 而非默认行索引：筛选/排序/换柜后行 key 变化触发 React
     // 重建行 DOM 并由 measureElement 同步重测；索引复用会让旧行高残留在
     // itemSizeCache（v3 同步测量命中缓存即不读 DOM），表现为行距错乱。
@@ -262,6 +271,9 @@ export function ItemListView({
       if (rows.length > 0) viewRef.current.ensureRange(rows[0], rows[rows.length - 1] + 1);
     },
   });
+
+  // F19 现场快照：E2E 读取虚拟器缓存与 DOM 实测是否一致（只在被调用时读）
+  useEffect(() => registerVirtualDiag("listVirtual", virtualizer, () => scrollRef.current), [virtualizer]);
 
   // 记录可见行真实测量数据；缺失行用 estimateSize 估算。
   // 注意：写 ref 属于副作用，必须放在 useLayoutEffect 中（渲染期写入在并发渲染被丢弃时会残留脏数据）。
