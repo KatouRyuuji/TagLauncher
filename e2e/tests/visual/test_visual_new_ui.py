@@ -15,7 +15,8 @@ import pytest
 from harness import files
 from harness.app import wait_until
 from tests.ui.test_cabinets_nested import cab_row
-from tests.ui.test_quick import enable_quick, quick_page, summon
+from tests.ui.test_collect import collect_page
+from tests.ui.test_quick import enable_quick, summon
 
 from .conftest import FREEZE_CSS, set_client_size
 from .test_visual import FAMILIES, apply_theme
@@ -230,8 +231,7 @@ def test_quick_and_pin_windows_new_ui(app, sandbox, run_dir, request):
         apply_combo(app, tid, mode, font)
         p = files.write(sandbox.files / "newui-collect" / f"收纳-{mode}.txt", "x")
         app.invoke("collect_submit", {"paths": [str(p)]})
-        cq = quick_page(app)
-        cq.get_by_test_id("quick-collect").wait_for(timeout=10000)
+        cq = collect_page(app)
         for dpr in DPRS:
             set_dpr(cq, dpr)
             shots.take(cq, f"collect-{mode}-f{font}-d{dpr}", ".quick-shell")
