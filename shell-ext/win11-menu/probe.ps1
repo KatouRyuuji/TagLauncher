@@ -3,7 +3,7 @@
 # 每个结论打印为 `W11MENU key=value`，便于从日志 grep。
 param(
     [string]$Work = (Join-Path $env:RUNNER_TEMP 'win11menu'),
-    [ValidateSet('default', 'novirt')][string]$Variant = 'default',
+    [string]$Variant = 'default',
     [switch]$SkipUi
 )
 $ErrorActionPreference = 'Continue'
@@ -45,19 +45,19 @@ Push-Location $Work
 cmd /c "`"$vcvars`" >nul && cl /nologo /LD /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE /DTL_MENU_PROBE `"$Here\tl_menu.cpp`" /Fe:tl_menu.dll /link /DEF:`"$Here\tl_menu.def`" shlwapi.lib shell32.lib ole32.lib oleaut32.lib user32.lib && cl /nologo /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE `"$Here\child_probe.cpp`" /Fe:child_probe.exe /link shell32.lib ole32.lib kernel32.lib" | Out-Host
 Pop-Location
 Log 'dll_built' (Test-Path (Join-Path $Work 'tl_menu.dll'))
-Copy-Item (Join-Path $Work 'tl_menu.dll') $ext -Force
+$res = Join-Path $ext 'win11-menu'
+New-Item -ItemType Directory -Force -Path $res | Out-Null
+Copy-Item (Join-Path $Work 'tl_menu.dll') $res -Force
 Copy-Item (Join-Path $Work 'child_probe.exe') (Join-Path $ext 'tag-launcher.exe') -Force
 
 Add-Type -AssemblyName System.Drawing
 $bmp = New-Object System.Drawing.Bitmap 44, 44
 $g = [System.Drawing.Graphics]::FromImage($bmp); $g.Clear([System.Drawing.Color]::SteelBlue); $g.Dispose()
-$bmp.Save((Join-Path $ext 'tl_menu_logo.png'), [System.Drawing.Imaging.ImageFormat]::Png)
-Copy-Item (Join-Path $ext 'tl_menu_logo.png') $pkgDir -Force
+$bmp.Save((Join-Path $res 'tl_menu_logo.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+New-Item -ItemType Directory -Force -Path (Join-Path $pkgDir 'win11-menu') | Out-Null
+Copy-Item (Join-Path $res 'tl_menu_logo.png') (Join-Path $pkgDir 'win11-menu') -Force
 $manifest = Get-Content (Join-Path $Here 'AppxManifest.xml') -Raw -Encoding UTF8
-$manifest = $manifest.Replace('ProcessorArchitecture="x64"', "ProcessorArchitecture=`"$arch`"")
-if ($Variant -eq 'novirt') {
-    $manifest = $manifest.Replace('xmlns:com=', 'xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6" xmlns:com=').Replace('IgnorableNamespaces="uap uap10', 'IgnorableNamespaces="desktop6 uap uap10').Replace('</Properties>', "  <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>`n    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>`n  </Properties>")
-}
+$manifest = $manifest.Replace('@ARCH@', $arch).Replace('@VERSION@', '1.0.0.0')
 [IO.File]::WriteAllText((Join-Path $pkgDir 'AppxManifest.xml'), $manifest, (New-Object Text.UTF8Encoding $false))
 
 # ---- 打包（未签名）----
@@ -177,7 +177,7 @@ if ($pkg) {
     Start-Sleep -Seconds 2
     $deleted = $false
     for ($i = 0; $i -lt 10 -and -not $deleted; $i++) {
-        try { Remove-Item (Join-Path $ext 'tl_menu.dll') -ErrorAction Stop; $deleted = $true } catch { Start-Sleep -Milliseconds 500 }
+        try { Remove-Item (Join-Path $res 'tl_menu.dll') -ErrorAction Stop; $deleted = $true } catch { Start-Sleep -Milliseconds 500 }
     }
     Log 'dll_deletable_after_remove' $deleted
     if (-not $SkipUi) {

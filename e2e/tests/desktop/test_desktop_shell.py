@@ -5,6 +5,8 @@
 - 调用：由一个前台 Tk 替身进程 ShellExecute 注册表动词 / 「发送到」快捷方式，
   父子关系与资源管理器一致（前台进程启动第二实例 → 第二实例让出前台权 → 主实例弹快速窗）；
 - 前台：快速窗是前台窗口、可见、置顶。
+- Win11 一级菜单（D-SHELL-06）：未签名稀疏包注册 → 资源管理器新菜单第一层出现并可点 → 主实例收纳；
+  启动按设置补注册；关闭后包 / PackagedCom 键 / 菜单项全无、DLL 不被占用。
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ import pytest
 
 from harness import files
 from harness.app import wait_until
-from tests.desktop import oswin
+from tests.desktop import oswin, win11menu
 from tests.ui.test_collect import (CLASSES, COLLECT_LATENCY_MS, MENU_TEXT, VERB, by_name, collect_page,
                                    collect_perf, delete_tree, read_shortcut, read_verb, result, same_path,
                                    send_to_link, verb_exists, verb_path, wait_attr, wait_session_done)
@@ -285,3 +287,66 @@ def test_fifty_items_via_shell_verb_latency(shell_on, sandbox):
         qp.get_by_test_id("collect-action-import").click()
         assert result(qp)["created"] == "50"
         wait_session_done(app, timeout=30)
+
+
+@pytest.mark.case("D-SHELL-06")
+def test_win11_top_level_menu_register_invoke_cleanup(app_factory, sandbox):
+    """Win11 一级右键菜单（设置默认关）：开启 → 包已注册、explorer 新菜单第一层有该项、点击后主实例收到收纳；
+    外部卸包后重启按设置自动补注册；关闭后包 / PackagedCom 键 / 菜单项消失，DLL 不再被占用；
+    `--shell-integration remove` 也会清掉它。"""
+    import shutil
+    assert win11menu.appx_version() is None, "runner 上不应预先注册 TagLauncher.ShellMenu"
+    # 沙箱只复制了 exe：菜单组件按安装布局放到 <程序目录>\win11-menu\
+    shutil.copytree(sandbox.exe_src.parent / "win11-menu", sandbox.bin / "win11-menu", dirs_exist_ok=True)
+    app = app_factory()
+    try:
+        st = app.invoke("get_win11_menu")
+        print(f"WIN11_MENU status {json.dumps(st, ensure_ascii=False)}")
+        assert st["supported"], f"desktop 作业构建了真实组件、runner 为 Win11 内核，应可用：{st}"
+        assert not st["enabled"] and not st["registered"], st
+        t0 = time.perf_counter()
+        st = app.invoke("set_win11_menu", {"enabled": True})
+        reg_ms = round((time.perf_counter() - t0) * 1000)
+        assert st["enabled"] and st["registered"] and st["registeredVersion"] == st["bundledVersion"], st
+        assert win11menu.packaged_com_registered()
+
+        d = files.write(sandbox.files / "w11" / "probe.txt", "x").parent
+        ui = win11menu.explorer_menu(d, "probe.txt", sandbox.artifacts / "win11-menu-on.png", "on", click=True)
+        assert ui.get("menu_modern") == "True", f"应是 Win11 新菜单（含「显示更多选项」）：{ui}"
+        assert ui.get("our_item_visible") == "True", f"一级菜单里应有「{win11menu.TITLE}」：{ui}"
+        t1 = time.perf_counter()
+        qp = collect_page(app)
+        wait_attr(qp.get_by_test_id("collect-summary"), "data-count", "1")
+        collect_ms = round((time.perf_counter() - t1) * 1000)
+        s = app.invoke("collect_session")
+        assert [os.path.basename(p) for p in s["paths"]] == ["probe.txt"], s
+        qp.get_by_test_id("collect-action-import").click()
+        assert result(qp)["created"] == "1"
+        wait_session_done(app)
+
+        # 意图保持开：外部把包卸掉（等同升级安装前钩子），重启后后台按设置补注册
+        win11menu.appx_remove()
+        assert win11menu.appx_version() is None
+        app = app.restart()
+        t2 = time.perf_counter()
+        wait_until(lambda: win11menu.appx_version() == st["bundledVersion"], 60, "重启后没有按设置重新注册")
+        reconcile_ms = round((time.perf_counter() - t2) * 1000)
+
+        st = app.invoke("set_win11_menu", {"enabled": False})
+        assert not st["enabled"] and not st["registered"], st
+        assert win11menu.appx_version() is None and not win11menu.packaged_com_registered()
+        ui = win11menu.explorer_menu(d, "probe.txt", sandbox.artifacts / "win11-menu-off.png", "off")
+        assert ui.get("menu_modern") == "True" and ui.get("our_item_visible") == "False", ui
+        dll = sandbox.bin / "win11-menu" / "tl_menu.dll"
+        wait_until(lambda: win11menu.file_unlocked(dll), 15, "关闭后 tl_menu.dll 仍被占用")
+
+        # 便携版清理入口同样移除一级菜单
+        st = app.invoke("set_win11_menu", {"enabled": True})
+        assert st["registered"], st
+        r = subprocess.run([str(sandbox.exe), "--shell-integration", "remove"], capture_output=True, timeout=120,
+                           env=sandbox.env(None))
+        assert r.returncode == 0, r.stderr.decode("utf-8", "replace")
+        assert win11menu.appx_version() is None
+        print(f"WIN11_MENU register_ms={reg_ms} click_to_collect_ms={collect_ms} reconcile_ms={reconcile_ms}")
+    finally:
+        win11menu.appx_remove()

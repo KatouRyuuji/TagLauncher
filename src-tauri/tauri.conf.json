@@ -16,6 +16,11 @@
     "license": "MIT",
     "licenseFile": "license_en.txt",
     "externalBin": ["bin/tl"],
+    "resources": {
+      "win11-menu/tl_menu.dll": "win11-menu/tl_menu.dll",
+      "win11-menu/tl_menu_logo.png": "win11-menu/tl_menu_logo.png",
+      "win11-menu/TagLauncher.ShellMenu.msix": "win11-menu/TagLauncher.ShellMenu.msix"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

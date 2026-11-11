@@ -1,8 +1,7 @@
 // TagLauncher Win11 一级右键菜单：IExplorerCommand 进程外（dllhost 代理）COM 服务器。
 // 由未签名稀疏包（Publisher 含 Unsigned OID）注册，不需要任何证书。
-// Invoke：把选中路径交给同目录的 TagLauncher 可执行文件（--collect <paths>）；
-// 若设置了探针标记文件路径（TL_MENU_PROBE_FILE 不可用于 dllhost，改用 %LOCALAPPDATA%\TagLauncher\win11-menu-invoked.txt），
-// 同时把路径写入该文件，供 CI 校验调用链。
+// Invoke：把选中路径交给 tag-launcher.exe（--collect <paths>），与经典菜单/发送到同一入口。
+// TL_MENU_PROBE 构建（CI 探针）额外把路径写入 %LOCALAPPDATA%\TagLauncher\win11-menu-invoked.txt 与公共目录。
 #include <windows.h>
 #include <shobjidl_core.h>
 #include <shlwapi.h>
@@ -23,6 +22,19 @@ static std::wstring ModuleDir() {
     GetModuleFileNameW(g_module, buf, ARRAYSIZE(buf));
     PathRemoveFileSpecW(buf);
     return buf;
+}
+
+// 程序目录：DLL 在 <程序目录>\win11-menu\ 下（tauri resources），exe 在上一级；探针布局里 exe 与 DLL 同级
+static std::wstring FindExe() {
+    std::wstring dir = ModuleDir();
+    std::wstring same = dir + L"\\tag-launcher.exe";
+    if (GetFileAttributesW(same.c_str()) != INVALID_FILE_ATTRIBUTES) return same;
+    wchar_t parent[MAX_PATH * 4] = {};
+    lstrcpynW(parent, dir.c_str(), ARRAYSIZE(parent));
+    PathRemoveFileSpecW(parent);
+    std::wstring up = std::wstring(parent) + L"\\tag-launcher.exe";
+    if (GetFileAttributesW(up.c_str()) != INVALID_FILE_ATTRIBUTES) return up;
+    return std::wstring();
 }
 
 static void AppendMarker(const std::wstring& text) {
@@ -121,8 +133,8 @@ public:
     }
     IFACEMETHODIMP GetTitle(IShellItemArray*, LPWSTR* name) override { return SHStrDupW(L"用 TagLauncher 收纳", name); }
     IFACEMETHODIMP GetIcon(IShellItemArray*, LPWSTR* icon) override {
-        std::wstring exe = ModuleDir() + L"\\tag-launcher.exe";
-        if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) { *icon = nullptr; return E_NOTIMPL; }
+        std::wstring exe = FindExe();
+        if (exe.empty()) { *icon = nullptr; return E_NOTIMPL; }
         return SHStrDupW((exe + L",0").c_str(), icon);
     }
     IFACEMETHODIMP GetToolTip(IShellItemArray*, LPWSTR* tip) override { *tip = nullptr; return E_NOTIMPL; }
@@ -150,9 +162,11 @@ public:
             }
             item->Release();
         }
+#ifdef TL_MENU_PROBE
         AppendMarker(marker);
-        std::wstring exe = ModuleDir() + L"\\tag-launcher.exe";
-        if (GetFileAttributesW(exe.c_str()) != INVALID_FILE_ATTRIBUTES) {
+#endif
+        std::wstring exe = FindExe();
+        if (!exe.empty()) {
 #ifdef TL_MENU_PROBE
             // 探针：两条启动路径都走一遍，子进程替身记录各自是否带包标识
             ShellExecuteW(nullptr, L"open", exe.c_str(), (L"--via=direct " + args).c_str(), nullptr, SW_SHOWNORMAL);
@@ -161,6 +175,7 @@ public:
             wsprintfW(note, L"via_explorer_hr=0x%08X\n", (unsigned)viaHr);
             AppendMarker(note);
 #else
+            // 经桌面 explorer 启动，TagLauncher 不继承 dllhost 的包标识；explorer 不可用时退回直接启动
             if (FAILED(ShellExecuteViaExplorer(exe, args))) {
                 ShellExecuteW(nullptr, L"open", exe.c_str(), args.c_str(), nullptr, SW_SHOWNORMAL);
             }

@@ -731,6 +731,29 @@ export async function setShellIntegration(enabled: boolean): Promise<ShellIntegr
   return invokeCmd("set_shell_integration", { enabled });
 }
 
+export interface Win11MenuStatus {
+  /** Windows 11 且安装包带了菜单组件 */
+  supported: boolean;
+  /** 不可用原因（supported=false） */
+  reason: string | null;
+  /** 设置里的意图 */
+  enabled: boolean;
+  /** 稀疏包实际已注册 */
+  registered: boolean;
+  registeredVersion: string | null;
+  bundledVersion: string;
+}
+
+/** Win11 一级右键菜单（未签名稀疏包）的状态；后台起一次 PowerShell 查询，约 0.5–1 秒 */
+export async function getWin11Menu(): Promise<Win11MenuStatus> {
+  return invokeCmd("get_win11_menu");
+}
+
+/** 开启（也用于重新注册修复）/ 关闭并移除 Win11 一级右键菜单 */
+export async function setWin11Menu(enabled: boolean): Promise<Win11MenuStatus> {
+  return invokeCmd("set_win11_menu", { enabled });
+}
+
 /** 首个实例的启动方式：background 时主题就绪后不显示主窗 */
 export async function getLaunchMode(): Promise<LaunchMode> {
   return invokeCmd("get_launch_mode");

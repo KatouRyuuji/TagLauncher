@@ -1,6 +1,7 @@
 ﻿# 在资源管理器里右键文件，用 UIA 读取 Win11 一级菜单（XAML 弹层）里的条目；可选点击我们的条目并核对调用标记。
-param([string]$Folder, [string]$FileName, [string]$Title, [string]$Shot, [string]$Marker, [switch]$Click, [string]$Tag = 'registered')
+param([string]$Folder, [string]$FileName, [string]$Title, [string]$Shot, [string]$Marker = '', [switch]$Click, [string]$Tag = 'registered')
 $ErrorActionPreference = 'Continue'
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 function Log($k, $v) { Write-Host "W11MENU ui_$($Tag)_$k=$v" }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Drawing, System.Windows.Forms
 Add-Type @'
@@ -69,15 +70,18 @@ $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
 $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size); $g.Dispose()
 $bmp.Save($Shot, [System.Drawing.Imaging.ImageFormat]::Png)
 if ($ours -and $Click) {
-    Remove-Item $Marker -ErrorAction SilentlyContinue
+    if ($Marker) { Remove-Item $Marker -ErrorAction SilentlyContinue }
     try { $ours.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch {
         $b = $ours.Current.BoundingRectangle
         [Mouse]::SetCursorPos([int]($b.X + $b.Width / 2), [int]($b.Y + $b.Height / 2)) | Out-Null
         [Mouse]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero); [Mouse]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
     }
-    $ok = $false
-    for ($i = 0; $i -lt 20 -and -not $ok; $i++) { Start-Sleep -Milliseconds 250; $ok = (Test-Path $Marker) -and ((Get-Content $Marker -Raw) -like "*$FileName*") }
-    Log 'click_invoked_marker' $ok
+    Log 'clicked' $true
+    if ($Marker) {
+        $ok = $false
+        for ($i = 0; $i -lt 20 -and -not $ok; $i++) { Start-Sleep -Milliseconds 250; $ok = (Test-Path $Marker) -and ((Get-Content $Marker -Raw) -like "*$FileName*") }
+        Log 'click_invoked_marker' $ok
+    }
 } else {
     [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
 }

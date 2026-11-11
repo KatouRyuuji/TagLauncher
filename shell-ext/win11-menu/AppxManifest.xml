@@ -1,21 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 模板：@VERSION@/@ARCH@ 由 scripts/prepare-win11-menu.mjs 与 probe.ps1 填入。ExternalLocation = 程序目录。 -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
   xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
   xmlns:desktop5="http://schemas.microsoft.com/appx/manifest/desktop/windows10/5"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
   xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap10 desktop4 desktop5 com rescap">
+  IgnorableNamespaces="uap uap10 desktop4 desktop5 desktop6 com rescap">
   <Identity Name="TagLauncher.ShellMenu"
             Publisher="CN=TagLauncher, OID.2.25.311729368913984317654407730594956997722=1"
-            Version="1.0.0.0" ProcessorArchitecture="x64" />
+            Version="@VERSION@" ProcessorArchitecture="@ARCH@" />
   <Properties>
     <DisplayName>TagLauncher 右键菜单</DisplayName>
     <PublisherDisplayName>TagLauncher</PublisherDisplayName>
-    <Logo>tl_menu_logo.png</Logo>
+    <Logo>win11-menu\tl_menu_logo.png</Logo>
     <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
+    <!-- dllhost 带包标识；关掉 AppData/注册表写虚拟化，直接启动的兜底路径也写真实数据目录 -->
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
   </Properties>
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
@@ -31,7 +36,7 @@
     <Application Id="TagLauncherShellMenu" Executable="tag-launcher.exe"
                  uap10:TrustLevel="mediumIL" uap10:RuntimeBehavior="win32App">
       <uap:VisualElements AppListEntry="none" DisplayName="TagLauncher 右键菜单" Description="TagLauncher Win11 右键菜单"
-                          BackgroundColor="transparent" Square150x150Logo="tl_menu_logo.png" Square44x44Logo="tl_menu_logo.png" />
+                          BackgroundColor="transparent" Square150x150Logo="win11-menu\tl_menu_logo.png" Square44x44Logo="win11-menu\tl_menu_logo.png" />
       <Extensions>
         <desktop4:Extension Category="windows.fileExplorerContextMenus">
           <desktop4:FileExplorerContextMenus>
@@ -46,7 +51,7 @@
         <com:Extension Category="windows.comServer">
           <com:ComServer>
             <com:SurrogateServer DisplayName="TagLauncher 右键菜单">
-              <com:Class Id="6F3B7A51-2C1E-4E8B-9A57-3D8E1B4C9F21" Path="tl_menu.dll" ThreadingModel="STA" />
+              <com:Class Id="6F3B7A51-2C1E-4E8B-9A57-3D8E1B4C9F21" Path="win11-menu\tl_menu.dll" ThreadingModel="STA" />
             </com:SurrogateServer>
           </com:ComServer>
         </com:Extension>

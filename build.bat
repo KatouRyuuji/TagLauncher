@@ -51,6 +51,13 @@ if defined TARGET (
         pause
         exit /b 1
     )
+    echo Building Win11 context menu component for %TARGET%...
+    call node scripts/prepare-win11-menu.mjs --target %TARGET%
+    if errorlevel 1 (
+        echo [ERROR] Win11 menu component build failed.
+        pause
+        exit /b 1
+    )
     echo Building Windows installers for %TARGET%...
     call npm run tauri build -- --target %TARGET%
 ) else (
@@ -58,6 +65,13 @@ if defined TARGET (
     call node scripts/prepare-cli-bin.mjs
     if errorlevel 1 (
         echo [ERROR] CLI sidecar build failed.
+        pause
+        exit /b 1
+    )
+    echo Building Win11 context menu component...
+    call node scripts/prepare-win11-menu.mjs
+    if errorlevel 1 (
+        echo [ERROR] Win11 menu component build failed.
         pause
         exit /b 1
     )

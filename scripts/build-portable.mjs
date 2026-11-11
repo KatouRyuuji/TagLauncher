@@ -61,6 +61,16 @@ if (existsSync(cliExePath)) {
   console.warn('[WARN] tl.exe not found, portable zip will not include the CLI. Run scripts/prepare-cli-bin.mjs first.');
 }
 
+// Win11 一级右键菜单组件（scripts/prepare-win11-menu.mjs；tauri build 已按 resources 复制到 release 目录）
+const win11MenuDir = join(releaseDir, 'win11-menu');
+const win11Files = ['tl_menu.dll', 'tl_menu_logo.png', 'TagLauncher.ShellMenu.msix'];
+if (win11Files.every((f) => existsSync(join(win11MenuDir, f)) && statSync(join(win11MenuDir, f)).size > 0)) {
+  mkdirSync(join(stagedRoot, 'win11-menu'), { recursive: true });
+  for (const f of win11Files) copyFileSync(join(win11MenuDir, f), join(stagedRoot, 'win11-menu', f));
+} else {
+  console.warn('[WARN] Win11 menu component missing or placeholder, portable zip will not include it. Run scripts/prepare-win11-menu.mjs first.');
+}
+
 try {
   execFileSync(
     'powershell',

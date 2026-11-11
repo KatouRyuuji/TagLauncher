@@ -52,6 +52,7 @@ jobs:
           CARGO_PROFILE_DEV_OPT_LEVEL: '3'
         run: |
           node scripts/prepare-cli-bin.mjs --placeholder
+          node scripts/prepare-win11-menu.mjs --placeholder
           npx tauri build --debug --no-bundle
           cargo build --manifest-path src-tauri/Cargo.toml --bin tl
 
@@ -133,6 +134,7 @@ jobs:
         shell: pwsh
         run: |
           node scripts/prepare-cli-bin.mjs --placeholder
+          node scripts/prepare-win11-menu.mjs
           npx tauri build --debug --bundles nsis --features gui-subsystem
           cargo build --manifest-path src-tauri/Cargo.toml --bin tl
           $nsis = Get-ChildItem src-tauri/target/debug/bundle/nsis/*-setup.exe | Select-Object -First 1
@@ -242,6 +244,7 @@ jobs:
         shell: pwsh
         run: |
           node scripts/prepare-cli-bin.mjs
+          node scripts/prepare-win11-menu.mjs
           npx tauri build --bundles nsis
           $nsis = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
           "TL_E2E_NSIS=$($nsis.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
