@@ -12,6 +12,7 @@ vi.mock("../lib/db", () => ({
   openInExplorer: vi.fn(async () => {}),
   openInExplorerById: vi.fn(),
   getFolderWatchStatus: vi.fn(async () => ({ masterEnabled: true, activeCount: 0, watchedItemIds: [] })),
+  setFolderWatch: vi.fn(),
 }));
 vi.mock("../lib/toast", () => ({ showToast: vi.fn() }));
 
@@ -72,6 +73,62 @@ describe("右键「打开所在文件夹」后刷新对象", () => {
     await userEvent.click(screen.getByRole("menuitem", { name: /打开所在文件夹/ }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(refreshed).toEqual([{ id: 5 }]);
+  });
+});
+
+describe("右键标签入口", () => {
+  beforeEach(() => useAppStore.setState({ batchAddTagOpen: false }));
+
+  it("单选仍是管理当前行标签", async () => {
+    const onEditTags = vi.fn();
+    render(
+      <ContextMenu
+        item={item}
+        cabinets={[]}
+        currentCabinetId={null}
+        currentCabinetName={null}
+        position={{ x: 10, y: 10 }}
+        onClose={vi.fn()}
+        onLaunch={vi.fn()}
+        onRemove={vi.fn()}
+        onEditTags={onEditTags}
+        onToggleFavorite={vi.fn()}
+        onAddItemToCabinet={noop}
+        onRemoveItemFromCabinet={noop}
+        onUpdateThumbnail={noop}
+      />,
+    );
+    await userEvent.click(screen.getByRole("menuitem", { name: "管理标签" }));
+    expect(onEditTags).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().batchAddTagOpen).toBe(false);
+  });
+
+  it("多选改为加入标签，不打开当前行编辑器", async () => {
+    const onEditTags = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <ContextMenu
+        item={item}
+        cabinets={[]}
+        currentCabinetId={null}
+        currentCabinetName={null}
+        contextSelection={{ ids: [5, 6], paths: ["D:/a", "D:/b"], favoriteTarget: true }}
+        position={{ x: 10, y: 10 }}
+        onClose={onClose}
+        onLaunch={vi.fn()}
+        onRemove={vi.fn()}
+        onEditTags={onEditTags}
+        onToggleFavorite={vi.fn()}
+        onAddItemToCabinet={noop}
+        onRemoveItemFromCabinet={noop}
+        onUpdateThumbnail={noop}
+      />,
+    );
+    expect(screen.queryByRole("menuitem", { name: "管理标签" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("menuitem", { name: "加入标签" }));
+    expect(onEditTags).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+    expect(useAppStore.getState().batchAddTagOpen).toBe(true);
   });
 });
 
@@ -198,5 +255,43 @@ describe("BUG-13 菜单变高后重新夹回视口", () => {
       spy.mockRestore();
       Object.defineProperty(window, "innerHeight", { configurable: true, value: origH });
     }
+  });
+});
+
+describe("文件夹监视菜单项：状态读回前不显示错误状态", () => {
+  const folder: ItemWithTags = { id: 7, name: "工程", path: "D:/工程", type: "folder", created_at: "2026-01-01", is_favorite: false, tags: [] };
+  const status = (ids: number[]) => ({ masterEnabled: true, activeCount: ids.length, watchedItemIds: ids });
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("读取中显示禁用的占位项，读回已监视后才显示「停止监视」", async () => {
+    let resolve!: (v: ReturnType<typeof status>) => void;
+    vi.mocked(db.getFolderWatchStatus).mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+    renderMenu(vi.fn(), folder);
+    const pending = screen.getByRole("menuitem", { name: "正在读取监视状态…" });
+    expect(pending).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("menuitem", { name: "监视此文件夹" })).not.toBeInTheDocument();
+    await userEvent.click(pending);
+    expect(db.setFolderWatch).not.toHaveBeenCalled();
+    resolve(status([7]));
+    const ready = await screen.findByRole("menuitem", { name: "停止监视此文件夹" });
+    expect(ready).not.toHaveAttribute("aria-disabled");
+    expect(ready).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("读回未监视显示「监视此文件夹」，点击开启", async () => {
+    vi.mocked(db.getFolderWatchStatus).mockResolvedValueOnce(status([]));
+    vi.mocked(db.setFolderWatch).mockResolvedValueOnce(status([7]));
+    const onClose = renderMenu(vi.fn(), folder);
+    await userEvent.click(await screen.findByRole("menuitem", { name: "监视此文件夹" }));
+    expect(db.setFolderWatch).toHaveBeenCalledWith(7, true);
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it("读取失败时退回可操作的「监视此文件夹」", async () => {
+    vi.mocked(db.getFolderWatchStatus).mockRejectedValueOnce(new Error("boom"));
+    renderMenu(vi.fn(), folder);
+    const item = await screen.findByRole("menuitem", { name: "监视此文件夹" });
+    expect(item).not.toHaveAttribute("aria-disabled");
   });
 });

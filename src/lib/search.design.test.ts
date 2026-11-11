@@ -222,6 +222,36 @@ test("B10 多层级标签闭包（两跳后代）", () => {
   assert.deepEqual(filterItemsByTags(items, [100], multiLevelExpand).map((i) => i.id), [1, 3]);
 });
 
+test("A→C←B 真值表：含后代 vs 仅直接标签（正选/排除/多选）", () => {
+  // A 与 B 同为 C 的父；对象只打直接标签，不把祖先写入 item_tags
+  const diamond = [
+    item(10, "onlyA", [{ id: 1, name: "A" }]),
+    item(11, "onlyB", [{ id: 2, name: "B" }]),
+    item(12, "onlyC", [{ id: 3, name: "C" }]),
+    item(13, "AandC", [{ id: 1, name: "A" }, { id: 3, name: "C" }]),
+    item(14, "ABC", [{ id: 1, name: "A" }, { id: 2, name: "B" }, { id: 3, name: "C" }]),
+  ];
+  const map = buildDescendantsMap([
+    { parentId: 1, childId: 3 },
+    { parentId: 2, childId: 3 },
+  ]);
+  const expand = (id: number) => map.get(id) ?? new Set([id]);
+  const ids = (selected: number[], excluded: number[] = [], withExpand = true) =>
+    filterItemsByTags(diamond, selected, withExpand ? expand : undefined, excluded).map((entry) => entry.id);
+
+  assert.deepEqual(ids([1]), [10, 12, 13, 14]);
+  assert.deepEqual(ids([2]), [11, 12, 13, 14]);
+  assert.deepEqual(ids([1, 2]), [12, 13, 14]);
+  assert.deepEqual(ids([], [1]), [11]);
+  assert.deepEqual(ids([1], [2]), [10]);
+
+  assert.deepEqual(ids([1], [], false), [10, 13, 14]);
+  assert.deepEqual(ids([2], [], false), [11, 14]);
+  assert.deepEqual(ids([1, 2], [], false), [14]);
+  assert.deepEqual(ids([], [1], false), [11, 12]);
+  assert.deepEqual(ids([1], [2], false), [10, 13]);
+});
+
 test("filterSearchIndex：按允许集过滤索引", () => {
   const layeredIndex = buildSearchIndex(items, "all");
   const allowed = new Set([1, 2]);

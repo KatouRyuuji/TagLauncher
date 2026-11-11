@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
-import { buildSearchIndex, filterItemsByTags, filterSearchIndex, searchWithIndex } from "../lib/search";
+import { buildSearchIndex, expandForTagFilter, filterItemsByTags, filterSearchIndex, searchWithIndex } from "../lib/search";
 import { ensurePinyin } from "../lib/pinyinProvider";
 import { applyMissingFilter, applyTypeFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/itemQuery";
 import { buildDescendantsMap } from "../lib/tagGraph";
@@ -109,6 +109,7 @@ export function useItems() {
   const libraryBrowseRoot = useAppStore((state) => state.libraryBrowseRoot);
   const libraryBrowseDir = useAppStore((state) => state.libraryBrowseDir);
   const tagRelations = useAppStore((state) => state.tagRelations);
+  const tagFilterMode = useAppStore((state) => state.tagFilterMode);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const [allItems, setAllItems] = useState<ItemWithTags[]>([]);
@@ -452,8 +453,13 @@ export function useItems() {
 
   const tagFiltered = useMemo(
     () =>
-      filterItemsByTags(source, selectedTagIds, (id) => descendantsMap.get(id) ?? new Set([id]), excludedTagIds),
-    [source, selectedTagIds, excludedTagIds, descendantsMap],
+      filterItemsByTags(
+        source,
+        selectedTagIds,
+        expandForTagFilter(tagFilterMode !== "direct", descendantsMap),
+        excludedTagIds,
+      ),
+    [source, selectedTagIds, excludedTagIds, descendantsMap, tagFilterMode],
   );
 
   const hasSearchQuery = deferredSearchQuery.trim().length > 0;

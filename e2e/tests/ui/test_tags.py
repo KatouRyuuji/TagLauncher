@@ -1,7 +1,6 @@
 """标签（E-TAG-*）。"""
 from __future__ import annotations
 
-import re
 
 import pytest
 
@@ -74,7 +73,7 @@ def test_edit_and_delete_tag(app, sandbox):
     dlg.wait_for(state="hidden")
     wait_until(lambda: dbh.scalar(sandbox.db_path, "SELECT COUNT(*) FROM tags") == 0, 5)
     assert dbh.scalar(sandbox.db_path, "SELECT COUNT(*) FROM item_tags") == 0
-    assert app.page.locator("[data-tag-row-id]").count() == 0
+    wait_until(lambda: app.page.locator("[data-tag-row-id]").count() == 0, 5, "删除后侧栏仍有标签行")
     assert any(i["name"] == "带标签.txt" for i in app.items())
 
 
@@ -155,7 +154,7 @@ def test_tag_relations_editor(app, sandbox):
     app.page.get_by_role("button", name="管理标签父子关系").click()
     dlg = app.dialog("标签关系")
     dlg.get_by_role("button", name="子", exact=True).first.click()
-    dlg.get_by_role("button", name=re.compile(r"^父\s*＋$")).click()
+    dlg.get_by_role("button", name="添加父标签「父」", exact=True).click()
     dlg.get_by_role("button", name="移除父标签「父」").wait_for()
     ids = app.tag_ids()
     wait_until(lambda: dbh.query(sandbox.db_path, "SELECT parent_id, child_id FROM tag_relations") == [(ids["父"], ids["子"])], 5)

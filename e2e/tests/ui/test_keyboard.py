@@ -39,7 +39,7 @@ def test_arrow_home_end(app, sandbox):
     app.page.get_by_role("button", name="列表视图", exact=True).click()
     names = app.visible_names()
     ids = {i["name"]: i["id"] for i in app.items()}
-    app.card(names[0]).click()
+    app.select_card(names[0])
     sel = app.selected_ids
     app.page.keyboard.press("ArrowDown")
     wait_until(lambda: sel() == [ids[names[1]]], 3, sel)

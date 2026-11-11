@@ -218,6 +218,7 @@ def test_nav_exclusive(app, sandbox):
     paths = [files.write(sandbox.files / "nav" / f"{n}.txt", n) for n in ("甲", "乙", "丙")]
     app.seed(paths)
     app.menu_click("甲.txt", "加入收藏")
+    wait_until(lambda: app.item("甲.txt")["is_favorite"], 5, "右键加入收藏未写库")
     con = sqlite3.connect(sandbox.db_path, timeout=10)
     with con:
         con.execute("UPDATE items SET last_used_at='2026-01-01 00:00:00' WHERE name='乙.txt'")
@@ -275,7 +276,7 @@ def test_drag_to_favorites_and_toasts(app, sandbox):
     app.seed([files.write(sandbox.files / "fv" / n, n) for n in ("拖我.txt", "别动.txt")])
     app.page.get_by_role("button", name="列表视图", exact=True).click()
     fav = app.page.locator("[data-drop-item-favorite]").first
-    drag(app, app.card("拖我.txt"), fav)
+    drag(app, app.card("拖我.txt").get_by_role("heading", level=3), fav)
     wait_until(lambda: app.item("拖我.txt")["is_favorite"], 5)
     assert not app.item("别动.txt")["is_favorite"]
     toast = app.page.get_by_role("status").filter(has_text="已收藏「拖我.txt」")
@@ -284,7 +285,7 @@ def test_drag_to_favorites_and_toasts(app, sandbox):
     toast.wait_for(state="detached", timeout=8000)        # success 3.5s 自动消失
     assert 2.5 < time.monotonic() - t0 < 6.5
     # 再拖一次 → info「已在收藏中」，点关闭立即消失
-    drag(app, app.card("拖我.txt"), fav)
+    drag(app, app.card("拖我.txt").get_by_role("heading", level=3), fav)
     info = app.page.get_by_role("status").filter(has_text="已在收藏中")
     info.wait_for(timeout=3000)
     info.get_by_role("button", name="关闭通知").click()
@@ -306,7 +307,7 @@ def test_recent_order(app, sandbox):
     app.seed(exes)
     app.page.get_by_role("button", name="列表视图", exact=True).click()
     for p in exes:
-        app.card(p.name).click()
+        app.select_card(p.name)
         app.page.keyboard.press("Enter")
         files.wait_marker(p)
         time.sleep(1.1)                      # last_used_at 为秒级

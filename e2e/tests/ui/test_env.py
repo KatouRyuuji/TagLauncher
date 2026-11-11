@@ -11,7 +11,7 @@ def test_first_launch_empty_library(sandbox, app_factory):
     app = app_factory(dismiss_welcome=False)
     page = app.page
     assert sandbox.db_path.exists(), "DB 应建在沙箱 Save/"
-    assert dbh.meta(sandbox.db_path, "schema_version") == "20"
+    assert dbh.meta(sandbox.db_path, "schema_version") == dbh.current_schema_version()
     # 首启欢迎（若有）可关闭
     app.close_welcome()
     empty = page.locator(".empty-state-panel[data-empty-variant=library]")
@@ -36,7 +36,7 @@ def test_legacy_db_upgrade_dialog(sandbox, app_factory):
     assert "1.6.0-beta" in dlg.inner_text()
     dlg.get_by_role("button", name="我知道了").click()
     dlg.wait_for(state="detached", timeout=5000)
-    assert dbh.meta(sandbox.db_path, "schema_version") == "20"
+    assert dbh.meta(sandbox.db_path, "schema_version") == dbh.current_schema_version()
     assert dbh.scalar(sandbox.db_path, "SELECT COUNT(*) FROM items") == 5
 
 

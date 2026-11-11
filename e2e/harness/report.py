@@ -26,6 +26,7 @@ class Reporter:
         self.session_notes: list[str] = []
         self.started = time.time()
         self.real_dir_diff: dict[str, str] | None = None
+        (run_dir / "results.jsonl").unlink(missing_ok=True)
 
     # ---------------------------------------------------------------- hooks
     @pytest.hookimpl(hookwrapper=True)
@@ -58,6 +59,14 @@ class Reporter:
                 rec["artifacts"].append(value)
             if name == "js_errors":
                 rec["js_errors"] = value
+        if rep.when == "teardown":
+            self.append_line(rec)
+
+    def append_line(self, rec: dict) -> None:
+        """每个用例结束即追加一行：job 被取消/超时也留下已跑用例的结果与错误摘要。"""
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        with (self.run_dir / "results.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps({**rec, "t": round(time.time() - self.started, 1)}, ensure_ascii=False) + "\n")
 
     def pytest_sessionfinish(self, session, exitstatus):
         self.write()

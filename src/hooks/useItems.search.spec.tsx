@@ -31,7 +31,7 @@ describe("对象搜索按需索引", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    useAppStore.setState({ searchQuery: "", searchMode: "all", selectedTagIds: [], excludedTagIds: [], selectedCabinetId: null, showFavorites: false, showRecent: false, typeFilter: "all", hideMissing: false, showNestedContents: false, libraryBrowseRoot: null, libraryBrowseDir: null, sortMode: "smart", tagRelations: [] });
+    useAppStore.setState({ searchQuery: "", searchMode: "all", selectedTagIds: [], excludedTagIds: [], selectedCabinetId: null, showFavorites: false, showRecent: false, typeFilter: "all", hideMissing: false, showNestedContents: false, libraryBrowseRoot: null, libraryBrowseDir: null, sortMode: "smart", tagRelations: [], tagFilterMode: "descendants" });
   });
 
   it("并发找回共享结果，扫描错误保留为失败状态并允许重试", async () => {
@@ -123,6 +123,21 @@ describe("对象搜索按需索引", () => {
     expect(result.current.items.map((item) => item.id)).toEqual([11]);
     act(() => useAppStore.setState({ selectedTagIds: [], selectedCabinetId: 3 }));
     await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([11]));
+  });
+
+  it("仅直接标签不并入后代对象", async () => {
+    const nested: ItemWithTags[] = [
+      { id: 1, name: "父对象", path: "D:\\a.exe", type: "exe", created_at: "2026-01-01", is_favorite: false, tags: [{ id: 10, name: "A", color: "#111" }] },
+      { id: 2, name: "子对象", path: "D:\\c.exe", type: "exe", created_at: "2026-01-01", is_favorite: false, tags: [{ id: 12, name: "C", color: "#333" }] },
+    ];
+    vi.mocked(db.getItems).mockResolvedValueOnce(nested);
+    useAppStore.setState({ tagRelations: [{ parentId: 10, childId: 12 }], tagFilterMode: "descendants" });
+    const { result } = renderHook(useItems);
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => useAppStore.setState({ selectedTagIds: [10] }));
+    expect(result.current.items.map((item) => item.id).sort()).toEqual([1, 2]);
+    act(() => useAppStore.setState({ tagFilterMode: "direct" }));
+    expect(result.current.items.map((item) => item.id)).toEqual([1]);
   });
 
   it("库内浏览只列出当前层，含被 All 隐藏的子文件", async () => {

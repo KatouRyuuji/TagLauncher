@@ -221,6 +221,26 @@ function requireCabinet(id: number): Cabinet {
   return cabinet;
 }
 
+function descendantsOf(id: number): Set<number> {
+  const childrenOf = new Map<number, number[]>();
+  for (const rel of state.relations) {
+    const list = childrenOf.get(rel.parentId) ?? [];
+    list.push(rel.childId);
+    childrenOf.set(rel.parentId, list);
+  }
+  const out = new Set<number>([id]);
+  const stack = [id];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    for (const next of childrenOf.get(current) ?? []) {
+      if (out.has(next)) continue;
+      out.add(next);
+      stack.push(next);
+    }
+  }
+  return out;
+}
+
 /** 标签 DAG 成环检测：从 startId 沿父子边能否回到 targetId */
 function createsCycle(parentId: number, childId: number): boolean {
   if (parentId === childId) return true;
@@ -668,6 +688,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "search_items": {
       const query = str(args.query).toLowerCase();
       const tagFilter = new Set(ids(args.tagIds));
+      const includeDescendants = args.includeDescendants !== false;
       return sortItems(
         state.items.filter((item) => {
           const tags = state.tags.filter((tag) => item.tagIds.includes(tag.id));
@@ -677,7 +698,11 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
             item.path.toLowerCase().includes(query) ||
             tags.some((tag) => tag.name.toLowerCase().includes(query));
           const matchesTags =
-            tagFilter.size === 0 || [...tagFilter].every((id) => item.tagIds.includes(id));
+            tagFilter.size === 0 ||
+            [...tagFilter].every((id) => {
+              const allowed = includeDescendants ? descendantsOf(id) : new Set([id]);
+              return item.tagIds.some((tagId) => allowed.has(tagId));
+            });
           return matchesQuery && matchesTags;
         }),
       ).map(withTags);

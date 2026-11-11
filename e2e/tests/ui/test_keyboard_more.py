@@ -29,7 +29,7 @@ def test_shift_arrow_range(app, sandbox):
     list_view(app)
     names = app.visible_names()
     ids = {i["name"]: i["id"] for i in app.items()}
-    app.card(names[0]).click()
+    app.select_card(names[0])
     for _ in range(3):
         app.page.keyboard.press("Shift+ArrowDown")
     want = sorted(ids[n] for n in names[:4])
@@ -45,7 +45,7 @@ def test_keyboard_context_menu(app, sandbox, key):
     seed_n(app, sandbox, 3)
     list_view(app)
     names = app.visible_names()
-    app.card(names[1]).click()
+    app.select_card(names[1])
     app.page.keyboard.press(key)
     menu = app.page.get_by_role("menu").first
     menu.wait_for(timeout=3000)
@@ -80,7 +80,7 @@ def test_view_hotkeys(app, sandbox):
 def test_typeahead(app, sandbox):
     app.seed([files.write(sandbox.files / "kbt" / n, n) for n in ("apple.txt", "banana.txt", "cherry.txt", "berry.txt")])
     list_view(app)
-    app.card("apple.txt").click()
+    app.select_card("apple.txt")
     ids = {i["name"]: i["id"] for i in app.items()}
     app.page.keyboard.type("ch", delay=40)
     wait_until(lambda: app.selected_ids() == [ids["cherry.txt"]], 3, app.selected_ids)

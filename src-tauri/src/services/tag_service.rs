@@ -167,7 +167,7 @@ pub fn reorder_tags(conn: &Connection, ids: &[i64]) -> Result<(), String> {
 pub(crate) fn write_sort_order(conn: &Connection, table: &str, ids: &[i64]) -> Result<(), String> {
     debug_assert!(table == "tags" || table == "cabinets");
     crate::db::ensure_writes_allowed()?;
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     {
         let mut stmt = tx
             .prepare(&format!("UPDATE {table} SET sort_order = ?1 WHERE id = ?2"))
@@ -243,7 +243,7 @@ pub fn set_item_tags(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result
     crate::db::ensure_writes_allowed()?;
     // 用事务把 DELETE + 全部 INSERT 包成原子操作：中途任一失败整体回滚，
     // 避免出现"删光旧标签但只写入部分新标签"导致对象标签丢失的情况。
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     ensure_exists(&tx, "items", item_id, "对象")?;
     ensure_ids_exist(&tx, "tags", tag_ids, "标签")?;
     set_item_tags_core(&tx, item_id, tag_ids)?;
@@ -254,7 +254,7 @@ pub fn set_item_tags(conn: &Connection, item_id: i64, tag_ids: &[i64]) -> Result
 /// 批量设置多个对象的标签（整批一个事务，原子）。
 pub fn set_many_item_tags(conn: &Connection, changes: &[(i64, Vec<i64>)]) -> Result<(), String> {
     crate::db::ensure_writes_allowed()?;
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     let item_ids = changes.iter().map(|(id, _)| *id).collect::<Vec<_>>();
     let tag_ids = changes.iter().flat_map(|(_, ids)| ids.iter().copied()).collect::<Vec<_>>();
     ensure_ids_exist(&tx, "items", &item_ids, "对象")?;

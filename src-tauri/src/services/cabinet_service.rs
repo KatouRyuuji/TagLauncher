@@ -157,7 +157,7 @@ pub fn add_items_to_cabinet(
     item_ids: &[i64],
 ) -> Result<(), String> {
     crate::db::ensure_writes_allowed()?;
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     // 先校验存在性给友好文案（事务保证校验失败时不留半份写入）
     tag_service::ensure_exists(&tx, "cabinets", cabinet_id, "文件柜")?;
     ensure_not_linked(&tx, cabinet_id)?;
@@ -185,7 +185,7 @@ pub fn remove_items_from_cabinet(
     if item_ids.is_empty() {
         return Ok(());
     }
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     for chunk in item_ids.chunks(crate::services::item_service::IN_CHUNK) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
@@ -383,7 +383,7 @@ pub fn set_cabinet_folder(
     crate::db::ensure_writes_allowed()?;
     tag_service::ensure_exists(conn, "cabinets", cabinet_id, "文件柜")?;
     let current = linked_folder(conn, cabinet_id)?;
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     match folder {
         Some(folder) => {
             let normalized = normalize_folder(folder);

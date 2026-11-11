@@ -451,9 +451,9 @@ pub fn add_items_with_context(
     }
 
     // ② 锁内单事务批量写库
-    let mut conn = db.get_conn();
+    let conn = db.get_conn();
     let mut items = Vec::new();
-    let tx = match conn.transaction() {
+    let tx = match crate::db::write_tx(&conn) {
         Ok(tx) => tx,
         Err(error) => {
             let error = error.to_string();
@@ -603,7 +603,7 @@ fn delete_items(conn: &Connection, ids: &[i64], ignore_watched: bool) -> Result<
     if ids.is_empty() {
         return Ok(());
     }
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     let mut all_ids = ids.to_vec();
     if ignore_watched {
         all_ids.extend(crate::services::watch_service::ignore_removed_items(&tx, ids)?);
@@ -868,7 +868,7 @@ pub fn set_favorites(conn: &Connection, ids: &[i64], favorite: bool) -> Result<(
         return Ok(());
     }
     let val = if favorite { 1 } else { 0 };
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     for chunk in ids.chunks(IN_CHUNK) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
@@ -1092,7 +1092,7 @@ pub fn apply_reconcile(conn: &Connection, writes: &[ReconcileWrite]) -> Result<(
         return Ok(());
     }
     crate::db::ensure_writes_allowed()?;
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     for w in writes {
         match w {
             ReconcileWrite::BackfillIdentity { id, volume_serial, file_id, expected } => {
@@ -1419,7 +1419,7 @@ pub fn apply_signature_relocations(
     writes: &[SignatureRelocation],
 ) -> Result<usize, String> {
     crate::db::ensure_writes_allowed()?;
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     let mut count = 0usize;
     for write in writes {
         let meta = &write.meta;

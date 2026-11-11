@@ -33,6 +33,13 @@ export function isListDensity(value: unknown): value is ListDensity {
   return value === "comfortable" || value === "compact";
 }
 
+/** 标签筛选：含后代（默认，选父即并入子对象）/ 仅直接标签（不展开） */
+export type TagFilterMode = "descendants" | "direct";
+
+export function isTagFilterMode(value: unknown): value is TagFilterMode {
+  return value === "descendants" || value === "direct";
+}
+
 /** 类型筛选：脚本合并 bat+ps1，避免顶栏 chip 过多 */
 export type TypeFilter = "all" | "folder" | "image" | "audio" | "video" | "text" | "exe" | "script";
 

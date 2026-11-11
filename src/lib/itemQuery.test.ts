@@ -45,6 +45,7 @@ import {
   formatBytes,
   formatTimestamp,
   isSortMode,
+  isTagFilterMode,
   isTypeFilter,
   isViewMode,
   isTypingTarget,
@@ -277,6 +278,9 @@ test("isSortMode / isTypeFilter 守卫", () => {
   assert.equal(isTypeFilter("bat"), false);
   assert.equal(isViewMode("icons"), true);
   assert.equal(isViewMode("tile"), false);
+  assert.equal(isTagFilterMode("direct"), true);
+  assert.equal(isTagFilterMode("descendants"), true);
+  assert.equal(isTagFilterMode("exact"), false);
 });
 
 test("formatPathCopy：空路径忽略，多项换行", () => {

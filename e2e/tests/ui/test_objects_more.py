@@ -64,13 +64,16 @@ def test_folder_import_remember(app, sandbox):
     files.write(b / "b1.txt", "1")
     add_via_menu(app, "添加文件夹…", [a])
     folder_dialog_confirm(app, "只加入里面的文件", remember=True)
-    wait_until(lambda: {i["name"] for i in app.items()} == {"a1.txt"}, 8)
+    # PR46 规格：投放根作为浏览入口一并入库（可见），夹内文件 hide_from_all
+    wait_until(lambda: {i["name"] for i in app.items()} == {"记住A", "a1.txt"}, 8,
+               lambda: [i["name"] for i in app.items()])
+    assert app.item("a1.txt")["hide_from_all"] and not app.item("记住A")["hide_from_all"]
     # 产品语义：“记住我的选择，下次添加文件夹时默认用它”= 对话框仍出现、预选上次方式（矩阵写的“不再弹出”与产品文案不符）
     add_via_menu(app, "添加文件夹…", [b])
     dlg = app.dialog("添加文件夹")
     assert dlg.get_by_role("radio", name="只加入里面的文件").get_attribute("aria-checked") == "true"
     dlg.get_by_role("button", name="添加", exact=True).click()
-    wait_until(lambda: {i["name"] for i in app.items()} == {"a1.txt", "b1.txt"}, 8,
+    wait_until(lambda: {i["name"] for i in app.items()} == {"记住A", "a1.txt", "记住B", "b1.txt"}, 8,
                lambda: [i["name"] for i in app.items()])
     # 重载后仍记住
     app.reload_page()
@@ -90,7 +93,11 @@ def test_folder_import_cap(app, sandbox):
     add_via_menu(app, "添加文件夹…", [big])
     folder_dialog_confirm(app, "只加入里面的文件")
     app.wait_toast("已先导入前 2000 个文件", timeout=60)
-    wait_until(lambda: len(app.items()) == 2000, 30, lambda: len(app.items()))
+    # 上限只针对文件：2000 个文件 + 投放根（PR46 起作为浏览入口入库）
+    files_only = lambda: [i for i in app.items() if i["type"] != "folder"]
+    wait_until(lambda: len(files_only()) == 2000, 30, lambda: len(files_only()))
+    assert [i["name"] for i in app.items() if i["type"] == "folder"] == ["大文件夹"]
+    assert all(i["hide_from_all"] for i in files_only())
 
 
 @pytest.mark.case("E-OBJ-09")

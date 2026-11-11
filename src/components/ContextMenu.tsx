@@ -81,7 +81,8 @@ export function ContextMenu({
   onUpdateThumbnail,
 }: ContextMenuProps) {
   useOverlayGate();
-  const [folderWatched, setFolderWatched] = useState(false);
+  // null = 监视状态尚未读回：此时不能断言「未监视」，菜单项显示读取中且不可点
+  const [folderWatched, setFolderWatched] = useState<boolean | null>(null);
   // 关联柜内的文件夹：「打开」改为进入子目录（App.handleOpenItem），另给出在资源管理器中打开
   const entersLinkedFolder = useAppStore((state) => {
     const root = state.cabinets.find((cabinet) => cabinet.id === state.selectedCabinetId)?.folder_path;
@@ -116,9 +117,13 @@ export function ContextMenu({
   useEffect(() => {
     if (item.type !== "folder") return;
     let cancelled = false;
+    setFolderWatched(null);
     void db.getFolderWatchStatus().then((status) => {
       if (!cancelled) setFolderWatched(status.watchedItemIds.includes(item.id));
-    }).catch(() => {});
+    }).catch(() => {
+      // 读不到状态时退回「未监视」让用户仍可开启；set_folder_watch 返回的是权威状态
+      if (!cancelled) setFolderWatched(false);
+    });
     return () => {
       cancelled = true;
     };
@@ -505,9 +510,11 @@ export function ContextMenu({
         {item.type === "folder" && !item.is_missing && (
           <MenuItem
             icon={Radar}
-            label={folderWatched ? "停止监视此文件夹" : "监视此文件夹"}
-            checked={folderWatched}
+            label={folderWatched == null ? "正在读取监视状态…" : folderWatched ? "停止监视此文件夹" : "监视此文件夹"}
+            checked={folderWatched === true}
+            disabled={folderWatched == null}
             onClick={async () => {
+              if (folderWatched == null) return;
               try {
                 const next = await db.setFolderWatch(item.id, !folderWatched);
                 setFolderWatched(next.watchedItemIds.includes(item.id));
@@ -557,7 +564,19 @@ export function ContextMenu({
           onClick={handleToggleFavoriteClick}
           accent={(multi ? !multi.favoriteTarget : item.is_favorite) ? "favorite" : undefined}
         />
-        <MenuItem icon={Tags} label="管理标签" onClick={() => { onEditTags(); onClose(); }} />
+        <MenuItem
+          icon={Tags}
+          label={multi ? "加入标签" : "管理标签"}
+          onClick={() => {
+            if (multi) {
+              onClose();
+              useAppStore.getState().setBatchAddTagOpen(true);
+              return;
+            }
+            onEditTags();
+            onClose();
+          }}
+        />
         {!multi && (
           <MenuItem
             icon={StickyNote}
@@ -761,12 +780,15 @@ export function MenuItem({
   onClick,
   accent,
   checked,
+  disabled,
 }: {
   icon: LucideIcon;
   label: string;
   onClick: () => void | Promise<void>;
   accent?: "danger" | "warning" | "favorite";
   checked?: boolean;
+  /** 用 aria-disabled 而非原生 disabled：仍可被键盘循环聚焦，只是不响应激活 */
+  disabled?: boolean;
 }) {
   const accentMap = {
     danger: {
@@ -790,14 +812,20 @@ export function MenuItem({
       type="button"
       role="menuitem"
       aria-checked={checked}
+      aria-disabled={disabled || undefined}
       // 菜单动作多为 async（启动/缩略图/文件柜操作），其底层链路（withErrorToast）
       // 已统一 toast 反馈；这里吞掉 rejection 避免未处理拒绝噪音（Promise.resolve 兼容同步返回）。
-      onClick={() => void Promise.resolve(onClick()).catch(() => {})}
+      onClick={() => {
+        if (disabled) return;
+        void Promise.resolve(onClick()).catch(() => {});
+      }}
       className="flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm hover:text-[var(--text-primary)]"
       style={{
-        color: accentStyle?.color ?? "var(--text-secondary)",
+        color: disabled ? "var(--text-faint)" : accentStyle?.color ?? "var(--text-secondary)",
+        cursor: disabled ? "default" : undefined,
       }}
       onMouseEnter={(event) => {
+        if (disabled) return;
         event.currentTarget.style.backgroundColor = accentStyle?.hoverBg ?? "var(--bg-hover)";
       }}
       onMouseLeave={(event) => {

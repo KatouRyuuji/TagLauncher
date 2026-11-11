@@ -175,7 +175,7 @@ export function DraggableTagList({ item, onReorder, onRemoveTag, compact, maxVis
           type="button"
           tabIndex={-1}
           aria-label="添加标签"
-          title="管理标签"
+          title="管理标签（Ctrl+T）"
           onPointerDown={(event) => event.stopPropagation()}
           onDoubleClick={(event) => event.stopPropagation()}
           onClick={(event) => {

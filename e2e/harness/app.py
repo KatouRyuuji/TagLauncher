@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import time
@@ -10,8 +11,10 @@ from pathlib import Path
 
 from playwright.sync_api import Browser, Page, Playwright
 
-from . import stealth
-from .sandbox import Sandbox, free_port
+from . import launchdiag, stealth, webview2_policy
+from .launchdiag import HEALTH, LaunchRecord, StartupError
+from .integrity import real_dirs
+from .sandbox import Sandbox, free_port, webview2_args
 
 # tests/window（physical_input）需要真实可见窗口，在其 conftest 里关掉
 STEALTH = {"on": True}
@@ -22,6 +25,14 @@ STUB_JS = (Path(__file__).parent / "ipc_stub.js").read_text(encoding="utf-8")
 CONSOLE_ALLOW = (
     "Failed to load resource",  # 缺失缩略图等
 )
+
+
+UPDATE_RESET_JS = """(() => { try {
+  if (sessionStorage.getItem('__e2e_update_reset')) return;
+  sessionStorage.setItem('__e2e_update_reset', '1');
+  localStorage.removeItem('taglauncher.update_last_check_ts');
+  localStorage.removeItem('taglauncher.update_notified_version');
+} catch (e) {} })();"""
 
 
 class AppSession:
@@ -43,25 +54,91 @@ class AppSession:
         self.port: int | None = None
         self.page_errors: list[str] = []
         self.launch_count = 0
+        self.spawned_at_ms: float | None = None
         self.guard: stealth.Guard | None = None
 
     # ------------------------------------------------------------------ 生命周期
     def start(self, timeout: float = 60) -> "AppSession":
+        threshold = launchdiag.fuse_threshold()
+        if self.cdp and HEALTH.tripped(threshold):
+            raise StartupError(HEALTH.fuse_message())
         self.sb.install_exe()
         self.port = free_port() if self.cdp else None
         self.launch_count += 1
-        log = (self.sb.root / f"process-{self.launch_count}.log").open("w", encoding="utf-8")
+        log_path = self.sb.root / f"process-{self.launch_count}.log"
+        log = log_path.open("w", encoding="utf-8")
         if stealth.ENABLED and STEALTH["on"] and self.guard is None:
             self.guard = stealth.Guard(self.sb.root)
-        self.proc = subprocess.Popen([str(self.sb.exe), *self.args], cwd=self.sb.bin,
-                                     env=self.sb.env(self.port), stdout=log, stderr=log)
+        env = self.sb.env(self.port)
+        policy = bool(self.cdp and webview2_policy.enabled())
+        if policy:
+            self._prepare_elevated_webview2()
+        rec = LaunchRecord(n=self.launch_count, exe=str(self.sb.exe), args=list(self.args), cwd=str(self.sb.bin),
+                           cdp_port=self.port, env=LaunchRecord.safe_env(env))
+        rec.env["webview2_channel"] = "hklm-policy" if policy else "env"
+        self._launch = rec
+        try:
+            # 墙钟起点（与页面 performance.timeOrigin 同一时钟）：冷启动 TTI 从进程创建算起
+            self.spawned_at_ms = time.time() * 1000
+            self.proc = subprocess.Popen([str(self.sb.exe), *self.args], cwd=self.sb.bin,
+                                         env=env, stdout=log, stderr=log)
+            rec.pid = self.proc.pid
+            rec.mark("进程已创建")
+            if self.cdp:
+                self._connect(timeout)
+                rec.mark("页面就绪")
+        except Exception as e:
+            log.flush()
+            rec.error = f"{type(e).__name__}: {e}"
+            self._fail_launch(rec, log_path)
+            raise StartupError(rec.summary()) from e
+        finally:
+            log.close()
         if self.cdp:
-            self._connect(timeout)
+            HEALTH.record_ok()
+            # 证据：WebView2 实际用的是哪个配置目录（沙箱变量被丢弃时只有真实目录出现）
+            rec.env["profile_in_sandbox"] = str((self.sb.root / "WebView2" / "EBWebView").exists())
+        rec.write(self.sb.artifacts)
         return self
+
+    def _prepare_elevated_webview2(self) -> None:
+        """CI 提权宿主：WebView2 丢弃 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS，CDP 端口改经 HKLM 策略下发。
+        （CI 实测：用户数据目录仍落在沙箱 WebView2\\EBWebView，只有附加参数被丢。）"""
+        webview2_policy.set_args(webview2_args(self.port))
+
+    def _fail_launch(self, rec: LaunchRecord, log_path: Path) -> None:
+        """记录退出码/存活、日志尾部；落盘 launch-N.json 与 process-N.log，更新熔断计数。"""
+        if self.proc is not None:
+            code = self.proc.poll()
+            rec.alive, rec.exit_code = code is None, code
+        rec.log_tail = launchdiag.tail_text(log_path)
+        snap = launchdiag.windows_snapshot(self.sb.root)
+        if snap:
+            (self.sb.artifacts / f"launch-{rec.n}-system.json").write_text(
+                json.dumps(snap, ensure_ascii=False, indent=1), encoding="utf-8")
+        out = rec.write(self.sb.artifacts)
+        try:
+            (self.sb.artifacts / log_path.name).write_bytes(log_path.read_bytes())
+        except OSError:
+            pass
+        if os.environ.get("CI"):
+            # CI 一次性 runner：Tauri 日志走真实 %LOCALAPPDATA%\com.taglauncher.app\logs（不认沙箱变量），
+            # 附上最新日志尾部；本机运行不读用户真实目录。
+            try:
+                logs = sorted((real_dirs()[1] / "logs").glob("*.log"), key=lambda f: f.stat().st_mtime)
+                if logs:
+                    (self.sb.artifacts / f"tauri-log-{rec.n}.txt").write_text(
+                        launchdiag.tail_text(logs[-1], 200), encoding="utf-8")
+            except OSError:
+                pass
+        if self.cdp:
+            HEALTH.record_fail(rec.summary(), str(out))
 
     def _connect(self, timeout: float) -> None:
         endpoint = f"http://127.0.0.1:{self.port}"
         deadline = time.monotonic() + timeout
+        rec = getattr(self, "_launch", None)
+        mark = rec.mark if rec else (lambda _p: None)
         while True:
             if self.proc.poll() is not None:
                 raise RuntimeError(f"应用进程提前退出 code={self.proc.returncode} sandbox={self.sb.root}")
@@ -72,11 +149,27 @@ class AppSession:
                 if time.monotonic() > deadline:
                     raise RuntimeError(f"WebView2 CDP 端口不可用: {self.sb.root}")
                 time.sleep(0.2)
-        # 偶发：首个 CDP 连接错过页面 target（一直看不到 tauri.localhost）。每 10s 无果就重连一次。
+        mark("CDP 端口可用")
+        # 先经 /json/list 等应用页面 target 出现再连：过早 connect_over_cdp 偶发错过页面，
+        # 原先只能 4s 后重连（冷启动 TTI 失败即源于此）。等不到也继续，走下面的重连兜底。
+        target_deadline = min(deadline, time.monotonic() + 15)
+        while time.monotonic() < target_deadline and self.proc.poll() is None:
+            try:
+                with urllib.request.urlopen(endpoint + "/json/list", timeout=1) as resp:
+                    targets = json.loads(resp.read().decode("utf-8", "replace"))
+                if any(t.get("type") == "page" and str(t.get("url", "")).startswith("http://tauri.localhost") for t in targets):
+                    mark("页面 target 出现")
+                    break
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.05)
+        # 偶发：首个 CDP 连接错过页面 target（一直看不到 tauri.localhost）。每 4s 无果就重连一次
+        # （原 10s 晚于应用 8s 的启动期更新检查，f1c4766 实测由此吞掉更新检查用例）。
         page, seen = None, set()
         while page is None:
             self.browser = self.pw.chromium.connect_over_cdp(endpoint)
-            reconnect_at = time.monotonic() + 10
+            mark("CDP 已连接")
+            reconnect_at = time.monotonic() + 4
             while page is None and time.monotonic() < min(deadline, reconnect_at):
                 for ctx in self.browser.contexts:
                     for cand in ctx.pages:
@@ -89,19 +182,30 @@ class AppSession:
                         break
                 if page is None:
                     time.sleep(0.2)
+            if rec:
+                rec.seen_urls = sorted(seen)
             if page is None:
                 # 不调用 browser.close()：CDP 连接上 close 可能连带关闭 WebView；旧连接随进程结束释放
                 if time.monotonic() >= deadline or self.proc.poll() is not None:
                     raise RuntimeError(f"找不到应用页面 seen={sorted(seen)} alive={self.proc.poll() is None}")
         # 桩脚本需要在应用脚本之前生效：注册 init script 后立刻 reload。
         # 应用的启动期更新检查有 8s 延迟，reload 发生在其之前（spike 验证）。
+        mark("找到应用页面")
         page.context.add_init_script(STUB_JS)
+        if not self.throttle_update and self.reload:
+            # 测启动期更新检查时，要从"从未检查过"开始。CI 上找到页面可能晚于 8s（f1c4766 实测
+            # 10.6s），重载前的页面已跑过一次检查并写下节流时间戳，重载后的检查会被 24h 节流吞掉。
+            # 只在本标签页第一次加载时清理（sessionStorage 跨 reload 保留），用例自己的二次重载仍走节流。
+            page.context.add_init_script(UPDATE_RESET_JS)
         page.evaluate(STUB_JS)
         if self.reload:
             page.reload(wait_until="domcontentloaded")
         self.page = page
         page.on("pageerror", lambda err: self.page_errors.append(str(err)))
+        if self.reload:
+            mark("reload 完成")
         page.locator('[data-region="root"]').wait_for(state="attached", timeout=60_000)
+        mark("应用根节点就绪")
         if self.throttle_update:
             page.evaluate("localStorage.setItem('taglauncher.update_last_check_ts', String(Date.now()))")
         if self.dismiss_welcome:
@@ -270,6 +374,11 @@ class AppSession:
         """卡片/行定位：以 item id 为准（data-selectable-item-id）。"""
         return self.page.locator(f'[data-selectable-item-id="{self.item(name)["id"]}"]')
 
+    def select_card(self, name: str) -> None:
+        """单击名称选中。不点行中心：窄窗口（CI 屏幕把窗口夹到 ~1040px）下列表行中心正落在
+        标签列的「+ 添加标签」按钮上，会弹出标签编辑框而不是选中（a245b25 failure.png 实证）。"""
+        self.card(name).get_by_role("heading", level=3).click()
+
     def card_by_id(self, item_id: int):
         return self.page.locator(f'[data-selectable-item-id="{item_id}"]')
 
@@ -284,7 +393,8 @@ class AppSession:
             " && e.classList.contains('bg-[var(--accent-primary-bg)]'))).map(e => e.dataset.selectableItemId)")]
 
     def context_menu(self, name: str):
-        self.card(name).click(button="right")
+        # 右键名称而非行中心：理由同 select_card（行中心在窄窗口落在「+ 添加标签」上）
+        self.card(name).get_by_role("heading", level=3).click(button="right")
         menu = self.page.locator("[data-context-menu][role=menu]").first
         menu.wait_for(timeout=5000)
         return menu

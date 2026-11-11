@@ -172,7 +172,9 @@ def test_linked_truncated_over_50000(app, sandbox):
                600, lambda: dbh.scalar(sandbox.db_path, "SELECT COUNT(*) FROM items"))
     app.reload_page()
     app.sidebar_tab("文件柜")
-    assert cab_row(app, "超大柜").locator('[title*="只同步了一部分"]').count() == 1
+    # 重载后文件柜列表异步拉取，标记稍后才渲染（e6aaf0f：断言时为 0，失败快照里已出现）
+    wait_until(lambda: cab_row(app, "超大柜").locator('[title*="只同步了一部分"]').count() == 1, 10,
+               lambda: cab_row(app, "超大柜").inner_text())
     cab_row(app, "超大柜").click()
     app.page.locator("[data-region=linked-cabinet-bar]").get_by_role("status").filter(
         has_text="只同步了一部分").wait_for(timeout=30000)

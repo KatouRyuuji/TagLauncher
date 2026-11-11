@@ -37,6 +37,9 @@ describe("appStore", () => {
       shortcutsHelpOpen: false,
       previewItemId: null,
       missingReviewOpen: false,
+      tagFilterMode: "descendants",
+      tagEditorItemId: null,
+      batchAddTagOpen: false,
     });
   });
 
@@ -235,6 +238,16 @@ describe("appStore", () => {
     useAppStore.setState({ libraryBrowseRoot: "D:\\Lib", selectedCabinetId: null });
     useAppStore.getState().setShowFavorites(true);
     expect(useAppStore.getState().libraryBrowseRoot).toBeNull();
+  });
+
+  it("setTagFilterMode 写入 workspace_prefs，默认含后代", () => {
+    expect(useAppStore.getState().tagFilterMode).toBe("descendants");
+    useAppStore.getState().setTagFilterMode("direct");
+    const stored = JSON.parse(localStorage.getItem("taglauncher.workspace_prefs") ?? "{}") as {
+      tagFilterMode?: string;
+    };
+    expect(useAppStore.getState().tagFilterMode).toBe("direct");
+    expect(stored.tagFilterMode).toBe("direct");
   });
 
   it("setHideMissing 写入 workspace_prefs，清除筛选后写回 false", () => {

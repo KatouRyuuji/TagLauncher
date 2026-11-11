@@ -254,8 +254,12 @@ export async function removeTagRelation(parentId: number, childId: number): Prom
 
 /** 后端搜索（保留路径：主界面使用前端内存搜索；此后端 FTS5 能力为有意保留的
  *  声明边界，见开发手册「items_fts（FTS5 全文搜索虚拟表）」。契约测试据此保留本封装，勿删。） */
-export async function searchItems(query: string, tagIds: number[]): Promise<ItemWithTags[]> {
-  return invokeCmd("search_items", { query, tagIds });
+export async function searchItems(
+  query: string,
+  tagIds: number[],
+  includeDescendants = true,
+): Promise<ItemWithTags[]> {
+  return invokeCmd("search_items", { query, tagIds, includeDescendants });
 }
 
 /** 读取同义词分组（每组内词互为同义，供搜索扩展） */
