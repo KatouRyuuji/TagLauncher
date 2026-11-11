@@ -273,7 +273,7 @@ jobs:
           TL_E2E_DESKTOP: '1'
           TL_E2E_BUILD: release
           PYTHONIOENCODING: utf-8
-        run: python -m pytest -c e2e/pytest.ini e2e/tests/desktop/test_desktop_shell.py e2e/tests/desktop/test_desktop_nsis.py e2e/tests/ui/test_quick.py::test_quick_window_performance e2e/tests/ui/test_quick.py::test_idle_cpu_with_both_windows_hidden --allow-physical-input --window-countdown 0 -s --junitxml=.tmp-test/e2e/desktop-release-run/junit.xml
+        run: python -m pytest -c e2e/pytest.ini e2e/tests/desktop/test_desktop_shell.py e2e/tests/desktop/test_desktop_nsis.py e2e/tests/ui/test_quick.py::test_quick_window_performance e2e/tests/ui/test_quick.py::test_idle_cpu_with_both_windows_hidden e2e/tests/ui/test_pin.py::test_pin_resident_memory_and_idle_cpu --allow-physical-input --window-countdown 0 -s --junitxml=.tmp-test/e2e/desktop-release-run/junit.xml
 
       - name: Release summary
         if: always()

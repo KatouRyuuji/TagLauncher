@@ -3122,5 +3122,104 @@
 "automation": "静态检查（安装/卸载测试按作者决定不做）",
 "priority": "P2",
 "coverage": "无"
+},
+{
+"id": "E-PIN-01",
+"module": "钉住视图",
+"scenario": "默认关闭；以文件柜为来源的浮动钉住视图",
+"steps": "设置未开启→无来源时开启→选父柜开启→关闭",
+"expect": "默认关闭且不建窗口；无来源开启报错；父柜视图含子柜成员（F16 口径）、标题为柜路径；关闭后快速搜索未开则销毁窗口",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P1",
+"coverage": "F-PIN 钉住视图"
+},
+{
+"id": "E-PIN-02",
+"module": "钉住视图",
+"scenario": "以标签为来源：含子标签、实时同步、打开、筛选、来源删除",
+"steps": "选父标签；tl 改标签（外部写）与主窗改标签（应用内写）；双击条目；筛选；删除标签",
+"expect": "子标签条目也在；两种写入都在同步阈值内出现；双击调用打开；筛选生效；来源删除显示失效提示",
+"layer": "UI",
+"automation": "CDP+tl",
+"priority": "P1",
+"coverage": "F-PIN 钉住视图"
+},
+{
+"id": "E-PIN-03",
+"module": "钉住视图",
+"scenario": "钉住视图与快速搜索共用 quick 窗口",
+"steps": "钉住显示时呼出快速搜索→隐藏",
+"expect": "切为搜索尺寸与内容；隐藏后回到钉住视图且尺寸不变；不新建 WebView",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P1",
+"coverage": "F-PIN 钉住视图"
+},
+{
+"id": "E-PIN-04",
+"module": "钉住视图",
+"scenario": "边缘抽屉收起/展开尺寸与诊断",
+"steps": "切抽屉模式→pin_expand→pin_collapse",
+"expect": "收起为 ≤6 逻辑 px 把手；展开 320；收起把手不计入数据同步的可见窗口；前台钩子已装",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P1",
+"coverage": "F-PIN 钉住视图"
+},
+{
+"id": "E-PERF-PIN",
+"module": "钉住视图",
+"scenario": "钉住视图常驻内存增量与空闲 CPU",
+"steps": "5k 库、300 项柜；开启浮动窗 / 抽屉各静置 120 s",
+"expect": "常驻内存增量 ≤60 MB；两种状态空闲 CPU ≤ 单核 1%",
+"layer": "UI",
+"automation": "CDP+进程采样",
+"priority": "P1",
+"coverage": "F-PIN 钉住视图"
+},
+{
+"id": "D-PIN-01",
+"module": "钉住视图",
+"scenario": "真实鼠标碰边滑出、划过不弹、离开收回",
+"steps": "鼠标停在把手边缘像素；快速划过；移出面板",
+"expect": "停留滑出到 320 且仍贴边、置顶；划过不弹；离开收回为把手",
+"layer": "desktop",
+"automation": "真实输入",
+"priority": "P1",
+"coverage": "F-PIN 钉住视图"
+},
+{
+"id": "D-PIN-02",
+"module": "钉住视图",
+"scenario": "前台全屏时抽屉不弹出",
+"steps": "普通前台替身→全屏替身→碰边→回普通前台",
+"expect": "全屏时把手隐藏、碰边与 pin_expand 都不弹；离开全屏后把手恢复且可滑出",
+"layer": "desktop",
+"automation": "真实输入+前台替身",
+"priority": "P1",
+"coverage": "F-PIN 钉住视图"
+},
+{
+"id": "D-PIN-03",
+"module": "钉住视图",
+"scenario": "拖动抽屉换边与重启位置记忆",
+"steps": "展开后拖标题到左侧偏上松手→重启",
+"expect": "松手吸附左边并记录显示器/边/上下比例；重启后把手在原处",
+"layer": "desktop",
+"automation": "真实输入+重启",
+"priority": "P1",
+"coverage": "F-PIN 钉住视图"
+},
+{
+"id": "D-PIN-04",
+"module": "钉住视图",
+"scenario": "浮动窗拖动记忆与托盘开关",
+"steps": "拖动浮动窗→重启；托盘菜单「隐藏/显示钉住视图」",
+"expect": "重启后在原位置；托盘菜单项可隐藏与重新显示",
+"layer": "desktop",
+"automation": "真实输入+托盘",
+"priority": "P2",
+"coverage": "F-PIN 钉住视图"
 }
 ]
