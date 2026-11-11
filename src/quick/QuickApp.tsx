@@ -23,6 +23,8 @@ import { recordQuickLoad, recordQuickMemory, recordQuickQuery, recordQuickSummon
 import { QUICK_COLLECT_EVENT, type CollectSession } from "../lib/collect";
 import { QuickCollect } from "./QuickCollect";
 import { ItemTypeIcon, ItemVisualIcon } from "../components/ItemVisualIcon";
+import type { PinViewState } from "../lib/desktopShortcut";
+import { PinView } from "./PinView";
 
 export const QUICK_SHOWN_EVENT = "quick-shown";
 /** 只给前 N 条取缩略图/程序图标（§3.3 数据投影），其余行只画类型图标，不发 IPC */
@@ -43,7 +45,16 @@ function useThemeFollower() {
   useEffect(() => {
     const apply = (raw: string | null) => {
       const snapshot = parseThemeSnapshot(raw);
-      if (snapshot) applyThemeSnapshot(snapshot);
+      if (snapshot) {
+        applyThemeSnapshot(snapshot);
+        return;
+      }
+      // 主窗还没写过快照（极少见：首启即被右键菜单拉起）：套默认主题令牌，不让样式落到浏览器默认色
+      void import("../themes/tokens").then(({ DEFAULT_THEME_VARIABLES }) => {
+        if (localStorage.getItem(THEME_SNAPSHOT_KEY)) return;
+        const vars = Object.fromEntries(Object.entries(DEFAULT_THEME_VARIABLES).map(([k, v]) => [`--${k}`, v]));
+        applyThemeSnapshot({ vars, attrs: {} });
+      });
     };
     apply(localStorage.getItem(THEME_SNAPSHOT_KEY));
     const onStorage = (e: StorageEvent) => {
@@ -123,12 +134,53 @@ function useQuickDrop(): { dragging: number | null; dropError: string | null } {
   return { dragging, dropError };
 }
 
+/** 后端 pin-surface 事件：quick 窗口当前是搜索表面还是钉住视图表面 */
+export const PIN_SURFACE_EVENT = "pin-surface";
+
+/** 切换表面：同步写 html[data-surface]（CSS 据此显示 / 隐藏两套界面，不卸载组件，切回搜索可立即聚焦） */
+export function setSurface(surface: "search" | "pin"): void {
+  document.documentElement.dataset.surface = surface;
+}
+
+/** 钉住视图状态：挂载时先拉一次（窗口创建时可能错过事件），之后跟 pin-surface 事件 */
+function usePinView(): PinViewState | null {
+  const [view, setView] = useState<PinViewState | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    const apply = (v: PinViewState) => {
+      setSurface(v.surface);
+      setView(v);
+    };
+    void listen<PinViewState>(PIN_SURFACE_EVENT, (event) => apply(event.payload))
+      .then((fn) => {
+        if (disposed) fn();
+        else stop = fn;
+      })
+      .catch(() => {});
+    void db.pinState().then((v) => { if (!disposed) apply(v); }).catch(() => {});
+    return () => {
+      disposed = true;
+      stop?.();
+    };
+  }, []);
+  return view;
+}
+
 export function QuickApp() {
   const [collect, closeCollect] = useCollectSession();
   const { dragging, dropError } = useQuickDrop();
+  const pin = usePinView();
+  // 搜索预热（空查询 → 后端建索引 + 渲染结果行）推迟到搜索表面第一次出现：
+  // 只开钉住视图时不为用不到的搜索常驻内存。一旦用过搜索就保持预热。
+  const [searchArmed, setSearchArmed] = useState(false);
+  useEffect(() => {
+    if (pin && pin.surface === "search") setSearchArmed(true);
+  }, [pin]);
   return (
     <>
-      {collect ? <QuickCollectShell session={collect} onClose={closeCollect} /> : <QuickSearch dropError={dropError} />}
+      {pin && pin.settings.enabled && pin.settings.source && <PinView view={pin} />}
+      {collect ? <QuickCollectShell session={collect} onClose={closeCollect} /> : <QuickSearch dropError={dropError} armed={searchArmed} />}
       {dragging !== null && (
         <div className="quick-drop-overlay" data-testid="quick-drop-overlay">
           {dragging > 0 ? `松开即收纳 ${dragging} 项` : "松开即收纳"}
@@ -168,7 +220,7 @@ function useClipboardCandidates(): [string[], () => void] {
   return [paths, useCallback(() => setPaths([]), [])];
 }
 
-function QuickSearch({ dropError }: { dropError: string | null }) {
+function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | null; armed: boolean }) {
   useThemeFollower();
   const [clipboardPaths, clearClipboardPaths] = useClipboardCandidates();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -196,7 +248,11 @@ function QuickSearch({ dropError }: { dropError: string | null }) {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  // 唤出事件也会武装（事件可能先于 pin-surface 到达）
+  const [shown, setShown] = useState(false);
+  const armed = armedByApp || shown;
   useEffect(() => {
+    if (!armed) return;
     const seq = ++searchSeq.current;
     const started = performance.now();
     runQuickSearch({ query, mode: prefs.searchMode, hideMissing: prefs.hideMissing, limit: QUICK_RESULT_LIMIT })
@@ -209,7 +265,7 @@ function QuickSearch({ dropError }: { dropError: string | null }) {
       .catch((e: unknown) => {
         if (seq === searchSeq.current) setStatus({ text: `搜索失败：${errorText(e)}`, tone: "error" });
       });
-  }, [query, prefs.searchMode, prefs.hideMissing, dataTick]);
+  }, [armed, query, prefs.searchMode, prefs.hideMissing, dataTick]);
   // 新词的结果到达前沿用上一次结果，避免列表闪空
   const results = res?.items ?? [];
   const current = results[Math.min(selected, results.length - 1)] ?? null;
@@ -228,6 +284,9 @@ function QuickSearch({ dropError }: { dropError: string | null }) {
     let disposed = false;
     let stop: (() => void) | undefined;
     void listen<{ t0Ms?: number; keepInput?: boolean }>(QUICK_SHOWN_EVENT, (event) => {
+      // 唤出快速搜索：先切到搜索表面（钉住视图共用本窗口），否则输入框在 display:none 里聚焦不了
+      setSurface("search");
+      setShown(true);
       setPicker(null);
       setStatus(null);
       setPrefs(readPrefs());

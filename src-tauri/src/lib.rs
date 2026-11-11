@@ -5,6 +5,9 @@ mod data_sync;
 /// F18 托盘 / 全局快捷键 / 关闭行为（仅 GUI 使用）
 mod desktop;
 mod explorer_selection;
+/// 钉住视图 / 边缘抽屉（复用快速窗 WebView）
+mod pin;
+mod pin_strip;
 mod quick;
 pub mod search;
 /// 资源管理器右键菜单 / 发送到（阶段③）
@@ -27,6 +30,10 @@ pub use db::Database;
 // 桌面驻留命令（含 #[tauri::command] 生成的 __cmd__ 宏）需在 generate_handler! 处可见
 use desktop::*;
 // 快速搜索窗命令（阶段②）
+use pin::{
+    get_pin_settings, pin_collapse, pin_diag, pin_expand, pin_handle_color, pin_items, pin_state,
+    set_pin_settings,
+};
 use quick::{quick_hide, quick_locate_in_main, quick_open};
 // 收纳会话与右键菜单（阶段③）
 use collect::{
@@ -239,7 +246,10 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == quick::QUICK_LABEL {
                     api.prevent_close();
-                    let _ = window.hide();
+                    // 钉住视图表面上 Alt+F4 不关（在设置 / 托盘里关闭钉住视图）
+                    if pin::surface() == pin::Surface::Search {
+                        quick::hide(window.app_handle());
+                    }
                     return;
                 }
             }
@@ -497,6 +507,14 @@ pub fn run() {
             set_close_action,
             set_hotkey_ignore_fullscreen,
             set_quick_options,
+            get_pin_settings,
+            set_pin_settings,
+            pin_state,
+            pin_diag,
+            pin_items,
+            pin_expand,
+            pin_collapse,
+            pin_handle_color,
             // 项目 CRUD
             add_item,
             add_items,

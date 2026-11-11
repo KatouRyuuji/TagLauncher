@@ -167,16 +167,21 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .build()
         .map_err(|e| format!("创建快速搜索窗失败：{e}"))?;
     // 失焦自动隐藏（Esc / 打开对象 / 点到别处都应收起）
-    let w = window.clone();
     let handle = app.clone();
-    window.on_window_event(move |event| {
-        if let tauri::WindowEvent::Focused(false) = event {
-            // 收纳会话进行中也按选项走：不自动隐藏时由 Esc / 处理完收起
-            if options().hide_on_blur {
-                let _ = w.hide();
-                after_hidden(&handle);
+    window.on_window_event(move |event| match event {
+        tauri::WindowEvent::Focused(false) => {
+            if crate::pin::surface() == crate::pin::Surface::Pin {
+                // 钉住表面：只有展开的抽屉失焦收回，浮动窗不动
+                crate::pin::on_blur(&handle);
+            } else if options().hide_on_blur {
+                // 收纳会话进行中也按选项走：不自动隐藏时由 Esc / 处理完收起
+                hide(&handle);
             }
         }
+        tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+            crate::pin::on_moved(&handle);
+        }
+        _ => {}
     });
     Ok(window)
 }
@@ -247,12 +252,16 @@ fn place_on_target_monitor(app: &AppHandle, window: &WebviewWindow) {
 /// 产品路径（热键/托盘/主窗按钮）一律 true。
 pub fn show(app: &AppHandle, t0_ms: u64, activate: bool) -> Result<(), String> {
     let window = ensure_window(app)?;
+    // 钉住视图共用本窗口：先切回搜索表面（尺寸 / 置顶 / 前端表面）
+    crate::pin::enter_search(&window);
     VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
     if LOW_MEMORY.load(Ordering::SeqCst) {
         set_memory_level(&window, false);
     }
     place_on_target_monitor(app, &window);
     window.show().map_err(|e| e.to_string())?;
+    // 钉住表面用原生 ShowWindow 显隐，tao 的可见标志可能停在「可见」而窗口其实已隐藏 → 上面的 show 是空操作；补一次原生显示
+    native_show(&window, activate);
     // 快速窗可见期间按可见间隔检测外部写入，唤出时先检测一次
     crate::data_sync::poke();
     if activate {
@@ -268,9 +277,50 @@ pub fn show(app: &AppHandle, t0_ms: u64, activate: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn native_show(window: &tauri::WebviewWindow, activate: bool) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_SHOW, SW_SHOWNOACTIVATE};
+        if let Ok(h) = window.hwnd() {
+            // SAFETY：hwnd 来自本进程窗口
+            unsafe {
+                ShowWindow(h.0 as _, if activate { SW_SHOW } else { SW_SHOWNOACTIVATE });
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (window, activate);
+}
+
+/// 同 [`native_show`]：tao 标志可能停在「隐藏」（钉住表面原生显示过），tauri hide 会跳过
+fn native_hide(window: &tauri::WebviewWindow) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+        if let Ok(h) = window.hwnd() {
+            // SAFETY：hwnd 来自本进程窗口
+            unsafe {
+                ShowWindow(h.0 as _, SW_HIDE);
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = window;
+}
+
 pub fn hide(app: &AppHandle) {
+    // 钉住视图开启：搜索收起 = 还原为钉住视图（同一个 WebView），不隐藏窗口
+    if crate::pin::active() {
+        if crate::pin::surface() == crate::pin::Surface::Search {
+            if let Err(e) = crate::pin::restore(app) {
+                log::warn!("[quick] 还原钉住视图失败：{e}");
+            }
+        }
+        return;
+    }
     if let Some(w) = quick_window(app) {
         let _ = w.hide();
+        native_hide(&w);
         after_hidden(app);
     }
 }
@@ -352,9 +402,11 @@ fn set_memory_level(window: &WebviewWindow, low: bool) {
 /// 热键：可见且有焦点 → 收起；否则唤出。
 pub fn toggle(app: &AppHandle, t0_ms: u64) {
     if let Some(w) = quick_window(app) {
-        if w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false) {
-            let _ = w.hide();
-            after_hidden(app);
+        if w.is_visible().unwrap_or(false)
+            && w.is_focused().unwrap_or(false)
+            && crate::pin::surface() == crate::pin::Surface::Search
+        {
+            hide(app);
             return;
         }
     }

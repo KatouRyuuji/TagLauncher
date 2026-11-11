@@ -27,6 +27,7 @@ pub const SETTINGS_CHANGED_EVENT: &str = "desktop-settings-changed";
 const MENU_SHOW: &str = "tray-show";
 const MENU_QUIT: &str = "tray-quit";
 const MENU_QUICK: &str = "tray-quick";
+const MENU_PIN: &str = "tray-pin";
 /// 前台全屏时被忽略的热键：窗口期内连按 3 次强制执行
 const FORCE_PRESSES: usize = 3;
 const FORCE_WINDOW: Duration = Duration::from_secs(2);
@@ -211,8 +212,13 @@ pub fn covers_monitor(window: (i32, i32, i32, i32), monitor: (i32, i32, i32, i32
     window.0 <= monitor.0 && window.1 <= monitor.1 && window.2 >= monitor.2 && window.3 >= monitor.3
 }
 
-#[cfg(windows)]
 fn foreground_is_fullscreen() -> bool {
+    fullscreen_foreground_monitor().is_some()
+}
+
+/// 前台是全屏程序时返回它所在显示器（HMONITOR 数值），否则 None。钉住视图抽屉据此隐藏把手。
+#[cfg(windows)]
+pub fn fullscreen_foreground_monitor() -> Option<isize> {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
@@ -224,44 +230,45 @@ fn foreground_is_fullscreen() -> bool {
     unsafe {
         let hwnd = GetForegroundWindow();
         if hwnd.is_null() {
-            return false;
+            return None;
         }
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, &mut pid);
         if pid == std::process::id() {
-            return false;
+            return None;
         }
         // 桌面与任务栏铺满屏幕但不是「全屏程序」
         let mut buf = [0u16; 64];
         let n = GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32).max(0) as usize;
         let class = String::from_utf16_lossy(&buf[..n]);
         if matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd") {
-            return false;
+            return None;
         }
         let mut rect: RECT = std::mem::zeroed();
         if GetWindowRect(hwnd, &mut rect) == 0 {
-            return false;
+            return None;
         }
         let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
         if monitor.is_null() {
-            return false;
+            return None;
         }
         let mut info: MONITORINFO = std::mem::zeroed();
         info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
         if GetMonitorInfoW(monitor, &mut info) == 0 {
-            return false;
+            return None;
         }
         let m = info.rcMonitor;
         covers_monitor(
             (rect.left, rect.top, rect.right, rect.bottom),
             (m.left, m.top, m.right, m.bottom),
         )
+        .then_some(monitor as isize)
     }
 }
 
 #[cfg(not(windows))]
-fn foreground_is_fullscreen() -> bool {
-    false
+pub fn fullscreen_foreground_monitor() -> Option<isize> {
+    None
 }
 
 // ───────────────────────────── 运行期状态 ─────────────────────────────
@@ -304,6 +311,8 @@ pub struct DesktopSettings {
     pub tray_active: bool,
     /// 快速窗选项（失焦隐藏 / 保留输入 / 唤出显示器）
     pub quick: crate::quick::QuickOptions,
+    /// 钉住视图设置（托盘菜单据此出现「显示 / 隐藏钉住视图」）
+    pub pin: crate::pin::PinSettings,
 }
 
 impl DesktopState {
@@ -332,6 +341,7 @@ impl DesktopState {
             launch_mode: launch_mode(),
             tray_active: app.tray_by_id(TRAY_ID).is_some(),
             quick: crate::quick::options(),
+            pin: crate::pin::settings(),
         }
     }
 }
@@ -486,6 +496,17 @@ pub fn tray_menu_model(settings: &DesktopSettings) -> Vec<TrayEntry> {
             label: format!("快速搜索（{}）", display_accelerator(acc)),
         });
     }
+    // 已选好来源时出现钉住视图开关
+    if settings.pin.source.is_some() {
+        model.push(TrayEntry::Item {
+            id: MENU_PIN,
+            label: if settings.pin.enabled {
+                "隐藏钉住视图".to_string()
+            } else {
+                "显示钉住视图".to_string()
+            },
+        });
+    }
     model.extend([
         TrayEntry::Separator,
         TrayEntry::Item {
@@ -533,6 +554,17 @@ fn create_tray(app: &AppHandle, menu: &Menu<tauri::Wry>) -> Result<(), String> {
         .on_menu_event(|app, event| match event.id().as_ref() {
             MENU_SHOW => show_main_window(app),
             MENU_QUICK => crate::quick::toggle(app, crate::quick::now_ms()),
+            MENU_PIN => {
+                // 可能要创建窗口：离开主线程
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    let mut next = crate::pin::settings();
+                    next.enabled = !next.enabled;
+                    if let Err(e) = crate::pin::apply_settings(&app, next) {
+                        log::warn!("[desktop] 切换钉住视图失败：{e}");
+                    }
+                });
+            }
             // 真正退出：走正常退出流程（RunEvent::Exit 里的清理照常执行）
             MENU_QUIT => app.exit(0),
             _ => {}
@@ -554,6 +586,11 @@ fn create_tray(app: &AppHandle, menu: &Menu<tauri::Wry>) -> Result<(), String> {
         .build(app)
         .map(|_| ())
         .map_err(|e| format!("创建托盘图标失败：{e}"))
+}
+
+/// 设置变化后重建托盘菜单并广播（钉住视图等模块用）
+pub fn refresh_tray(app: &AppHandle) {
+    sync_tray(app);
 }
 
 /// 按当前设置建立/重建/移除托盘，并广播设置变化。
@@ -662,8 +699,14 @@ pub fn init(app: &AppHandle, mode: LaunchMode) {
         .registered
         .contains_key(&HotkeyAction::OpenQuick);
     app.manage(state);
+    crate::pin::init(app);
     sync_tray(app);
-    crate::quick::sync_window(app, quick_enabled);
+    crate::quick::sync_window(app, quick_enabled || crate::pin::active());
+}
+
+/// quick 窗口是否需要常驻：快速搜索开启，或钉住视图开启（共用同一个 WebView）
+pub fn quick_window_needed(app: &AppHandle) -> bool {
+    quick_enabled(app) || crate::pin::active()
 }
 
 /// 快速搜索窗是否开启（「打开快速搜索窗」已绑定快捷键）
@@ -790,7 +833,7 @@ pub async fn set_hotkey(
         }
     }
     if action == HotkeyAction::OpenQuick {
-        crate::quick::sync_window(&app, quick_enabled(&app));
+        crate::quick::sync_window(&app, quick_window_needed(&app));
     }
     sync_tray(&app);
     Ok(state.snapshot(&app))
@@ -1002,6 +1045,7 @@ mod tests {
             launch_mode: LaunchMode::Show,
             tray_active: true,
             quick: crate::quick::QuickOptions::default(),
+            pin: crate::pin::PinSettings::default(),
         }
     }
 
@@ -1056,6 +1100,25 @@ mod tests {
         assert!(!tray_menu_model(&settings_with(None))
             .iter()
             .any(|e| matches!(e, TrayEntry::Item { id, .. } if *id == MENU_QUICK)));
+    }
+
+    #[test]
+    fn tray_menu_has_pin_toggle_only_when_source_chosen() {
+        let has_pin = |s: &DesktopSettings| {
+            tray_menu_model(s).into_iter().find_map(|e| match e {
+                TrayEntry::Item { id, label } if id == MENU_PIN => Some(label),
+                _ => None,
+            })
+        };
+        let mut s = settings_with(None);
+        assert_eq!(has_pin(&s), None, "未选来源不出现");
+        s.pin.source = Some(crate::pin::PinSource::Cabinet(3));
+        assert_eq!(has_pin(&s).as_deref(), Some("显示钉住视图"));
+        s.pin.enabled = true;
+        assert_eq!(has_pin(&s).as_deref(), Some("隐藏钉住视图"));
+        // 位置在「退出」之前
+        let model = tray_menu_model(&s);
+        assert_eq!(model.last(), Some(&TrayEntry::Item { id: MENU_QUIT, label: "退出".into() }));
     }
 
     #[test]

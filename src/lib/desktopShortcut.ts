@@ -29,6 +29,34 @@ export interface DesktopSettings {
   trayActive: boolean;
   /** 快速窗选项 */
   quick: QuickOptions;
+  /** 钉住视图设置（托盘「显示 / 隐藏钉住视图」据此出现） */
+  pin: PinSettings;
+}
+
+/** 钉住视图内容来源：一个标签（含子标签）或一个文件柜（含子柜） */
+export type PinSource = { kind: "tag"; id: number } | { kind: "cabinet"; id: number };
+export type PinMode = "float" | "drawer";
+export type PinEdge = "left" | "right";
+
+export interface PinSettings {
+  /** 默认关 */
+  enabled: boolean;
+  source: PinSource | null;
+  /** 浮动窗 / 边缘抽屉（自动隐藏） */
+  mode: PinMode;
+  /** 抽屉贴哪一边 */
+  edge: PinEdge;
+  /** 浮动窗置顶（抽屉总是置顶） */
+  topmost: boolean;
+}
+
+export const DEFAULT_PIN_SETTINGS: PinSettings = { enabled: false, source: null, mode: "float", edge: "right", topmost: true };
+
+/** quick 窗口当前表面与抽屉状态（后端 pin-surface 事件 / pin_state） */
+export interface PinViewState {
+  surface: "search" | "pin";
+  settings: PinSettings;
+  drawer: "collapsed" | "expanded" | "hiddenFullscreen";
 }
 
 export type QuickMonitor = "cursor" | "main";

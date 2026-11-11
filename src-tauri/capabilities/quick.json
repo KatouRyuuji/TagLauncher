@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "quick",
-  "description": "全局快速搜索窗：只需要事件与窗口显示/隐藏；数据与打开/打标签都走应用自身命令",
+  "description": "全局快速搜索窗：只需要事件与窗口显示/隐藏（钉住视图：拖动标题移动）；数据与打开/打标签都走应用自身命令",
   "windows": ["quick"],
   "permissions": [
     "core:default",
     "core:window:allow-hide",
     "core:window:allow-show",
-    "core:window:allow-set-focus"
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging"
   ]
 }

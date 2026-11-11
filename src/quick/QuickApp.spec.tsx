@@ -47,6 +47,10 @@ vi.mock("../lib/db", () => ({
     return { total: ids.length, indexed: fixtures.length, items: ids.map((id) => [...fixtures, ...manyItems].find((it) => it.id === id)!) };
   }),
   quickHide: vi.fn(async () => {}),
+  pinState: vi.fn(async () => pinStub.view),
+  pinItems: vi.fn(async () => ({ source: { kind: "cabinet", id: 10 }, title: "项目", total: 1, items: [fixtures[0]] })),
+  pinExpand: vi.fn(async () => true),
+  pinCollapse: vi.fn(async () => true),
   getItemVisual: vi.fn(async (id: number) => {
     const it = [...fixtures, ...manyItems].find((x) => x.id === id)!;
     return { path: it.path, icon_path: it.type === "exe" ? `C:/icons/${id}.png` : null };
@@ -75,6 +79,9 @@ vi.mock("../lib/db", () => ({
   })),
 }));
 
+const pinStub = vi.hoisted(() => ({
+  view: { surface: "search", settings: { enabled: false, source: null, mode: "float", edge: "right", topmost: true }, drawer: "collapsed" } as unknown,
+}));
 const collect = vi.hoisted(() => ({ pending: null as unknown, pref: null as unknown, clipboard: [] as string[], submitError: null as string | null }));
 
 const { QuickApp, QUICK_SHOWN_EVENT, QUICK_MEMORY_EVENT } = await import("./QuickApp");
@@ -100,6 +107,8 @@ beforeEach(() => {
   collect.pref = null;
   collect.clipboard = [];
   collect.submitError = null;
+  delete document.documentElement.dataset.surface;
+  pinStub.view = { surface: "search", settings: { enabled: false, source: null, mode: "float", edge: "right", topmost: true }, drawer: "collapsed" };
 });
 
 describe("QuickApp", () => {
@@ -324,5 +333,23 @@ describe("QuickApp 收纳入口：剪贴板与拖入", () => {
     collect.submitError = "没有可收纳的项目：需要是存在的文件或文件夹";
     act(() => drop.handler!({ payload: { type: "drop", paths: ["D:\\gone"], position: { x: 1, y: 1 } } }));
     expect(await screen.findByTestId("quick-status")).toHaveTextContent("收纳失败：没有可收纳的项目");
+  });
+
+  it("钉住视图共用本窗口：pin-surface 切到钉住表面并渲染面板；唤出快速搜索立即切回搜索表面", async () => {
+    pinStub.view = { surface: "pin", settings: { enabled: true, source: { kind: "cabinet", id: 10 }, mode: "float", edge: "right", topmost: true }, drawer: "collapsed" };
+    render(<QuickApp />);
+    await waitFor(() => expect(document.documentElement.dataset.surface).toBe("pin"));
+    expect(await screen.findByTestId("pin-panel")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("pin-title")).toHaveTextContent("项目"));
+    // 只开钉住视图：不做搜索预热（不建索引、不渲染结果行）
+    expect(db.quickSearch).not.toHaveBeenCalled();
+    fire(QUICK_SHOWN_EVENT, { t0Ms: Date.now(), keepInput: true });
+    expect(document.documentElement.dataset.surface).toBe("search");
+    expect(screen.getByTestId("quick-input")).toHaveFocus();
+    // 第一次唤出搜索才查询，之后保持
+    await waitFor(() => expect(screen.getAllByTestId("quick-result")).toHaveLength(2));
+    // 未开启时不渲染钉住面板
+    fire("pin-surface", { surface: "search", settings: { enabled: false, source: null, mode: "float", edge: "right", topmost: true }, drawer: "collapsed" });
+    expect(screen.queryByTestId("pin-panel")).not.toBeInTheDocument();
   });
 });

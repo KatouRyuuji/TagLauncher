@@ -775,7 +775,10 @@ export function Sidebar({
                         }
                       }}
                       className={`relative flex h-8 min-w-0 flex-1 cursor-grab items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors active:cursor-grabbing ${
-                        hovered || nestInto
+                        nestInto
+                          ? // 拖入（作为子柜）：描边 + 浅底，选中行上也一眼可辨（单靠底色会和选中态混在一起）
+                            "border-[var(--accent-primary)] bg-[var(--accent-primary-bg-light)] text-[var(--accent-primary-ink)]"
+                          : hovered
                           ? "border-transparent bg-[var(--accent-primary-bg-light)] text-[var(--accent-primary-ink)]"
                           : active
                             ? "border-transparent bg-[var(--accent-primary-bg)] font-semibold text-[var(--text-primary)]"

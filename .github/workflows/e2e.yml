@@ -191,7 +191,7 @@ jobs:
           TL_E2E_ALLOW_VISIBLE: '1'
           TL_E2E_DESKTOP: '1'
           PYTHONIOENCODING: utf-8
-        run: python -m pytest -c e2e/pytest.ini e2e/tests/desktop e2e/tests/window --allow-physical-input --window-countdown 0 -s --junitxml=.tmp-test/e2e/desktop-run/junit.xml
+        run: python -m pytest -c e2e/pytest.ini e2e/tests/desktop e2e/tests/window e2e/tests/ui/test_pin.py::test_drawer_handle_expand_collapse_sizes e2e/tests/visual/test_visual_new_ui.py::test_quick_and_pin_windows_new_ui --allow-physical-input --window-countdown 0 -s --junitxml=.tmp-test/e2e/desktop-run/junit.xml
 
       - name: Desktop summary
         if: always()
@@ -210,6 +210,7 @@ jobs:
             .tmp-test/e2e/desktop-run/junit.xml
             .tmp-test/e2e/desktop-run/report.html
             .tmp-test/e2e/desktop-run/artifacts/
+            .tmp-test/e2e/desktop-run/visual/
           if-no-files-found: warn
 
   # 发布配置（release profile、windows 子系统、与发行包同一构建命令）下复测右键收纳与安装包：
@@ -273,7 +274,7 @@ jobs:
           TL_E2E_DESKTOP: '1'
           TL_E2E_BUILD: release
           PYTHONIOENCODING: utf-8
-        run: python -m pytest -c e2e/pytest.ini e2e/tests/desktop/test_desktop_shell.py e2e/tests/desktop/test_desktop_nsis.py e2e/tests/ui/test_quick.py::test_quick_window_performance e2e/tests/ui/test_quick.py::test_idle_cpu_with_both_windows_hidden --allow-physical-input --window-countdown 0 -s --junitxml=.tmp-test/e2e/desktop-release-run/junit.xml
+        run: python -m pytest -c e2e/pytest.ini e2e/tests/desktop/test_desktop_shell.py e2e/tests/desktop/test_desktop_nsis.py e2e/tests/ui/test_quick.py::test_quick_window_performance e2e/tests/ui/test_quick.py::test_idle_cpu_with_both_windows_hidden e2e/tests/ui/test_pin.py::test_pin_resident_memory_and_idle_cpu --allow-physical-input --window-countdown 0 -s --junitxml=.tmp-test/e2e/desktop-release-run/junit.xml
 
       - name: Release summary
         if: always()

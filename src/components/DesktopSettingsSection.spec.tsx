@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesktopSettings } from "../lib/desktopShortcut";
@@ -17,6 +17,7 @@ function fresh(over: Partial<DesktopSettings> = {}, accelerator: string | null =
     launchMode: "show",
     trayActive: false,
     quick: { hideOnBlur: true, keepInput: true, monitor: "cursor" },
+    pin: { enabled: false, source: null, mode: "float", edge: "right", topmost: true },
     ...over,
   };
 }
@@ -55,6 +56,10 @@ vi.mock("../lib/db", () => ({
   getShellIntegration: vi.fn(async () => ({ supported: false, enabled: false, partial: false, registeredExe: null, currentExe: "", exeMatches: true, sendTo: false, verbs: [] })),
   // Win11 一级菜单区块有自己的用例（Win11MenuSection.spec），这里按「不支持」只显示原因
   getWin11Menu: vi.fn(async () => ({ supported: false, reason: "仅支持 Windows 11", enabled: false, registered: false, registeredVersion: null, privilege: "standard", bundledVersion: "1.0.0.0" })),
+  setPinSettings: vi.fn(async (pin: DesktopSettings["pin"]) => {
+    desktop.state = { ...desktop.state, pin };
+    return structuredClone(pin);
+  }),
   getCollectPreference: vi.fn(async () => null),
   getTags: vi.fn(async () => []),
   getCabinets: vi.fn(async () => []),
@@ -62,6 +67,7 @@ vi.mock("../lib/db", () => ({
 
 import * as db from "../lib/db";
 import { DesktopSettingsSection } from "./DesktopSettingsSection";
+import { useAppStore } from "../stores/appStore";
 
 const value = () => screen.getByTestId("hotkey-value-toggle_main");
 
@@ -158,5 +164,30 @@ describe("桌面驻留设置", () => {
     act(() => desktop.emit?.(fresh({ closeAction: "tray" }, "Ctrl+Alt+KeyT")));
     await waitFor(() => expect(value()).toHaveTextContent("Ctrl + Alt + T"));
     expect(screen.getByRole("radio", { name: /最小化到托盘/ })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("钉住视图：默认关、未选来源不能开；选柜后可开，切到边缘抽屉出现贴边选项", async () => {
+    useAppStore.setState({
+      tags: [{ id: 5, name: "工作", color: "#000" }],
+      cabinets: [
+        { id: 1, name: "资料", color: "#000", created_at: "", folder_path: null, parent_id: null },
+        { id: 2, name: "项目", color: "#000", created_at: "", folder_path: null, parent_id: 1 },
+      ],
+    });
+    render(<DesktopSettingsSection />);
+    const section = await screen.findByTestId("pin-options");
+    const toggle = within(section).getAllByRole("switch")[0];
+    expect(toggle).toBeDisabled();
+    const select = within(section).getByTestId("pin-source-select");
+    expect(within(select).getByRole("option", { name: "资料 / 项目" })).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "cabinet:2" } });
+    await waitFor(() => expect(db.setPinSettings).toHaveBeenLastCalledWith({ enabled: false, source: { kind: "cabinet", id: 2 }, mode: "float", edge: "right", topmost: true }));
+    await waitFor(() => expect(toggle).not.toBeDisabled());
+    fireEvent.click(toggle);
+    await waitFor(() => expect(desktop.state.pin.enabled).toBe(true));
+    fireEvent.click(within(section).getByTestId("pin-mode-drawer"));
+    await waitFor(() => expect(within(section).getByTestId("pin-edge-left")).toBeInTheDocument());
+    fireEvent.click(within(section).getByTestId("pin-edge-left"));
+    await waitFor(() => expect(desktop.state.pin).toMatchObject({ enabled: true, mode: "drawer", edge: "left" }));
   });
 });
