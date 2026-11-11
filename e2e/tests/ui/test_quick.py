@@ -55,7 +55,15 @@ def _quick_diag(app) -> str:
         session = app.invoke("collect_session")
     except Exception as e:  # noqa: BLE001
         session = f"<{e}>"
-    return f"windows={labels} cdp={_cdp_targets(app)} collect_session={session} logs={logs[-12:]}"
+    pages = []
+    for p in quick_pages(app):
+        try:
+            pages.append(p.evaluate("() => ({ready: document.readyState, collect: !!document.querySelector('[data-testid=quick-collect]'),"
+                                    " input: !!document.querySelector('[data-testid=quick-input]'), text: document.body.innerText.slice(0, 160),"
+                                    " perf: (window.__tlCollectPerf || []).length})"))
+        except Exception as e:  # noqa: BLE001
+            pages.append(f"<{type(e).__name__}: {str(e)[:120]}>")
+    return f"windows={labels} cdp={_cdp_targets(app)} quick_pages={pages} collect_session={session} logs={logs[-12:]}"
 
 
 def quick_page(app, timeout: float = 20):
