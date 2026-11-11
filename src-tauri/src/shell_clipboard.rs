@@ -1,4 +1,4 @@
-//! 应用内「复制文件」（CF_HDROP）与系统「打开方式…」对话框。
+//! 应用内「复制文件」（CF_HDROP）、读取剪贴板里的文件或路径（收纳剪贴板）、系统「打开方式…」对话框。
 //!
 //! CF_HDROP 的内存布局（DROPFILES 头 + 双零结尾的 UTF-16 路径表）由纯函数生成与解析，便于单测；
 //! 真正读写剪贴板、弹对话框的部分只在 Windows 上编译。
@@ -30,7 +30,6 @@ pub fn dropfiles_payload(paths: &[String]) -> Vec<u8> {
     out
 }
 
-#[cfg(test)]
 /// 解析 CF_HDROP 数据（宽字符或 ANSI 按 Latin-1 兜底）。格式不对返回空表。
 pub fn parse_dropfiles(bytes: &[u8]) -> Vec<String> {
     if bytes.len() < DROPFILES_HEADER {
@@ -66,14 +65,32 @@ pub fn parse_dropfiles(bytes: &[u8]) -> Vec<String> {
     out
 }
 
+/// 剪贴板文本 → 候选路径：每行一个，去引号与首尾空白；只保留存在的绝对路径（与收纳参数同一校验）。
+pub fn paths_from_text(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| crate::collect::normalize_arg(line.trim()))
+        .collect()
+}
+
+/// 收纳用：只保留存在的绝对路径并去重、限量
+pub fn sanitize_paths(raw: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    raw.into_iter()
+        .filter_map(|p| crate::collect::normalize_arg(&p))
+        .filter(|p| seen.insert(crate::collect::path_key(p)))
+        .take(crate::collect::MAX_COLLECT)
+        .collect()
+}
+
 #[cfg(windows)]
 mod win {
     use windows_sys::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
     use windows_sys::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
+        CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
+        OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
     use windows_sys::Win32::System::Memory::{
-        GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+        GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
     };
 
     const CF_UNICODETEXT: u32 = 13;
@@ -157,6 +174,44 @@ mod win {
         Ok(())
     }
 
+    fn read_global(format: u32) -> Option<Vec<u8>> {
+        // SAFETY：剪贴板已打开；只读拷出锁定的数据，句柄归剪贴板所有
+        unsafe {
+            if IsClipboardFormatAvailable(format) == 0 {
+                return None;
+            }
+            let h = GetClipboardData(format);
+            if h.is_null() {
+                return None;
+            }
+            let size = GlobalSize(h as HGLOBAL);
+            let p = GlobalLock(h as HGLOBAL) as *const u8;
+            if p.is_null() {
+                return None;
+            }
+            let out = std::slice::from_raw_parts(p, size).to_vec();
+            GlobalUnlock(h as HGLOBAL);
+            Some(out)
+        }
+    }
+
+    /// 剪贴板里的文件（CF_HDROP），没有则读文本里的路径
+    pub fn read_paths() -> Result<Vec<String>, String> {
+        let _clip = open()?;
+        if let Some(bytes) = read_global(CF_HDROP) {
+            return Ok(super::parse_dropfiles(&bytes));
+        }
+        if let Some(bytes) = read_global(CF_UNICODETEXT) {
+            let units: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .take_while(|u| *u != 0)
+                .collect();
+            return Ok(super::paths_from_text(&String::from_utf16_lossy(&units)));
+        }
+        Ok(Vec::new())
+    }
+
     /// 系统「打开方式」对话框：在独立线程里弹出（模态阻塞），立即返回
     pub fn open_with(path: String) {
         let _ = std::thread::Builder::new()
@@ -227,6 +282,21 @@ pub fn copy_items_as_files(db: State<Database>, ids: Vec<i64>) -> Result<CopyFil
     })
 }
 
+/// 热键 B 的降级来源：读剪贴板失败按空处理
+pub fn read_clipboard_candidates() -> Vec<String> {
+    clipboard_collect_candidates().unwrap_or_default()
+}
+
+/// 剪贴板里可收纳的路径（文件，或一行一个的存在路径）
+#[tauri::command(async)]
+pub fn clipboard_collect_candidates() -> Result<Vec<String>, String> {
+    #[cfg(windows)]
+    let raw = win::read_paths()?;
+    #[cfg(not(windows))]
+    let raw: Vec<String> = Vec::new();
+    Ok(sanitize_paths(raw))
+}
+
 /// 系统「打开方式…」：只对存在的文件（文件夹没有打开方式）
 #[tauri::command(async)]
 pub fn open_with_dialog(db: State<Database>, id: i64) -> Result<(), String> {
@@ -280,5 +350,25 @@ mod tests {
         let mut bad_offset = dropfiles_payload(&["C:\\x".into()]);
         bad_offset[0] = 0xff;
         assert!(parse_dropfiles(&bad_offset).is_empty());
+    }
+
+    #[test]
+    fn text_paths_keep_only_existing_absolute_paths() {
+        let dir = std::env::temp_dir().join(format!("tl-clip-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.txt");
+        std::fs::write(&f, b"x").unwrap();
+        let text = format!(
+            "\"{}\"\r\nrelative.txt\r\n{}\\nope.txt\r\n",
+            f.display(),
+            dir.display()
+        );
+        assert_eq!(paths_from_text(&text), vec![f.display().to_string()]);
+        let dup = sanitize_paths(vec![
+            f.display().to_string(),
+            f.display().to_string().to_uppercase(),
+        ]);
+        assert_eq!(dup.len(), 1, "大小写不同的同一路径只留一条");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -264,6 +264,83 @@ def clear_clipboard() -> None:
     with _Clip():
         user32.EmptyClipboard()
 
+
+# ---------------------------------------------------------------- 资源管理器窗口（Shell 自动化 + UIA）
+_FIND_WINDOW_PS = r"""
+$sh = New-Object -ComObject Shell.Application
+$w = $null
+foreach ($x in $sh.Windows()) {
+  try { if ($x.Document.Folder.Self.Path -eq $env:TL_DIR) { $w = $x; break } } catch {}
+}
+"""
+
+
+def _ps(script: str, **env) -> str:
+    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-STA", "-Command",
+                        "[Console]::OutputEncoding = [Text.Encoding]::UTF8; " + script],
+                       capture_output=True, timeout=60, env={**__import__("os").environ, **env})
+    out = r.stdout.decode("utf-8", "replace").strip()
+    if r.returncode != 0:
+        raise RuntimeError(f"PowerShell 失败：{r.stderr.decode('utf-8', 'replace')[:500]} / {out[:300]}")
+    return out
+
+
+class ExplorerWindow:
+    """真实的资源管理器窗口：打开文件夹、按名字选中项、取某项在屏幕上的矩形。"""
+
+    def __init__(self, folder: Path):
+        self.folder = Path(folder)
+        subprocess.Popen(["explorer.exe", str(self.folder)])
+        deadline = time.time() + 30
+        self.hwnd = 0
+        while time.time() < deadline and not self.hwnd:
+            out = _ps(_FIND_WINDOW_PS + "if ($w) { $w.HWND }", TL_DIR=str(self.folder))
+            self.hwnd = int(out) if out.strip().isdigit() else 0
+            if not self.hwnd:
+                time.sleep(0.5)
+        assert self.hwnd, f"资源管理器窗口没有打开：{self.folder}"
+
+    def select(self, names: list[str]) -> None:
+        script = _FIND_WINDOW_PS + r"""
+$names = $env:TL_NAMES -split "`n"
+$first = $true
+foreach ($n in $names) {
+  $it = $w.Document.Folder.ParseName($n)
+  if ($first) { $w.Document.SelectItem($it, 1 + 4 + 8 + 16); $first = $false } else { $w.Document.SelectItem($it, 1) }
+}
+@($w.Document.SelectedItems() | ForEach-Object { $_.Path }) | ConvertTo-Json -Compress
+"""
+        out = _ps(script, TL_DIR=str(self.folder), TL_NAMES="\n".join(names))
+        got = json.loads(out or "[]")
+        got = [got] if isinstance(got, str) else got
+        assert sorted(Path(p).name for p in got) == sorted(names), f"选中项不对：{got}"
+
+    def item_rect(self, name: str) -> tuple[int, int, int, int]:
+        """UIA 找列表项（显示名可能隐藏扩展名）的屏幕矩形（物理像素）。"""
+        script = r"""
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+$root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr][long]$env:TL_HWND)
+foreach ($n in @($env:TL_NAME, [IO.Path]::GetFileNameWithoutExtension($env:TL_NAME))) {
+  $c1 = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $n)
+  $c2 = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)
+  $el = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.AndCondition($c1, $c2)))
+  if ($el) { $r = $el.Current.BoundingRectangle; "{0},{1},{2},{3}" -f [int]$r.Left, [int]$r.Top, [int]$r.Right, [int]$r.Bottom; break }
+}
+"""
+        out = _ps(script, TL_HWND=str(self.hwnd), TL_NAME=name)
+        assert out.count(",") == 3, f"UIA 没找到列表项 {name}：{out!r}"
+        l, t, r, b = (int(v) for v in out.split(","))
+        return l, t, r, b
+
+    def close(self) -> None:
+        user32.PostMessageW(self.hwnd, 0x10, 0, 0)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
 # ---------------------------------------------------------------- 通知区溢出（Win11 系任务栏）
 OVERFLOW_CLASS = "TopLevelWindowForOverflowXamlIsland"
 NOTIFY_SETTINGS = r"Control Panel\NotifyIconSettings"

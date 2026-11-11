@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import * as db from "../lib/db";
 import { latestOnly, SKIPPED } from "../lib/latestOnly";
 import { announceWindowWrite, onAnyDataChanged } from "../lib/dataSync";
@@ -78,10 +79,58 @@ function useCollectSession(): [CollectSession | null, (id: number) => void] {
   return [session, useCallback((id: number) => setSession((s) => (s && s.id === id ? null : s)), [])];
 }
 
+/**
+ * 拖入快速窗即收纳（搜索态开始新会话，收纳态并入当前会话）。只听 webview 级原生拖放事件：
+ * 快速窗只有一个 webview，窗口级事件是同一份。返回拖动中的项数（null = 没有拖动）与收纳失败信息。
+ */
+function useQuickDrop(): { dragging: number | null; dropError: string | null } {
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [dropError, setDropError] = useState<string | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        const p = event.payload;
+        if (p.type === "enter") {
+          setDropError(null);
+          setDragging(p.paths.length);
+        } else if (p.type === "over") {
+          setDragging((n) => n ?? 0);
+        } else if (p.type === "leave") {
+          setDragging(null);
+        } else if (p.type === "drop") {
+          setDragging(null);
+          if (p.paths.length === 0) return;
+          void db.collectSubmit(p.paths).catch((e: unknown) => setDropError(errorText(e)));
+        }
+      })
+      .then((fn) => {
+        if (disposed) fn();
+        else stop = fn;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      stop?.();
+    };
+  }, []);
+  return { dragging, dropError };
+}
+
 export function QuickApp() {
   const [collect, closeCollect] = useCollectSession();
-  if (collect) return <QuickCollectShell session={collect} onClose={closeCollect} />;
-  return <QuickSearch />;
+  const { dragging, dropError } = useQuickDrop();
+  return (
+    <>
+      {collect ? <QuickCollectShell session={collect} onClose={closeCollect} /> : <QuickSearch dropError={dropError} />}
+      {dragging !== null && (
+        <div className="quick-drop-overlay" data-testid="quick-drop-overlay">
+          {dragging > 0 ? `松开即收纳 ${dragging} 项` : "松开即收纳"}
+        </div>
+      )}
+    </>
+  );
 }
 
 function QuickCollectShell({ session, onClose }: { session: CollectSession; onClose: (id: number) => void }) {
@@ -90,8 +139,33 @@ function QuickCollectShell({ session, onClose }: { session: CollectSession; onCl
   return <QuickCollect key={session.id} session={session} onClose={() => onClose(session.id)} />;
 }
 
-function QuickSearch() {
+/** 剪贴板里有文件（或存在的路径）时提示收纳：唤出时读一次，收纳后清掉提示 */
+function useClipboardCandidates(): [string[], () => void] {
+  const [paths, setPaths] = useState<string[]>([]);
+  const refresh = useCallback(() => {
+    void db.clipboardCollectCandidates().then(setPaths, () => setPaths([]));
+  }, []);
+  useEffect(() => {
+    refresh();
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    void listen(QUICK_SHOWN_EVENT, refresh)
+      .then((fn) => {
+        if (disposed) fn();
+        else stop = fn;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      stop?.();
+    };
+  }, [refresh]);
+  return [paths, useCallback(() => setPaths([]), [])];
+}
+
+function QuickSearch({ dropError }: { dropError: string | null }) {
   useThemeFollower();
+  const [clipboardPaths, clearClipboardPaths] = useClipboardCandidates();
   const inputRef = useRef<HTMLInputElement>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
   const [prefs, setPrefs] = useState(readPrefs);
@@ -193,7 +267,21 @@ function QuickSearch() {
     });
   }, [run]);
 
+  const collectClipboard = useCallback(() => {
+    if (clipboardPaths.length === 0) return;
+    const paths = clipboardPaths;
+    clearClipboardPaths();
+    void run("收纳剪贴板", async () => {
+      await db.collectSubmit(paths);
+    });
+  }, [clipboardPaths, clearClipboardPaths, run]);
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === "v" && clipboardPaths.length > 0) {
+      event.preventDefault();
+      collectClipboard();
+      return;
+    }
     const action = quickKeyAction(event);
     if (!action) return;
     if (action === "escape") {
@@ -290,6 +378,11 @@ function QuickSearch() {
         }}
         onKeyDown={onKeyDown}
       />
+      {clipboardPaths.length > 0 && !picker && (
+        <button type="button" className="quick-button quick-clipboard" data-testid="quick-clipboard" data-count={clipboardPaths.length} onMouseDown={(e) => e.preventDefault()} onClick={collectClipboard}>
+          收纳剪贴板中的 {clipboardPaths.length} 项（Ctrl+Shift+V）
+        </button>
+      )}
       {picker ? (
         <div className="quick-picker" data-testid="quick-tag-picker">
           <div className="quick-picker-title">给「{itemDisplayName(picker.item)}」打标签（Enter 切换，Esc 返回）</div>
@@ -350,9 +443,9 @@ function QuickSearch() {
         </ul>
       )}
       <div className="quick-footer">
-        {status ? (
-          <span role={status.tone === "error" ? "alert" : "status"} data-testid="quick-status" className={status.tone === "error" ? "quick-error" : ""}>
-            {status.text}
+        {status || dropError ? (
+          <span role={status?.tone === "info" ? "status" : "alert"} data-testid="quick-status" className={status?.tone === "info" ? "" : "quick-error"}>
+            {status ? status.text : `收纳失败：${dropError}`}
           </span>
         ) : (
           <span>Enter 打开 · Ctrl+Enter 位置 · Ctrl+Shift+C 复制路径 · Alt+Enter 主窗定位 · Ctrl+T 标签 · Esc 收起</span>

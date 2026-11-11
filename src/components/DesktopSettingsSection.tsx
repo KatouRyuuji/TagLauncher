@@ -19,6 +19,11 @@ const CLOSE_OPTIONS: Array<{ value: CloseAction; label: string; hint: string }> 
   { value: "tray", label: "最小化到托盘", hint: "点关闭只隐藏窗口，从托盘图标或全局快捷键唤回；托盘菜单「退出」才真正退出" },
 ];
 
+/** 各动作的补充说明（按动作，不按顺序） */
+const HOTKEY_HINTS: Partial<Record<HotkeyAction, string>> = {
+  collect_selection: "在资源管理器或桌面选中文件后按下，弹出收纳窗；前台没有选中项时，改为收纳剪贴板里复制的文件。",
+};
+
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -37,6 +42,11 @@ function HotkeyRow({ info, disabled, onApply }: {
   return (
     <div data-hotkey-action={info.action}>
       <span className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">{info.label}</span>
+      {HOTKEY_HINTS[info.action] && (
+        <span data-testid={`hotkey-hint-${info.action}`} className="mb-1.5 block text-xs leading-5 text-[var(--text-secondary)]">
+          {HOTKEY_HINTS[info.action]}
+        </span>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <span
           data-testid={`hotkey-value-${info.action}`}

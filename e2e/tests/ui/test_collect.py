@@ -396,3 +396,50 @@ def test_fifty_item_collect_latency(app_factory, sandbox):
     r = result(qp)
     assert r["created"] == "50", r
     wait_session_done(app)
+
+
+@pytest.mark.case("E-COLLECT-06")
+def test_collect_submit_from_quick_window(app_factory, sandbox):
+    """快速窗发起的收纳（拖入 / 剪贴板走同一命令 collect_submit）：立即弹出、只收有效路径；
+    会话进行中再提交并入同一会话；一条有效路径都没有时报错且不建会话。"""
+    app = collect_app(app_factory, sandbox)
+    a = files.write(sandbox.files / "submit" / "甲.txt", "a")
+    b = files.write(sandbox.files / "submit" / "乙.txt", "b")
+    err = app.invoke_error("collect_submit", {"paths": [str(sandbox.files / "submit" / "不存在.txt"), "relative.txt"]})
+    assert err and "没有可收纳的项目" in err, err
+    assert app.invoke("collect_session") is None
+    t0 = time.time()
+    s = app.invoke("collect_submit", {"paths": [str(a), str(sandbox.files / "submit" / "不存在.txt")]})
+    assert [Path(p).name for p in s["paths"]] == ["甲.txt"] and s["invalid"] == 1, s
+    qp = collect_page(app)
+    summary = qp.get_by_test_id("collect-summary")
+    wait_attr(summary, "data-count", "1")
+    shown_ms = round((time.time() - t0) * 1000)
+    s2 = app.invoke("collect_submit", {"paths": [str(b), str(a)]})
+    assert s2["id"] == s["id"] and sorted(Path(p).name for p in s2["paths"]) == ["乙.txt", "甲.txt"], s2
+    wait_attr(summary, "data-count", "2")
+    assert len(quick_pages(app)) == 1
+    print(f"COLLECT_SUBMIT shown_ms={shown_ms}")
+    qp.get_by_test_id("collect-action-import").click()
+    assert result(qp)["created"] == "2"
+    wait_session_done(app)
+
+
+@pytest.mark.case("E-COLLECT-07")
+@pytest.mark.parametrize("n", [15, 100])
+def test_multi_select_15_and_100_merge(app_factory, sandbox, n):
+    """右键多选 15 / 100 项（经典动词 Player 模型的典型与上限）：每项一进程，全部并入一个会话。"""
+    app = collect_app(app_factory, sandbox)
+    paths = [files.write(sandbox.files / f"m{n}" / f"f{i:03}.txt", "x") for i in range(n)]
+    t0 = time.time()
+    invoke_collect(sandbox, [[p] for p in paths])
+    qp = collect_page(app, timeout=60)
+    summary = qp.get_by_test_id("collect-summary")
+    wait_attr(summary, "data-count", str(n), timeout=60)
+    wait_attr(summary, "data-invocations", str(n), timeout=60)
+    sessions = sorted({p["id"] for p in collect_perf(qp)})
+    print(f"COLLECT_MULTI n={n} total_ms={round((time.time() - t0) * 1000)} sessions={sessions}")
+    assert len(sessions) == 1 and len(quick_pages(app)) == 1, sessions
+    qp.get_by_test_id("collect-action-import").click()
+    assert result(qp)["created"] == str(n)
+    wait_session_done(app, timeout=30)

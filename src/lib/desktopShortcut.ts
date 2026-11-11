@@ -7,8 +7,9 @@
 // ============================================================================
 
 export type CloseAction = "exit" | "tray";
-/** 可绑定全局快捷键的动作；与后端 HotkeyAction 一致。open_quick 绑定即开启快速搜索窗 */
-export type HotkeyAction = "toggle_main" | "open_quick";
+/** 可绑定全局快捷键的动作；与后端 HotkeyAction 一致。open_quick 绑定即开启快速搜索窗；
+ *  collect_selection 收纳前台资源管理器的选中项（没有选中项时收纳剪贴板里的文件） */
+export type HotkeyAction = "toggle_main" | "open_quick" | "collect_selection";
 export type LaunchMode = "show" | "background";
 
 export interface HotkeyInfo {

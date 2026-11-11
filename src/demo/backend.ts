@@ -105,6 +105,7 @@ function seedState(): DemoState {
       hotkeys: [
         { action: "toggle_main", label: "显示 / 隐藏主窗口", accelerator: null, error: null },
         { action: "open_quick", label: "打开快速搜索窗", accelerator: null, error: null },
+        { action: "collect_selection", label: "收纳资源管理器选中项", accelerator: null, error: null },
       ],
       closeAction: "exit",
       ignoreFullscreen: true,
@@ -924,6 +925,10 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "collect_session":
     case "get_collect_preference":
       return null;
+    case "clipboard_collect_candidates":
+      return [];
+    case "collect_submit":
+      throw new Error("演示模式不支持收纳");
     case "collect_finish":
       return null;
     case "set_collect_preference":
