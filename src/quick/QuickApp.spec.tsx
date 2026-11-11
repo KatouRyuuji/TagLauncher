@@ -337,13 +337,17 @@ describe("QuickApp 收纳入口：剪贴板与拖入", () => {
 
   it("钉住视图共用本窗口：pin-surface 切到钉住表面并渲染面板；唤出快速搜索立即切回搜索表面", async () => {
     pinStub.view = { surface: "pin", settings: { enabled: true, source: { kind: "cabinet", id: 10 }, mode: "float", edge: "right", topmost: true }, drawer: "collapsed" };
-    await setup();
+    render(<QuickApp />);
     await waitFor(() => expect(document.documentElement.dataset.surface).toBe("pin"));
     expect(await screen.findByTestId("pin-panel")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId("pin-title")).toHaveTextContent("项目"));
+    // 只开钉住视图：不做搜索预热（不建索引、不渲染结果行）
+    expect(db.quickSearch).not.toHaveBeenCalled();
     fire(QUICK_SHOWN_EVENT, { t0Ms: Date.now(), keepInput: true });
     expect(document.documentElement.dataset.surface).toBe("search");
     expect(screen.getByTestId("quick-input")).toHaveFocus();
+    // 第一次唤出搜索才查询，之后保持
+    await waitFor(() => expect(screen.getAllByTestId("quick-result")).toHaveLength(2));
     // 未开启时不渲染钉住面板
     fire("pin-surface", { surface: "search", settings: { enabled: false, source: null, mode: "float", edge: "right", topmost: true }, drawer: "collapsed" });
     expect(screen.queryByTestId("pin-panel")).not.toBeInTheDocument();

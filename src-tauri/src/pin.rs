@@ -360,6 +360,17 @@ static RUNTIME: Mutex<Runtime> = Mutex::new(Runtime {
 static ANIM_GEN: AtomicU64 = AtomicU64::new(0);
 static MOVE_GEN: AtomicU64 = AtomicU64::new(0);
 static LEAVE_GEN: AtomicU64 = AtomicU64::new(0);
+/// 诊断计数（pin_diag.dragEvents）：[拖动开始, 拖动结束, 抽屉 Moved, 抽屉吸附]
+static DRAG_EVENTS: [std::sync::atomic::AtomicU32; 4] = [
+    std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0),
+];
+
+fn count(i: usize) {
+    DRAG_EVENTS[i].fetch_add(1, Ordering::Relaxed);
+}
 
 fn rt() -> std::sync::MutexGuard<'static, Runtime> {
     RUNTIME.lock().unwrap_or_else(|e| e.into_inner())
@@ -810,6 +821,8 @@ fn watch_leave(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
         let mut outside_since: Option<Instant> = None;
+        // 光标先进入过面板才开始计离开（程序化展开 / 键盘展开时光标本就不在面板上，不能立刻收回）
+        let mut seen_inside = false;
         loop {
             std::thread::sleep(Duration::from_millis(100));
             if LEAVE_GEN.load(Ordering::SeqCst) != gen {
@@ -826,7 +839,11 @@ fn watch_leave(app: &AppHandle) {
                 return;
             };
             if dragging || left_button_down() || cursor_inside(&window) {
+                seen_inside |= !dragging;
                 outside_since = None;
+                continue;
+            }
+            if !seen_inside {
                 continue;
             }
             if outside_since.get_or_insert_with(Instant::now).elapsed() >= LEAVE_COLLAPSE {
@@ -893,6 +910,7 @@ pub fn on_moved(app: &AppHandle) {
     if settings().mode == PinMode::Drawer {
         // 抽屉：拖动循环结束（EVENT_SYSTEM_MOVESIZEEND，见 movesize_proc）时吸附；这里是兜底——
         // 收到用户拖动产生的 Moved 就标记拖动中，左键松开且位置稳定后吸附（与钩子重复吸附是幂等的）
+        count(2);
         rt().dragging = true;
         let gen = MOVE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
         let app = app.clone();
@@ -948,6 +966,7 @@ fn settle_after_move(app: &AppHandle) {
             save_place(app);
         }
         PinMode::Drawer => {
+            count(3);
             let all = monitors(app);
             let works: Vec<Rect> = all.iter().map(work_of).collect();
             let Some((index, edge, offset)) = snap(rect, &works) else {
@@ -1042,9 +1061,11 @@ unsafe extern "system" fn movesize_proc(
         return;
     }
     if event == windows_sys::Win32::UI::WindowsAndMessaging::EVENT_SYSTEM_MOVESIZESTART {
+        count(0);
         rt().dragging = true;
         return;
     }
+    count(1);
     let dragging_drawer = {
         let mut r = rt();
         r.dragging = false;
@@ -1320,6 +1341,8 @@ pub struct PinDiag {
     /// 原生把手：是否显示与物理矩形 [x, y, w, h]
     pub handle_visible: bool,
     pub handle_rect: [i64; 4],
+    /// [拖动开始, 拖动结束, 抽屉 Moved, 抽屉吸附] 累计次数
+    pub drag_events: [u32; 4],
 }
 
 #[tauri::command]
@@ -1331,6 +1354,7 @@ pub fn pin_diag() -> PinDiag {
         counts_as_visible: counts_as_visible(),
         handle_visible,
         handle_rect: [r.0 as i64, r.1 as i64, r.2 as i64, r.3 as i64],
+        drag_events: std::array::from_fn(|i| DRAG_EVENTS[i].load(Ordering::Relaxed)),
     }
 }
 

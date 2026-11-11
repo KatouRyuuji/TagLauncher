@@ -72,9 +72,17 @@ def set_font(app, scale: float) -> None:
       const p = JSON.parse(localStorage.getItem(k) || '{}'); p.uiFontScale = s; localStorage.setItem(k, JSON.stringify(p)); }""", scale)
 
 
+_CDP: dict = {}
+
+
 def set_dpr(page, dpr: float) -> None:
-    cdp = page.context.new_cdp_session(page)
+    # CDP 会话要一直持有：会话被回收 / 断开时模拟随之失效（之前截图仍是 1x）
+    cdp = _CDP.get(id(page))
+    if cdp is None:
+        cdp = _CDP[id(page)] = page.context.new_cdp_session(page)
     cdp.send("Emulation.setDeviceMetricsOverride", {"width": 0, "height": 0, "deviceScaleFactor": dpr, "mobile": False})
+    wait_until(lambda: abs(page.evaluate("devicePixelRatio") - dpr) < 0.01, 3,
+               lambda: f"devicePixelRatio 未生效：{page.evaluate('devicePixelRatio')} != {dpr}")
 
 
 def combos():

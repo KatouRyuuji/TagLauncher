@@ -163,7 +163,8 @@ def test_drawer_drag_switches_edge_and_position_survives_restart(app, sandbox):
     tx, ty = work[0] + 200, work[1] + 60 + (hy - t)
     win32.drag(hx, hy, tx, ty, steps=30)
     wait_until(lambda: app.invoke("get_pin_settings")["edge"] == "left", 5,
-               lambda: f"松手应吸附到左边：rect={win32.rect(q)} settings={app.invoke('get_pin_settings')}")
+               lambda: f"松手应吸附到左边：rect={win32.rect(q)} settings={app.invoke('get_pin_settings')} "
+                          f"diag={app.invoke('pin_diag')}")
     wait_until(lambda: win32.rect(q)[0] == work[0], 3, lambda: f"应贴左边：rect={win32.rect(q)} work={work}")
     offset = float(dbh.meta(sandbox.db_path, "pin.drawer_offset"))
     assert offset < 0.3, f"上下比例应偏上：{offset}"
