@@ -1,4 +1,4 @@
-# Win11 一级右键菜单原型探针（只在 CI runner 上运行）。
+﻿# Win11 一级右键菜单原型探针（只在 CI runner 上运行）。
 # 验证：未签名稀疏包 + IExplorerCommand 进程外 COM 能否在“非开发者模式、无证书”条件下注册、显示、调用与完全卸载。
 # 每个结论打印为 `W11MENU key=value`，便于从日志 grep。
 param(

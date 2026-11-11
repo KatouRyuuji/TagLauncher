@@ -1,4 +1,4 @@
-# 在资源管理器里右键文件，用 UIA 读取 Win11 一级菜单（XAML 弹层）里的条目；可选点击我们的条目并核对调用标记。
+﻿# 在资源管理器里右键文件，用 UIA 读取 Win11 一级菜单（XAML 弹层）里的条目；可选点击我们的条目并核对调用标记。
 param([string]$Folder, [string]$FileName, [string]$Title, [string]$Shot, [string]$Marker, [switch]$Click, [string]$Tag = 'registered')
 $ErrorActionPreference = 'Continue'
 function Log($k, $v) { Write-Host "W11MENU ui_$($Tag)_$k=$v" }
