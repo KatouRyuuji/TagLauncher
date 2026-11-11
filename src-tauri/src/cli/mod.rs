@@ -1,4 +1,4 @@
-//! CLI / MCP 共用核心：Tauri 无关的数据库定位与打开。
+//! CLI 共用核心：Tauri 无关的数据库定位与打开。
 //!
 //! tl.exe 与主程序同目录安装，因此 exe 旁 datapath.json 重定向与默认数据目录
 //! （%LOCALAPPDATA%\TagLauncher\Save\）的解析结果与 GUI 完全一致。
@@ -7,7 +7,6 @@ use crate::db::Database;
 use crate::services::path_service;
 use std::path::PathBuf;
 
-pub mod mcp;
 pub mod tui;
 
 /// 解析实库路径：exe 同级重定向优先，其次默认数据目录。
@@ -34,7 +33,7 @@ pub fn open_db() -> Result<Database, String> {
     Database::new(&path).map_err(|e| format!("打开数据库失败（{}）: {}", path.display(), e))
 }
 
-/// 库概览统计（CLI stats 与 MCP overview 工具共用）。
+/// 库概览统计（`tl stats` 使用）。
 #[derive(serde::Serialize)]
 pub struct CliStats {
     pub items: i64,

@@ -303,7 +303,7 @@ export function AiSettingsSection() {
   );
 }
 
-/** AI 集成区块：CLI（tl）与 MCP 接入说明 + 配置一键复制 */
+/** 命令行（tl）接入说明：路径展示与一键复制 */
 function CliIntegrationBlock() {
   const [info, setInfo] = useState<db.CliIntegrationInfo | null>(null);
 
@@ -318,20 +318,19 @@ function CliIntegrationBlock() {
 
   return (
     <div className="mt-5 border-t border-[var(--line-hairline)] pt-4">
-      <div className="text-label">AI 集成</div>
+      <div className="text-label">命令行</div>
       <p className="mt-2 text-sm text-[var(--text-muted)]">
         应用随附命令行 <code className="text-[var(--text-secondary)]">tl</code>，供终端脚本与 AI 客户端直接管理对象库：
         <code className="text-[var(--text-secondary)]">tl search / launch / tag / fav</code>、
-        <code className="text-[var(--text-secondary)]">tl tui</code>（终端界面）、
-        <code className="text-[var(--text-secondary)]">tl mcp</code>（MCP 服务）。
+        <code className="text-[var(--text-secondary)]">tl tui</code>（终端界面）。加
+        <code className="text-[var(--text-secondary)]"> --json</code> 可输出机器可读结果。
       </p>
       {info.cli_available ? (
         <div className="mt-3 space-y-2">
-          <SettingsField label="Claude Desktop 等 MCP 客户端配置（复制后粘贴到客户端配置文件）">
-            <textarea
+          <SettingsField label="tl.exe 路径（与主程序同级，可复制到终端使用）">
+            <input
               readOnly
-              rows={7}
-              value={prettyJson(info.mcp_config)}
+              value={info.cli_path}
               spellCheck={false}
               className={`${inputClass} font-mono text-xs`}
               onFocus={(e) => e.target.select()}
@@ -340,14 +339,9 @@ function CliIntegrationBlock() {
           <button
             type="button"
             className="action-button px-4 text-xs"
-            onClick={() =>
-              void copyText(
-                prettyJson(info.mcp_config),
-                "MCP 配置已复制",
-              )
-            }
+            onClick={() => void copyText(info.cli_path, "路径已复制")}
           >
-            复制 MCP 配置
+            复制路径
           </button>
         </div>
       ) : (
@@ -357,12 +351,4 @@ function CliIntegrationBlock() {
       )}
     </div>
   );
-}
-
-function prettyJson(raw: string): string {
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2);
-  } catch {
-    return raw;
-  }
 }

@@ -2,7 +2,6 @@
 //!
 //! 直连与 GUI 相同的 SQLite 实库（WAL 下并发安全），覆盖搜索/启动/标签/收藏/
 //! 文件柜等核心功能；`--json` 全局开关输出机器可读 JSON，供脚本与 AI 消费。
-//! `tl mcp` 以 stdio 方式暴露 MCP 工具面。
 
 use clap::{Parser, Subcommand};
 use tag_launcher_lib::cli;
@@ -60,8 +59,6 @@ enum Cmd {
     Cabinet(CabinetCmd),
     /// 库概览统计
     Stats,
-    /// 以 stdio 启动 MCP 服务（供 Claude Desktop 等 AI 客户端接入）
-    Mcp,
     /// 终端交互界面（搜索 + 启动 + 收藏）
     Tui,
 }
@@ -117,7 +114,6 @@ fn main() {
 fn run(args: CliArgs) -> Result<(), String> {
     let json = args.json;
     match args.command {
-        Cmd::Mcp => return cli::mcp::serve_stdio(),
         Cmd::Tui => return cli::tui::run(),
         Cmd::Search { query, type_filter, limit } => {
             let db = cli::open_db()?;

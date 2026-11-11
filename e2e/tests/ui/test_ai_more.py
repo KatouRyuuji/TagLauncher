@@ -235,8 +235,9 @@ def test_merge_not_overwrite(app, sandbox):
 
 
 @pytest.mark.case("E-AI-13")
-def test_copy_mcp_config(sandbox, app_factory):
+def test_copy_cli_path(sandbox, app_factory):
     import shutil
+    from pathlib import Path
     from harness import paths
     sandbox.bin.mkdir(parents=True, exist_ok=True)
     tl = paths.default_cli()
@@ -245,16 +246,11 @@ def test_copy_mcp_config(sandbox, app_factory):
     app = app_factory()
     dlg = app.open_settings("AI 打标")
     if dlg.get_by_text("未检测到 tl.exe", exact=False).count():
-        pytest.skip("被测构建旁无 tl.exe，MCP 配置块不可用")
-    dlg.get_by_role("button", name="复制 MCP 配置").click()
-    app.wait_toast("MCP 配置已复制")
+        pytest.skip("被测构建旁无 tl.exe，命令行路径块不可用")
+    expected = (sandbox.bin / "tl.exe").resolve()
+    dlg.get_by_role("button", name="复制路径").click()
+    app.wait_toast("路径已复制")
     raw = app.clipboard()[-1]
-    cfg = json.loads(raw)
-    servers = cfg.get("mcpServers") or cfg
-    srv = next(iter(servers.values()))
-    from pathlib import Path
-    assert Path(srv["command"]).resolve() == (sandbox.bin / "tl.exe").resolve(), srv
-    assert "mcp" in srv.get("args", []), srv
-    # 文本框里展示的与复制内容一致
-    shown = dlg.locator("textarea").last.input_value()
-    assert json.loads(shown) == cfg
+    assert Path(raw).resolve() == expected, raw
+    shown = dlg.get_by_label("tl.exe 路径（与主程序同级，可复制到终端使用）").input_value()
+    assert Path(shown).resolve() == expected, shown

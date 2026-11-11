@@ -5,7 +5,7 @@ description: 管理并启动 TagLauncher（Windows 标签式启动器）中的�
 
 # TagLauncher 集成
 
-TagLauncher 把文件、文件夹、应用组织为「对象」并以标签管理。已接入 MCP（`tl mcp`）时直接用其工具，工具说明与使用准则由服务端提供；否则用下面的 `tl` 命令行。
+TagLauncher 把文件、文件夹、应用组织为「对象」并以标签管理。通过下面的 `tl` 命令行搜索、启动与整理对象库。
 
 ## 命令行
 

@@ -1,6 +1,6 @@
 // CLI 二进制准备：构建 tl（TagLauncher 命令行）并以 Tauri sidecar 命名规范
 // 复制到 src-tauri/bin/tl-<rust-triple>.exe，供 tauri build 的 externalBin 打进
-// 安装包（落在主程序同级目录，用户安装后即可在终端直接使用 tl / tl mcp / tl tui）。
+// 安装包（落在主程序同级目录，用户安装后即可在终端直接使用 tl / tl tui）。
 //
 // tauri-build 在每次编译主包（含 cargo test / tauri dev / cargo build，以及 --bin tl
 // 自身）时校验 externalBin 文件存在，因此缺位时先放 0 字节占位文件；--placeholder
