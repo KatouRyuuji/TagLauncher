@@ -405,7 +405,8 @@ pub fn handle_second_instance(app: &AppHandle, args: &[String]) {
     }
     match parse_launch_args(args.iter().skip(1)) {
         LaunchMode::Show => show_main_window(app),
-        // 已在运行：后台启动请求不打扰用户，只确认托盘可用
+        // 已在运行：后台启动请求不打扰用户（不动窗口），托盘按现有设置重新同步（幂等）；
+        // 是否需要托盘只看首个实例的启动方式与「关闭到托盘」，不因二次 --background 新增
         LaunchMode::Background => sync_tray(app),
     }
 }

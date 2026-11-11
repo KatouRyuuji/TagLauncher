@@ -1,4 +1,5 @@
 mod collect;
+mod collect_forward;
 mod commands;
 mod data_sync;
 /// F18 托盘 / 全局快捷键 / 关闭行为（仅 GUI 使用）
@@ -175,6 +176,10 @@ pub fn run() {
     // 它马上退出，真正 show 窗口的是首个实例。先把前台权让给任意进程，首个实例的 set_focus 才不被
     // Windows 前台锁拦下（只放行下一次 SetForegroundWindow，不常驻）。
     desktop::allow_foreground_handoff();
+    // 右键多选每项一个进程：已有实例时在建运行时之前直接转发并退出（见 collect_forward.rs）
+    if collect_forward::try_forward(&std::env::args().skip(1).collect::<Vec<_>>()) {
+        std::process::exit(0);
+    }
     tauri::Builder::default()
         // 须为首个插件：第二个实例在初始化其余部分前即退出，只把已有主窗口唤到前台
         // 第二个实例转发的参数按参数路由处理（--show 默认唤主窗，--background 不打扰）
