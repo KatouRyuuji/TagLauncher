@@ -236,7 +236,7 @@ def test_fifty_items_via_shell_verb_latency(shell_on, sandbox):
         m = {"spawn_all_ms": round((t_spawned - t0) * 1000), "window_ms": round((t_window - t0) * 1000),
              "full_render_ms": round(perf[-1]["renderedMs"] - t0 * 1000), "renders": len(perf),
              "sessions": sorted({p["id"] for p in perf}), "foreground": foreground_report(app),
-             "single_forward_ms": single, "single_verb_ms": verb_single, "arrivals_during_spawn": arrivals[::5]}
+             "build": os.environ.get("TL_E2E_BUILD", "debug+gui-subsystem"), "single_forward_ms": single, "single_verb_ms": verb_single, "arrivals_during_spawn": arrivals[::5]}
         print(f"COLLECT_SHELL_PERF {json.dumps(m, ensure_ascii=False)}")
         assert len(m["sessions"]) == 1 and len(quick_pages(app)) == 1, m
         assert m["full_render_ms"] <= COLLECT_LATENCY_MS, m
