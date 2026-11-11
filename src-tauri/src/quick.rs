@@ -9,6 +9,7 @@
 //!   写后发 `window-data-written` 让主窗按 ID 增量刷新。
 
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
@@ -20,6 +21,14 @@ const QUICK_WIDTH: f64 = 680.0;
 const QUICK_HEIGHT: f64 = 440.0;
 /// 预创建延迟：避开主窗首屏加载
 const PRECREATE_DELAY: Duration = Duration::from_millis(1500);
+/// 隐藏超过这么久后把快速窗的 WebView2 降为低内存目标（MemoryUsageTargetLevel=Low，§3.3）；
+/// 唤出时先恢复 Normal。不用 TrySuspend：恢复有延迟，和「极速」冲突。
+const LOW_MEMORY_AFTER: Duration = Duration::from_secs(300);
+pub const QUICK_MEMORY_EVENT: &str = "quick-memory-level";
+/// 每次隐藏 / 唤出自增：过期的降内存计时器据此作废
+static VISIBILITY_GEN: AtomicU64 = AtomicU64::new(0);
+/// 当前是否处于低内存目标（唤出时只在确实降过时才恢复）
+static LOW_MEMORY: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,9 +83,11 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .map_err(|e| format!("创建快速搜索窗失败：{e}"))?;
     // 失焦自动隐藏（Esc / 打开对象 / 点到别处都应收起）
     let w = window.clone();
+    let handle = app.clone();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(false) = event {
             let _ = w.hide();
+            after_hidden(&handle);
         }
     });
     Ok(window)
@@ -139,6 +150,10 @@ fn place_on_cursor_monitor(app: &AppHandle, window: &WebviewWindow) {
 /// 产品路径（热键/托盘/主窗按钮）一律 true。
 pub fn show(app: &AppHandle, t0_ms: u64, activate: bool) -> Result<(), String> {
     let window = ensure_window(app)?;
+    VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
+    if LOW_MEMORY.load(Ordering::SeqCst) {
+        set_memory_level(&window, false);
+    }
     place_on_cursor_monitor(app, &window);
     window.show().map_err(|e| e.to_string())?;
     // 快速窗可见期间按可见间隔检测外部写入，唤出时先检测一次
@@ -153,7 +168,82 @@ pub fn show(app: &AppHandle, t0_ms: u64, activate: bool) -> Result<(), String> {
 pub fn hide(app: &AppHandle) {
     if let Some(w) = quick_window(app) {
         let _ = w.hide();
+        after_hidden(app);
     }
+}
+
+/// 隐藏超过 LOW_MEMORY_AFTER 仍未唤出 → 降为低内存目标。debug 构建可用
+/// TAGLAUNCHER_E2E_QUICK_LOW_MS 缩短（E2E 用）。
+fn after_hidden(app: &AppHandle) {
+    let gen = VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let delay = low_memory_after();
+    let app = app.clone();
+    let _ = std::thread::Builder::new()
+        .name("tl-quick-lowmem".into())
+        .spawn(move || {
+            std::thread::sleep(delay);
+            if VISIBILITY_GEN.load(Ordering::SeqCst) != gen {
+                return; // 期间唤出或再次隐藏过，由新的计时负责
+            }
+            if let Some(w) = quick_window(&app) {
+                if !w.is_visible().unwrap_or(true) {
+                    set_memory_level(&w, true);
+                }
+            }
+        });
+}
+
+fn low_memory_after() -> Duration {
+    if cfg!(debug_assertions) {
+        if let Some(ms) = std::env::var("TAGLAUNCHER_E2E_QUICK_LOW_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            return Duration::from_millis(ms);
+        }
+    }
+    LOW_MEMORY_AFTER
+}
+
+/// 设置快速窗 WebView2 的内存目标（ICoreWebView2_19，WebView2 Runtime ≥ 114）。
+/// 运行时太旧拿不到接口时只记日志，不影响功能。成功后给快速窗发事件（E2E 据此断言）。
+fn set_memory_level(window: &WebviewWindow, low: bool) {
+    #[cfg(windows)]
+    {
+        let target = window.clone();
+        let _ = window.with_webview(move |webview| {
+            use webview2_com::Microsoft::Web::WebView2::Win32::{
+                ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
+                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+            };
+            use windows::core::Interface;
+            let level = if low {
+                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+            } else {
+                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+            };
+            // SAFETY：with_webview 回调在 WebView 所在线程执行，controller 在回调期间有效
+            let result = unsafe {
+                webview
+                    .controller()
+                    .CoreWebView2()
+                    .and_then(|core| core.cast::<ICoreWebView2_19>())
+                    .and_then(|core| core.SetMemoryUsageTargetLevel(level))
+            };
+            match result {
+                Ok(()) => {
+                    LOW_MEMORY.store(low, Ordering::SeqCst);
+                    let _ = target.emit(
+                        QUICK_MEMORY_EVENT,
+                        serde_json::json!({ "level": if low { "low" } else { "normal" }, "atMs": now_ms() }),
+                    );
+                }
+                Err(e) => log::warn!("[quick] 设置 WebView2 内存目标失败：{e}"),
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = (window, low);
 }
 
 /// 热键：可见且有焦点 → 收起；否则唤出。
@@ -161,6 +251,7 @@ pub fn toggle(app: &AppHandle, t0_ms: u64) {
     if let Some(w) = quick_window(app) {
         if w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false) {
             let _ = w.hide();
+            after_hidden(app);
             return;
         }
     }

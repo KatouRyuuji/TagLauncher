@@ -299,3 +299,65 @@ def test_quick_window_performance(sandbox, app_factory, n):
     if hidden_delta > HIDDEN_MEM_MB[n]:
         problems.append(f"隐藏常驻私有内存增量 {hidden_delta}MB > {HIDDEN_MEM_MB[n]}MB")
     assert not problems, "；".join(problems) + f"（详见 quick-perf-{n}.json）"
+
+
+# ---------------------------------------------------------------- 隐藏后降内存（§3.3）
+LOW_AFTER_MS = 2000  # 产品默认 5 分钟；debug 构建经 TAGLAUNCHER_E2E_QUICK_LOW_MS 缩短
+
+
+def memory_events(qp) -> list[dict]:
+    return perf(qp).get("memory", [])
+
+
+@pytest.mark.case("E-QUICK-MEM-01")
+def test_hidden_quick_window_lowers_webview_memory_target(sandbox, app_factory):
+    """隐藏超过 N 后 WebView2 MemoryUsageTargetLevel=Low，唤出先恢复 Normal；可见期间、
+    提前唤出都不降；降过之后的唤出仍守唤出 p95 ≤ 80 ms。内存变化只记录（Low 只是提示，
+    回收多少由 WebView2 决定）。"""
+    sandbox.env_extra["TAGLAUNCHER_E2E_QUICK_LOW_MS"] = str(LOW_AFTER_MS)
+    build_library(sandbox, 5000)
+    app = app_factory()
+    app.wait_count(5000, timeout=120)
+    pid = app.proc.pid
+    qp = enable_quick(app)
+    wait_loaded(qp, 5000, timeout=120)
+
+    # 可见期间不降
+    summon(app, qp)
+    time.sleep(LOW_AFTER_MS / 1000 + 2)
+    assert memory_events(qp) == [], f"可见期间不应降内存：{memory_events(qp)}"
+    # 隐藏后不到 N 就唤出：旧计时作废
+    hide(app)
+    time.sleep(LOW_AFTER_MS / 1000 / 2)
+    summon(app, qp)
+    time.sleep(LOW_AFTER_MS / 1000 + 2)
+    assert memory_events(qp) == [], f"隐藏不足 N 就唤出时不应降内存：{memory_events(qp)}"
+
+    cycles, summons = [], []
+    for i in range(5):
+        hide(app)
+        hidden_at = time.time() * 1000
+        time.sleep(1)
+        before = procmem.tree_memory(pid)
+        n0 = len(memory_events(qp))
+        low = wait_until(lambda: next((e for e in memory_events(qp)[n0:] if e["level"] == "low"), None),
+                         LOW_AFTER_MS / 1000 + 15, lambda: f"隐藏后未降内存：{memory_events(qp)}")
+        time.sleep(3)
+        after = procmem.tree_memory(pid)
+        n1 = len(memory_events(qp))
+        s = summon(app, qp)
+        normal = wait_until(lambda: next((e for e in memory_events(qp)[n1:] if e["level"] == "normal"), None),
+                            5, lambda: f"唤出后未恢复 Normal：{memory_events(qp)}")
+        summons.append(s["ms"])
+        cycles.append({"low_after_hide_ms": round(low["atMs"] - hidden_at), "normal_before_ready_ms": round(s["readyAtMs"] - normal["atMs"]),
+                       "summon_ms": round(s["ms"], 1), "private_mb_before_low": before["private_mb"], "private_mb_low": after["private_mb"],
+                       "ws_mb_before_low": before["working_set_mb"], "ws_mb_low": after["working_set_mb"]})
+        assert low["atMs"] - hidden_at >= LOW_AFTER_MS - 200, f"第 {i + 1} 轮提前降内存：{cycles[-1]}"
+        assert normal["atMs"] <= s["readyAtMs"], f"第 {i + 1} 轮可输入时尚未恢复 Normal：{cycles[-1]}"
+
+    out = {"low_after_ms": LOW_AFTER_MS, "summon_ms": stats(summons), "cycles": cycles,
+           "private_mb_delta_median": statistics.median(c["private_mb_low"] - c["private_mb_before_low"] for c in cycles),
+           "ws_mb_delta_median": statistics.median(c["ws_mb_low"] - c["ws_mb_before_low"] for c in cycles)}
+    (sandbox.artifacts / "quick-memory-level.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("QUICK_MEMORY", json.dumps(out, ensure_ascii=False))
+    assert out["summon_ms"]["p95"] <= SUMMON_P95_MS, f"降内存后的唤出 p95 {out['summon_ms']['p95']}ms > {SUMMON_P95_MS}ms：{out}"

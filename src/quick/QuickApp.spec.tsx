@@ -67,7 +67,7 @@ vi.mock("../lib/db", () => ({
 
 const collect = vi.hoisted(() => ({ pending: null as unknown, pref: null as unknown, clipboard: [] as string[], submitError: null as string | null }));
 
-const { QuickApp, QUICK_SHOWN_EVENT } = await import("./QuickApp");
+const { QuickApp, QUICK_SHOWN_EVENT, QUICK_MEMORY_EVENT } = await import("./QuickApp");
 
 function fire(name: string, payload: unknown) {
   act(() => { bus.handlers.get(name)?.forEach((h) => h({ payload })); });
@@ -155,6 +155,15 @@ describe("QuickApp", () => {
     expect(db.quickSearch).toHaveBeenLastCalledWith({ query: "", mode: "all", hideMissing: false, limit: 50 });
     fire("data-changed", { origin: "app", seq: 1, detectedAtMs: 1 });
     await waitFor(() => expect(db.quickSearch).toHaveBeenCalledTimes(2));
+  });
+
+  it("记录后端切换 WebView2 内存目标的事件（隐藏久了 low、唤出 normal）", async () => {
+    await setup();
+    await waitFor(() => expect(bus.handlers.get(QUICK_MEMORY_EVENT)?.size ?? 0).toBeGreaterThan(0));
+    fire(QUICK_MEMORY_EVENT, { level: "low", atMs: 10 });
+    fire(QUICK_MEMORY_EVENT, { level: "normal", atMs: 20 });
+    const perf = (window as unknown as { __tlQuickPerf: { memory: Array<{ level: string; atMs: number }> } }).__tlQuickPerf;
+    expect(perf.memory.slice(-2)).toEqual([{ level: "low", atMs: 10 }, { level: "normal", atMs: 20 }]);
   });
 
   it("跟随主窗主题快照", async () => {

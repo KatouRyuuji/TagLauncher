@@ -19,11 +19,13 @@ import { loadWorkspacePrefs, PREFS_KEY, type SearchMode } from "../stores/appSto
 import { applyThemeSnapshot, parseThemeSnapshot, THEME_SNAPSHOT_KEY } from "../lib/themeSnapshot";
 import type { ItemWithTags, Tag } from "../types";
 import { filterTagChoices, QUICK_RESULT_LIMIT, quickKeyAction, stepIndex, toggledTagIds } from "./quickModel";
-import { recordQuickLoad, recordQuickQuery, recordQuickSummon } from "./quickPerf";
+import { recordQuickLoad, recordQuickMemory, recordQuickQuery, recordQuickSummon } from "./quickPerf";
 import { QUICK_COLLECT_EVENT, type CollectSession } from "../lib/collect";
 import { QuickCollect } from "./QuickCollect";
 
 export const QUICK_SHOWN_EVENT = "quick-shown";
+/** 后端切换 WebView2 内存目标后发来（只做记录，供 E2E 断言） */
+export const QUICK_MEMORY_EVENT = "quick-memory-level";
 
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -231,6 +233,23 @@ function QuickSearch({ dropError }: { dropError: string | null }) {
       input?.select();
       const t0 = typeof event.payload?.t0Ms === "number" ? event.payload.t0Ms : Date.now();
       requestAnimationFrame(() => recordQuickSummon(t0, Date.now(), document.activeElement === inputRef.current));
+    })
+      .then((fn) => {
+        if (disposed) fn();
+        else stop = fn;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      stop?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    void listen<{ level?: string; atMs?: number }>(QUICK_MEMORY_EVENT, (event) => {
+      recordQuickMemory(String(event.payload?.level ?? ""), event.payload?.atMs ?? Date.now());
     })
       .then((fn) => {
         if (disposed) fn();
