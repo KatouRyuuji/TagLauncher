@@ -27,6 +27,7 @@ import {
 } from "../lib/collect";
 import type { Cabinet, Tag } from "../types";
 import { stepIndex } from "./quickModel";
+import { cabinetPathLabel } from "../lib/cabinetTree";
 
 type Step = "choose" | "tag" | "cabinet" | "running" | "done";
 
@@ -246,7 +247,7 @@ export function QuickCollect({ session, onClose }: { session: CollectSession; on
             {targets.length === 0 && <div className="quick-empty">没有可放入的普通文件柜（请先在主窗口新建）</div>}
             {targets.map((c) => (
               <button key={c.id} type="button" className="quick-button quick-row-button" data-testid="collect-cabinet-option" data-cabinet-id={c.id} onClick={() => runCabinet(c.id)}>
-                <span className="quick-tag-dot" style={{ background: c.color }} /> {c.name}
+                <span className="quick-tag-dot" style={{ background: c.color }} /> {cabinetPathLabel(cabinets, c.id)}
               </button>
             ))}
           </div>

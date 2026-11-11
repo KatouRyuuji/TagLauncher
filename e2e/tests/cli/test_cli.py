@@ -252,3 +252,28 @@ def test_sandbox_isolation_real_dirs(sandbox, app_factory, real_dir_guard):
     log = real_dirs()[1] / "logs" / "TagLauncher.log"
     assert log.exists() and log.stat().st_size > 0, "日志文件应落盘"
     assert time.time() - log.stat().st_mtime < 120, "日志应为本次运行写入"
+
+
+@pytest.mark.case("E-CLI-NEST-01")
+def test_cabinet_nesting_cli_matches_gui_semantics(tl, sandbox):
+    tl.ensure_db()
+    zoo = _zoo(sandbox)
+    tl.json("add", zoo["txt"], zoo["md"])
+    ids = [i["id"] for i in tl.json("list")]
+    with closing(sqlite3.connect(sandbox.db_path)) as con:
+        con.execute("INSERT INTO cabinets(name, color) VALUES('父', '#00aa00'), ('子', '#00aa00')")
+        parent, child = [r[0] for r in con.execute("SELECT id FROM cabinets ORDER BY id")]
+        con.execute("INSERT INTO cabinet_items(cabinet_id, item_id) VALUES(?, ?), (?, ?)", (parent, ids[0], child, ids[1]))
+        con.commit()
+    out = tl.run("cabinet", "move", child, "--parent", parent).out
+    assert "移到" in out
+    assert dbh.scalar(sandbox.db_path, "SELECT parent_id FROM cabinets WHERE id=?", (child,)) == parent
+    assert [c["parent_id"] for c in tl.json("cabinet", "list") if c["id"] == child] == [parent]
+    listing = tl.run("cabinet", "list").out.splitlines()
+    assert listing == [f"#{parent}\t父", f"  #{child}\t子"], listing
+    assert sorted(i["id"] for i in tl.json("cabinet", "items", parent)) == sorted(ids[:2]), "默认含子柜"
+    assert [i["id"] for i in tl.json("cabinet", "items", parent, "--only-self")] == [ids[0]]
+    bad = tl.run("cabinet", "move", parent, "--parent", child, check=False)
+    assert bad.returncode != 0 and "子柜" in bad.err
+    tl.run("cabinet", "move", child)
+    assert dbh.scalar(sandbox.db_path, "SELECT parent_id FROM cabinets WHERE id=?", (child,)) is None

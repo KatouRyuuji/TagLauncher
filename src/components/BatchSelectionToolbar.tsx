@@ -27,6 +27,7 @@ import {
 } from "../lib/itemActionCopy";
 import { summarizeTagOwnership, type TaggableItem } from "../lib/tagOwnership";
 import { useAppStore } from "../stores/appStore";
+import { cabinetPathLabel } from "../lib/cabinetTree";
 
 const TAG_MENU_FILTER_THRESHOLD = 8;
 
@@ -218,7 +219,7 @@ export function BatchSelectionToolbar({
             <MenuEmptyText>暂无文件柜</MenuEmptyText>
           ) : (
             cabinets.map((cabinet) => (
-              <MenuOption key={cabinet.id} color={cabinet.color} label={`加入 ${cabinet.name}`} onClick={() => runAction(() => onAddToCabinet(cabinet.id))} />
+              <MenuOption key={cabinet.id} color={cabinet.color} label={`加入 ${cabinetPathLabel(cabinets, cabinet.id)}`} onClick={() => runAction(() => onAddToCabinet(cabinet.id))} />
             ))
           )}
           <button

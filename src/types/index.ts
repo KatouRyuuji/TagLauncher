@@ -35,6 +35,8 @@ export interface Cabinet {
   folder_state?: "ok" | "offline" | "missing" | null;
   /** 侧栏手动顺序，升序；相同值按名称排 */
   sort_order?: number;
+  /** 父柜（F16 嵌套，单父树）；null/缺省为顶层。父柜视图默认包含全部子孙柜成员 */
+  parent_id?: number | null;
 }
 
 export interface Tag {

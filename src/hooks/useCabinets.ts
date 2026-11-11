@@ -92,11 +92,15 @@ export function useCabinets() {
     notifyCabinetsChanged(next);
   }, [setCabinets]);
 
-  /** 删除文件柜（关联的 cabinet_items 记录会级联删除） */
+  /** 删除文件柜（关联的 cabinet_items 记录会级联删除；子柜上移一级，与后端一致） */
   const removeCabinet = useCallback(async (id: number) => {
     await db.removeCabinet(id);
-    // 局部更新：按 id 过滤
-    const next = useAppStore.getState().cabinets.filter((c) => c.id !== id);
+    // 局部更新：按 id 过滤，并把它的子柜挂到它的父柜
+    const current = useAppStore.getState().cabinets;
+    const removed = current.find((c) => c.id === id);
+    const next = current
+      .filter((c) => c.id !== id)
+      .map((c) => (c.parent_id === id ? { ...c, parent_id: removed?.parent_id ?? null } : c));
     setCabinets(next);
     notifyCabinetsChanged(next);
     // 若删除的是当前选中文件柜，清除选中状态避免幽灵筛选
@@ -111,6 +115,14 @@ export function useCabinets() {
     await loadCabinets();
   }, [loadCabinets]);
 
+  /** 设置父柜（null 移到顶层）；成功后局部更新，成员计数随之变化 */
+  const setCabinetParent = useCallback(async (id: number, parentId: number | null) => {
+    await db.setCabinetParent(id, parentId);
+    const next = useAppStore.getState().cabinets.map((c) => (c.id === id ? { ...c, parent_id: parentId } : c));
+    setCabinets(next);
+    notifyCabinetsChanged(next);
+  }, [setCabinets]);
+
   /** 按给定 id 顺序写入侧栏手动顺序 */
   const reorderCabinets = useCallback(async (ids: number[]) => {
     await db.reorderCabinets(ids);
@@ -119,5 +131,5 @@ export function useCabinets() {
     notifyCabinetsChanged(next);
   }, [setCabinets]);
 
-  return { refresh: loadCabinets, addCabinet, updateCabinet, removeCabinet, setCabinetFolder, reorderCabinets };
+  return { refresh: loadCabinets, addCabinet, updateCabinet, removeCabinet, setCabinetFolder, setCabinetParent, reorderCabinets };
 }

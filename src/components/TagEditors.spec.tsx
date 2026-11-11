@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { TagEditor } from "./TagEditor";
@@ -26,11 +26,41 @@ describe("分类编辑器状态", () => {
   it("文件柜新建标题下强调分组用途，并列出可识别的颜色选项", () => {
     render(<TagEditor tag={null} label="文件柜" onSave={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByRole("dialog", { name: "新建文件柜" })).toBeInTheDocument();
-    expect(screen.getByText("文件柜是分组，一个对象可以进多个柜；也可以关联一个磁盘文件夹，柜内容随文件夹同步")).toBeInTheDocument();
+    expect(screen.getByText("文件柜是分组，一个对象可以进多个柜；柜可以放进另一个柜（父柜默认显示全部子柜内容）；也可以关联一个磁盘文件夹，柜内容随文件夹同步")).toBeInTheDocument();
     const group = screen.getByRole("radiogroup", { name: "分类颜色" });
     expect(group.querySelectorAll('[role="radio"]')).toHaveLength(10);
     expect(screen.getByRole("radio", { name: "蔷薇" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "晴蓝" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("文件柜可选上级文件柜（F16），保存时带回 parentId；有子柜时不提供关联文件夹", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <TagEditor
+        tag={{ id: 3, name: "子", color: "#3b82f6" }}
+        label="文件柜"
+        folderPath={null}
+        parentId={null}
+        parentOptions={[{ id: 1, label: "工作" }, { id: 2, label: "工作 / 项目" }]}
+        hasChildren
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const select = screen.getByTestId("cabinet-parent-select") as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual(["（顶层）", "工作", "工作 / 项目"]);
+    expect(screen.getByTestId("cabinet-folder-blocked")).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "2" } });
+    fireEvent.submit(select.closest("form")!);
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith("子", expect.any(String), null, 2));
+  });
+
+  it("标签编辑器不显示上级文件柜字段，保存不带 parentId", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<TagEditor tag={{ id: 1, name: "工作", color: "#3b82f6" }} onSave={onSave} onClose={vi.fn()} />);
+    expect(screen.queryByTestId("cabinet-parent-select")).toBeNull();
+    fireEvent.submit(screen.getByRole("textbox").closest("form")!);
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith("工作", expect.any(String), null, undefined));
   });
 
   it("现有色不在主题色板里时立刻吸附最近位，不出现当前点", () => {

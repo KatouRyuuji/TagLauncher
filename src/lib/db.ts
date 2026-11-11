@@ -315,6 +315,8 @@ export async function searchIndexStats(): Promise<SearchIndexStats> {
 export interface ViewQueryArgs {
   scope: "all" | "favorites" | "recent" | "cabinet";
   cabinetId?: number | null;
+  /** 父柜视图「仅本柜」；缺省 = 本柜 ∪ 全部子孙柜（F16） */
+  cabinetOnlySelf?: boolean;
   /** 每个正选标签的命中集合（直接标签 = 仅自身；后代模式 = 自身 ∪ 后代） */
   selectedGroups: number[][];
   excludedGroups: number[][];
@@ -602,6 +604,11 @@ export async function setCabinetFolder(id: number, folder: string | null): Promi
   return invokeCmd("set_cabinet_folder", { id, folder });
 }
 
+/** 设置父柜（null 移到顶层）；后端拒绝成环、以关联文件夹柜为父 */
+export async function setCabinetParent(id: number, parentId: number | null): Promise<void> {
+  return invokeCmd("set_cabinet_parent", { id, parentId });
+}
+
 /** 添加项目到文件柜（重复添加会被忽略） */
 export async function addItemToCabinet(cabinetId: number, itemId: number): Promise<void> {
   return invokeCmd("add_item_to_cabinet", { cabinetId, itemId });
@@ -622,12 +629,12 @@ export async function removeItemsFromCabinet(cabinetId: number, itemIds: number[
   return invokeCmd("remove_items_from_cabinet", { cabinetId, itemIds });
 }
 
-/** 获取文件柜内项目及标签，自动图标默认开启。 */
-export async function getCabinetItems(cabinetId: number, includeVisuals = true): Promise<ItemWithTags[]> {
-  return invokeCmd("get_cabinet_items", { cabinetId, includeVisuals });
+/** 获取文件柜内项目及标签，自动图标默认开启；默认含全部子孙柜成员（与父柜视图一致）。 */
+export async function getCabinetItems(cabinetId: number, includeVisuals = true, includeDescendants = true): Promise<ItemWithTags[]> {
+  return invokeCmd("get_cabinet_items", { cabinetId, includeVisuals, includeDescendants });
 }
 
-/** 各文件柜成员计数（轻量单查询，侧栏徽标用） */
+/** 各文件柜成员计数（侧栏徽标用；父柜 = 自身 ∪ 子孙柜去重，与默认视图一致） */
 export async function getCabinetItemCounts(): Promise<Map<number, number>> {
   const pairs = await invokeCmd("get_cabinet_item_counts") as [number, number][];
   return new Map(pairs);

@@ -44,6 +44,7 @@ import { useAppStore } from "../stores/appStore";
 import { isUnderDir } from "../lib/cabinetBrowse";
 import type { Cabinet, ItemWithTags } from "../types";
 import type { ContextSelectionInfo } from "./ItemCard";
+import { cabinetPathLabel } from "../lib/cabinetTree";
 
 interface ContextMenuProps {
   item: ItemWithTags;
@@ -766,7 +767,7 @@ export function ContextMenu({
               className="flex min-h-9 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
               <span className="h-3 w-3 shrink-0 rounded-[4px]" style={{ backgroundColor: cabinet.color }} />
-              <span className="truncate">{cabinet.name}</span>
+              <span className="truncate">{cabinetPathLabel(cabinets, cabinet.id)}</span>
             </button>
           ))}
         </div>

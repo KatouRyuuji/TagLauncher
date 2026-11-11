@@ -8,10 +8,11 @@
 // ============================================================================
 
 import { Fragment, useMemo } from "react";
-import { ChevronRight, Eraser, FolderTree, History, Rows3 } from "lucide-react";
+import { ChevronRight, Eraser, FolderTree, History, Layers, Rows3, Square } from "lucide-react";
 import { browseCrumbs, parentDir } from "../lib/cabinetBrowse";
 import { IgnoredPathsButton } from "./IgnoredPathsButton";
 import { resolveWorkspaceScope } from "../lib/workspaceScope";
+import { hasChildCabinets } from "../lib/cabinetTree";
 import { useAppStore } from "../stores/appStore";
 import type { Cabinet } from "../types";
 
@@ -43,6 +44,10 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir 
   const showNestedContents = useAppStore((state) => state.showNestedContents);
   const setShowNestedContents = useAppStore((state) => state.setShowNestedContents);
   const libraryBrowseRoot = useAppStore((state) => state.libraryBrowseRoot);
+  const cabinetOnlySelf = useAppStore((state) => state.cabinetOnlySelf);
+  const setCabinetOnlySelf = useAppStore((state) => state.setCabinetOnlySelf);
+  // 父柜（有子柜）视图：默认含全部子柜内容，可切「仅本柜」（F16）
+  const parentCabinet = selectedCabinetId !== null && !showFavorites && !showRecent && hasChildCabinets(cabinets, selectedCabinetId);
   const inAll =
     !showFavorites && !showRecent && selectedCabinetId === null;
 
@@ -94,6 +99,19 @@ export function WorkspaceScopeHeader({ visibleCount, pending = false, browseDir 
           >
             <History aria-hidden="true" size={14} strokeWidth={1.8} />
             清除记录
+          </button>
+        )}
+        {parentCabinet && (
+          <button
+            type="button"
+            data-testid="cabinet-only-self"
+            aria-pressed={cabinetOnlySelf}
+            title={cabinetOnlySelf ? "当前只显示本柜自己的对象；点此改为包含全部子柜" : "当前包含全部子柜的对象；点此改为只看本柜"}
+            onClick={() => setCabinetOnlySelf(!cabinetOnlySelf)}
+            className="control-chip ml-auto h-7 min-h-7 shrink-0 gap-1.5 self-center px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))]"
+          >
+            {cabinetOnlySelf ? <Square aria-hidden="true" size={14} strokeWidth={1.8} /> : <Layers aria-hidden="true" size={14} strokeWidth={1.8} />}
+            {cabinetOnlySelf ? "仅本柜" : "含子柜"}
           </button>
         )}
         {inAll && !libraryBrowseRoot && (

@@ -21,6 +21,7 @@ import { browseTargetForItem } from "../lib/nestedVisibility";
 import type { SortMode, TypeFilter } from "../lib/itemQuery";
 import { planUntrack, watchRootPaths } from "../lib/untrack";
 import { applySortOrder, compareSortOrder } from "../lib/sidebarOrder";
+import { cabinetDescendants } from "../lib/cabinetTree";
 import {
   DEMO_AUDIO_META,
   DEMO_CABINET_ITEMS,
@@ -345,11 +346,27 @@ const num = (value: unknown): number => Number(value);
 const str = (value: unknown): string => String(value);
 const ids = (value: unknown): number[] => (value as number[]).map(Number);
 
+/** 本柜自己的成员（关联柜按路径） */
+function ownCabinetMembers(cabinetId: number): Set<number> {
+  const folder = state.cabinets.find((entry) => entry.id === cabinetId)?.folder_path;
+  return folder ? new Set(linkedMembers(folder)) : new Set(state.cabinetItems.get(cabinetId) ?? []);
+}
+
+/** 与后端 cabinet_member_ids 同口径：默认本柜 ∪ 全部子孙柜（F16） */
+function cabinetMembers(cabinetId: number, includeDescendants = true): Set<number> {
+  const out = ownCabinetMembers(cabinetId);
+  if (!includeDescendants) return out;
+  for (const id of cabinetDescendants(state.cabinets, cabinetId)) {
+    for (const member of ownCabinetMembers(id)) out.add(member);
+  }
+  return out;
+}
+
 function demoViewQuery(raw: unknown) {
   const v = (raw ?? {}) as Record<string, unknown>;
   const cabinetId = typeof v.cabinetId === "number" ? v.cabinetId : null;
   const folder = v.scope === "cabinet" ? state.cabinets.find((entry) => entry.id === cabinetId)?.folder_path ?? null : null;
-  const members = v.scope === "cabinet" ? (folder ? new Set(linkedMembers(folder)) : state.cabinetItems.get(cabinetId ?? -1) ?? new Set<number>()) : null;
+  const members = v.scope === "cabinet" ? cabinetMembers(cabinetId ?? -1, v.cabinetOnlySelf !== true) : null;
   const groups = (x: unknown) => (Array.isArray(x) ? x.map((g) => ids(g)) : []);
   const strOrNull = (x: unknown) => (typeof x === "string" ? x : null);
   return demoView(sortItems(state.items).map(withTags), {
@@ -858,6 +875,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         folder_path: null,
         folder_truncated: false,
         sort_order: nextSortOrder(state.cabinets),
+        parent_id: null,
       };
       state.cabinets.push(cabinet);
       state.cabinetItems.set(cabinet.id, new Set());
@@ -871,8 +889,23 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     }
     case "remove_cabinet": {
       const id = num(args.id);
-      state.cabinets = state.cabinets.filter((cabinet) => cabinet.id !== id);
+      const parent = requireCabinet(id).parent_id ?? null;
+      state.cabinets = state.cabinets
+        .filter((cabinet) => cabinet.id !== id)
+        .map((cabinet) => (cabinet.parent_id === id ? { ...cabinet, parent_id: parent } : cabinet));
       state.cabinetItems.delete(id);
+      return null;
+    }
+    case "set_cabinet_parent": {
+      const cabinet = requireCabinet(num(args.id));
+      const parent = args.parentId == null ? null : num(args.parentId);
+      if (parent !== null) {
+        const target = requireCabinet(parent);
+        if (parent === cabinet.id) throw new Error("不能把文件柜放进它自己");
+        if (target.folder_path) throw new Error("关联文件夹的文件柜只能在最底层，不能再放入子柜");
+        if (cabinetDescendants(state.cabinets, cabinet.id).has(parent)) throw new Error("不能把文件柜放进它自己的子柜");
+      }
+      cabinet.parent_id = parent;
       return null;
     }
     case "set_cabinet_folder": {
@@ -883,6 +916,9 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         cabinet.folder_path = null;
         cabinet.folder_state = null;
         return null;
+      }
+      if (state.cabinets.some((entry) => entry.parent_id === cabinet.id)) {
+        throw new Error("该文件柜包含子柜；关联文件夹的文件柜只能在最底层，请先移走子柜");
       }
       if (state.cabinets.some((entry) => entry.id !== cabinet.id && entry.folder_path?.toLowerCase() === folder.toLowerCase())) {
         throw new Error("该文件夹已关联到其他文件柜");
@@ -915,18 +951,12 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return null;
     }
     case "get_cabinet_items": {
-      const folder = state.cabinets.find((entry) => entry.id === num(args.cabinetId))?.folder_path;
-      const members = folder ? new Set(linkedMembers(folder)) : state.cabinetItems.get(num(args.cabinetId)) ?? new Set<number>();
+      const members = cabinetMembers(num(args.cabinetId), args.includeDescendants !== false);
       return sortItems(state.items.filter((item) => members.has(item.id))).map(withTags);
     }
     case "get_cabinet_item_counts": {
       const pairs: [number, number][] = [];
-      for (const cabinet of state.cabinets) {
-        const size = cabinet.folder_path
-          ? linkedMembers(cabinet.folder_path).length
-          : state.cabinetItems.get(cabinet.id)?.size ?? 0;
-        pairs.push([cabinet.id, size]);
-      }
+      for (const cabinet of state.cabinets) pairs.push([cabinet.id, cabinetMembers(cabinet.id).size]);
       return pairs;
     }
 

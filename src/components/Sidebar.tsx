@@ -24,6 +24,7 @@ import { SidebarThemeSwitcher } from "./SidebarThemeSwitcher";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
 import { filterCollapsedTagRows, flattenTagTree } from "../lib/tagTree";
 import { compareSortOrder, moveBeside } from "../lib/sidebarOrder";
+import { cabinetPathLabel, canNestCabinet, flattenCabinetTree, parentCandidates } from "../lib/cabinetTree";
 import { scopedTagSearch, scopeSearchKey } from "../lib/tagScopeSearch";
 import { TagScopeNotice } from "./TagScopeNotice";
 import { describeParentChange, resolveHierarchyDrop, type HierarchyDropTarget } from "../lib/tagHierarchyDrag";
@@ -65,6 +66,8 @@ interface SidebarProps {
   onReorderCabinets: (ids: number[]) => Promise<void>;
   /** 关联 / 解除文件柜的磁盘文件夹 */
   onSetCabinetFolder?: (id: number, folder: string | null) => Promise<void>;
+  /** 设置父柜（null = 顶层；F16 嵌套） */
+  onSetCabinetParent?: (id: number, parentId: number | null) => Promise<void>;
   onAddTagToItem: (itemId: number, tagId: number) => Promise<void>;
   onAddTagRelation: (parentId: number, childId: number) => Promise<void>;
   onRemoveTagRelation: (parentId: number, childId: number) => Promise<void>;
@@ -94,6 +97,7 @@ export function Sidebar({
   onReorderTags,
   onReorderCabinets,
   onSetCabinetFolder,
+  onSetCabinetParent,
   onAddTagToItem,
   onAddTagRelation,
   onRemoveTagRelation,
@@ -146,6 +150,17 @@ export function Sidebar({
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [showAddTag, setShowAddTag] = useState(false);
   const [editingCabinet, setEditingCabinet] = useState<Cabinet | null>(null);
+  const [collapsedCabinets, setCollapsedCabinets] = useState<Set<number>>(loadCollapsedCabinets);
+  const toggleCabinetCollapsed = useCallback((id: number, collapse?: boolean) => {
+    setCollapsedCabinets((prev) => {
+      const next = new Set(prev);
+      if (collapse ?? !next.has(id)) next.add(id);
+      else next.delete(id);
+      saveCollapsedCabinets(next);
+      return next;
+    });
+  }, []);
+  const cabinetRows = useMemo(() => flattenCabinetTree(cabinets, collapsedCabinets), [cabinets, collapsedCabinets]);
   const [showAddCabinet, setShowAddCabinet] = useState(false);
   // null = 关闭；打开时记下要对准的标签（右键所在标签或侧栏当前选中标签）
   const [relationsEditor, setRelationsEditor] = useState<{ initialTagId: number | null } | null>(null);
@@ -358,10 +373,35 @@ export function Sidebar({
         if (!row) return null;
         const targetId = Number(row.element.dataset.dropItemCabinetId);
         if (targetId === cabinet.id) return null;
+        const target = cabinets.find((entry) => entry.id === targetId);
+        // 行中部 = 放进去成为子柜（需合法：不成环、目标不是关联文件夹柜）；上/下缘 = 排到它前/后
+        if (onSetCabinetParent && row.middle && canNestCabinet(cabinets, cabinet.id, targetId)) {
+          return { kind: "sidebar-cabinet", cabinetId: targetId, after: row.after, into: true };
+        }
+        const siblingParent = target?.parent_id ?? null;
+        if (onSetCabinetParent && siblingParent !== (cabinet.parent_id ?? null) && !canNestCabinet(cabinets, cabinet.id, siblingParent)) {
+          return null;
+        }
         return { kind: "sidebar-cabinet", cabinetId: targetId, after: row.after };
       },
       onDrop: async (target) => {
         if (target?.kind !== "sidebar-cabinet") return;
+        if (target.into) {
+          if (cabinet.parent_id === target.cabinetId) return;
+          await reorderWithToast(() => onSetCabinetParent!(cabinet.id, target.cabinetId));
+          setCollapsedCabinets((prev) => {
+            if (!prev.has(target.cabinetId)) return prev;
+            const next = new Set(prev);
+            next.delete(target.cabinetId);
+            saveCollapsedCabinets(next);
+            return next;
+          });
+          return;
+        }
+        const siblingParent = cabinets.find((entry) => entry.id === target.cabinetId)?.parent_id ?? null;
+        if (onSetCabinetParent && siblingParent !== (cabinet.parent_id ?? null)) {
+          await reorderWithToast(() => onSetCabinetParent(cabinet.id, siblingParent));
+        }
         const next = moveBeside(cabinets.map((entry) => entry.id), cabinet.id, target.cabinetId, target.after);
         if (next) await reorderWithToast(() => onReorderCabinets(next));
       },
@@ -681,18 +721,42 @@ export function Sidebar({
               </SectionHeader>
 
               <div className="mt-1 space-y-0.5">
-                {cabinets.map((cabinet) => {
+                {cabinetRows.map(({ cabinet, depth, hasChildren, collapsed }) => {
                   const active = selectedCabinetId === cabinet.id;
                   const hovered = hoveredCabinetId === cabinet.id;
+                  const nestInto = cabinetInsert?.cabinetId === cabinet.id && cabinetInsert.into;
                   const activeCabinetStyle = active
                     ? { boxShadow: "inset 3px 0 0 var(--accent-primary)" }
                     : undefined;
                   return (
-                    <button
+                    <div
                       key={cabinet.id}
+                      className="relative flex items-center"
+                      style={{ paddingLeft: depth * 14 }}
+                      data-cabinet-depth={depth}
+                    >
+                      {hasChildren ? (
+                        <button
+                          type="button"
+                          className="icon-button h-6 w-5 shrink-0"
+                          data-testid={`cabinet-toggle-${cabinet.id}`}
+                          aria-label={collapsed ? `展开「${cabinet.name}」的子柜` : `折叠「${cabinet.name}」的子柜`}
+                          aria-expanded={!collapsed}
+                          onClick={() => toggleCabinetCollapsed(cabinet.id)}
+                        >
+                          {collapsed
+                            ? <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+                            : <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />}
+                        </button>
+                      ) : (
+                        cabinets.some((entry) => entry.parent_id != null) && <span className="w-5 shrink-0" aria-hidden="true" />
+                      )}
+                    <button
                       type="button"
                       data-drop-item-cabinet-id={cabinet.id}
+                      data-cabinet-parent-id={cabinet.parent_id ?? ""}
                       aria-pressed={active}
+                      aria-expanded={hasChildren ? !collapsed : undefined}
                       style={activeCabinetStyle}
                       onPointerDown={(event) => handleCabinetPointerDown(event, cabinet)}
                       onClick={() => handleCabinetClick(cabinet.id)}
@@ -705,15 +769,19 @@ export function Sidebar({
                         if (event.key === "F2" || event.key === "Delete") {
                           event.preventDefault();
                           setEditingCabinet(cabinet);
+                        } else if (hasChildren && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {
+                          event.preventDefault();
+                          toggleCabinetCollapsed(cabinet.id, event.key === "ArrowLeft");
                         }
                       }}
-                      className={`relative flex h-8 w-full cursor-grab items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors active:cursor-grabbing ${
-                        hovered
+                      className={`relative flex h-8 min-w-0 flex-1 cursor-grab items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 text-left transition-colors active:cursor-grabbing ${
+                        hovered || nestInto
                           ? "border-transparent bg-[var(--accent-primary-bg-light)] text-[var(--accent-primary-ink)]"
                           : active
                             ? "border-transparent bg-[var(--accent-primary-bg)] font-semibold text-[var(--text-primary)]"
                             : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                       }`}
+                      data-nest-target={nestInto ? "" : undefined}
                     >
                       <span
                         className="h-2.5 w-2.5 shrink-0 rounded-[2px] ring-1 ring-[color-mix(in_srgb,var(--border-strong)_42%,transparent)]"
@@ -722,9 +790,10 @@ export function Sidebar({
                       />
                       <span className="min-w-0 flex-1 truncate text-[length:calc(13px*var(--ui-font-scale,1))] font-medium">{cabinet.name}</span>
                       {cabinet.folder_path && <LinkedFolderMark cabinet={cabinet} />}
-                      {cabinetInsert?.cabinetId === cabinet.id && <InsertLine after={cabinetInsert.after} />}
+                      {cabinetInsert?.cabinetId === cabinet.id && !cabinetInsert.into && <InsertLine after={cabinetInsert.after} />}
                       <NavCount value={itemCountByCabinet.get(cabinet.id) ?? 0} />
                     </button>
+                    </div>
                   );
                 })}
               </div>
@@ -820,14 +889,27 @@ export function Sidebar({
           tag={editingCabinet ? { id: editingCabinet.id, name: editingCabinet.name, color: editingCabinet.color } : null}
           label="文件柜"
           folderPath={onSetCabinetFolder ? editingCabinet?.folder_path ?? null : undefined}
-          onSave={async (name, color, folder) => {
+          parentId={onSetCabinetParent ? editingCabinet?.parent_id ?? null : undefined}
+          parentOptions={parentCandidates(cabinets, editingCabinet?.id ?? null)
+            .map((entry) => ({ id: entry.id, label: cabinetPathLabel(cabinets, entry.id) }))}
+          hasChildren={editingCabinet ? cabinets.some((entry) => entry.parent_id === editingCabinet.id) : false}
+          onSave={async (name, color, folder, parentId) => {
             if (editingCabinet) {
               await onUpdateCabinet(editingCabinet.id, name, color);
+              // 先改父柜再关联文件夹：两者都由后端校验（关联柜只能是叶子）
+              if (parentId !== undefined && parentId !== (editingCabinet.parent_id ?? null)) {
+                await onSetCabinetParent?.(editingCabinet.id, parentId);
+              }
               if (folder !== editingCabinet.folder_path) {
                 await onSetCabinetFolder?.(editingCabinet.id, folder);
               }
             } else {
               const created = await onAddCabinet(name, color) as Cabinet;
+              if (parentId != null) {
+                await onSetCabinetParent?.(created.id, parentId).catch((err: unknown) =>
+                  showToast(`文件柜已创建，但放入上级文件柜失败：${err instanceof Error ? err.message : String(err)}`, "error"),
+                );
+              }
               if (folder !== null) {
                 // 柜已建成：关联失败只提示，不让用户重复提交造成重名
                 await onSetCabinetFolder?.(created.id, folder).catch((err: unknown) =>
@@ -1085,12 +1167,33 @@ function LinkedFolderMark({ cabinet }: { cabinet: Cabinet }) {
 }
 
 /** 指针下最近的侧栏行，after 表示落在该行下半区 */
-function sidebarRowAt(event: PointerEvent, selector: string): { element: HTMLElement; after: boolean } | null {
+function sidebarRowAt(event: PointerEvent, selector: string): { element: HTMLElement; after: boolean; middle: boolean } | null {
   const hit = document.elementFromPoint(event.clientX, event.clientY);
   const element = hit instanceof HTMLElement ? hit.closest<HTMLElement>(selector) : null;
   if (!element) return null;
   const rect = element.getBoundingClientRect();
-  return { element, after: event.clientY > rect.top + rect.height / 2 };
+  const offset = event.clientY - rect.top;
+  // middle：行高中间一半（用于文件柜「放进去成为子柜」）；上下各四分之一仍是排序
+  return { element, after: offset > rect.height / 2, middle: offset > rect.height / 4 && offset < (rect.height * 3) / 4 };
+}
+
+const CABINET_COLLAPSE_KEY = "tl.sidebar.collapsedCabinets";
+
+function loadCollapsedCabinets(): Set<number> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CABINET_COLLAPSE_KEY) ?? "[]") as unknown;
+    return new Set(Array.isArray(raw) ? raw.filter((v): v is number => typeof v === "number") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsedCabinets(ids: Set<number>): void {
+  try {
+    localStorage.setItem(CABINET_COLLAPSE_KEY, JSON.stringify([...ids]));
+  } catch {
+    // 隐私模式等：折叠状态只在本次会话有效
+  }
 }
 
 /** 拖动排序的插入位置线 */

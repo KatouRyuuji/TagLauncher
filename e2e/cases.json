@@ -1397,6 +1397,28 @@
 "coverage": "CAB-07"
 },
 {
+"id": "E-CAB-NEST-01",
+"module": "文件柜",
+"scenario": "嵌套文件柜：拖入/弹窗设父柜，父柜默认含子柜，可切仅本柜",
+"steps": "拖柜到另一柜行中部；编辑弹窗选上级；选父柜；点「含子柜/仅本柜」；重载；折叠；拖到行上缘移出",
+"expect": "parent_id 落库；侧栏缩进；父柜计数=并集去重；视图默认含子孙柜成员，仅本柜只显示自身；偏好持久化；折叠隐藏子孙；成员不写入父柜",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P1",
+"coverage": "F16 方案 C"
+},
+{
+"id": "E-CAB-NEST-02",
+"module": "文件柜",
+"scenario": "嵌套规则：防环、关联文件夹柜只能是叶子、删除中间柜子柜上移",
+"steps": "invoke/拖放把祖先放进子孙；关联柜作父；给父柜关联文件夹；删除中间柜",
+"expect": "成环被拒；关联柜不能作父、父柜不能关联文件夹；关联柜可作子柜且其成员并入父柜视图；删除后孙柜挂到祖父、成员保留",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P1",
+"coverage": "F16 方案 C"
+},
+{
 "id": "E-SR-01",
 "module": "搜索",
 "scenario": "关键词搜索+高亮",
@@ -2792,6 +2814,17 @@
 "automation": "pywinpty",
 "priority": "P2",
 "coverage": "TUI-01"
+},
+{
+"id": "E-CLI-NEST-01",
+"module": "命令行",
+"scenario": "tl cabinet move/list/items 与界面嵌套语义一致",
+"steps": "tl cabinet move <id> --parent <pid>；list；items（默认/--only-self）；成环；move 回顶层",
+"expect": "parent_id 落库；list 按层缩进；items 默认含子柜，--only-self 仅本柜；成环退出码非 0",
+"layer": "CLI",
+"automation": "subprocess",
+"priority": "P1",
+"coverage": "F16 方案 C"
 },
 {
 "id": "E-ERR-01",
