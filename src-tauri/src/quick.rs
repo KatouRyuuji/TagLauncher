@@ -260,6 +260,8 @@ pub fn show(app: &AppHandle, t0_ms: u64, activate: bool) -> Result<(), String> {
     }
     place_on_target_monitor(app, &window);
     window.show().map_err(|e| e.to_string())?;
+    // 钉住表面用原生 ShowWindow 显隐，tao 的可见标志可能停在「可见」而窗口其实已隐藏 → 上面的 show 是空操作；补一次原生显示
+    native_show(&window, activate);
     // 快速窗可见期间按可见间隔检测外部写入，唤出时先检测一次
     crate::data_sync::poke();
     if activate {
@@ -275,6 +277,37 @@ pub fn show(app: &AppHandle, t0_ms: u64, activate: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn native_show(window: &tauri::WebviewWindow, activate: bool) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_SHOW, SW_SHOWNOACTIVATE};
+        if let Ok(h) = window.hwnd() {
+            // SAFETY：hwnd 来自本进程窗口
+            unsafe {
+                ShowWindow(h.0 as _, if activate { SW_SHOW } else { SW_SHOWNOACTIVATE });
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (window, activate);
+}
+
+/// 同 [`native_show`]：tao 标志可能停在「隐藏」（钉住表面原生显示过），tauri hide 会跳过
+fn native_hide(window: &tauri::WebviewWindow) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+        if let Ok(h) = window.hwnd() {
+            // SAFETY：hwnd 来自本进程窗口
+            unsafe {
+                ShowWindow(h.0 as _, SW_HIDE);
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = window;
+}
+
 pub fn hide(app: &AppHandle) {
     // 钉住视图开启：搜索收起 = 还原为钉住视图（同一个 WebView），不隐藏窗口
     if crate::pin::active() {
@@ -287,6 +320,7 @@ pub fn hide(app: &AppHandle) {
     }
     if let Some(w) = quick_window(app) {
         let _ = w.hide();
+        native_hide(&w);
         after_hidden(app);
     }
 }

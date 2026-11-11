@@ -493,10 +493,10 @@ fn set_bounds(window: &WebviewWindow, r: Rect) {
     let _ = window.set_position(tauri::PhysicalPosition::new(r.0, r.1));
 }
 
-/// 隐藏：tauri 的 hide（同步 tao 内部的可见标志，否则之后 tauri show 会被当成已可见而跳过）
-/// + 原生 SW_HIDE（窗口是 show_no_activate 原生显示的，tao 标志可能仍是「隐藏」，它的 hide 是空操作）
+/// 隐藏：只用原生 SW_HIDE，与 [`show_no_activate`] 成对。
+/// 不经 tauri hide：钉住表面的显示是原生的，tao 的可见标志与真实状态不一致，tauri hide/show 按标志差异
+/// 决定做不做，会变成空操作；混用还会让 WebView 尺寸停在动画中间值。搜索表面的 show 见 quick::show（会补原生 SW_SHOW）。
 fn hide_window(window: &WebviewWindow) {
-    let _ = window.hide();
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
@@ -506,6 +506,10 @@ fn hide_window(window: &WebviewWindow) {
                 ShowWindow(h.0 as _, SW_HIDE);
             }
         }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window.hide();
     }
 }
 
