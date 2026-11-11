@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { flattenTagTree } from "./tagTree";
-import { scopedTagSearch, subtreeIds } from "./tagScopeSearch";
+import { scopedTagSearch, scopeSearchKey, subtreeIds } from "./tagScopeSearch";
 
 // 游戏(1) → 动作(2) → 动作射击(4)；影视(3) → 动作片(5)；共享子「收藏」(6) 同时在 游戏、影视 下
 const tags = [
@@ -49,3 +49,14 @@ describe("tagScopeSearch（F04c）", () => {
     expect(ids(r)).toEqual(["1>2", "2>4", "3>5"]);
   });
 });
+
+describe("scopeSearchKey", () => {
+  it("转全局只绑定当时的当前层与过滤词：整段换词或换层后不再相等", () => {
+    const k = scopeSearchKey([1], "工具");
+    expect(scopeSearchKey([1], " 工具 ")).toBe(k);
+    expect(scopeSearchKey([1], "收藏")).not.toBe(k);
+    expect(scopeSearchKey([2], "工具")).not.toBe(k);
+    expect(scopeSearchKey([1, 2], "")).not.toBe(scopeSearchKey([12], ""));
+  });
+});
+
