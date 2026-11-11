@@ -88,3 +88,30 @@ def tree_memory(root_pid: int) -> dict:
         ws += m[1]
         rows.append({"pid": pid, "exe": exe, "private_mb": round(m[0] / 2**20, 1), "ws_mb": round(m[1] / 2**20, 1)})
     return {"private_mb": round(priv / 2**20, 1), "working_set_mb": round(ws / 2**20, 1), "processes": rows}
+
+
+def cpu_seconds(pid: int) -> float | None:
+    """进程累计 CPU 时间（内核 + 用户，秒）。"""
+    h = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not h:
+        return None
+    try:
+        c, e, k, u = (wintypes.FILETIME() for _ in range(4))
+        if not k32.GetProcessTimes(h, ctypes.byref(c), ctypes.byref(e), ctypes.byref(k), ctypes.byref(u)):
+            return None
+
+        def ft(x) -> int:
+            return (x.dwHighDateTime << 32) | x.dwLowDateTime
+        return (ft(k) + ft(u)) / 1e7
+    finally:
+        k32.CloseHandle(h)
+
+
+def tree_cpu(root_pid: int) -> dict[int, tuple[str, float]]:
+    """{pid: (exe, cpu_seconds)}：应用进程树每个进程的累计 CPU 时间。"""
+    out = {}
+    for pid, exe in tree(root_pid):
+        s = cpu_seconds(pid)
+        if s is not None:
+            out[pid] = (exe, s)
+    return out

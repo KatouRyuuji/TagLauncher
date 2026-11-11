@@ -18,6 +18,8 @@ vi.mock("@tauri-apps/api/event", () => ({
   emit: vi.fn(async (name: string, payload: unknown) => { bus.emitted.push({ name, payload }); }),
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (p: string) => `asset://${p}` }));
+
 const drop = vi.hoisted(() => ({ handler: null as null | ((e: { payload: unknown }) => void) }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({
@@ -34,13 +36,21 @@ const fixtures: ItemWithTags[] = [
 ];
 
 // 后端 quick_search 的替身：只区分空查询与示例里用到的两个词（打分语义由 Rust 对照测试覆盖）
-const BACKEND_HITS: Record<string, number[]> = { "": [2, 1], xmwd: [1], vsc: [2] };
+const BACKEND_HITS: Record<string, number[]> = { "": [2, 1], xmwd: [1], vsc: [2], many: Array.from({ length: 25 }, (_, i) => 100 + i) };
+const manyItems: ItemWithTags[] = [];
+for (let i = 0; i < 25; i++) {
+  manyItems.push({ id: 100 + i, name: `批量 ${i}`, path: `D:/many/${i}.exe`, type: "exe", created_at: "2026-01-01", is_favorite: false, tags: [] });
+}
 vi.mock("../lib/db", () => ({
   quickSearch: vi.fn(async ({ query }: { query: string }) => {
     const ids = BACKEND_HITS[query.trim()] ?? [];
-    return { total: ids.length, indexed: fixtures.length, items: ids.map((id) => fixtures.find((it) => it.id === id)!) };
+    return { total: ids.length, indexed: fixtures.length, items: ids.map((id) => [...fixtures, ...manyItems].find((it) => it.id === id)!) };
   }),
   quickHide: vi.fn(async () => {}),
+  getItemVisual: vi.fn(async (id: number) => {
+    const it = [...fixtures, ...manyItems].find((x) => x.id === id)!;
+    return { path: it.path, icon_path: it.type === "exe" ? `C:/icons/${id}.png` : null };
+  }),
   quickLocateInMain: vi.fn(async () => {}),
   launchItem: vi.fn(async () => {}),
   openInExplorerById: vi.fn(async () => {}),
@@ -164,6 +174,20 @@ describe("QuickApp", () => {
     fire(QUICK_MEMORY_EVENT, { level: "normal", atMs: 20 });
     const perf = (window as unknown as { __tlQuickPerf: { memory: Array<{ level: string; atMs: number }> } }).__tlQuickPerf;
     expect(perf.memory.slice(-2)).toEqual([{ level: "low", atMs: 10 }, { level: "normal", atMs: 20 }]);
+  });
+
+  it("结果只给前 20 条取图标（缩略图/程序图标），其余只画类型图标", async () => {
+    const { user, input } = await setup();
+    await waitFor(() => expect(screen.getAllByTestId("quick-result-icon")[0].querySelector("img")).not.toBeNull());
+    expect(screen.getAllByTestId("quick-result-icon")[0].querySelector("img")!.getAttribute("src")).toBe("asset://C:/icons/2.png");
+    await user.type(input, "many");
+    await waitFor(() => expect(screen.getAllByTestId("quick-result")).toHaveLength(25));
+    const kinds = screen.getAllByTestId("quick-result-icon").map((el) => el.dataset.visual);
+    expect(kinds.filter((k) => k === "visual")).toHaveLength(20);
+    expect(kinds.slice(20)).toEqual(["type", "type", "type", "type", "type"]);
+    await waitFor(() => expect(screen.getAllByTestId("quick-result-icon")[19].querySelector("img")).not.toBeNull());
+    const requested = new Set(vi.mocked(db.getItemVisual).mock.calls.map(([id]) => id));
+    for (let i = 20; i < 25; i++) expect(requested.has(100 + i)).toBe(false);
   });
 
   it("跟随主窗主题快照", async () => {

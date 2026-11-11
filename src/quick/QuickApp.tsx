@@ -22,8 +22,11 @@ import { filterTagChoices, QUICK_RESULT_LIMIT, quickKeyAction, stepIndex, toggle
 import { recordQuickLoad, recordQuickMemory, recordQuickQuery, recordQuickSummon } from "./quickPerf";
 import { QUICK_COLLECT_EVENT, type CollectSession } from "../lib/collect";
 import { QuickCollect } from "./QuickCollect";
+import { ItemTypeIcon, ItemVisualIcon } from "../components/ItemVisualIcon";
 
 export const QUICK_SHOWN_EVENT = "quick-shown";
+/** 只给前 N 条取缩略图/程序图标（§3.3 数据投影），其余行只画类型图标，不发 IPC */
+export const QUICK_ICON_LIMIT = 20;
 /** 后端切换 WebView2 内存目标后发来（只做记录，供 E2E 断言） */
 export const QUICK_MEMORY_EVENT = "quick-memory-level";
 
@@ -452,6 +455,11 @@ function QuickSearch({ dropError }: { dropError: string | null }) {
                 hide();
               })}
             >
+              <span className="quick-icon" data-testid="quick-result-icon" data-visual={i < QUICK_ICON_LIMIT ? "visual" : "type"}>
+                {i < QUICK_ICON_LIMIT
+                  ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
+                  : <ItemTypeIcon item={item} emojiClass="" />}
+              </span>
               <span className="quick-name">{itemDisplayName(item)}</span>
               {item.tags.length > 0 && (
                 <span className="quick-tags">{item.tags.slice(0, 3).map((t) => t.name).join(" · ")}</span>

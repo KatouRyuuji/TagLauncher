@@ -54,6 +54,11 @@ export function ItemVisualIcon({ item, emojiClass, imageClass }: { item: ItemWit
       />
     );
   }
+  return <ItemTypeIcon item={item} emojiClass={emojiClass} />;
+}
+
+/** 只按类型画图标，不取缩略图（快速窗前 N 条之外的行用它，不发 IPC）。 */
+export function ItemTypeIcon({ item, emojiClass }: { item: ItemWithTags; emojiClass: string }) {
   const FallbackIcon = FALLBACK_ICONS[item.type] ?? File;
   return (
     <FallbackIcon
