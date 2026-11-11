@@ -179,3 +179,87 @@ class FgHelper:
 
     def __exit__(self, *exc):
         self.close()
+
+
+# ---------------------------------------------------------------- 剪贴板（CF_HDROP）
+CF_UNICODETEXT, CF_HDROP = 13, 15
+user32.OpenClipboard.argtypes = [wintypes.HWND]
+user32.GetClipboardData.restype = wintypes.HANDLE
+user32.GetClipboardData.argtypes = [wintypes.UINT]
+user32.SetClipboardData.restype = wintypes.HANDLE
+user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+user32.RegisterClipboardFormatW.argtypes = [wintypes.LPCWSTR]
+kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+kernel32.GlobalLock.restype = ctypes.c_void_p
+kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+kernel32.GlobalSize.restype = ctypes.c_size_t
+kernel32.GlobalSize.argtypes = [wintypes.HGLOBAL]
+shell32.DragQueryFileW.restype = wintypes.UINT
+shell32.DragQueryFileW.argtypes = [wintypes.HANDLE, wintypes.UINT, wintypes.LPWSTR, wintypes.UINT]
+
+
+class _Clip:
+    def __enter__(self):
+        for _ in range(50):
+            if user32.OpenClipboard(None):
+                return self
+            time.sleep(0.05)
+        raise OSError("OpenClipboard 失败")
+
+    def __exit__(self, *exc):
+        user32.CloseClipboard()
+
+
+def clipboard_files() -> dict:
+    """读剪贴板：CF_HDROP 文件表（DragQueryFileW）与 Preferred DropEffect。"""
+    with _Clip():
+        out = {"files": [], "drop_effect": None, "text": None}
+        h = user32.GetClipboardData(CF_HDROP)
+        if h:
+            n = shell32.DragQueryFileW(h, 0xFFFFFFFF, None, 0)
+            for i in range(n):
+                size = shell32.DragQueryFileW(h, i, None, 0) + 1
+                buf = ctypes.create_unicode_buffer(size)
+                shell32.DragQueryFileW(h, i, buf, size)
+                out["files"].append(buf.value)
+        fmt = user32.RegisterClipboardFormatW("Preferred DropEffect")
+        h = user32.GetClipboardData(fmt)
+        if h:
+            p = kernel32.GlobalLock(h)
+            out["drop_effect"] = ctypes.c_uint32.from_address(p).value
+            kernel32.GlobalUnlock(h)
+        h = user32.GetClipboardData(CF_UNICODETEXT)
+        if h:
+            p = kernel32.GlobalLock(h)
+            out["text"] = ctypes.wstring_at(p)
+            kernel32.GlobalUnlock(h)
+        return out
+
+
+def _set(fmt: int, data: bytes) -> None:
+    h = kernel32.GlobalAlloc(0x2, len(data))
+    p = kernel32.GlobalLock(h)
+    ctypes.memmove(p, data, len(data))
+    kernel32.GlobalUnlock(h)
+    assert user32.SetClipboardData(fmt, h), "SetClipboardData 失败"
+
+
+def set_clipboard_files(paths: list[str]) -> None:
+    body = b"".join(p.encode("utf-16-le") + b"\0\0" for p in paths) + b"\0\0"
+    header = (20).to_bytes(4, "little") + bytes(8) + (0).to_bytes(4, "little") + (1).to_bytes(4, "little")
+    with _Clip():
+        user32.EmptyClipboard()
+        _set(CF_HDROP, header + body)
+
+
+def set_clipboard_text(text: str) -> None:
+    with _Clip():
+        user32.EmptyClipboard()
+        _set(CF_UNICODETEXT, text.encode("utf-16-le") + b"\0\0")
+
+
+def clear_clipboard() -> None:
+    with _Clip():
+        user32.EmptyClipboard()

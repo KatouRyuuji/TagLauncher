@@ -6,6 +6,7 @@ mod desktop;
 mod quick;
 pub mod search;
 /// 资源管理器右键菜单 / 发送到（阶段③）
+mod shell_clipboard;
 pub mod shell_integration;
 pub mod view;
 // 集成测试（tests/ 目录把本 crate 当外部 rlib 使用）与 CLI 二进制（src/bin/tl.rs）
@@ -26,6 +27,8 @@ use quick::{quick_hide, quick_locate_in_main, quick_open};
 // 收纳会话与右键菜单（阶段③）
 use collect::{collect_finish, collect_session, get_collect_preference, set_collect_preference};
 use shell_integration::{get_shell_integration, set_shell_integration};
+// 应用内「复制文件」/「打开方式…」
+use shell_clipboard::{copy_items_as_files, open_with_dialog};
 
 use extensions::mod_loader;
 use extensions::mod_registry::ModRegistry;
@@ -467,6 +470,8 @@ pub fn run() {
             get_collect_preference,
             set_collect_preference,
             get_shell_integration,
+            copy_items_as_files,
+            open_with_dialog,
             set_shell_integration,
             set_hotkey,
             set_close_action,

@@ -3,8 +3,10 @@ import { createPortal } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   ChevronRight,
+  AppWindow,
   Copy,
   Eye,
+  Files,
   FolderInput,
   FolderMinus,
   FolderOpen,
@@ -409,6 +411,26 @@ export function ContextMenu({
     onClose();
   };
 
+  // 「复制文件」：多选时作用于整个选中集（与复制路径一致）；后端按文件ID重定位，丢失的跳过
+  const handleCopyFiles = () => {
+    const ids = multi ? multi.ids : [item.id];
+    onClose();
+    void db.copyItemsAsFiles(ids).then(
+      ({ copied, missing }) => {
+        const head = ids.length === 1 ? "已复制文件，可粘贴到资源管理器或聊天窗口" : `已复制 ${copied} 个文件`;
+        showToast(missing > 0 ? `${head}（${missing} 个已丢失，未复制）` : head, missing > 0 ? "warning" : "success");
+      },
+      (error) => showToast(`复制文件失败：${error instanceof Error ? error.message : String(error)}`, "error"),
+    );
+  };
+
+  const handleOpenWith = () => {
+    onClose();
+    void db.openWithDialog(item.id).catch((error) => {
+      showToast(`打开方式失败：${error instanceof Error ? error.message : String(error)}`, "error");
+    });
+  };
+
   const handleToggleFavoriteClick = () => {
     if (multi) {
       // 多选统一置为目标态（有未收藏项则全部收藏，否则全部取消）：由 useItems 监听执行
@@ -543,6 +565,15 @@ export function ContextMenu({
             }}
           />
         )}
+        {!multi && item.type !== "folder" && !item.is_missing && (
+          <MenuItem icon={AppWindow} label="打开方式…" onClick={handleOpenWith} />
+        )}
+        <MenuItem
+          icon={Files}
+          label={multi ? `复制 ${multi.ids.length} 个文件` : "复制文件"}
+          disabled={!multi && item.is_missing}
+          onClick={handleCopyFiles}
+        />
         <MenuItem
           icon={Copy}
           label={multi ? `复制 ${multi.paths.length} 条路径` : "复制路径"}
