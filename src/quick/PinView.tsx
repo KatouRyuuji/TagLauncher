@@ -57,7 +57,7 @@ export function PinView({ view }: { view: PinViewState }) {
   // 原生把手跟随主题强调色（主题在本窗口启动时从快照套用；切换主题后下次视图变化时同步）
   useEffect(() => {
     if (!isDrawer) return;
-    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent-primary").trim();
     if (accent) void db.pinHandleColor(accent).catch(() => {});
   }, [isDrawer, drawer]);
   useEffect(() => clearTimers, []);

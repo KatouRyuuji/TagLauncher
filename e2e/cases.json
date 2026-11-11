@@ -3221,5 +3221,27 @@
 "automation": "真实输入+托盘",
 "priority": "P2",
 "coverage": "F-PIN 钉住视图"
+},
+{
+"id": "E-VIS-NEWUI-01",
+"module": "视觉",
+"scenario": "本轮新增主窗 UI 一致性截图",
+"steps": "浅/深 × 标准/特大字号 × DPR 1.25/1.5：柜层级侧栏、拖放指示、含子柜切换、上级文件柜、子树搜索、桌面驻留设置、诊断 toast",
+"expect": "与主题令牌一致、无写死色；无文字溢出（报告 report-main.json）",
+"layer": "视觉",
+"automation": "CDP 截图 + Emulation DPR",
+"priority": "P1",
+"coverage": "UI 审查 2026-11-11"
+},
+{
+"id": "E-VIS-NEWUI-02",
+"module": "视觉",
+"scenario": "快速窗 / 钉住视图 / 收纳页一致性截图",
+"steps": "同上组合：快速搜索（结果/空态）、钉住浮动窗、展开的抽屉、收纳页",
+"expect": "跟随主窗主题与字号快照；深色下底色为深色；无文字溢出（report-quick.json）",
+"layer": "视觉",
+"automation": "CDP 截图 + Emulation DPR",
+"priority": "P1",
+"coverage": "UI 审查 2026-11-11"
 }
 ]

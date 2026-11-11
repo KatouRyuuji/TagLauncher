@@ -45,7 +45,16 @@ function useThemeFollower() {
   useEffect(() => {
     const apply = (raw: string | null) => {
       const snapshot = parseThemeSnapshot(raw);
-      if (snapshot) applyThemeSnapshot(snapshot);
+      if (snapshot) {
+        applyThemeSnapshot(snapshot);
+        return;
+      }
+      // 主窗还没写过快照（极少见：首启即被右键菜单拉起）：套默认主题令牌，不让样式落到浏览器默认色
+      void import("../themes/tokens").then(({ DEFAULT_THEME_VARIABLES }) => {
+        if (localStorage.getItem(THEME_SNAPSHOT_KEY)) return;
+        const vars = Object.fromEntries(Object.entries(DEFAULT_THEME_VARIABLES).map(([k, v]) => [`--${k}`, v]));
+        applyThemeSnapshot({ vars, attrs: {} });
+      });
     };
     apply(localStorage.getItem(THEME_SNAPSHOT_KEY));
     const onStorage = (e: StorageEvent) => {

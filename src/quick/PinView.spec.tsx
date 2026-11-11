@@ -97,7 +97,7 @@ describe("PinView", () => {
 
   it("抽屉收起时面板已渲染（窗口由后端隐藏、原生把手负责悬停）、把手取主题色；展开后离开面板收回", async () => {
     vi.useFakeTimers();
-    document.documentElement.style.setProperty("--accent", "#c0647d");
+    document.documentElement.style.setProperty("--accent-primary", "#c0647d");
     const { rerender } = render(<PinView view={view({ mode: "drawer" })} />);
     expect(screen.getByTestId("pin-panel")).toHaveAttribute("data-mode", "drawer");
     expect(screen.queryByTestId("pin-handle")).toBeNull();

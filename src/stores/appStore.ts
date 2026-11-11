@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { applyUiFontScale, DEFAULT_UI_FONT_SCALE, isUiFontScale, type UiFontScale } from "../lib/uiFontScale";
+import { saveThemeSnapshot } from "../lib/themeSnapshot";
 import { create } from "zustand";
 import type { Tag, Cabinet, TagRelation } from "../types";
 import * as db from "../lib/db";
@@ -489,6 +490,8 @@ export const useAppStore = create<AppState>((set, get) => {
     if (!isUiFontScale(scale) || get().uiFontScale === scale) return;
     set({ uiFontScale: scale });
     applyUiFontScale(scale);
+    // 快速窗 / 钉住视图从主题快照取根变量（含 --ui-font-scale）：改字号后立即重写快照，两窗同步
+    saveThemeSnapshot();
     persistNow();
   },
   setTagFilterMode: (mode) => {
