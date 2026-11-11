@@ -332,6 +332,8 @@ struct Runtime {
     drawer: DrawerState,
     /// 我们自己挪窗口后的一小段时间里忽略 Moved（不当成用户拖动）
     ignore_moves_until: Option<Instant>,
+    /// 系统拖动循环进行中（EVENT_SYSTEM_MOVESIZESTART..END）：期间不收回抽屉
+    dragging: bool,
 }
 
 static RUNTIME: Mutex<Runtime> = Mutex::new(Runtime {
@@ -350,6 +352,7 @@ static RUNTIME: Mutex<Runtime> = Mutex::new(Runtime {
     surface: Surface::Search,
     drawer: DrawerState::Collapsed,
     ignore_moves_until: None,
+    dragging: false,
 });
 /// 动画 / 拖动结束计时的代数：新的操作让旧的作废
 static ANIM_GEN: AtomicU64 = AtomicU64::new(0);
@@ -490,6 +493,22 @@ fn set_bounds(window: &WebviewWindow, r: Rect) {
     let _ = window.set_position(tauri::PhysicalPosition::new(r.0, r.1));
 }
 
+/// 隐藏：tauri 的 hide（同步 tao 内部的可见标志，否则之后 tauri show 会被当成已可见而跳过）
+/// + 原生 SW_HIDE（窗口是 show_no_activate 原生显示的，tao 标志可能仍是「隐藏」，它的 hide 是空操作）
+fn hide_window(window: &WebviewWindow) {
+    let _ = window.hide();
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+        if let Ok(h) = window.hwnd() {
+            // SAFETY：hwnd 来自本进程窗口
+            unsafe {
+                ShowWindow(h.0 as _, SW_HIDE);
+            }
+        }
+    }
+}
+
 /// 显示但不抢前台
 fn show_no_activate(window: &WebviewWindow) {
     #[cfg(windows)]
@@ -583,7 +602,7 @@ pub fn restore(app: &AppHandle) -> Result<(), String> {
         set_foreground_hook(app, false);
         crate::pin_strip::hide(app);
         if let Some(w) = app.get_webview_window(crate::quick::QUICK_LABEL) {
-            let _ = w.hide();
+            hide_window(&w);
             emit_view(&w);
         }
         return Ok(());
@@ -608,7 +627,7 @@ pub fn restore(app: &AppHandle) -> Result<(), String> {
             let _ = window.set_always_on_top(true);
             let _ = window.set_resizable(false);
             // 收起 = quick 窗口隐藏（WebView 不画），只留原生把手
-            let _ = window.hide();
+            hide_window(&window);
             emit_view(&window);
             set_foreground_hook(app, true);
             if crate::desktop::fullscreen_foreground_monitor()
@@ -689,7 +708,7 @@ pub fn expand(app: &AppHandle) -> Result<bool, String> {
     if fullscreen_on_drawer_monitor(app) {
         rt().drawer = DrawerState::HiddenFullscreen;
         crate::pin_strip::hide(app);
-        let _ = window.hide();
+        hide_window(&window);
         emit_view(&window);
         return Ok(false);
     }
@@ -714,16 +733,21 @@ pub fn expand(app: &AppHandle) -> Result<bool, String> {
     Ok(true)
 }
 
-/// 鼠标离开面板 / 失焦：收回成把手
-pub fn collapse(app: &AppHandle) -> Result<bool, String> {
+/// 鼠标离开面板 / 失焦 / Esc / 打开对象后：收回成把手。
+/// `from_leave`：前端 mouseleave 计时触发——光标其实还在窗口里（开始拖动时 WebView 会误报离开）就不收。
+/// 系统拖动循环进行中一律不收（拖动循环按起始尺寸摆窗口，收起会被它改回去，状态就乱了）。
+pub fn collapse(app: &AppHandle, from_leave: bool) -> Result<bool, String> {
     let Some(window) = app.get_webview_window(crate::quick::QUICK_LABEL) else {
         return Ok(false);
     };
     {
         let r = rt();
-        if r.surface != Surface::Pin || r.drawer != DrawerState::Expanded {
+        if r.surface != Surface::Pin || r.drawer != DrawerState::Expanded || r.dragging {
             return Ok(false);
         }
+    }
+    if from_leave && cursor_inside(&window) {
+        return Ok(false);
     }
     let Some((_, pw, hw)) = drawer_geometry(app, false) else {
         return Ok(false);
@@ -731,7 +755,7 @@ pub fn collapse(app: &AppHandle) -> Result<bool, String> {
     rt().drawer = DrawerState::Collapsed;
     animate(app, &window, pw, anim_start(pw, hw));
     show_handle(app);
-    let _ = window.hide();
+    hide_window(&window);
     emit_view(&window);
     Ok(true)
 }
@@ -760,6 +784,31 @@ fn animate(app: &AppHandle, window: &WebviewWindow, from: u32, to: u32) {
     }
 }
 
+fn cursor_inside(window: &WebviewWindow) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{POINT, RECT};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
+        let Ok(h) = window.hwnd() else {
+            return false;
+        };
+        let mut pt = POINT { x: 0, y: 0 };
+        let mut rc = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        // SAFETY：只读查询本进程窗口与光标位置
+        unsafe {
+            if GetCursorPos(&mut pt) == 0 || GetWindowRect(h.0 as _, &mut rc) == 0 {
+                return false;
+            }
+        }
+        pt.x >= rc.left && pt.x < rc.right && pt.y >= rc.top && pt.y < rc.bottom
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        false
+    }
+}
+
 /// quick 窗口失焦：钉住表面下只有展开的抽屉收回
 pub fn on_blur(app: &AppHandle) {
     let expanded = {
@@ -769,7 +818,7 @@ pub fn on_blur(app: &AppHandle) {
     if expanded {
         let app = app.clone();
         std::thread::spawn(move || {
-            let _ = collapse(&app);
+            let _ = collapse(&app, false);
         });
     }
 }
@@ -878,7 +927,7 @@ fn on_foreground_changed(app: &AppHandle) {
             ANIM_GEN.fetch_add(1, Ordering::SeqCst);
             rt().drawer = DrawerState::HiddenFullscreen;
             crate::pin_strip::hide(app);
-            let _ = window.hide();
+            hide_window(&window);
             emit_view(&window);
         }
         _ => {}
@@ -898,7 +947,7 @@ static MOVE_HOOK: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsiz
 #[cfg(windows)]
 unsafe extern "system" fn movesize_proc(
     _hook: windows_sys::Win32::UI::Accessibility::HWINEVENTHOOK,
-    _event: u32,
+    event: u32,
     hwnd: windows_sys::Win32::Foundation::HWND,
     _id_object: i32,
     _id_child: i32,
@@ -914,8 +963,13 @@ unsafe extern "system" fn movesize_proc(
     if window.hwnd().ok().map(|h| h.0 as isize) != Some(hwnd as isize) {
         return;
     }
+    if event == windows_sys::Win32::UI::WindowsAndMessaging::EVENT_SYSTEM_MOVESIZESTART {
+        rt().dragging = true;
+        return;
+    }
     let dragging_drawer = {
-        let r = rt();
+        let mut r = rt();
+        r.dragging = false;
         r.surface == Surface::Pin
             && r.settings.mode == PinMode::Drawer
             && r.drawer == DrawerState::Expanded
@@ -948,7 +1002,8 @@ fn set_foreground_hook(app: &AppHandle, on: bool) {
         let install = move || {
             use windows_sys::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent};
             use windows_sys::Win32::UI::WindowsAndMessaging::{
-                EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND, WINEVENT_OUTOFCONTEXT,
+                EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART,
+                WINEVENT_OUTOFCONTEXT,
                 WINEVENT_SKIPOWNPROCESS,
             };
             let current = HOOK.load(Ordering::SeqCst);
@@ -969,7 +1024,7 @@ fn set_foreground_hook(app: &AppHandle, on: bool) {
                 // SAFETY：同上；只订阅本进程窗口的拖动结束
                 let m = unsafe {
                     SetWinEventHook(
-                        EVENT_SYSTEM_MOVESIZEEND,
+                        EVENT_SYSTEM_MOVESIZESTART,
                         EVENT_SYSTEM_MOVESIZEEND,
                         std::ptr::null_mut(),
                         Some(movesize_proc),
@@ -1213,8 +1268,8 @@ pub async fn pin_expand(app: AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub async fn pin_collapse(app: AppHandle) -> Result<bool, String> {
-    collapse(&app)
+pub async fn pin_collapse(app: AppHandle, from_leave: Option<bool>) -> Result<bool, String> {
+    collapse(&app, from_leave.unwrap_or(false))
 }
 
 /// 前端告知主题强调色，用于原生把手

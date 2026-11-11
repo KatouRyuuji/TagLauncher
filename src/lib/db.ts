@@ -823,8 +823,9 @@ export async function pinExpand(): Promise<boolean> {
   return invokeCmd("pin_expand");
 }
 
-export async function pinCollapse(): Promise<boolean> {
-  return invokeCmd("pin_collapse");
+/** 收回抽屉；fromLeave = 鼠标离开计时触发（后端会核对光标是否真的离开了窗口） */
+export async function pinCollapse(fromLeave = false): Promise<boolean> {
+  return invokeCmd("pin_collapse", { fromLeave });
 }
 
 /** 告知后端主题强调色：边缘抽屉的原生把手用它着色 */

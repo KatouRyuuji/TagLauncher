@@ -117,5 +117,6 @@ describe("PinView", () => {
     fireEvent.mouseLeave(document.documentElement);
     act(() => { vi.advanceTimersByTime(PIN_LEAVE_COLLAPSE_MS + 5); });
     expect(db.pinCollapse).toHaveBeenCalledTimes(1);
+    expect(db.pinCollapse).toHaveBeenCalledWith(true);
   });
 });

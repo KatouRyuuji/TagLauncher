@@ -203,10 +203,12 @@ def test_pin_resident_memory_and_idle_cpu(sandbox, app_factory):
     app.invoke("add_items_to_cabinet", {"cabinetId": cab, "itemIds": list(range(1, 301))})
     before = mem()
     pin_settings(app, enabled=True, source={"kind": "cabinet", "id": cab})
+    # 先量再挂 CDP：测试工具对新 WebView 的挂接（含备用连接）本身会占渲染进程内存，不算进产品常驻增量
+    wait_until(lambda: app.invoke("pin_state")["surface"] == "pin", 10)
+    time.sleep(12)
+    after = mem()
     qp = quick_page(app, timeout=30)
     wait_until(lambda: len(pin_ids(qp)) == 300, 15, lambda: len(pin_ids(qp)))
-    time.sleep(8)
-    after = mem()
     delta = round(after["private_mb"] - before["private_mb"], 1)
 
     assert app.invoke("set_close_action", {"action": "tray"})["trayActive"]

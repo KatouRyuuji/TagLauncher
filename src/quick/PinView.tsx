@@ -69,7 +69,7 @@ export function PinView({ view }: { view: PinViewState }) {
     const root = document.documentElement;
     const onLeave = () => {
       if (leaveTimer.current) clearTimeout(leaveTimer.current);
-      leaveTimer.current = setTimeout(() => void db.pinCollapse().catch(() => {}), PIN_LEAVE_COLLAPSE_MS);
+      leaveTimer.current = setTimeout(() => void db.pinCollapse(true).catch(() => {}), PIN_LEAVE_COLLAPSE_MS);
     };
     const onEnter = () => {
       if (leaveTimer.current) clearTimeout(leaveTimer.current);

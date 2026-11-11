@@ -125,18 +125,21 @@ def test_drawer_hides_and_never_pops_over_fullscreen(app, sandbox):
     """前台切到全屏程序：把手隐藏、碰边不弹出（展开请求也被拒）；切回普通窗口后把手恢复、可再滑出。"""
     h, q = setup_drawer(app, sandbox)
     assert app.invoke("pin_diag")["hookInstalled"] is True
-    with oswin.FgHelper(env=sandbox.env(None)) as normal, oswin.FgHelper(env=sandbox.env(None), fullscreen=True) as fs:
+    with oswin.FgHelper(env=sandbox.env(None)) as normal:
         normal.focus()
         time.sleep(0.5)
         assert win32.is_visible(h), "普通前台时把手可见"
-        fs.focus()
-        print(f"FULLSCREEN rect={win32.rect(fs.hwnd)} monitor={win32.monitor_info(fs.hwnd)}")
-        wait_until(lambda: not win32.is_visible(h), 3, lambda: f"前台全屏时把手应隐藏：drawer={drawer(app)}")
-        assert drawer(app) == "hiddenFullscreen"
-        hit_edge(h)
-        time.sleep(0.8)
-        assert not win32.is_visible(h) and not win32.is_visible(q) and drawer(app) == "hiddenFullscreen", "全屏时碰边不应弹出"
-        assert app.invoke("pin_expand") is False
+        # 全屏置顶窗口会盖住普通窗口（再 focus 普通窗口会失败）：用完即关，之后再切回普通窗口
+        with oswin.FgHelper(env=sandbox.env(None), fullscreen=True) as fs:
+            fs.focus()
+            print(f"FULLSCREEN rect={win32.rect(fs.hwnd)} monitor={win32.monitor_info(fs.hwnd)}")
+            wait_until(lambda: not win32.is_visible(h), 3, lambda: f"前台全屏时把手应隐藏：drawer={drawer(app)}")
+            assert drawer(app) == "hiddenFullscreen"
+            hit_edge(h)
+            time.sleep(0.8)
+            assert not win32.is_visible(h) and not win32.is_visible(q) and drawer(app) == "hiddenFullscreen", \
+                "全屏时碰边不应弹出"
+            assert app.invoke("pin_expand") is False
         normal.focus()
         wait_until(lambda: win32.is_visible(h) and drawer(app) == "collapsed", 3,
                    lambda: f"离开全屏后把手应恢复：visible={win32.is_visible(h)} drawer={drawer(app)}")
