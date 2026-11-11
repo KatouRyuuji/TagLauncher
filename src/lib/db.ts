@@ -387,6 +387,21 @@ export async function openInExplorerById(id: number): Promise<void> {
   return invokeCmd("open_in_explorer_by_id", { id });
 }
 
+export interface CopyFilesResult {
+  copied: number;
+  missing: number;
+}
+
+/** 「复制文件」：以文件形式（CF_HDROP）放进剪贴板，可直接粘贴到资源管理器或聊天软件 */
+export async function copyItemsAsFiles(ids: number[]): Promise<CopyFilesResult> {
+  return invokeCmd("copy_items_as_files", { ids });
+}
+
+/** 系统「打开方式…」对话框（仅文件） */
+export async function openWithDialog(id: number): Promise<void> {
+  return invokeCmd("open_with_dialog", { id });
+}
+
 // ---- 对象预览 ----
 
 export interface ObjectPreviewFileInfo {

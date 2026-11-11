@@ -666,7 +666,10 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "open_in_explorer":
     case "open_in_explorer_by_id":
     case "open_object_path":
+    case "open_with_dialog":
       return null;
+    case "copy_items_as_files":
+      return { copied: ids(args.ids).length, missing: 0 };
 
     // ---- 对象预览 ----
     case "get_object_file_info": {

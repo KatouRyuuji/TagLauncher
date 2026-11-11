@@ -6,7 +6,7 @@ import pytest
 from harness import files
 from harness.app import wait_until
 
-FILE_MENU = {"快速预览", "复制路径", "加入收藏", "管理标签", "编辑备注…", "设置显示别名…", "重命名…", "添加到文件柜",
+FILE_MENU = {"快速预览", "打开方式…", "复制文件", "复制路径", "加入收藏", "管理标签", "编辑备注…", "设置显示别名…", "重命名…", "添加到文件柜",
              "从库中移除", "删除本地文件", "缩略图"}
 
 
@@ -35,9 +35,9 @@ def test_multi_select_menu(app, sandbox):
     app.card("多0.txt").click()
     app.card("多2.txt").click(modifiers=["Shift"])
     labels = menu_labels(app.context_menu("多1.txt"))
-    for want in ("复制 3 条路径", "从库中移除 3 项", "删除 3 个本地文件"):
+    for want in ("复制 3 个文件", "复制 3 条路径", "从库中移除 3 项", "删除 3 个本地文件"):
         assert any(want in l for l in labels), f"缺少 {want}；实际 {labels}"
-    assert not any(l.startswith("重命名…") for l in labels)
+    assert not any(l.startswith("重命名…") or l.startswith("打开方式") for l in labels)
 
 
 @pytest.mark.case("E-PRV-01")

@@ -13,8 +13,11 @@ vi.mock("../lib/db", () => ({
   openInExplorerById: vi.fn(),
   getFolderWatchStatus: vi.fn(async () => ({ masterEnabled: true, activeCount: 0, watchedItemIds: [] })),
   setFolderWatch: vi.fn(),
+  copyItemsAsFiles: vi.fn(async (ids: number[]) => ({ copied: ids.length, missing: 0 })),
+  openWithDialog: vi.fn(async () => {}),
 }));
 vi.mock("../lib/toast", () => ({ showToast: vi.fn() }));
+import { showToast } from "../lib/toast";
 
 // jsdom 不提供 ResizeObserver：菜单滚动提示只需能订阅
 const resizeCallbacks: Array<() => void> = [];
@@ -293,5 +296,58 @@ describe("文件夹监视菜单项：状态读回前不显示错误状态", () =
     renderMenu(vi.fn(), folder);
     const item = await screen.findByRole("menuitem", { name: "监视此文件夹" });
     expect(item).not.toHaveAttribute("aria-disabled");
+  });
+});
+
+describe("右键「复制文件」与「打开方式…」", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("单个文件：复制文件按 id 放入剪贴板并提示；打开方式调用系统对话框", async () => {
+    const onClose = renderMenu();
+    await userEvent.click(screen.getByRole("menuitem", { name: "复制文件" }));
+    expect(onClose).toHaveBeenCalled();
+    expect(db.copyItemsAsFiles).toHaveBeenCalledWith([5]);
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith("已复制文件，可粘贴到资源管理器或聊天窗口", "success"));
+    renderMenu();
+    await userEvent.click(screen.getAllByRole("menuitem", { name: "打开方式…" })[0]);
+    expect(db.openWithDialog).toHaveBeenCalledWith(5);
+  });
+
+  it("多选：复制整个选中集的文件，部分丢失时警告；不显示打开方式", async () => {
+    vi.mocked(db.copyItemsAsFiles).mockResolvedValueOnce({ copied: 1, missing: 1 });
+    render(
+      <ContextMenu
+        item={item}
+        cabinets={[]}
+        currentCabinetId={null}
+        currentCabinetName={null}
+        contextSelection={{ ids: [5, 6], paths: ["D:/a", "D:/b"], favoriteTarget: true }}
+        position={{ x: 10, y: 10 }}
+        onClose={vi.fn()}
+        onLaunch={vi.fn()}
+        onRemove={vi.fn()}
+        onEditTags={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onAddItemToCabinet={noop}
+        onRemoveItemFromCabinet={noop}
+        onUpdateThumbnail={noop}
+      />,
+    );
+    expect(screen.queryByRole("menuitem", { name: "打开方式…" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("menuitem", { name: "复制 2 个文件" }));
+    expect(db.copyItemsAsFiles).toHaveBeenCalledWith([5, 6]);
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith("已复制 1 个文件（1 个已丢失，未复制）", "warning"));
+  });
+
+  it("文件夹没有打开方式；失效对象复制文件禁用", () => {
+    renderMenu(vi.fn(), { ...item, type: "folder", path: "D:/目录" });
+    expect(screen.queryByRole("menuitem", { name: "打开方式…" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "复制文件" })).toBeEnabled();
+  });
+
+  it("失效对象：复制文件禁用、无打开方式", () => {
+    renderMenu(vi.fn(), { ...item, is_missing: true });
+    expect(screen.getByRole("menuitem", { name: "复制文件" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("menuitem", { name: "打开方式…" })).not.toBeInTheDocument();
   });
 });
