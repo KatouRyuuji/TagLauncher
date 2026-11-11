@@ -6,7 +6,8 @@
 //!   `pin_expand`，不轮询鼠标、不装输入钩子；离开 / 失焦后 `pin_collapse`。
 //! - 前台全屏：抽屉模式下用 `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`（前台切换事件，
 //!   非输入钩子）在前台变化时判断；前台全屏且与抽屉同一显示器 → 隐藏把手。展开前再判一次。
-//! - 位置记忆：抽屉 = 显示器名 + 边 + 上下比例；浮动窗 = 物理左上角 + 逻辑宽高。
+//! - 位置记忆：抽屉 = 显示器名 + 边 + 上下比例（拖动展开的抽屉，松手 = 本进程 EVENT_SYSTEM_MOVESIZEEND
+//!   时吸附到最近显示器的左 / 右边）；浮动窗 = 物理左上角 + 逻辑宽高（移动 / 改尺寸静默后保存）。
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -735,7 +736,7 @@ pub fn on_blur(app: &AppHandle) {
     }
 }
 
-/// quick 窗口移动 / 改尺寸：钉住表面下记位置（浮动窗）或拖动结束后吸附（抽屉）
+/// quick 窗口移动 / 改尺寸：浮动窗静默 DRAG_SETTLE 后记位置
 pub fn on_moved(app: &AppHandle) {
     {
         let r = rt();
@@ -745,7 +746,8 @@ pub fn on_moved(app: &AppHandle) {
         if r.ignore_moves_until.is_some_and(|t| Instant::now() < t) {
             return;
         }
-        if r.settings.mode == PinMode::Drawer && r.drawer != DrawerState::Expanded {
+        // 抽屉的拖动在系统拖动循环结束（EVENT_SYSTEM_MOVESIZEEND）时吸附，见 movesize_proc
+        if r.settings.mode == PinMode::Drawer {
             return;
         }
     }
@@ -849,6 +851,38 @@ fn on_foreground_changed(app: &AppHandle) {
 static HOOK_APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
 #[cfg(windows)]
 static HOOK: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+/// 本进程窗口的拖动结束事件（只看自己的进程），抽屉松手吸附用
+#[cfg(windows)]
+static MOVE_HOOK: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+#[cfg(windows)]
+unsafe extern "system" fn movesize_proc(
+    _hook: windows_sys::Win32::UI::Accessibility::HWINEVENTHOOK,
+    _event: u32,
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    _id_object: i32,
+    _id_child: i32,
+    _thread: u32,
+    _time: u32,
+) {
+    let Some(app) = HOOK_APP.get() else {
+        return;
+    };
+    let Some(window) = app.get_webview_window(crate::quick::QUICK_LABEL) else {
+        return;
+    };
+    if window.hwnd().ok().map(|h| h.0 as isize) != Some(hwnd as isize) {
+        return;
+    }
+    let dragging_drawer = {
+        let r = rt();
+        r.surface == Surface::Pin && r.settings.mode == PinMode::Drawer && r.drawer == DrawerState::Expanded
+    };
+    if dragging_drawer {
+        let app = app.clone();
+        std::thread::spawn(move || settle_after_move(&app));
+    }
+}
 
 #[cfg(windows)]
 unsafe extern "system" fn foreground_proc(
@@ -872,7 +906,8 @@ fn set_foreground_hook(app: &AppHandle, on: bool) {
         let install = move || {
             use windows_sys::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent};
             use windows_sys::Win32::UI::WindowsAndMessaging::{
-                EVENT_SYSTEM_FOREGROUND, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
+                EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND, WINEVENT_OUTOFCONTEXT,
+                WINEVENT_SKIPOWNPROCESS,
             };
             let current = HOOK.load(Ordering::SeqCst);
             if on && current == 0 {
@@ -889,10 +924,27 @@ fn set_foreground_hook(app: &AppHandle, on: bool) {
                     )
                 };
                 HOOK.store(h as isize, Ordering::SeqCst);
+                // SAFETY：同上；只订阅本进程窗口的拖动结束
+                let m = unsafe {
+                    SetWinEventHook(
+                        EVENT_SYSTEM_MOVESIZEEND,
+                        EVENT_SYSTEM_MOVESIZEEND,
+                        std::ptr::null_mut(),
+                        Some(movesize_proc),
+                        std::process::id(),
+                        0,
+                        WINEVENT_OUTOFCONTEXT,
+                    )
+                };
+                MOVE_HOOK.store(m as isize, Ordering::SeqCst);
             } else if !on && current != 0 {
-                // SAFETY：current 是本线程装的钩子
+                // SAFETY：current / MOVE_HOOK 是本线程装的钩子
                 unsafe {
                     UnhookWinEvent(current as _);
+                    let m = MOVE_HOOK.swap(0, Ordering::SeqCst);
+                    if m != 0 {
+                        UnhookWinEvent(m as _);
+                    }
                 }
                 HOOK.store(0, Ordering::SeqCst);
             }
@@ -1054,7 +1106,11 @@ pub fn apply_settings(app: &AppHandle, next: PinSettings) -> Result<PinSettings,
         restore(app)?;
     }
     if was_active && !next.active() {
-        crate::quick::sync_window(app, crate::desktop::quick_window_needed(app));
+        // 快速搜索也没开：销毁 quick 窗口（与关闭快速搜索同一路径，在主线程销毁）
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            crate::quick::sync_window(&handle, crate::desktop::quick_window_needed(&handle));
+        });
     }
     crate::desktop::refresh_tray(app);
     Ok(next)
