@@ -12,6 +12,10 @@ import { showToast } from "../lib/toast";
 import { DialogHeader } from "./DialogHeader";
 import { flattenTagTree, type TagTreeRow } from "../lib/tagTree";
 import { useAppStore } from "../stores/appStore";
+import { matchesNameQuery } from "../lib/nameMatch";
+import { ensurePinyin } from "../lib/pinyinProvider";
+import { scopedTagSearch, scopeSearchKey } from "../lib/tagScopeSearch";
+import { TagScopeNotice } from "./TagScopeNotice";
 
 // 标签数超过阈值才显示过滤框（与 BatchSelectionToolbar 的 TAG_MENU_FILTER_THRESHOLD 对齐）
 const TAG_FILTER_THRESHOLD = 8;
@@ -28,6 +32,8 @@ interface ItemTagsEditorProps {
 
 export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTags, onClose }: ItemTagsEditorProps) {
   const tagRelations = useAppStore((state) => state.tagRelations);
+  // F04c：当前层 = 侧栏已选的正向标签；先在其下级里过滤，没有命中再提示转全局
+  const scopeIds = useAppStore((state) => state.selectedTagIds);
   const [selectedIds, setSelectedIds] = useState<number[]>(item.tags.map((tag) => tag.id));
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -35,6 +41,16 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
   const [tagFilter, setTagFilter] = useState("");
   // IME 组合中只更新文本，组合结束才过滤（appliedTagFilter）
   const [appliedTagFilter, setAppliedTagFilter] = useState("");
+  // 转全局只对当时的「当前层 + 过滤词」有效（见 scopeSearchKey）
+  const [searchGlobalKey, setSearchGlobalKey] = useState<string | null>(null);
+  const [pinyinReady, setPinyinReady] = useState(false);
+  useEffect(() => {
+    if (!appliedTagFilter.trim()) return;
+    if (pinyinReady) return;
+    let cancelled = false;
+    void ensurePinyin().then(() => { if (!cancelled) setPinyinReady(true); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [appliedTagFilter, pinyinReady]);
   const tagFilterIme = useImeComposition<string>(setAppliedTagFilter);
   // 跟踪本次会话中通过 quick-create 真正新建的标签 id（复用同名已有标签不计入）：
   // 进入编辑器时快照已有 id，之后 diff 出的新 id 即为新建。
@@ -117,9 +133,14 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
   // 标签按侧栏的父子关系呈现，名称和层级是识别主线；过滤时保留原层级。
   const tagQuery = appliedTagFilter.trim().toLowerCase();
   const tagRows = flattenTagTree(tags, tagRelations, (a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name), { uniqueIds: true });
-  const visibleTagRows = tagQuery
-    ? tagRows.filter(({ tag }) => tag.name.toLowerCase().includes(tagQuery))
-    : tagRows;
+  // 与侧栏「过滤标签…」同一匹配规则（子串 + 拼音全拼/首字母前缀）
+  const searchKey = scopeSearchKey(scopeIds, tagQuery);
+  const searchGlobal = searchGlobalKey === searchKey;
+  const setSearchGlobal = (global: boolean) => setSearchGlobalKey(global ? searchKey : null);
+  const tagSearch = scopedTagSearch(tagRows, tagRelations, scopeIds, tagQuery,
+    (name) => matchesNameQuery(name, tagQuery, pinyinReady), searchGlobal, true);
+  const visibleTagRows = tagSearch.rows;
+  const scopeLabel = scopeIds.map((id) => tags.find((t) => t.id === id)?.name).filter(Boolean).join("、");
   const selectedTags = selectedIds.map((id) => tags.find((tag) => tag.id === id)).filter((tag): tag is Tag => tag !== undefined);
   const showTagFilter = tags.length > TAG_FILTER_THRESHOLD;
 
@@ -179,8 +200,18 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
               onChange={(event) => { setTagFilter(event.target.value); tagFilterIme.onChange(event.target.value); }}
               onCompositionStart={tagFilterIme.onCompositionStart}
               onCompositionEnd={tagFilterIme.onCompositionEnd}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && tagSearch.scope === "subtree" && tagSearch.subtreeCount === 0 && tagSearch.globalCount > 0) {
+                  event.preventDefault();
+                  setSearchGlobal(true);
+                }
+              }}
               className="mb-2 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
             />
+          )}
+          {tagSearch.scope !== "all" && (
+            <TagScopeNotice scope={tagSearch.scope} scopeLabel={scopeLabel} subtreeCount={tagSearch.subtreeCount}
+              globalCount={tagSearch.globalCount} onGlobal={() => setSearchGlobal(true)} onSubtree={() => setSearchGlobal(false)} />
           )}
           <div className="mb-2 flex items-center justify-between text-xs text-[var(--text-muted)]">
             <span>已选 {selectedIds.length} 个标签</span>

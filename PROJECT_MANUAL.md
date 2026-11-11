@@ -272,7 +272,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | parent_id | INTEGER FK | 父标签，关联 tags.id，级联删除 |
 | child_id | INTEGER FK | 子标签，关联 tags.id，级联删除；`(parent_id, child_id)` 为主键 |
 
-> 标签构成有向无环图（DAG，可多父继承）：父标签是子标签的超集。新增关系时服务层做环检测（`add_tag_relation`），筛选时用 `WITH RECURSIVE` 展开后代（`expand_with_descendants`）。侧栏「编辑层级」（标签区标题栏 ListTree 按钮，F14）：拖到标签上 = 加为它的下级（加边，保留原父级=多父）；按住 Alt 放下 = 从这一行所在的父级移过去（换边）；拖到顶部虚线框 = 移出这一行所在的父级。按路径行操作（与 F12 多父展示一致，行上 `data-tag-parent-id` 即来源父级）。落点语义在 `src/lib/tagHierarchyDrag.ts`（防环/自身/已是下级给出原因，行上标红、放下提示），写入走 `move_tag_parent(childId, fromParentId, toParentId)`：一个事务、与 `add_tag_relation` 同口径校验、来源边不存在时拒绝。编辑层级时拖动不排序、不打到对象；退出后恢复。E2E：E-TAG-F14-01。
+> 标签构成有向无环图（DAG，可多父继承）：父标签是子标签的超集。新增关系时服务层做环检测（`add_tag_relation`），筛选时用 `WITH RECURSIVE` 展开后代（`expand_with_descendants`）。侧栏「编辑层级」（标签区标题栏 ListTree 按钮，F14）：拖到标签上 = 加为它的下级（加边，保留原父级=多父）；按住 Alt 放下 = 从这一行所在的父级移过去（换边）；拖到顶部虚线框 = 移出这一行所在的父级。按路径行操作（与 F12 多父展示一致，行上 `data-tag-parent-id` 即来源父级）。落点语义在 `src/lib/tagHierarchyDrag.ts`（防环/自身/已是下级给出原因，行上标红、放下提示），写入走 `move_tag_parent(childId, fromParentId, toParentId)`：一个事务、与 `add_tag_relation` 同口径校验、来源边不存在时拒绝。编辑层级时拖动不排序、不打到对象；退出后恢复。E2E：E-TAG-F14-01。标签过滤范围（F04c，`src/lib/tagScopeSearch.ts`）：侧栏「过滤标签…」与「管理标签」弹窗在有已选正向标签（当前层）时先只在当前层及全部下级里过滤（多父标签只列走在当前层里的路径），提示命中数；当前层无命中而全部标签有时提示「全部标签中有 N 个」，点按钮或 Enter 转全局；清空过滤词或当前层变化即回到当前层。匹配规则两处统一为 `matchesNameQuery`（子串 + 拼音全拼/首字母前缀；弹窗原先只有子串）。E2E：E-TAG-F04C-01。
 
 #### cabinets（文件柜表）
 | 列名 | 类型 | 说明 |

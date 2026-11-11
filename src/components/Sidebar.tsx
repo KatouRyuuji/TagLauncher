@@ -24,6 +24,8 @@ import { SidebarThemeSwitcher } from "./SidebarThemeSwitcher";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
 import { filterCollapsedTagRows, flattenTagTree } from "../lib/tagTree";
 import { compareSortOrder, moveBeside } from "../lib/sidebarOrder";
+import { scopedTagSearch, scopeSearchKey } from "../lib/tagScopeSearch";
+import { TagScopeNotice } from "./TagScopeNotice";
 import { describeParentChange, resolveHierarchyDrop, type HierarchyDropTarget } from "../lib/tagHierarchyDrag";
 import { compareNames } from "../lib/itemQuery";
 import { matchesNameQuery } from "../lib/nameMatch";
@@ -185,11 +187,18 @@ export function Sidebar({
     void ensurePinyin().then(() => { if (!cancelled) setPinyinReady(true); }).catch(() => {});
     return () => { cancelled = true; };
   }, [appliedTagQuery, pinyinReady]);
-  const filteredTagRows = useMemo(() => {
+  // F04c：有已选标签（当前层）时先只在当前层及下级里过滤，没有命中再提示转全局
+  // 转全局只对当时的「当前层 + 过滤词」有效；任一变化即回到当前层（不靠 effect 清理，整段替换过滤词也成立）
+  const [tagSearchGlobalKey, setTagSearchGlobalKey] = useState<string | null>(null);
+  const tagSearchKey = scopeSearchKey(selectedTagIds, appliedTagQuery);
+  const tagSearchGlobal = tagSearchGlobalKey === tagSearchKey;
+  const setTagSearchGlobal = (global: boolean) => setTagSearchGlobalKey(global ? tagSearchKey : null);
+  const tagSearch = useMemo(() => {
     const q = appliedTagQuery.trim().toLowerCase();
-    if (!q) return tagRows;
-    return tagRows.filter(({ tag }) => matchesNameQuery(tag.name, q, pinyinReady));
-  }, [tagRows, appliedTagQuery, pinyinReady]);
+    return scopedTagSearch(tagRows, tagRelations, selectedTagIds, q, (name) => matchesNameQuery(name, q, pinyinReady), tagSearchGlobal);
+  }, [tagRows, tagRelations, selectedTagIds, appliedTagQuery, pinyinReady, tagSearchGlobal]);
+  const filteredTagRows = tagSearch.rows;
+  const scopeLabel = selectedTagIds.map((id) => tags.find((t) => t.id === id)?.name).filter(Boolean).join("、");
 
   useEffect(() => {
     if (tags.length === 0) return;
@@ -508,9 +517,25 @@ export function Sidebar({
                   onChange={(event) => { setTagQuery(event.target.value); tagFilterIme.onChange(event.target.value); }}
                   onCompositionStart={tagFilterIme.onCompositionStart}
                   onCompositionEnd={tagFilterIme.onCompositionEnd}
-                  placeholder="过滤标签…"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && tagSearch.scope === "subtree" && tagSearch.subtreeCount === 0 && tagSearch.globalCount > 0) {
+                      event.preventDefault();
+                      setTagSearchGlobal(true);
+                    }
+                  }}
+                  placeholder={selectedTagIds.length > 0 ? `在「${scopeLabel}」及下级中过滤…` : "过滤标签…"}
                   aria-label="过滤标签"
                   className="input-frame mb-1 h-7 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-primary)] placeholder-[var(--text-placeholder)]"
+                />
+              )}
+              {tagSearch.scope !== "all" && (
+                <TagScopeNotice
+                  scope={tagSearch.scope}
+                  scopeLabel={scopeLabel}
+                  subtreeCount={tagSearch.subtreeCount}
+                  globalCount={tagSearch.globalCount}
+                  onGlobal={() => setTagSearchGlobal(true)}
+                  onSubtree={() => setTagSearchGlobal(false)}
                 />
               )}
               {hierarchyEditing && (
