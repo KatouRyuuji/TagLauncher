@@ -3,7 +3,7 @@
 // 「当前层」= 侧栏已选的正向标签（用户正在浏览的那几支）。有当前层且输入了过滤词时：
 // 1. 先只在当前层及其全部下级里找（下级闭包与筛选「含下级」同一口径：沿 tag_relations 的全部后代）；
 // 2. 当前层里没有命中、全部标签里有时，给出「全部标签中有 N 个」并可一键转全局；
-// 3. 用户主动转全局后，同一过滤词保持全局，直到清空过滤词或当前层变化。
+// 3. 用户主动转全局后，同一过滤词保持全局；过滤词或当前层一变就回到当前层（见 scopeSearchKey）。
 // 名称匹配仍用 matchesNameQuery（子串 + 拼音全拼/首字母前缀），与侧栏既有过滤同一规则。
 import type { TagRelation } from "../types";
 import type { TagTreeRow } from "./tagTree";
@@ -37,6 +37,14 @@ export function subtreeIds(roots: readonly number[], relations: readonly TagRela
     stack.push(...(children.get(id) ?? []));
   }
   return out;
+}
+
+/**
+ * 「转全局」绑定的键：当前层 + 过滤词。用户转全局时记下这把键，之后只有键相同才保持全局——
+ * 改过滤词（哪怕没先清空，例如直接整段替换）或换当前层都自动回到「先搜当前层」。
+ */
+export function scopeSearchKey(roots: readonly number[], query: string): string {
+  return `${roots.join(",")}\u0000${query.trim().toLowerCase()}`;
 }
 
 function distinctCount<T extends { id: number }>(rows: readonly TagTreeRow<T>[]): number {
