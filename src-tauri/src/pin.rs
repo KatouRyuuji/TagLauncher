@@ -824,6 +824,30 @@ fn sync_webview_bounds(window: &WebviewWindow) {
             return;
         }
         let (w, hgt) = (rc.right - rc.left, rc.bottom - rc.top);
+        let mut wr = windows_sys::Win32::Foundation::RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        // SAFETY：同上
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect(h.0 as _, &mut wr);
+        }
+        if wr.right - wr.left != w {
+            // 无边框窗口的客户区应等于窗口：比窗口窄说明非客户区（缩放边框）被算进来了，重算一次框架
+            log::info!("[pin] 客户区 {w} 窄于窗口 {}，重算框架", wr.right - wr.left);
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+            };
+            // SAFETY：只触发 WM_NCCALCSIZE，不改几何
+            unsafe {
+                SetWindowPos(
+                    h.0 as _,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+        }
         let _ = window.with_webview(move |webview| {
             let controller = webview.controller();
             let mut b = windows::Win32::Foundation::RECT::default();
@@ -1416,10 +1440,48 @@ pub struct PinDiag {
     pub handle_rect: [i64; 4],
     /// [拖动开始, 拖动结束, 抽屉 Moved, 抽屉吸附] 累计次数
     pub drag_events: [u32; 7],
+    /// quick 窗口 [窗口宽, 窗口高, 客户区宽, 客户区高, GWL_STYLE, GWL_EXSTYLE]
+    pub quick_geometry: [i64; 6],
+}
+
+fn quick_geometry(app: &AppHandle) -> [i64; 6] {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::RECT;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetClientRect, GetWindowLongW, GetWindowRect, GWL_EXSTYLE, GWL_STYLE,
+        };
+        let Some(h) = app
+            .get_webview_window(crate::quick::QUICK_LABEL)
+            .and_then(|w| w.hwnd().ok())
+        else {
+            return [0; 6];
+        };
+        let mut wr = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        let mut cr = wr;
+        // SAFETY：只读查询本进程窗口
+        unsafe {
+            GetWindowRect(h.0 as _, &mut wr);
+            GetClientRect(h.0 as _, &mut cr);
+            [
+                (wr.right - wr.left) as i64,
+                (wr.bottom - wr.top) as i64,
+                (cr.right - cr.left) as i64,
+                (cr.bottom - cr.top) as i64,
+                GetWindowLongW(h.0 as _, GWL_STYLE) as u32 as i64,
+                GetWindowLongW(h.0 as _, GWL_EXSTYLE) as u32 as i64,
+            ]
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        [0; 6]
+    }
 }
 
 #[tauri::command]
-pub fn pin_diag() -> PinDiag {
+pub fn pin_diag(app: AppHandle) -> PinDiag {
     let (handle_visible, r) = crate::pin_strip::state();
     PinDiag {
         view: view(),
@@ -1428,6 +1490,7 @@ pub fn pin_diag() -> PinDiag {
         handle_visible,
         handle_rect: [r.0 as i64, r.1 as i64, r.2 as i64, r.3 as i64],
         drag_events: std::array::from_fn(|i| DRAG_EVENTS[i].load(Ordering::Relaxed)),
+        quick_geometry: quick_geometry(&app),
     }
 }
 

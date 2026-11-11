@@ -167,7 +167,7 @@ def test_drawer_handle_expand_collapse_sizes(app, sandbox):
     qp.get_by_test_id("pin-panel").wait_for(state="attached", timeout=3000)
     assert app.invoke("pin_expand") is True
     wait_until(lambda: is_visible(qp) and qp.evaluate("() => innerWidth") == 320, 3,
-               lambda: (is_visible(qp), qp.evaluate("() => innerWidth")))
+               lambda: (is_visible(qp), qp.evaluate("() => innerWidth"), qp.evaluate("() => devicePixelRatio"), diag(app)))
     d = diag(app)
     assert d["countsAsVisible"] is True and d["handleVisible"] is False, d
     assert app.invoke("pin_expand") is False, "已展开时不重复展开"
