@@ -8,7 +8,7 @@ const menu = vi.hoisted(() => ({
 }));
 
 const base = (over: Record<string, unknown> = {}) => ({
-  supported: true, reason: null, enabled: false, registered: false, registeredVersion: null, bundledVersion: "1.9.1.0", ...over,
+  supported: true, reason: null, enabled: false, registered: false, registeredVersion: null, privilege: "elevated", bundledVersion: "1.9.1.0", ...over,
 });
 
 vi.mock("../lib/toast", () => ({ showToast: vi.fn() }));
@@ -62,6 +62,18 @@ describe("Win11 一级右键菜单设置", () => {
     await user.click(screen.getByRole("button", { name: "重新注册" }));
     await waitFor(() => expect(screen.queryByTestId("win11-menu-stale")).toBeNull());
     expect(db.setWin11Menu).toHaveBeenCalledWith(true);
+  });
+
+  it("说明管理员（UAC）限制；标准用户账户另有明确提示", async () => {
+    render(<Win11MenuSection disabled={false} />);
+    expect(await screen.findByTestId("win11-menu-limits")).toHaveTextContent("管理员授权（UAC）");
+    expect(screen.queryByTestId("win11-menu-standard-user")).toBeNull();
+  });
+
+  it("标准用户：提示无法安装未签名组件", async () => {
+    menu.state = base({ privilege: "standard" });
+    render(<Win11MenuSection disabled={false} />);
+    expect(await screen.findByTestId("win11-menu-standard-user")).toHaveTextContent("标准用户");
   });
 
   it("不支持时只显示原因、不给开关", async () => {

@@ -1,16 +1,22 @@
 //! Win11 一级右键菜单（实验，默认关闭）：未签名稀疏包 + IExplorerCommand 进程外 COM
 //! （源码 shell-ext/win11-menu，构建 scripts/prepare-win11-menu.mjs）。
 //!
-//! CI 实测（Win11 26100/26200，开发者模式强制关、标准用户也可）：
+//! CI 实测（win11-menu-probe.yml；Win11 26100 x64 / 26200 arm64，开发者模式强制关）：
 //! - `Add-AppxPackage -Path <msix> -ExternalLocation <程序目录> -AllowUnsigned`：Publisher 末尾带
-//!   Unsigned OID，不需要证书、不需要导入任何根证书、不改系统全局注册表；Win10 / Server 2022
+//!   Unsigned OID，不需要证书、不导入任何根证书、不改系统全局注册表；Win10 / Server 2022
 //!   （20348）拒绝（0x80073D2B），所以要求 build ≥ 22000。
+//! - **须管理员权限**：系统里尚无人注册时，非提权进程注册报 0x80073D19「an unsigned package cannot
+//!   include Executable activations」（去掉 Application@Executable 也只换成「not a valid unsigned
+//!   package」）；与微软文档「含可执行内容的未签名包须管理员为全体用户安装」一致。所以：
+//!   已提权（或 UAC 关闭的管理员）直接注册；UAC 受限的管理员经 `runas` 弹一次 UAC 再注册；
+//!   标准用户账户只有在包已被管理员暂存时才能注册，否则给出明确原因。移除自己的注册不需要提权。
 //! - 菜单项由 dllhost 代理进程里的 DLL 提供，dllhost 带包标识：子进程须经桌面 explorer 启动
 //!   （DLL 内实现），否则 TagLauncher 会继承包标识；清单同时关闭 AppData/注册表写虚拟化兜底。
 //! - `Remove-AppxPackage` 后菜单即时消失，PackagedCom 键与 DLL 文件锁一并释放，无 HKCU 残留。
 //!
 //! 意图存设置 `shell.win11_menu`（"1" 开）：安装/升级前 NSIS 钩子先卸包以释放 DLL，
-//! 启动时若意图为开且未注册/版本不符，后台补注册。意图为关时启动不做任何事（不起 PowerShell）。
+//! 启动时若意图为开且未注册/版本不符，后台补注册——只在无需 UAC 时做（不在启动时弹授权框），
+//! 否则设置页显示「重新注册」。意图为关时启动不做任何事（不起 PowerShell）。
 //! 与经典 HKCU 菜单（shell_integration.rs）相互独立，可同时开启。
 
 use serde::Serialize;
@@ -40,6 +46,51 @@ pub struct Win11MenuStatus {
     pub registered_version: Option<String>,
     /// 本程序附带的包版本
     pub bundled_version: String,
+    /// 当前进程权限：elevated（直接注册）/ uac（注册时弹一次 UAC）/ standard（标准用户，通常不能注册）
+    pub privilege: Privilege,
+}
+
+/// 当前进程的权限形态，决定注册走哪条路
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Privilege {
+    /// 已提权，或 UAC 关闭的管理员
+    Elevated,
+    /// UAC 受限令牌的管理员：可经 runas 提权（弹一次 UAC）
+    Uac,
+    /// 标准用户账户
+    Standard,
+}
+
+/// TOKEN_ELEVATION_TYPE（1 默认 / 2 完整 / 3 受限）+ 是否管理员 → 权限形态。
+/// 默认型令牌出现在 UAC 关闭或标准用户时，靠是否管理员区分。
+pub fn classify_privilege(elevation_type: i32, is_admin: bool) -> Privilege {
+    match elevation_type {
+        2 => Privilege::Elevated,
+        3 => Privilege::Uac,
+        _ if is_admin => Privilege::Elevated,
+        _ => Privilege::Standard,
+    }
+}
+
+pub const STANDARD_USER_HINT: &str =
+    "当前是标准用户账户：Windows 只允许管理员安装含代码的未签名组件，请用管理员账户开启";
+
+/// 注册失败的说明：标准用户撞上「未签名包须管理员安装」时补一句原因
+pub fn register_error(privilege: Privilege, err: &str) -> String {
+    let unsigned_admin_only = err.contains("0x80073D19")
+        || err.contains("Executable activations")
+        || err.contains("not a valid unsigned package");
+    if privilege == Privilege::Standard && unsigned_admin_only {
+        format!("注册 Win11 右键菜单失败：{STANDARD_USER_HINT}（{err}）")
+    } else {
+        format!("注册 Win11 右键菜单失败：{err}")
+    }
+}
+
+/// 启动补注册只在不需要弹 UAC 时做
+pub fn can_register_silently(privilege: Privilege) -> bool {
+    privilege != Privilege::Uac
 }
 
 /// 应用版本 → 包版本四段式（预发布后缀去掉，缺的段补 0）
@@ -192,26 +243,142 @@ pub mod platform {
         Ok((!v.is_empty()).then_some(v))
     }
 
+    /// 当前进程令牌的权限形态
+    pub fn privilege() -> Privilege {
+        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows_sys::Win32::Security::{GetTokenInformation, TokenElevationType, TOKEN_QUERY};
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+        use windows_sys::Win32::UI::Shell::IsUserAnAdmin;
+        let mut elevation_type: i32 = 1;
+        // SAFETY: 只读查询当前进程令牌；句柄用完即关
+        unsafe {
+            let mut token: HANDLE = std::ptr::null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) != 0 {
+                let mut len = 0u32;
+                if GetTokenInformation(
+                    token,
+                    TokenElevationType,
+                    (&mut elevation_type as *mut i32).cast(),
+                    std::mem::size_of::<i32>() as u32,
+                    &mut len,
+                ) == 0
+                {
+                    elevation_type = 1;
+                }
+                CloseHandle(token);
+            }
+            classify_privilege(elevation_type, IsUserAnAdmin() != 0)
+        }
+    }
+
+    /// 以管理员身份运行一段 PowerShell（弹 UAC），等它结束。错误经临时文件带回。
+    fn run_ps_elevated(script: &str) -> Result<(), String> {
+        use windows_sys::Win32::Foundation::{
+            CloseHandle, GetLastError, ERROR_CANCELLED, WAIT_OBJECT_0,
+        };
+        use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
+        use windows_sys::Win32::UI::Shell::{
+            ShellExecuteExW, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+        };
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
+
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let base =
+            std::env::temp_dir().join(format!("tl-win11-menu-{}-{stamp}", std::process::id()));
+        let ps1 = base.with_extension("ps1");
+        let err_file = base.with_extension("err");
+        let body = format!(
+            "$ProgressPreference='SilentlyContinue'\r\ntry {{ {script}; exit 0 }} catch {{ [IO.File]::WriteAllText({}, ($_ | Out-String), [Text.Encoding]::UTF8); exit 1 }}\r\n",
+            ps_quote(&err_file.to_string_lossy())
+        );
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend_from_slice(body.as_bytes());
+        std::fs::write(&ps1, bytes).map_err(|e| format!("写临时脚本失败：{e}"))?;
+        let cleanup = || {
+            let _ = std::fs::remove_file(&ps1);
+            let _ = std::fs::remove_file(&err_file);
+        };
+        let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+        let verb = wide("runas");
+        let file = wide("powershell.exe");
+        let params = wide(&format!(
+            "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{}\"",
+            ps1.display()
+        ));
+        // SAFETY: 结构体按 Win32 约定零初始化后填字段；宽字符串在调用期间存活
+        let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+        info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+        info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+        info.lpVerb = verb.as_ptr();
+        info.lpFile = file.as_ptr();
+        info.lpParameters = params.as_ptr();
+        info.nShow = SW_HIDE;
+        if unsafe { ShellExecuteExW(&mut info) } == 0 {
+            let code = unsafe { GetLastError() };
+            cleanup();
+            return Err(if code == ERROR_CANCELLED {
+                "已取消管理员授权".to_string()
+            } else {
+                format!("无法以管理员身份启动 PowerShell（错误 {code}）")
+            });
+        }
+        if info.hProcess.is_null() {
+            cleanup();
+            return Err("无法以管理员身份启动 PowerShell".to_string());
+        }
+        let mut exit_code = 1u32;
+        // SAFETY: hProcess 由 SEE_MASK_NOCLOSEPROCESS 交给我们，等待后关闭
+        let waited = unsafe { WaitForSingleObject(info.hProcess, 120_000) };
+        unsafe {
+            if waited == WAIT_OBJECT_0 {
+                GetExitCodeProcess(info.hProcess, &mut exit_code);
+            }
+            CloseHandle(info.hProcess);
+        }
+        let detail = std::fs::read_to_string(&err_file).ok();
+        cleanup();
+        if waited != WAIT_OBJECT_0 {
+            return Err("管理员 PowerShell 超过 120 秒未结束".to_string());
+        }
+        if exit_code == 0 {
+            Ok(())
+        } else {
+            Err(summarize_ps_error(detail.as_deref().unwrap_or("")))
+        }
+    }
+
     pub fn register() -> Result<(), String> {
         let dir = program_dir()?;
         let msix = dir.join(RESOURCE_DIR).join(MSIX_FILE);
-        run_ps(&register_script(
-            &msix.to_string_lossy(),
-            &dir.to_string_lossy(),
-        ))
-        .map(|_| ())
-        .map_err(|e| format!("注册 Win11 右键菜单失败：{e}"))
+        let script = register_script(&msix.to_string_lossy(), &dir.to_string_lossy());
+        let privilege = privilege();
+        let result = match privilege {
+            Privilege::Uac => run_ps_elevated(&script),
+            _ => run_ps(&script).map(|_| ()),
+        };
+        result.map_err(|e| register_error(privilege, &e))
     }
 
+    /// 移除自己的注册不需要提权；万一失败且可提权，再经 UAC 重试一次
     pub fn unregister() -> Result<(), String> {
-        run_ps(&remove_script())
-            .map(|_| ())
-            .map_err(|e| format!("移除 Win11 右键菜单失败：{e}"))
+        let result = run_ps(&remove_script()).map(|_| ());
+        let result = match result {
+            Err(_) if privilege() == Privilege::Uac => run_ps_elevated(&remove_script()),
+            other => other,
+        };
+        result.map_err(|e| format!("移除 Win11 右键菜单失败：{e}"))
     }
 }
 
 #[cfg(not(windows))]
 pub mod platform {
+    use super::Privilege;
+    pub fn privilege() -> Privilege {
+        Privilege::Standard
+    }
     pub fn os_build() -> Option<u32> {
         None
     }
@@ -247,6 +414,7 @@ pub fn status(intent: bool) -> Result<Win11MenuStatus, String> {
         registered: registered_version.is_some(),
         registered_version,
         bundled_version: bundled_version(),
+        privilege: platform::privilege(),
     })
 }
 
@@ -291,6 +459,12 @@ pub fn reconcile_on_startup(app: tauri::AppHandle) {
     }
     std::thread::spawn(move || {
         let Ok(st) = status(true) else { return };
+        if !can_register_silently(st.privilege) {
+            if st.registered_version.as_deref() != Some(st.bundled_version.as_str()) {
+                log::info!("Win11 右键菜单需要重新注册（需管理员授权，等待用户在设置页操作）");
+            }
+            return;
+        }
         if needs_register(
             true,
             st.supported,
@@ -385,6 +559,27 @@ mod tests {
         assert!(!needs_register(true, true, Some("1.0.0.0"), "1.0.0.0"));
         assert!(!needs_register(false, true, None, "1.0.0.0"));
         assert!(!needs_register(true, false, None, "1.0.0.0"));
+    }
+
+    #[test]
+    fn privilege_from_token_type_and_admin() {
+        assert_eq!(classify_privilege(2, true), Privilege::Elevated);
+        assert_eq!(classify_privilege(3, false), Privilege::Uac);
+        assert_eq!(classify_privilege(1, true), Privilege::Elevated); // UAC 关闭的管理员
+        assert_eq!(classify_privilege(1, false), Privilege::Standard);
+        assert!(can_register_silently(Privilege::Elevated));
+        assert!(can_register_silently(Privilege::Standard));
+        assert!(!can_register_silently(Privilege::Uac));
+    }
+
+    #[test]
+    fn standard_user_error_explains_admin_requirement() {
+        // CI 探针实测的报错原文（标准用户、系统中无人注册）
+        let e = "Deployment failed with HRESULT: 0x80073D19, An error occurred because a user was logged off.";
+        assert!(register_error(Privilege::Standard, e).contains("标准用户"));
+        assert!(!register_error(Privilege::Uac, e).contains("标准用户"));
+        assert!(!register_error(Privilege::Standard, "0x80073CF3 conflict").contains("标准用户"));
+        assert_eq!(serde_json::to_string(&Privilege::Uac).unwrap(), "\"uac\"");
     }
 
     #[test]

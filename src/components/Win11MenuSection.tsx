@@ -54,7 +54,7 @@ export function Win11MenuSection({ disabled }: { disabled: boolean }) {
         disabled={disabled || busy || !status}
         onChange={(checked) => void apply(checked)}
         title="Win11 一级右键菜单（实验）"
-        description="把「用 TagLauncher 收纳」放进 Windows 11 新右键菜单的第一层，不用再点「显示更多选项」。以本机注册的未签名稀疏包实现：无需证书、管理员或开发者模式，不改系统全局设置；关闭或卸载时完整移除。可与上面的经典菜单同时开启。"
+        description="把「用 TagLauncher 收纳」放进 Windows 11 新右键菜单的第一层，不用再点「显示更多选项」。以本机注册的未签名稀疏包实现：不导入证书、不需要开发者模式、不改系统全局设置；关闭或卸载时完整移除。可与上面的经典菜单同时开启。"
       />
       {busy && <p className="text-sm text-[var(--text-secondary)]">正在{status?.enabled ? "处理" : "注册"}…</p>}
       {stale && !busy && (
@@ -64,7 +64,15 @@ export function Win11MenuSection({ disabled }: { disabled: boolean }) {
         </p>
       )}
       {error && <p role="alert" className="text-sm text-[var(--color-danger-ink)]">{error}</p>}
-      <p className="text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]">
+      {status?.privilege === "standard" && (
+        <p data-testid="win11-menu-standard-user" className="text-sm text-[var(--color-warning-ink)]">
+          当前是标准用户账户：Windows 只允许管理员安装这类未签名组件，标准用户通常无法开启（需在管理员账户下使用）。
+        </p>
+      )}
+      <p data-testid="win11-menu-limits" className="text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]">
+        限制：需要管理员权限——开启、重新注册时 Windows 会弹出一次管理员授权（UAC），关闭不需要；
+        升级安装会先移除菜单（释放组件文件），升级后若此处提示未注册，点「重新注册」即可。
+        这是微软标注为「便于测试」的未签名包机制，日后的 Windows 版本可能改变行为。
         便携版删除程序目录前请先关闭此项；也可运行 <code>tag-launcher.exe --win11-menu remove</code> 清理。
       </p>
     </div>

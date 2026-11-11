@@ -60,7 +60,7 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com"
 # 用关联程序打开对象（ShellExecuteW，替代经 cmd.exe 的启动，杜绝命令注入），
 # 以及视频等内容的系统缩略图提取（IShellItemImageFactory + GDI+ 落盘 PNG）、
 # 「复制文件」（CF_HDROP 剪贴板）与「打开方式…」（SHOpenWithDialog）。
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Graphics_GdiPlus", "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Diagnostics_Debug"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Graphics_GdiPlus", "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Diagnostics_Debug", "Win32_System_Registry", "Win32_System_Threading"] }
 
 # 发布构建优化：LTO + 单代码生成单元提升运行性能，strip 移除调试符号显著减小二进制体积。
 # 不启用 panic="abort"：连接层依赖 Mutex 锁中毒恢复（panic 展开），abort 会改变该容错行为。

@@ -959,7 +959,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "set_shell_integration":
       throw new Error("演示模式不支持资源管理器右键菜单");
     case "get_win11_menu":
-      return { supported: false, reason: "演示模式不支持", enabled: false, registered: false, registeredVersion: null, bundledVersion: "0.0.0.0" };
+      return { supported: false, reason: "演示模式不支持", enabled: false, registered: false, registeredVersion: null, privilege: "standard", bundledVersion: "0.0.0.0" };
     case "set_win11_menu":
       throw new Error("演示模式不支持 Win11 右键菜单");
     // 快速搜索窗：演示模式没有第二个窗口

@@ -742,6 +742,8 @@ export interface Win11MenuStatus {
   registered: boolean;
   registeredVersion: string | null;
   bundledVersion: string;
+  /** 当前进程权限：elevated 直接注册 / uac 注册时弹一次 UAC / standard 标准用户（通常无法注册） */
+  privilege: "elevated" | "uac" | "standard";
 }
 
 /** Win11 一级右键菜单（未签名稀疏包）的状态；后台起一次 PowerShell 查询，约 0.5–1 秒 */

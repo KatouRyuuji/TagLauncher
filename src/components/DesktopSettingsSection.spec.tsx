@@ -54,7 +54,7 @@ vi.mock("../lib/db", () => ({
   // 右键菜单区块有自己的用例（ShellIntegrationSection.spec），这里让它按「不支持」不渲染
   getShellIntegration: vi.fn(async () => ({ supported: false, enabled: false, partial: false, registeredExe: null, currentExe: "", exeMatches: true, sendTo: false, verbs: [] })),
   // Win11 一级菜单区块有自己的用例（Win11MenuSection.spec），这里按「不支持」只显示原因
-  getWin11Menu: vi.fn(async () => ({ supported: false, reason: "仅支持 Windows 11", enabled: false, registered: false, registeredVersion: null, bundledVersion: "1.0.0.0" })),
+  getWin11Menu: vi.fn(async () => ({ supported: false, reason: "仅支持 Windows 11", enabled: false, registered: false, registeredVersion: null, privilege: "standard", bundledVersion: "1.0.0.0" })),
   getCollectPreference: vi.fn(async () => null),
   getTags: vi.fn(async () => []),
   getCabinets: vi.fn(async () => []),
