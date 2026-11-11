@@ -3,9 +3,10 @@
 - 唤出走与热键同一入口 quick_open（后端 show → 发 quick-shown{t0Ms}）。E2E 传 activate=false：
   测试机守护不允许应用抢前台，所以「热键时的系统焦点切换」需真机确认；输入框聚焦仍在页面内断言。
 - 性能口径（设计目标，不放宽）：
-  唤出 → 输入框已聚焦后的下一帧 p95 ≤ 80 ms；
+  唤出 → 输入框已聚焦后的下一帧 p95 ≤ 80 ms、p99 ≤ 150 ms（100 次）；
   输入事件 → 结果提交后的下一帧 p95：5k ≤ 30 ms、50k ≤ 100 ms；
-  预创建并加载完数据、隐藏常驻时，应用进程树（含 WebView2 子进程）私有内存增量：5k ≤ 60 MB、50k ≤ 120 MB。
+  预创建并加载完数据、隐藏常驻时，应用进程树（含 WebView2 子进程）私有内存增量：5k ≤ 60 MB、50k ≤ 120 MB；
+  两窗都隐藏时 120 s 平均 CPU ≤ 单核 1%（E-PERF-IDLE）。
 """
 from __future__ import annotations
 
@@ -23,6 +24,8 @@ from tests.cli.conftest import Tl
 
 HOTKEY = "Ctrl+Alt+Shift+F10"
 SUMMON_P95_MS = 80
+SUMMON_P99_MS = 150  # §3.3：p99 ≤ 150 ms（100 次唤出，p99 才有意义）
+SUMMONS = 100
 QUERY_P95_MS = {5000: 30, 50000: 100}
 HIDDEN_MEM_MB = {5000: 60, 50000: 120}
 
@@ -128,13 +131,18 @@ def result_ids(qp) -> list[int]:
     return [int(x) for x in qp.eval_on_selector_all("[data-testid=quick-result]", "els => els.map(e => e.dataset.itemId)")]
 
 
-def p95(xs):
+def pct(xs, q: float):
     xs = sorted(xs)
-    return xs[min(len(xs) - 1, max(0, round(0.95 * len(xs)) - 1))]
+    return xs[min(len(xs) - 1, max(0, round(q * len(xs)) - 1))]
+
+
+def p95(xs):
+    return pct(xs, 0.95)
 
 
 def stats(xs):
-    return {"n": len(xs), "p50": round(statistics.median(xs), 1), "p95": round(p95(xs), 1), "max": round(max(xs), 1)}
+    return {"n": len(xs), "p50": round(statistics.median(xs), 1), "p95": round(p95(xs), 1), "p99": round(pct(xs, 0.99), 1),
+            "max": round(max(xs), 1)}
 
 
 # ---------------------------------------------------------------- 功能
@@ -269,7 +277,7 @@ def test_quick_window_performance(sandbox, app_factory, n):
     hidden_ws_delta = round(after["working_set_mb"] - before["working_set_mb"], 1)
 
     summons = []
-    for _ in range(20):
+    for _ in range(SUMMONS):
         summons.append(summon(app, qp)["ms"])
         hide(app)
         time.sleep(0.3)
@@ -299,13 +307,15 @@ def test_quick_window_performance(sandbox, app_factory, n):
         "slowest_queries": sorted(queries, key=lambda x: -x["ms"])[:5],
         # Rust 搜索索引在主进程（主窗首屏后预建，计入 mem_before），单列便于拆分内存构成
         "search_index": app.invoke("search_index_stats"),
-        "targets": {"summon_p95": SUMMON_P95_MS, "query_p95": QUERY_P95_MS[n], "hidden_mb": HIDDEN_MEM_MB[n]},
+        "targets": {"summon_p95": SUMMON_P95_MS, "summon_p99": SUMMON_P99_MS, "query_p95": QUERY_P95_MS[n], "hidden_mb": HIDDEN_MEM_MB[n]},
     }
     (sandbox.artifacts / f"quick-perf-{n}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print("QUICK_PERF", json.dumps({k: v for k, v in out.items() if k not in ("processes_after",)}, ensure_ascii=False))
 
     assert len(query_ms) >= 25, f"输入采样太少：{len(query_ms)}"
     problems = []
+    if out["summon_ms"]["p99"] > SUMMON_P99_MS:
+        problems.append(f"唤出到可输入 p99 {out['summon_ms']['p99']}ms > {SUMMON_P99_MS}ms")
     if out["summon_ms"]["p95"] > SUMMON_P95_MS:
         problems.append(f"唤出到可输入 p95 {out['summon_ms']['p95']}ms > {SUMMON_P95_MS}ms")
     if out["query_ms"]["p95"] > QUERY_P95_MS[n]:
@@ -375,3 +385,61 @@ def test_hidden_quick_window_lowers_webview_memory_target(sandbox, app_factory):
     (sandbox.artifacts / "quick-memory-level.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print("QUICK_MEMORY", json.dumps(out, ensure_ascii=False))
     assert out["summon_ms"]["p95"] <= SUMMON_P95_MS, f"降内存后的唤出 p95 {out['summon_ms']['p95']}ms > {SUMMON_P95_MS}ms：{out}"
+
+
+@pytest.mark.case("E-QUICK-04")
+def test_quick_results_show_icons_for_first_twenty(app, sandbox):
+    """快速窗结果：图片对象显示真实缩略图（asset 协议在快速窗可用、图片能解码）；
+    超过 20 条时只有前 20 条取图标，其余只画类型图标。"""
+    img = files.write(sandbox.files / "qicon" / "图标测试.png", files.png_bytes(16, 16))
+    others = [files.write(sandbox.files / "qicon" / f"批量图标{i:02d}.txt", "x") for i in range(29)]
+    app.seed([img, *others])
+    qp = enable_quick(app)
+    wait_loaded(qp, 30)
+    summon(app, qp)
+    inp = qp.get_by_test_id("quick-input")
+    inp.fill("图标")
+    wait_until(lambda: qp.get_by_test_id("quick-result").count() == 30, 10, lambda: qp.get_by_test_id("quick-result").count())
+    kinds = qp.eval_on_selector_all("[data-testid=quick-result-icon]", "els => els.map(e => e.dataset.visual)")
+    assert kinds[:20] == ["visual"] * 20 and kinds[20:] == ["type"] * 10, kinds
+    inp.fill("图标测试")
+    wait_until(lambda: qp.get_by_test_id("quick-result").count() == 1, 10)
+    loaded = wait_until(lambda: qp.evaluate(
+        "() => { const i = document.querySelector('[data-testid=quick-result-icon] img'); return i && i.complete && i.naturalWidth > 0 ? i.naturalWidth : null }"),
+        10, lambda: qp.inner_html("[data-testid=quick-results]"))
+    assert loaded == 16
+    hide(app)
+
+
+IDLE_WINDOW_S = 120
+IDLE_CPU_PCT = 1.0  # §3.3「两窗都隐藏时平均 ≈ 0%」：按单核 1% 计（120 s 内整棵进程树 CPU ≤ 1.2 s）
+
+
+@pytest.mark.case("E-PERF-IDLE")
+def test_idle_cpu_with_both_windows_hidden(app_factory, sandbox):
+    """关闭到托盘 + 快速搜索开启（预创建隐藏）：主窗、快速窗都隐藏后，进程树（含 WebView2）
+    120 s 平均 CPU ≤ 单核 1%。进程级明细写入 idle-cpu.json。"""
+    from win import win32
+    build_library(sandbox, 5000)
+    app = app_factory()
+    app.wait_count(5000, timeout=120)
+    app.close_welcome(3000)
+    assert app.invoke("set_close_action", {"action": "tray"})["trayActive"]
+    qp = enable_quick(app)
+    wait_loaded(qp, 5000, timeout=120)
+    h = win32.main_window(app.proc.pid, timeout=20, visible=False)
+    win32.user32.PostMessageW(h, 0x0010, 0, 0)  # WM_CLOSE → 关闭到托盘（隐藏）
+    wait_until(lambda: not win32.is_visible(h), 8, "关闭到托盘应隐藏主窗")
+    assert not is_visible(qp)
+    time.sleep(10)  # 隐藏后的收尾（GC、索引、data_sync 降频）
+    t0, c0 = time.time(), procmem.tree_cpu(app.proc.pid)
+    time.sleep(IDLE_WINDOW_S)
+    t1, c1 = time.time(), procmem.tree_cpu(app.proc.pid)
+    rows = [{"pid": pid, "exe": exe, "cpu_s": round(s - c0[pid][1], 3)} for pid, (exe, s) in c1.items() if pid in c0]
+    total = sum(r["cpu_s"] for r in rows)
+    pct = round(total / (t1 - t0) * 100, 3)
+    out = {"window_s": round(t1 - t0, 1), "cpu_s": round(total, 3), "avg_pct_one_core": pct, "target_pct": IDLE_CPU_PCT,
+           "processes": sorted(rows, key=lambda r: -r["cpu_s"])}
+    (sandbox.artifacts / "idle-cpu.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("IDLE_CPU", json.dumps(out, ensure_ascii=False))
+    assert pct <= IDLE_CPU_PCT, f"两窗隐藏时平均 CPU {pct}% > {IDLE_CPU_PCT}%：{out}"
