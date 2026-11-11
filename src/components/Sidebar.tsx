@@ -7,6 +7,7 @@ import {
   FolderSync,
   GitFork,
   Info,
+  ListTree,
 
   Library,
   Network,
@@ -23,6 +24,7 @@ import { SidebarThemeSwitcher } from "./SidebarThemeSwitcher";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
 import { filterCollapsedTagRows, flattenTagTree } from "../lib/tagTree";
 import { compareSortOrder, moveBeside } from "../lib/sidebarOrder";
+import { describeParentChange, resolveHierarchyDrop, type HierarchyDropTarget } from "../lib/tagHierarchyDrag";
 import { compareNames } from "../lib/itemQuery";
 import { matchesNameQuery } from "../lib/nameMatch";
 import { findTagByNameInsensitive } from "../lib/tagNames";
@@ -64,6 +66,8 @@ interface SidebarProps {
   onAddTagToItem: (itemId: number, tagId: number) => Promise<void>;
   onAddTagRelation: (parentId: number, childId: number) => Promise<void>;
   onRemoveTagRelation: (parentId: number, childId: number) => Promise<void>;
+  /** 「编辑层级」拖动：加边 / 换边 / 移到顶层（一个事务，F14） */
+  onMoveTagParent: (childId: number, fromParentId: number | null, toParentId: number | null) => Promise<void>;
   /** 库计数（后端按全库算；侧栏不持有对象数据） */
   stats: LibraryStats | null;
   /** 数据代：对象数据变化时递增（关系编辑器的关联对象据此重取） */
@@ -91,6 +95,7 @@ export function Sidebar({
   onAddTagToItem,
   onAddTagRelation,
   onRemoveTagRelation,
+  onMoveTagParent,
   stats,
   dataEpoch,
   modPanels = [],
@@ -124,6 +129,14 @@ export function Sidebar({
   const tagInsert = useInternalDragStore((state) =>
     state.hoverTarget?.kind === "sidebar-tag" ? state.hoverTarget : null,
   );
+  const parentDrop = useInternalDragStore((state) =>
+    state.hoverTarget?.kind === "tag-parent" ? state.hoverTarget : null,
+  );
+  const rootDrop = useInternalDragStore((state) =>
+    state.hoverTarget?.kind === "tag-root" ? state.hoverTarget : null,
+  );
+  // 「编辑层级」模式（F14）：拖动改父子关系；与拖动排序 / 拖到对象打标签分开，避免手势冲突
+  const [hierarchyEditing, setHierarchyEditing] = useState(false);
   const cabinetInsert = useInternalDragStore((state) =>
     state.hoverTarget?.kind === "sidebar-cabinet" ? state.hoverTarget : null,
   );
@@ -243,8 +256,50 @@ export function Sidebar({
     }
   };
 
+  // 编辑层级：拖到标签上 = 成为它的子标签（默认加边保留原父级；按住 Alt 放下 = 从当前父级移过去），
+  // 拖到顶部虚线框 = 移出当前父级。不可放的落点也给出原因（行上标红 + 放下时提示）。
+  const handleHierarchyPointerDown = (event: React.PointerEvent<HTMLElement>, tag: Tag, parentId: number | null) => {
+    const resolve = (target: HierarchyDropTarget) =>
+      resolveHierarchyDrop(tag.id, parentId, target, useAppStore.getState().tagRelations);
+    beginInternalPointerDrag({
+      event,
+      payload: { kind: "tag", tagId: tag.id, label: tag.name, color: tag.color },
+      findHoverTarget: (pointerEvent) => {
+        if (sidebarRowAt(pointerEvent, "[data-tag-root-drop]")) {
+          const r = resolve({ kind: "root" });
+          return { kind: "tag-root", blocked: r.ok ? null : r.reason };
+        }
+        const row = sidebarRowAt(pointerEvent, "[data-tag-row-id]");
+        if (!row) return null;
+        const targetId = Number(row.element.dataset.tagRowId);
+        const move = pointerEvent.altKey;
+        const r = resolve({ kind: "parent", parentId: targetId, move });
+        return { kind: "tag-parent", tagId: targetId, move, blocked: r.ok ? null : r.reason };
+      },
+      onDrop: async (target) => {
+        if (target?.kind !== "tag-parent" && target?.kind !== "tag-root") return;
+        const r = resolve(target.kind === "tag-root" ? { kind: "root" } : { kind: "parent", parentId: target.tagId, move: target.move });
+        if (!r.ok) {
+          showToast(`无法调整层级：${r.reason}`, "info");
+          return;
+        }
+        try {
+          await onMoveTagParent(r.change.childId, r.change.fromParentId, r.change.toParentId);
+          const nameOf = (id: number) => tags.find((t) => t.id === id)?.name ?? String(id);
+          showToast(describeParentChange(r.change, nameOf), "success");
+        } catch (err) {
+          showToast(`调整层级失败：${err instanceof Error ? err.message : String(err)}`, "error");
+        }
+      },
+    });
+  };
+
   // 标签拖到对象上为打标签；拖到同一父级下的另一标签行为排序
   const handleTagPointerDown = (event: React.PointerEvent<HTMLElement>, tag: Tag, parentId: number | null) => {
+    if (hierarchyEditing) {
+      handleHierarchyPointerDown(event, tag, parentId);
+      return;
+    }
     beginInternalPointerDrag({
       event,
       payload: {
@@ -404,6 +459,21 @@ export function Sidebar({
           <div className="space-y-5">
             <section aria-labelledby="sidebar-tags-label">
               <SectionHeader id="sidebar-tags-label" label="标签" count={loading ? undefined : tags.length}>
+                <button
+                  type="button"
+                  aria-pressed={hierarchyEditing}
+                  aria-label="编辑层级"
+                  title={hierarchyEditing ? "退出编辑层级" : "编辑层级：拖动标签调整父子关系"}
+                  data-testid="tag-hierarchy-edit"
+                  onClick={() => setHierarchyEditing((v) => !v)}
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] border ${
+                    hierarchyEditing
+                      ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary)]"
+                      : "border-transparent text-[var(--text-muted)] hover:border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent-primary)]"
+                  }`}
+                >
+                  <ListTree className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+                </button>
                 <SidebarIconButton label="管理标签父子关系" onClick={() => setRelationsEditor({ initialTagId: selectedTagIds[0] ?? null })}>
                   <GitFork className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
                 </SidebarIconButton>
@@ -443,6 +513,28 @@ export function Sidebar({
                   className="input-frame mb-1 h-7 w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-primary)] placeholder-[var(--text-placeholder)]"
                 />
               )}
+              {hierarchyEditing && (
+                <div data-testid="tag-hierarchy-hint" className="mb-1 space-y-1">
+                  <p className="px-1.5 text-[length:calc(12px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">
+                    拖到另一个标签上 = 加为它的下级（保留原父级，可多父）；按住 Alt 放下 = 从当前父级移过去。
+                  </p>
+                  <div
+                    data-tag-root-drop=""
+                    data-testid="tag-root-drop"
+                    data-active={rootDrop ? (rootDrop.blocked ? "blocked" : "ok") : undefined}
+                    title={rootDrop?.blocked ?? undefined}
+                    className={`flex h-8 items-center justify-center rounded-[var(--radius-sm)] border border-dashed text-[length:calc(12px*var(--ui-font-scale,1))] ${
+                      rootDrop
+                        ? rootDrop.blocked
+                          ? "border-[var(--color-danger-ink)] text-[var(--color-danger-ink)]"
+                          : "border-[var(--accent-primary)] bg-[var(--accent-primary-bg)] text-[var(--accent-primary-ink)]"
+                        : "border-[var(--border-subtle)] text-[var(--text-faint)]"
+                    }`}
+                  >
+                    {rootDrop?.blocked ?? "拖到这里：移出当前父级"}
+                  </div>
+                </div>
+              )}
               <div className="mt-1 space-y-0.5">
                 {visibleTagRows.map(({ tag, depth, hasChildren, parentId, pathKey }) => {
                   const active = selectedTagIds.includes(tag.id);
@@ -461,6 +553,16 @@ export function Sidebar({
                       className={`relative flex h-8 min-w-0 items-center gap-0.5 ${depth === 1 ? "ml-3" : depth === 2 ? "ml-6" : ""}`}
                     >
                       {tagInsert?.tagId === tag.id && <InsertLine after={tagInsert.after} />}
+                      {parentDrop?.tagId === tag.id && (
+                        <span
+                          data-tag-parent-drop={parentDrop.blocked ? "blocked" : parentDrop.move ? "move" : "add"}
+                          title={parentDrop.blocked ?? undefined}
+                          aria-hidden="true"
+                          className={`pointer-events-none absolute inset-0 rounded-[var(--radius-sm)] border-2 ${
+                            parentDrop.blocked ? "border-[var(--color-danger-ink)]" : "border-[var(--accent-primary)]"
+                          }`}
+                        />
+                      )}
                       {canCollapse ? (
                         <button
                           type="button"

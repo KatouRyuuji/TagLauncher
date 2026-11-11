@@ -66,6 +66,18 @@ pub fn add_tag_relation(db: State<Database>, parent_id: i64, child_id: i64) -> R
     tag_service::add_tag_relation(&conn, parent_id, child_id)
 }
 
+/// 侧栏「编辑层级」拖动（F14）：加边 / 换边 / 移到顶层，一个事务。
+#[tauri::command]
+pub fn move_tag_parent(
+    db: State<Database>,
+    child_id: i64,
+    from_parent_id: Option<i64>,
+    to_parent_id: Option<i64>,
+) -> Result<(), String> {
+    let conn = db.get_conn();
+    tag_service::move_tag_parent(&conn, child_id, from_parent_id, to_parent_id)
+}
+
 #[tauri::command]
 pub fn remove_tag_relation(db: State<Database>, parent_id: i64, child_id: i64) -> Result<(), String> {
     let conn = db.get_conn();

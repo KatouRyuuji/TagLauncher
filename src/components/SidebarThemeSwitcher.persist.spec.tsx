@@ -49,6 +49,7 @@ function renderHomepageSidebar() {
         onAddTagToItem={async () => {}}
         onAddTagRelation={async () => {}}
         onRemoveTagRelation={async () => {}}
+        onMoveTagParent={async () => {}}
         allItems={[]}
       />
     </ThemeProvider>,
