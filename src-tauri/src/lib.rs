@@ -11,6 +11,8 @@ pub mod search;
 mod shell_clipboard;
 pub mod shell_integration;
 pub mod view;
+/// Win11 一级右键菜单（未签名稀疏包，实验，默认关闭）
+pub mod win11_menu;
 // 集成测试（tests/ 目录把本 crate 当外部 rlib 使用）与 CLI 二进制（src/bin/tl.rs）
 // 只能访问 pub 项，故将以下模块公开，使其 service/db/model/extension/cli 层可被直接调用。
 // 仅放宽可见性，不改变任何业务逻辑。
@@ -31,6 +33,7 @@ use collect::{
     collect_finish, collect_session, collect_submit, get_collect_preference, set_collect_preference,
 };
 use shell_integration::{get_shell_integration, set_shell_integration};
+use win11_menu::{get_win11_menu, set_win11_menu};
 // 应用内「复制文件」/「打开方式…」与收纳剪贴板
 use shell_clipboard::{clipboard_collect_candidates, copy_items_as_files, open_with_dialog};
 
@@ -171,6 +174,9 @@ pub fn run() {
     {
         let args: Vec<String> = std::env::args().skip(1).collect();
         if let Some(code) = shell_integration::handle_cli(&args) {
+            std::process::exit(code);
+        }
+        if let Some(code) = win11_menu::handle_cli(&args) {
             std::process::exit(code);
         }
     }
@@ -426,6 +432,8 @@ pub fn run() {
             app.manage(registry);
             app.manage(collect::CollectState::default());
             desktop::init(app.handle(), desktop::parse_launch_args(std::env::args().skip(1)));
+            // 设置里开了 Win11 一级菜单：升级/挪目录后后台补注册（关着时不做任何事）
+            win11_menu::reconcile_on_startup(app.handle().clone());
             // 由右键菜单/发送到启动的首个实例：后台启动（不显示主窗），只弹快速窗收纳
             if let Some(paths) = collect::collect_args(std::env::args().skip(1)) {
                 collect::submit(app.handle(), paths);
@@ -478,11 +486,13 @@ pub fn run() {
             get_collect_preference,
             set_collect_preference,
             get_shell_integration,
+            get_win11_menu,
             copy_items_as_files,
             clipboard_collect_candidates,
             collect_submit,
             open_with_dialog,
             set_shell_integration,
+            set_win11_menu,
             set_hotkey,
             set_close_action,
             set_hotkey_ignore_fullscreen,

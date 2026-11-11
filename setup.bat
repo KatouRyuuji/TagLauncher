@@ -153,6 +153,7 @@ if errorlevel 1 (
         :: tauri-build validates bundle.externalBin on every build; fresh clones need
         :: the sidecar placeholder or the first compile fails.
         call node scripts/prepare-cli-bin.mjs --placeholder
+        call node scripts/prepare-win11-menu.mjs --placeholder
     )
 )
 echo.

@@ -1,3 +1,11 @@
+; Win11 一级右键菜单（未签名稀疏包 TagLauncher.ShellMenu，见 src-tauri/src/win11_menu.rs）：
+; 安装/升级前先卸包，释放 dllhost 持有的 win11-menu\tl_menu.dll，覆盖文件才不会失败；
+; 设置里开着时，新版本启动后按设置自动重新注册。卸载时无条件移除（不看「删除应用数据」）。
+!macro TL_REMOVE_WIN11_MENU
+  nsExec::Exec 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-AppxPackage -Name TagLauncher.ShellMenu | Remove-AppxPackage"'
+  Pop $0
+!macroend
+
 ; 卸载后清理钩子：应用数据目录位于 %LOCALAPPDATA%\TagLauncher，
 ; Tauri NSIS 模板默认只清 %APPDATA%/%LOCALAPPDATA%\<bundleId>，在此补齐真实数据目录。
 ; 与模板同一口径：仅在用户勾选「删除应用数据」且非升级覆盖安装时删除。
@@ -20,4 +28,9 @@
     SetShellVarContext current
     Delete "$APPDATA\Microsoft\Windows\SendTo\*TagLauncher*.lnk"
   ${EndIf}
+  !insertmacro TL_REMOVE_WIN11_MENU
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  !insertmacro TL_REMOVE_WIN11_MENU
 !macroend

@@ -24,7 +24,7 @@
     "test:unit": "vitest run",
     "demo": "vite --mode demo --host 127.0.0.1",
     "pack:portable": "node scripts/build-portable.mjs",
-    "pack": "node scripts/prepare-cli-bin.mjs && npm run tauri build && npm run pack:portable",
+    "pack": "node scripts/prepare-win11-menu.mjs && node scripts/prepare-cli-bin.mjs && npm run tauri build && npm run pack:portable",
     "demo:shots": "node scripts/demo-screenshots.mjs"
   },
   "dependencies": {

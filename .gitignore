@@ -67,3 +67,6 @@ tmp-verify/
 plan/
 __pycache__/
 *.pyc
+
+# Win11 一级右键菜单组件（scripts/prepare-win11-menu.mjs 生成或占位）
+src-tauri/win11-menu/

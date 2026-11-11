@@ -1,0 +1,4 @@
+LIBRARY tl_menu
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

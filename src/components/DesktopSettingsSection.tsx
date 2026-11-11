@@ -15,6 +15,7 @@ import {
 import { showToast } from "../lib/toast";
 import { SettingsToggle } from "./SettingsField";
 import { ShellIntegrationSection } from "./ShellIntegrationSection";
+import { Win11MenuSection } from "./Win11MenuSection";
 
 const CLOSE_OPTIONS: Array<{ value: CloseAction; label: string; hint: string }> = [
   { value: "exit", label: "退出程序", hint: "点关闭即退出（默认）。程序退出后全局快捷键随之失效" },
@@ -294,6 +295,7 @@ export function DesktopSettingsSection() {
         )}
       </div>
       <ShellIntegrationSection disabled={busy} />
+      <Win11MenuSection disabled={busy} />
     </section>
   );
 }

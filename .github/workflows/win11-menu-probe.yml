@@ -1,0 +1,32 @@
+name: Win11 menu probe
+
+# 原型验证：未签名稀疏包 + IExplorerCommand。只在本分支/手动触发，不进 PR 必需检查。
+on:
+  workflow_dispatch:
+  push:
+    branches: ['cursor/win11-menu-*']
+    paths: ['shell-ext/win11-menu/**', '.github/workflows/win11-menu-probe.yml']
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-2025, variant: default }
+          - { os: windows-2022, variant: default }
+          - { os: windows-11-arm, variant: default }
+          - { os: windows-2025, variant: noexe }
+          - { os: windows-11-arm, variant: noexe }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe (admin runner user)
+        shell: powershell
+        run: ./shell-ext/win11-menu/probe.ps1 -Variant ${{ matrix.variant }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: win11-menu-${{ matrix.os }}-${{ matrix.variant }}
+          path: ${{ runner.temp }}/win11menu/*.png

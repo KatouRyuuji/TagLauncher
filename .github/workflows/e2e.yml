@@ -52,6 +52,7 @@ jobs:
           CARGO_PROFILE_DEV_OPT_LEVEL: '3'
         run: |
           node scripts/prepare-cli-bin.mjs --placeholder
+          node scripts/prepare-win11-menu.mjs --placeholder
           npx tauri build --debug --no-bundle
           cargo build --manifest-path src-tauri/Cargo.toml --bin tl
 
@@ -132,7 +133,10 @@ jobs:
           CARGO_PROFILE_DEV_OPT_LEVEL: '3'
         shell: pwsh
         run: |
+          # 任一构建命令失败即中止（pwsh 默认不因原生命令非零退出而停）
+          $ErrorActionPreference = 'Stop'; $PSNativeCommandUseErrorActionPreference = $true
           node scripts/prepare-cli-bin.mjs --placeholder
+          node scripts/prepare-win11-menu.mjs
           npx tauri build --debug --bundles nsis --features gui-subsystem
           cargo build --manifest-path src-tauri/Cargo.toml --bin tl
           $nsis = Get-ChildItem src-tauri/target/debug/bundle/nsis/*-setup.exe | Select-Object -First 1
@@ -241,6 +245,9 @@ jobs:
       - name: Build release app + NSIS installer + CLI（同 release.yml）
         shell: pwsh
         run: |
+          # 任一构建命令失败即中止（pwsh 默认不因原生命令非零退出而停）
+          $ErrorActionPreference = 'Stop'; $PSNativeCommandUseErrorActionPreference = $true
+          node scripts/prepare-win11-menu.mjs
           node scripts/prepare-cli-bin.mjs
           npx tauri build --bundles nsis
           $nsis = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1

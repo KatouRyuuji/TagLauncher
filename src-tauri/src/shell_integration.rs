@@ -2,7 +2,7 @@
 //!
 //! - 经典 HKCU 注册表动词，不需要管理员：文件（`*`）、文件夹（`Directory`）、文件夹背景
 //!   （`Directory\Background`，`%V` = 当前目录）各一个「用 TagLauncher 收纳…」。Win11 上在
-//!   「显示更多选项」里；一级菜单需要签名的稀疏包，不做。
+//!   「显示更多选项」里；一级菜单另见 win11_menu.rs（未签名稀疏包，独立开关）。
 //! - 「发送到」：`%APPDATA%\Microsoft\Windows\SendTo` 下一个指向 GUI exe 的快捷方式，多选时
 //!   一次启动、全部路径作参数。
 //! - 默认关闭，设置里手动开启；关闭时把注册项和快捷方式全部删掉。状态不另存设置，一律以
@@ -297,9 +297,9 @@ pub fn handle_cli(args: &[String]) -> Option<i32> {
                 Some(1)
             }
         },
-        Some("remove") => match platform::remove_all() {
+        Some("remove") => match platform::remove_all().and_then(|_| crate::win11_menu::platform::unregister()) {
             Ok(()) => {
-                println!("已清理资源管理器右键菜单与「发送到」");
+                println!("已清理资源管理器右键菜单（含 Win11 一级菜单）与「发送到」");
                 Some(0)
             }
             Err(e) => {
