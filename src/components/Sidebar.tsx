@@ -24,7 +24,7 @@ import { SidebarThemeSwitcher } from "./SidebarThemeSwitcher";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
 import { filterCollapsedTagRows, flattenTagTree } from "../lib/tagTree";
 import { compareSortOrder, moveBeside } from "../lib/sidebarOrder";
-import { scopedTagSearch } from "../lib/tagScopeSearch";
+import { scopedTagSearch, scopeSearchKey } from "../lib/tagScopeSearch";
 import { TagScopeNotice } from "./TagScopeNotice";
 import { describeParentChange, resolveHierarchyDrop, type HierarchyDropTarget } from "../lib/tagHierarchyDrag";
 import { compareNames } from "../lib/itemQuery";
@@ -188,10 +188,11 @@ export function Sidebar({
     return () => { cancelled = true; };
   }, [appliedTagQuery, pinyinReady]);
   // F04c：有已选标签（当前层）时先只在当前层及下级里过滤，没有命中再提示转全局
-  const [tagSearchGlobal, setTagSearchGlobal] = useState(false);
-  const scopeKey = selectedTagIds.join(",");
-  useEffect(() => { setTagSearchGlobal(false); }, [scopeKey]);
-  useEffect(() => { if (!appliedTagQuery.trim()) setTagSearchGlobal(false); }, [appliedTagQuery]);
+  // 转全局只对当时的「当前层 + 过滤词」有效；任一变化即回到当前层（不靠 effect 清理，整段替换过滤词也成立）
+  const [tagSearchGlobalKey, setTagSearchGlobalKey] = useState<string | null>(null);
+  const tagSearchKey = scopeSearchKey(selectedTagIds, appliedTagQuery);
+  const tagSearchGlobal = tagSearchGlobalKey === tagSearchKey;
+  const setTagSearchGlobal = (global: boolean) => setTagSearchGlobalKey(global ? tagSearchKey : null);
   const tagSearch = useMemo(() => {
     const q = appliedTagQuery.trim().toLowerCase();
     return scopedTagSearch(tagRows, tagRelations, selectedTagIds, q, (name) => matchesNameQuery(name, q, pinyinReady), tagSearchGlobal);

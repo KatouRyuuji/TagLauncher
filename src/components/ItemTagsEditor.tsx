@@ -14,7 +14,7 @@ import { flattenTagTree, type TagTreeRow } from "../lib/tagTree";
 import { useAppStore } from "../stores/appStore";
 import { matchesNameQuery } from "../lib/nameMatch";
 import { ensurePinyin } from "../lib/pinyinProvider";
-import { scopedTagSearch } from "../lib/tagScopeSearch";
+import { scopedTagSearch, scopeSearchKey } from "../lib/tagScopeSearch";
 import { TagScopeNotice } from "./TagScopeNotice";
 
 // 标签数超过阈值才显示过滤框（与 BatchSelectionToolbar 的 TAG_MENU_FILTER_THRESHOLD 对齐）
@@ -41,13 +41,11 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
   const [tagFilter, setTagFilter] = useState("");
   // IME 组合中只更新文本，组合结束才过滤（appliedTagFilter）
   const [appliedTagFilter, setAppliedTagFilter] = useState("");
-  const [searchGlobal, setSearchGlobal] = useState(false);
+  // 转全局只对当时的「当前层 + 过滤词」有效（见 scopeSearchKey）
+  const [searchGlobalKey, setSearchGlobalKey] = useState<string | null>(null);
   const [pinyinReady, setPinyinReady] = useState(false);
   useEffect(() => {
-    if (!appliedTagFilter.trim()) {
-      setSearchGlobal(false);
-      return;
-    }
+    if (!appliedTagFilter.trim()) return;
     if (pinyinReady) return;
     let cancelled = false;
     void ensurePinyin().then(() => { if (!cancelled) setPinyinReady(true); }).catch(() => {});
@@ -136,6 +134,9 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
   const tagQuery = appliedTagFilter.trim().toLowerCase();
   const tagRows = flattenTagTree(tags, tagRelations, (a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name), { uniqueIds: true });
   // 与侧栏「过滤标签…」同一匹配规则（子串 + 拼音全拼/首字母前缀）
+  const searchKey = scopeSearchKey(scopeIds, tagQuery);
+  const searchGlobal = searchGlobalKey === searchKey;
+  const setSearchGlobal = (global: boolean) => setSearchGlobalKey(global ? searchKey : null);
   const tagSearch = scopedTagSearch(tagRows, tagRelations, scopeIds, tagQuery,
     (name) => matchesNameQuery(name, tagQuery, pinyinReady), searchGlobal, true);
   const visibleTagRows = tagSearch.rows;
