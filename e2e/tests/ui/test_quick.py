@@ -26,6 +26,7 @@ HOTKEY = "Ctrl+Alt+Shift+F10"
 SUMMON_P95_MS = 80
 SUMMON_P99_MS = 150  # §3.3：p99 ≤ 150 ms（100 次唤出，p99 才有意义）
 SUMMONS = 100
+CROSS_WINDOW_MS = 300  # §3.3：快速窗打标签后主窗可见 ≤ 300 ms
 QUERY_P95_MS = {5000: 30, 50000: 100}
 HIDDEN_MEM_MB = {5000: 60, 50000: 120}
 
@@ -196,9 +197,20 @@ def test_quick_search_and_keyboard_actions(app, sandbox):
     tag_inp = qp.get_by_test_id("quick-tag-input")
     tag_inp.wait_for(timeout=3000)
     tag_inp.press_sequentially("快速")
+    # §3.3「跨窗一致延迟」：快速窗打标签 → 主窗可见 ≤ CROSS_WINDOW_MS。两页共用墙钟（Date.now），
+    # 主窗用 MutationObserver 记下卡片出现新标签的时刻，避免轮询粒度
+    app.page.evaluate("""(id) => { window.__tlCross = null; const t = () => {
+      const el = document.querySelector(`[data-selectable-item-id="${id}"]`);
+      if (el && el.innerText.includes('快速标签')) { window.__tlCross = Date.now(); return true; } return false; };
+      const mo = new MutationObserver(() => { if (t()) mo.disconnect(); });
+      mo.observe(document.body, { subtree: true, childList: true, characterData: true }); }""", target)
+    t0 = qp.evaluate("() => Date.now()")
     tag_inp.press("Enter")
     qp.get_by_test_id("quick-status").filter(has_text="已添加标签「快速标签」").wait_for(timeout=3000)
     wait_until(lambda: "快速标签" in card.inner_text(), 2, lambda: card.inner_text())
+    cross_ms = wait_until(lambda: app.page.evaluate("() => window.__tlCross"), 2, "主窗未记录到新标签") - t0
+    print(f"QUICK_CROSS_WINDOW tag_visible_in_main_ms={cross_ms}")
+    assert cross_ms <= CROSS_WINDOW_MS, f"快速窗打标签后主窗 {cross_ms} ms 才可见，目标 ≤ {CROSS_WINDOW_MS} ms"
     assert len(app.calls("get_items")) == full_loads, "快速窗打标签后主窗应按 ID 增量刷新，而不是整表重载"
     assert app.calls("get_items_by_ids"), "主窗应按对象 ID 取回变化"
     assert [t["id"] for t in app.item("项目文档.txt")["tags"]] == [tag["id"]]
