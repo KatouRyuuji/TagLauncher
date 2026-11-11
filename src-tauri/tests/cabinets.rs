@@ -76,10 +76,10 @@ fn batch_add_and_remove_cabinet_items() {
     cabinet_service::add_items_to_cabinet(&conn, cab.id, &[a.id, b.id, c.id]).expect("batch add");
     // 幂等：重复加入不产生重复成员。
     cabinet_service::add_items_to_cabinet(&conn, cab.id, &[a.id]).expect("idempotent");
-    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id).unwrap().len(), 3);
+    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id, true).unwrap().len(), 3);
 
     cabinet_service::remove_items_from_cabinet(&conn, cab.id, &[a.id, c.id]).expect("batch remove");
-    let left = cabinet_service::get_cabinet_items(&conn, cab.id).unwrap();
+    let left = cabinet_service::get_cabinet_items(&conn, cab.id, true).unwrap();
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].item.id, b.id);
 }
@@ -97,8 +97,8 @@ fn cabinets_isolate_membership() {
     cabinet_service::add_item_to_cabinet(&conn, cab_a.id, x.id).unwrap();
     cabinet_service::add_item_to_cabinet(&conn, cab_b.id, y.id).unwrap();
 
-    let in_a = cabinet_service::get_cabinet_items(&conn, cab_a.id).unwrap();
-    let in_b = cabinet_service::get_cabinet_items(&conn, cab_b.id).unwrap();
+    let in_a = cabinet_service::get_cabinet_items(&conn, cab_a.id, true).unwrap();
+    let in_b = cabinet_service::get_cabinet_items(&conn, cab_b.id, true).unwrap();
     assert_eq!(in_a.len(), 1);
     assert_eq!(in_a[0].item.id, x.id);
     assert_eq!(in_b.len(), 1);
@@ -134,12 +134,12 @@ fn deleting_item_removes_it_from_cabinets() {
     let cab = cabinet_service::add_cabinet(&conn, "C", "#fff").unwrap();
     let a = item_service::add_item(&conn, &common::write_file(&t.dir, "gone.exe", b"a")).unwrap();
     cabinet_service::add_item_to_cabinet(&conn, cab.id, a.id).unwrap();
-    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id).unwrap().len(), 1);
+    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id, true).unwrap().len(), 1);
 
     item_service::remove_item(&conn, a.id).unwrap();
 
     assert!(
-        cabinet_service::get_cabinet_items(&conn, cab.id).unwrap().is_empty(),
+        cabinet_service::get_cabinet_items(&conn, cab.id, true).unwrap().is_empty(),
         "删除对象应自动从柜内移除"
     );
 }
@@ -172,7 +172,7 @@ fn linked_cabinet_members_follow_folder() {
     let linked = cabinets.iter().find(|c| c.id == cab.id).unwrap();
     assert_eq!(linked.folder_path.as_deref(), Some(root.as_str()), "末尾分隔符被规范化去掉");
     assert!(!linked.folder_truncated);
-    let items = cabinet_service::get_cabinet_items(&conn, cab.id).unwrap();
+    let items = cabinet_service::get_cabinet_items(&conn, cab.id, true).unwrap();
     let mut names: Vec<_> = items.iter().map(|i| i.item.name.clone()).collect();
     names.sort();
     assert_eq!(names.len(), 3, "{names:?}");
@@ -193,9 +193,9 @@ fn linked_cabinet_members_follow_folder() {
     cabinet_service::set_cabinet_folder(&conn, cab.id, None).unwrap();
     let after = cabinet_service::get_cabinets(&conn).unwrap();
     assert!(after.iter().all(|c| c.folder_path.is_none()));
-    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id).unwrap().len(), 3, "解除后成员固化");
+    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id, true).unwrap().len(), 3, "解除后成员固化");
     cabinet_service::add_item_to_cabinet(&conn, cab.id, outside.id).unwrap();
-    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id).unwrap().len(), 4);
+    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id, true).unwrap().len(), 4);
 }
 
 #[test]

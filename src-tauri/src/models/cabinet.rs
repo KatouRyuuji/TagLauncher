@@ -18,4 +18,7 @@ pub struct Cabinet {
     /// 仅 GUI 命令层在锁外填写，其余调用方为 None
     #[serde(default)]
     pub folder_state: Option<String>,
+    /// 父柜（F16 嵌套，单父树）；None 为顶层。关联文件夹柜只能是叶子
+    #[serde(default)]
+    pub parent_id: Option<i64>,
 }

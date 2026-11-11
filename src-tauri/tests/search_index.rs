@@ -165,7 +165,7 @@ fn view_query_follows_db_with_frozen_smart_order() {
     assert_eq!((ta("file"), ta("2.t"), ta("zz")), (Some(a), Some(b), None));
     let (members, folder) = {
         let conn = t.db.get_conn();
-        cabinet_service::cabinet_member_ids(&conn, 9999).unwrap()
+        cabinet_service::cabinet_member_ids(&conn, 9999, true).unwrap()
     };
     assert!(
         members.is_empty() && folder.is_none(),

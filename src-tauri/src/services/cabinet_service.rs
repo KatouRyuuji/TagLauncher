@@ -7,7 +7,7 @@ use rusqlite::{params, Connection};
 pub fn get_cabinets(conn: &Connection) -> Result<Vec<Cabinet>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, color, created_at, folder_path, folder_truncated, sort_order
+            "SELECT id, name, color, created_at, folder_path, folder_truncated, sort_order, parent_id
              FROM cabinets ORDER BY sort_order, name",
         )
         .map_err(|e| e.to_string())?;
@@ -23,6 +23,7 @@ pub fn get_cabinets(conn: &Connection) -> Result<Vec<Cabinet>, String> {
                 folder_truncated: row.get(5)?,
                 sort_order: row.get(6)?,
                 folder_state: None,
+                parent_id: row.get(7)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -83,6 +84,7 @@ pub fn add_cabinet(conn: &Connection, name: &str, color: &str) -> Result<Cabinet
         folder_truncated: false,
         sort_order,
         folder_state: None,
+        parent_id: None,
     })
 }
 
@@ -112,15 +114,78 @@ pub fn update_cabinet(conn: &Connection, id: i64, name: &str, color: &str) -> Re
     Ok(())
 }
 
-/// 删除文件柜
+/// 删除文件柜：子柜上移一级（挂到被删柜的父柜，顶层柜的子柜成为顶层），不级联删除子柜与其成员。
 pub fn remove_cabinet(conn: &Connection, id: i64) -> Result<(), String> {
     crate::db::ensure_writes_allowed()?;
-    let affected = conn
-        .execute("DELETE FROM cabinets WHERE id = ?1", [id])
+    let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
+    let parent: Option<i64> = tx
+        .query_row("SELECT parent_id FROM cabinets WHERE id = ?1", [id], |r| r.get(0))
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("文件柜不存在（id {}），可能已被删除", id),
+            other => other.to_string(),
+        })?;
+    tx.execute(
+        "UPDATE cabinets SET parent_id = ?2 WHERE parent_id = ?1",
+        params![id, parent],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM cabinets WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
-    if affected == 0 {
-        return Err(format!("文件柜不存在（id {}），可能已被删除", id));
+    tx.commit().map_err(|e| e.to_string())
+}
+
+// ------------------------------------------------------------------ 嵌套（F16 方案 C）
+
+/// 以 `id` 为根的子树（含自身），广度优先。`UNION` 去重：即使库里被外部写出环也不会死循环。
+pub fn subtree_ids(conn: &Connection, id: i64) -> Result<Vec<i64>, String> {
+    let mut stmt = conn
+        .prepare(
+            "WITH RECURSIVE sub(id) AS (
+                 SELECT ?1
+                 UNION
+                 SELECT c.id FROM cabinets c JOIN sub ON c.parent_id = sub.id
+             )
+             SELECT id FROM sub",
+        )
+        .map_err(|e| e.to_string())?;
+    let ids = stmt
+        .query_map([id], |r| r.get::<_, i64>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(ids)
+}
+
+fn has_children(conn: &Connection, id: i64) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM cabinets WHERE parent_id = ?1)",
+        [id],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// 设置父柜（None = 移到顶层）。拒绝：自身为父、父为自己的子孙（成环）、父是关联文件夹柜（只能是叶子）。
+pub fn set_cabinet_parent(conn: &Connection, id: i64, parent: Option<i64>) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
+    tag_service::ensure_exists(conn, "cabinets", id, "文件柜")?;
+    if let Some(parent) = parent {
+        tag_service::ensure_exists(conn, "cabinets", parent, "父文件柜")?;
+        if parent == id {
+            return Err("不能把文件柜放进它自己".to_string());
+        }
+        if linked_folder(conn, parent)?.is_some() {
+            return Err("关联文件夹的文件柜只能在最底层，不能再放入子柜".to_string());
+        }
+        if subtree_ids(conn, id)?.contains(&parent) {
+            return Err("不能把文件柜放进它自己的子柜".to_string());
+        }
     }
+    conn.execute(
+        "UPDATE cabinets SET parent_id = ?2 WHERE id = ?1",
+        params![id, parent],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -212,9 +277,46 @@ pub fn remove_items_from_cabinet(
     Ok(())
 }
 
-/// 各文件柜成员计数（普通柜一次 GROUP BY，关联柜各一次路径前缀计数；供侧栏徽标使用，
-/// 避免逐柜调用 get_cabinet_items 引发的全库对账 + 图标补齐重 IO）
+/// 各文件柜成员计数，与父柜默认视图同一口径：自身 ∪ 全部子孙柜（去重）。
+/// 无子柜的柜走原来的轻量计数（普通柜一次 GROUP BY，关联柜各一次路径前缀计数）；
+/// 只有带子柜的柜才取成员 ID 做并集。供侧栏徽标使用，不做对账与图标补齐。
 pub fn get_cabinet_item_counts(conn: &Connection) -> Result<Vec<(i64, i64)>, String> {
+    let mut counts = own_item_counts(conn)?;
+    let parents: Vec<i64> = {
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT parent_id FROM cabinets WHERE parent_id IS NOT NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, i64>(0))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        rows
+    };
+    if parents.is_empty() {
+        return Ok(counts);
+    }
+    let mut own: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+    for parent in parents {
+        let mut union = std::collections::HashSet::new();
+        for cab in subtree_ids(conn, parent)? {
+            if !own.contains_key(&cab) {
+                let ids = own_member_ids(conn, cab)?.0;
+                own.insert(cab, ids);
+            }
+            union.extend(own[&cab].iter().copied());
+        }
+        let n = union.len() as i64;
+        match counts.iter_mut().find(|(id, _)| *id == parent) {
+            Some(entry) => entry.1 = n,
+            None => counts.push((parent, n)),
+        }
+    }
+    Ok(counts)
+}
+
+/// 仅本柜成员计数（不含子柜）。
+fn own_item_counts(conn: &Connection) -> Result<Vec<(i64, i64)>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT ci.cabinet_id, COUNT(*) FROM cabinet_items ci
@@ -243,8 +345,34 @@ pub fn get_cabinet_item_counts(conn: &Connection) -> Result<Vec<(i64, i64)>, Str
     Ok(counts)
 }
 
-/// 获取文件柜内的所有项目：关联柜按路径取文件夹下的全部对象，普通柜取 cabinet_items 成员。
-pub fn get_cabinet_items(conn: &Connection, cabinet_id: i64) -> Result<Vec<ItemWithTags>, String> {
+/// 获取文件柜内的所有项目：关联柜按路径取文件夹下的全部对象，普通柜取 cabinet_items 成员；
+/// `include_descendants` 时并入全部子孙柜成员（去重，保持同一排序）。
+pub fn get_cabinet_items(
+    conn: &Connection,
+    cabinet_id: i64,
+    include_descendants: bool,
+) -> Result<Vec<ItemWithTags>, String> {
+    if include_descendants && has_children(conn, cabinet_id)? {
+        let (ids, _) = cabinet_member_ids(conn, cabinet_id, true)?;
+        let mut items = crate::services::item_service::get_items_by_ids(conn, &ids)?;
+        // 与单柜查询同一 ORDER：收藏优先、最近使用、名称
+        items.sort_by(|a, b| {
+            b.item.is_favorite
+                .cmp(&a.item.is_favorite)
+                .then_with(|| match (&a.item.last_used_at, &b.item.last_used_at) {
+                    (Some(x), Some(y)) => y.cmp(x),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                })
+                .then_with(|| a.item.name.cmp(&b.item.name))
+        });
+        return Ok(items);
+    }
+    own_cabinet_items(conn, cabinet_id)
+}
+
+fn own_cabinet_items(conn: &Connection, cabinet_id: i64) -> Result<Vec<ItemWithTags>, String> {
     const COLUMNS: &str = crate::services::item_service::ITEM_COLS_I;
     const ORDER: &str = "ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name";
     let items: Vec<Item> = match linked_folder(conn, cabinet_id)? {
@@ -332,7 +460,33 @@ fn like_pattern(folder: &str) -> String {
 }
 
 /// 柜成员 ID（与 get_cabinet_items 同一成员口径）与关联文件夹。主窗视图查询用，不取对象数据。
+/// `include_descendants`：并入全部子孙柜成员（父柜默认视图）；关联文件夹只返回本柜自己的
+/// （关联柜只能是叶子，并集视图不按磁盘目录浏览）。
 pub fn cabinet_member_ids(
+    conn: &Connection,
+    cabinet_id: i64,
+    include_descendants: bool,
+) -> Result<(Vec<i64>, Option<String>), String> {
+    let (own, folder) = own_member_ids(conn, cabinet_id)?;
+    if !include_descendants || !has_children(conn, cabinet_id)? {
+        return Ok((own, folder));
+    }
+    let mut seen: std::collections::HashSet<i64> = own.iter().copied().collect();
+    let mut ids = own;
+    for cab in subtree_ids(conn, cabinet_id)? {
+        if cab == cabinet_id {
+            continue;
+        }
+        for id in own_member_ids(conn, cab)?.0 {
+            if seen.insert(id) {
+                ids.push(id);
+            }
+        }
+    }
+    Ok((ids, folder))
+}
+
+fn own_member_ids(
     conn: &Connection,
     cabinet_id: i64,
 ) -> Result<(Vec<i64>, Option<String>), String> {
@@ -433,6 +587,9 @@ pub fn set_cabinet_folder(
     let tx = crate::db::write_tx(&conn).map_err(|e| e.to_string())?;
     match folder {
         Some(folder) => {
+            if has_children(conn, cabinet_id)? {
+                return Err("该文件柜包含子柜；关联文件夹的文件柜只能在最底层，请先移走子柜".to_string());
+            }
             let normalized = normalize_folder(folder);
             if normalized.is_empty() || !std::path::Path::new(&normalized).is_dir() {
                 return Err(format!("文件夹不存在或不可访问：{}", folder.trim()));
@@ -511,10 +668,10 @@ mod tests {
         add_items_to_cabinet(&conn, cab.id, &[a.id, b.id, c.id]).expect("batch add");
         // 幂等：重复加入不产生重复记录
         add_items_to_cabinet(&conn, cab.id, &[a.id]).expect("idempotent add");
-        assert_eq!(get_cabinet_items(&conn, cab.id).unwrap().len(), 3);
+        assert_eq!(get_cabinet_items(&conn, cab.id, true).unwrap().len(), 3);
 
         remove_items_from_cabinet(&conn, cab.id, &[a.id, c.id]).expect("batch remove");
-        let left = get_cabinet_items(&conn, cab.id).unwrap();
+        let left = get_cabinet_items(&conn, cab.id, true).unwrap();
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].item.id, b.id);
     }
@@ -550,5 +707,110 @@ mod tests {
         ));
         assert!(!path_under(r"D:\Media", &folder_prefix(r"D:\Media")));
         assert!(!path_under(r"D:\MediaX\y", &folder_prefix(r"D:\Media")));
+    }
+
+    fn parent_of(conn: &Connection, id: i64) -> Option<i64> {
+        conn.query_row("SELECT parent_id FROM cabinets WHERE id = ?1", [id], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn nested_parent_rejects_self_cycle_and_linked_parent() {
+        let conn = setup();
+        let a = add_cabinet(&conn, "A", "#fff").unwrap();
+        let b = add_cabinet(&conn, "B", "#fff").unwrap();
+        let c = add_cabinet(&conn, "C", "#fff").unwrap();
+        set_cabinet_parent(&conn, b.id, Some(a.id)).unwrap();
+        set_cabinet_parent(&conn, c.id, Some(b.id)).unwrap();
+        assert_eq!(subtree_ids(&conn, a.id).unwrap(), vec![a.id, b.id, c.id]);
+
+        assert!(set_cabinet_parent(&conn, a.id, Some(a.id)).is_err(), "不能以自己为父");
+        let err = set_cabinet_parent(&conn, a.id, Some(c.id)).unwrap_err();
+        assert!(err.contains("子柜"), "防环：{err}");
+        assert_eq!(parent_of(&conn, a.id), None, "拒绝后不落库");
+        assert!(set_cabinet_parent(&conn, a.id, Some(999)).is_err(), "父柜须存在");
+
+        // 关联文件夹柜只能是叶子：不能做父，也不能给有子柜的柜关联文件夹
+        let dir = std::env::temp_dir();
+        let leaf = add_cabinet(&conn, "Linked", "#fff").unwrap();
+        set_cabinet_folder(&conn, leaf.id, Some(dir.to_str().unwrap())).unwrap();
+        let err = set_cabinet_parent(&conn, c.id, Some(leaf.id)).unwrap_err();
+        assert!(err.contains("最底层"), "{err}");
+        set_cabinet_parent(&conn, leaf.id, Some(a.id)).expect("关联柜可以作为子柜");
+        let err = set_cabinet_folder(&conn, b.id, Some(dir.to_str().unwrap())).unwrap_err();
+        assert!(err.contains("子柜"), "{err}");
+
+        set_cabinet_parent(&conn, c.id, None).unwrap();
+        assert_eq!(parent_of(&conn, c.id), None, "移到顶层");
+    }
+
+    #[test]
+    fn subtree_query_terminates_on_externally_written_cycle() {
+        let conn = setup();
+        let a = add_cabinet(&conn, "A", "#fff").unwrap();
+        let b = add_cabinet(&conn, "B", "#fff").unwrap();
+        conn.execute("UPDATE cabinets SET parent_id = ?2 WHERE id = ?1", params![a.id, b.id]).unwrap();
+        conn.execute("UPDATE cabinets SET parent_id = ?2 WHERE id = ?1", params![b.id, a.id]).unwrap();
+        let mut ids = subtree_ids(&conn, a.id).unwrap();
+        ids.sort();
+        assert_eq!(ids, vec![a.id, b.id]);
+        let (members, _) = cabinet_member_ids(&conn, a.id, true).unwrap();
+        assert!(members.is_empty());
+    }
+
+    #[test]
+    fn parent_view_unions_descendants_and_only_self_excludes_them() {
+        let conn = setup();
+        let root = add_cabinet(&conn, "Root", "#fff").unwrap();
+        let child = add_cabinet(&conn, "Child", "#fff").unwrap();
+        let grand = add_cabinet(&conn, "Grand", "#fff").unwrap();
+        set_cabinet_parent(&conn, child.id, Some(root.id)).unwrap();
+        set_cabinet_parent(&conn, grand.id, Some(child.id)).unwrap();
+        let x = item_service::add_item(&conn, r"D:\__n__\x.exe").unwrap();
+        let y = item_service::add_item(&conn, r"D:\__n__\y.exe").unwrap();
+        let z = item_service::add_item(&conn, r"D:\__n__\z.exe").unwrap();
+        add_items_to_cabinet(&conn, root.id, &[x.id]).unwrap();
+        add_items_to_cabinet(&conn, child.id, &[x.id, y.id]).unwrap();
+        add_items_to_cabinet(&conn, grand.id, &[z.id]).unwrap();
+
+        let mut all = cabinet_member_ids(&conn, root.id, true).unwrap().0;
+        all.sort();
+        assert_eq!(all, vec![x.id, y.id, z.id], "自身 ∪ 子孙，去重");
+        assert_eq!(cabinet_member_ids(&conn, root.id, false).unwrap().0, vec![x.id], "仅本柜");
+        assert_eq!(get_cabinet_items(&conn, root.id, true).unwrap().len(), 3);
+        assert_eq!(get_cabinet_items(&conn, root.id, false).unwrap().len(), 1);
+        // 成员不继承写入：父柜的 cabinet_items 没有被写入子柜成员
+        let own: i64 = conn
+            .query_row("SELECT COUNT(*) FROM cabinet_items WHERE cabinet_id = ?1", [root.id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(own, 1);
+
+        let counts: std::collections::HashMap<i64, i64> =
+            get_cabinet_item_counts(&conn).unwrap().into_iter().collect();
+        assert_eq!(counts.get(&root.id), Some(&3), "父柜计数与默认视图一致（去重并集）");
+        assert_eq!(counts.get(&child.id), Some(&3));
+        assert_eq!(counts.get(&grand.id), Some(&1));
+
+        let snapshot = item_service::read_cabinet_reconcile_snapshot(&conn, root.id).unwrap();
+        assert_eq!(snapshot.len(), 3, "切到父柜时核对整个子树");
+    }
+
+    #[test]
+    fn removing_parent_moves_children_up_one_level_and_keeps_members() {
+        let conn = setup();
+        let top = add_cabinet(&conn, "Top", "#fff").unwrap();
+        let mid = add_cabinet(&conn, "Mid", "#fff").unwrap();
+        let leaf = add_cabinet(&conn, "Leaf", "#fff").unwrap();
+        set_cabinet_parent(&conn, mid.id, Some(top.id)).unwrap();
+        set_cabinet_parent(&conn, leaf.id, Some(mid.id)).unwrap();
+        let x = item_service::add_item(&conn, r"D:\__r__\x.exe").unwrap();
+        add_items_to_cabinet(&conn, leaf.id, &[x.id]).unwrap();
+
+        remove_cabinet(&conn, mid.id).unwrap();
+        assert_eq!(parent_of(&conn, leaf.id), Some(top.id), "子柜上移一级");
+        assert_eq!(get_cabinet_items(&conn, leaf.id, false).unwrap().len(), 1, "子柜成员保留");
+        remove_cabinet(&conn, top.id).unwrap();
+        assert_eq!(parent_of(&conn, leaf.id), None, "顶层柜删除后子柜成为顶层");
+        assert!(remove_cabinet(&conn, 999).is_err());
     }
 }

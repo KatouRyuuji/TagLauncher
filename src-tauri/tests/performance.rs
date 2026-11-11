@@ -49,7 +49,7 @@ fn large_library_batch_paths() {
         .iter()
         .all(|item| item.tags.iter().map(|tag| tag.id).eq(1..=10)));
     assert_eq!(
-        cabinet_service::get_cabinet_items(&conn, cabinet.id)
+        cabinet_service::get_cabinet_items(&conn, cabinet.id, true)
             .unwrap()
             .len(),
         5000

@@ -118,6 +118,9 @@ pub struct ViewQueryArgs {
     /// "all" | "favorites" | "recent" | "cabinet"
     pub scope: String,
     pub cabinet_id: Option<i64>,
+    /// 父柜视图「仅本柜」；默认 false = 本柜 ∪ 全部子孙柜（F16）
+    #[serde(default)]
+    pub cabinet_only_self: bool,
     #[serde(default)]
     pub selected_groups: Vec<Vec<i64>>,
     #[serde(default)]
@@ -178,7 +181,7 @@ fn view_request(conn: &rusqlite::Connection, args: ViewQueryArgs) -> Result<View
         "recent" => Scope::Recent,
         "cabinet" => {
             let id = args.cabinet_id.ok_or("cabinet 视图缺少 cabinetId")?;
-            let (members, linked_folder) = cabinet_service::cabinet_member_ids(conn, id)?;
+            let (members, linked_folder) = cabinet_service::cabinet_member_ids(conn, id, !args.cabinet_only_self)?;
             Scope::Cabinet {
                 members,
                 linked_folder,

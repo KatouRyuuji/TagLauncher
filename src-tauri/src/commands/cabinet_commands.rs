@@ -42,6 +42,13 @@ pub fn add_cabinet(db: State<Database>, name: String, color: String) -> Result<C
     cabinet_service::add_cabinet(&conn, &name, &color)
 }
 
+/// 设置父柜（parentId 为 null 移到顶层）；防环与「关联文件夹柜只能是叶子」由服务层校验。
+#[tauri::command]
+pub fn set_cabinet_parent(db: State<Database>, id: i64, parent_id: Option<i64>) -> Result<(), String> {
+    let conn = db.get_conn();
+    cabinet_service::set_cabinet_parent(&conn, id, parent_id)
+}
+
 #[tauri::command]
 pub fn reorder_cabinets(db: State<Database>, ids: Vec<i64>) -> Result<(), String> {
     let conn = db.get_conn();
@@ -133,10 +140,11 @@ pub fn get_cabinet_items(
     db: State<Database>,
     cabinet_id: i64,
     include_visuals: Option<bool>,
+    include_descendants: Option<bool>,
 ) -> Result<Vec<ItemWithTags>, String> {
     let mut items = {
         let conn = db.get_conn();
-        cabinet_service::get_cabinet_items(&conn, cabinet_id)?
+        cabinet_service::get_cabinet_items(&conn, cabinet_id, include_descendants.unwrap_or(true))?
     };
     if include_visuals.unwrap_or(true) {
         item_service::fill_visuals(&app, &mut items);

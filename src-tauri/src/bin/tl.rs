@@ -5,7 +5,7 @@
 
 use clap::{Parser, Subcommand};
 use tag_launcher_lib::cli;
-use tag_launcher_lib::models::ItemWithTags;
+use tag_launcher_lib::models::{Cabinet, ItemWithTags};
 use tag_launcher_lib::services::{
     cabinet_service, item_service, launch_service, search_service, tag_service,
 };
@@ -77,10 +77,21 @@ enum TagCmd {
 
 #[derive(Subcommand)]
 enum CabinetCmd {
-    /// 列出全部文件柜
+    /// 列出全部文件柜（按嵌套层级缩进）
     List,
-    /// 列出柜内对象
-    Items { id: i64 },
+    /// 列出柜内对象（默认含全部子柜，与界面父柜视图一致）
+    Items {
+        id: i64,
+        /// 仅本柜，不含子柜
+        #[arg(long)]
+        only_self: bool,
+    },
+    /// 移动文件柜到另一个柜下（不给 --parent 则移到顶层）
+    Move {
+        id: i64,
+        #[arg(long)]
+        parent: Option<i64>,
+    },
 }
 
 /// 把共享代码里的 log 记录原样打印到 stderr（GUI 由 tauri-plugin-log 写日志文件）。
@@ -279,14 +290,21 @@ fn run(args: CliArgs) -> Result<(), String> {
                     if json {
                         println!("{}", serde_json::to_string_pretty(&cabinets).map_err(|e| e.to_string())?);
                     } else {
-                        for c in &cabinets {
-                            println!("#{}\t{}", c.id, c.name);
+                        for (c, depth) in cabinet_tree(&cabinets) {
+                            println!("{}#{}\t{}", "  ".repeat(depth), c.id, c.name);
                         }
                     }
                 }
-                CabinetCmd::Items { id } => {
-                    let items = cabinet_service::get_cabinet_items(&conn, id)?;
+                CabinetCmd::Items { id, only_self } => {
+                    let items = cabinet_service::get_cabinet_items(&conn, id, !only_self)?;
                     print_items(&items, json)?;
+                }
+                CabinetCmd::Move { id, parent } => {
+                    cabinet_service::set_cabinet_parent(&conn, id, parent)?;
+                    match parent {
+                        Some(p) => println!("已把文件柜 #{id} 移到 #{p} 下"),
+                        None => println!("已把文件柜 #{id} 移到顶层"),
+                    }
                 }
             }
         }
@@ -305,6 +323,36 @@ fn run(args: CliArgs) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// 文件柜按父子关系深度优先展开（同级保持 get_cabinets 的顺序）；父不存在或成环的柜按顶层输出。
+fn cabinet_tree(cabinets: &[Cabinet]) -> Vec<(&Cabinet, usize)> {
+    let ids: std::collections::HashSet<i64> = cabinets.iter().map(|c| c.id).collect();
+    let mut out = Vec::with_capacity(cabinets.len());
+    let mut seen = std::collections::HashSet::new();
+    fn walk<'a>(
+        all: &'a [Cabinet],
+        parent: Option<i64>,
+        depth: usize,
+        ids: &std::collections::HashSet<i64>,
+        seen: &mut std::collections::HashSet<i64>,
+        out: &mut Vec<(&'a Cabinet, usize)>,
+    ) {
+        for c in all {
+            let p = c.parent_id.filter(|p| ids.contains(p));
+            if p == parent && seen.insert(c.id) {
+                out.push((c, depth));
+                walk(all, Some(c.id), depth + 1, ids, seen, out);
+            }
+        }
+    }
+    walk(cabinets, None, 0, &ids, &mut seen, &mut out);
+    for c in cabinets {
+        if seen.insert(c.id) {
+            out.push((c, 0));
+        }
+    }
+    out
 }
 
 fn print_items(items: &[ItemWithTags], json: bool) -> Result<(), String> {
