@@ -52,7 +52,8 @@ function sameCabinets(a: Cabinet[], b: Cabinet[]): boolean {
     cabinet.created_at === b[index].created_at &&
     cabinet.folder_path === b[index].folder_path &&
     cabinet.folder_truncated === b[index].folder_truncated &&
-    cabinet.folder_state === b[index].folder_state,
+    cabinet.folder_state === b[index].folder_state &&
+    (cabinet.parent_id ?? null) === (b[index].parent_id ?? null),
   );
 }
 
