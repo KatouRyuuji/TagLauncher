@@ -26,3 +26,17 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
 .quick-picker .quick-row { grid-template-columns: 1.2em 0.8em 1fr; align-items: center; }
 .quick-check { color: var(--accent, #c0647d); }
 .quick-tag-dot { width: 0.7em; height: 0.7em; border-radius: 50%; }
+/* 收纳模式（右键菜单 / 发送到） */
+.quick-collect-title { font-weight: 600; display: flex; gap: 10px; align-items: baseline; }
+.quick-collect-note { color: var(--text-muted, #777); font-size: 0.85em; font-weight: 400; }
+.quick-collect-paths { flex: 1; }
+.quick-collect-modes { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.9em; }
+.quick-collect-actions { display: flex; gap: 8px; }
+.quick-collect-remember { font-size: 0.85em; color: var(--text-muted, #777); display: flex; gap: 6px; align-items: center; }
+.quick-button { height: 34px; padding: 0 14px; border-radius: var(--radius-md, 8px); border: 1px solid var(--border-subtle, #ddd);
+  background: var(--bg-input, #fff); color: inherit; font: inherit; cursor: pointer; }
+.quick-button:focus-visible { outline: 2px solid var(--accent, #c0647d); outline-offset: 1px; }
+.quick-button:disabled { opacity: 0.5; cursor: default; }
+.quick-button-primary { border-color: var(--accent, #c0647d); }
+.quick-row-button { display: flex; width: 100%; align-items: center; gap: 8px; margin-bottom: 4px; text-align: left; }
+.quick-link { height: auto; padding: 0 6px; margin-left: 8px; border: none; background: none; text-decoration: underline; }

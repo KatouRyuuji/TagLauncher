@@ -116,22 +116,24 @@ pub enum LaunchMode {
     Background,
 }
 
-/// 解析启动参数（不含 exe 本身）。只认 `--show` / `--background`，后出现的生效；
-/// 其余参数忽略（以后扩展 `--quick` / `--collect`）。参数只当数据，绝不执行。
+/// 解析启动参数（不含 exe 本身）。认 `--show` / `--background`，后出现的生效；
+/// `--collect` 之后全是路径数据（见 collect.rs），不再当开关解析，且未显式 `--show` 时按后台启动
+/// （右键收纳只弹快速窗，不打扰主窗）。其余参数忽略。参数只当数据，绝不执行。
 pub fn parse_launch_args<I, S>(args: I) -> LaunchMode
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    let mut mode = LaunchMode::Show;
+    let mut mode = None;
     for arg in args {
         match arg.as_ref() {
-            "--show" => mode = LaunchMode::Show,
-            "--background" => mode = LaunchMode::Background,
+            "--show" => mode = Some(LaunchMode::Show),
+            "--background" => mode = Some(LaunchMode::Background),
+            crate::collect::COLLECT_ARG => return mode.unwrap_or(LaunchMode::Background),
             _ => {}
         }
     }
-    mode
+    mode.unwrap_or(LaunchMode::Show)
 }
 
 /// 解析用户录入的快捷键。必须含 Ctrl / Alt / Win 之一：单键或只加 Shift 的组合会拦截日常输入。
@@ -396,6 +398,11 @@ pub fn show_main_window(app: &AppHandle) {
 
 /// 单实例回调：第二次启动转发来的参数（含 exe 本身）按参数路由处理。
 pub fn handle_second_instance(app: &AppHandle, args: &[String]) {
+    // 右键菜单 / 发送到：每项一进程转发过来，交给收纳会话合并
+    if let Some(paths) = crate::collect::collect_args(args.iter().skip(1)) {
+        crate::collect::submit(app, paths);
+        return;
+    }
     match parse_launch_args(args.iter().skip(1)) {
         LaunchMode::Show => show_main_window(app),
         // 已在运行：后台启动请求不打扰用户，只确认托盘可用
@@ -844,6 +851,15 @@ mod tests {
             parse_launch_args(["D:\\a b.txt", "--collect", "--background"]),
             LaunchMode::Background,
             "未知参数只当数据忽略"
+        );
+        // --collect 之后都是路径：其后的 --show 不算开关；之前显式 --show 才显示主窗
+        assert_eq!(
+            parse_launch_args(["--collect", "--show"]),
+            LaunchMode::Background
+        );
+        assert_eq!(
+            parse_launch_args(["--show", "--collect", "D:\\a.txt"]),
+            LaunchMode::Show
         );
     }
 

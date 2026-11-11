@@ -46,6 +46,11 @@ vi.mock("../lib/db", () => ({
     desktop.state = { ...desktop.state, ignoreFullscreen: enabled };
     return structuredClone(desktop.state);
   }),
+  // 右键菜单区块有自己的用例（ShellIntegrationSection.spec），这里让它按「不支持」不渲染
+  getShellIntegration: vi.fn(async () => ({ supported: false, enabled: false, partial: false, registeredExe: null, currentExe: "", exeMatches: true, sendTo: false, verbs: [] })),
+  getCollectPreference: vi.fn(async () => null),
+  getTags: vi.fn(async () => []),
+  getCabinets: vi.fn(async () => []),
 }));
 
 import * as db from "../lib/db";

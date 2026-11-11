@@ -917,6 +917,18 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return structuredClone(state.desktop);
     case "get_launch_mode":
       return "show";
+    // 收纳 / 资源管理器右键菜单：演示模式没有资源管理器与第二个实例
+    case "collect_session":
+    case "get_collect_preference":
+      return null;
+    case "collect_finish":
+      return null;
+    case "set_collect_preference":
+      return (args?.preference as unknown) ?? null;
+    case "get_shell_integration":
+      return { supported: false, enabled: false, partial: false, registeredExe: null, currentExe: "", exeMatches: false, sendTo: false, verbs: [false, false, false] };
+    case "set_shell_integration":
+      throw new Error("演示模式不支持资源管理器右键菜单");
     // 快速搜索窗：演示模式没有第二个窗口
     case "quick_open":
     case "quick_hide":

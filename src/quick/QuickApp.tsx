@@ -19,6 +19,8 @@ import { applyThemeSnapshot, parseThemeSnapshot, THEME_SNAPSHOT_KEY } from "../l
 import type { ItemWithTags, Tag } from "../types";
 import { filterTagChoices, QUICK_RESULT_LIMIT, quickKeyAction, stepIndex, toggledTagIds } from "./quickModel";
 import { recordQuickLoad, recordQuickQuery, recordQuickSummon } from "./quickPerf";
+import { QUICK_COLLECT_EVENT, type CollectSession } from "../lib/collect";
+import { QuickCollect } from "./QuickCollect";
 
 export const QUICK_SHOWN_EVENT = "quick-shown";
 
@@ -54,7 +56,41 @@ interface TagPickerState {
   tags: Tag[];
 }
 
+/** 收纳会话：窗口刚创建时可能错过事件，挂载时先拉一次；之后按 quick-collect 事件更新 */
+function useCollectSession(): [CollectSession | null, (id: number) => void] {
+  const [session, setSession] = useState<CollectSession | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    void db.collectSession().then((s) => { if (!disposed && s) setSession(s); }).catch(() => {});
+    void listen<CollectSession>(QUICK_COLLECT_EVENT, (event) => setSession(event.payload))
+      .then((fn) => {
+        if (disposed) fn();
+        else stop = fn;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      stop?.();
+    };
+  }, []);
+  // 只清掉已结束的那个会话：collect_finish 有剩余路径时会先推来新会话，不能被随后的关闭覆盖
+  return [session, useCallback((id: number) => setSession((s) => (s && s.id === id ? null : s)), [])];
+}
+
 export function QuickApp() {
+  const [collect, closeCollect] = useCollectSession();
+  if (collect) return <QuickCollectShell session={collect} onClose={closeCollect} />;
+  return <QuickSearch />;
+}
+
+function QuickCollectShell({ session, onClose }: { session: CollectSession; onClose: (id: number) => void }) {
+  useThemeFollower();
+  // 同一会话的更新（新路径并入）沿用组件状态；换会话时重建
+  return <QuickCollect key={session.id} session={session} onClose={() => onClose(session.id)} />;
+}
+
+function QuickSearch() {
   useThemeFollower();
   const inputRef = useRef<HTMLInputElement>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
