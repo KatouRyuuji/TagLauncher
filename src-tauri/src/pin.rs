@@ -753,6 +753,7 @@ pub fn expand(app: &AppHandle, by_hover: bool) -> Result<bool, String> {
     show_no_activate(&window);
     crate::pin_strip::hide(app);
     animate(app, &window, start, pw);
+    sync_webview_bounds(&window);
     watch_leave(app, by_hover);
     Ok(true)
 }
@@ -806,6 +807,46 @@ fn animate(app: &AppHandle, window: &WebviewWindow, from: u32, to: u32) {
             std::thread::sleep(ANIM_STEP);
         }
     }
+}
+
+/// 动画是从工作线程连续 SetWindowPos 的：WebView2 控制器边界偶尔停在倒数第二步（窗口 320、页面 304，
+/// 右侧一条不渲染）。动画结束后按客户区核对一次控制器边界，不一致就补设。
+fn sync_webview_bounds(window: &WebviewWindow) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetClientRect;
+        let Ok(h) = window.hwnd() else {
+            return;
+        };
+        let mut rc = windows_sys::Win32::Foundation::RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        // SAFETY：只读查询本进程窗口
+        if unsafe { GetClientRect(h.0 as _, &mut rc) } == 0 {
+            return;
+        }
+        let (w, hgt) = (rc.right - rc.left, rc.bottom - rc.top);
+        let _ = window.with_webview(move |webview| {
+            let controller = webview.controller();
+            let mut b = windows::Win32::Foundation::RECT::default();
+            // SAFETY：with_webview 回调在 WebView 所在线程执行，controller 在回调期间有效
+            unsafe {
+                if controller.Bounds(&mut b).is_ok() && (b.right - b.left != w || b.bottom - b.top != hgt) {
+                    log::info!(
+                        "[pin] WebView 边界 {}x{} 与客户区 {w}x{hgt} 不一致，补设",
+                        b.right - b.left,
+                        b.bottom - b.top
+                    );
+                    let _ = controller.SetBounds(windows::Win32::Foundation::RECT {
+                        left: 0,
+                        top: 0,
+                        right: w,
+                        bottom: hgt,
+                    });
+                }
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = window;
 }
 
 fn left_button_down() -> bool {
