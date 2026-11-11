@@ -37,7 +37,8 @@ PROBE_JS = """(mode) => {
     .filter((x) => x.r.height > 0).sort((a, b) => a.r.top - b.r.top);
   const contentEnd = rows.length ? Math.max(...rows.map((x) => x.r.bottom)) : L.top;
   const lastIndex = rows.length ? Math.max(...rows.map((x) => x.i)) : -1;
-  const viewTop = Math.max(scr.top + headerH, L.top);
+  // 内容起点：列表顶 + 列表自身上内边距（网格少量模式有 padding）
+  const viewTop = Math.max(scr.top + headerH, L.top + (parseFloat(getComputedStyle(list).paddingTop) || 0));
   const viewBottom = Math.min(scr.bottom, L.bottom);
   // 期望被行覆盖的区间：可视区 ∩ [列表顶, 最后一行底]（最后一行之后的「底部空」是正常的）
   const want = [viewTop, Math.min(viewBottom, contentEnd)];

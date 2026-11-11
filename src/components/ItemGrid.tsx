@@ -7,6 +7,7 @@ import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
 import { SelectionCanvas, consumeSelectionScrollFollow, type Rect } from "./SelectionCanvas";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { createMeasuredSizes } from "../lib/virtualMeasure";
 import { registerVirtualDiag } from "../lib/virtualDiag";
 import { gridOverscanRows, setWorkspaceGridLanes, peekPendingItemFocus, focusSelectableItem, clearPendingItemFocus } from "../lib/workspaceChrome";
 import type { ContextSelectionInfo } from "./ItemCard";
@@ -288,13 +289,16 @@ export function ItemGrid({
     const first = ids[index * lanes];
     return first !== undefined ? `${first}@${lanes}@${iconLayout ? "icons" : "grid"}` : index;
   }, [ids, lanes, iconLayout]);
+  // F19：测过的行按实测值估算（见 lib/virtualMeasure.ts 根因说明）
+  const [measured] = useState(createMeasuredSizes);
+  const measureRow = useMemo(() => measured.wrap<HTMLDivElement, HTMLElement>(measureGridRow), [measured]);
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => loadedRowHeight,
+    estimateSize: (index) => measured.estimate(getRowKey(index), loadedRowHeight),
     // 行高测量走自定义 measureGridRow：挂载与尺寸变化都读真实 DOM 高度，
-    // 不信任 itemSizeCache 的残留值（见 measureGridRow 注释）。
-    measureElement: measureGridRow,
+    // 不信任 itemSizeCache 的残留值（见 measureGridRow 注释）；实测值同时登记给 estimateSize。
+    measureElement: measureRow,
     // 行 key 用内容身份（首项 id + 列数）而非默认行索引：换柜/筛选/排序/列数变化后
     // 行 key 随之变化，React 重建行 DOM 触发 measureElement 重测。索引复用的 key
     // 会让行 DOM 滞留旧内容的测量语义，行高与内容错位积累，表现为行间间隙/重叠。
