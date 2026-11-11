@@ -70,21 +70,70 @@ def _quick_diag(app) -> str:
     return f"windows={labels} cdp={_cdp_targets(app)} quick_pages={pages} collect_session={session} logs={logs[-12:]}"
 
 
-def quick_page(app, timeout: float = 20):
-    """快速窗是第二个 WebView：Playwright 的 CDP 连接按 target 自动挂接；挂接不到时另开一条连接兜底。"""
-    extra = []
+class QuickPageFinder:
+    """在所有 CDP 连接里找快速窗页面（E-COLLECT-03/05 根治）。
 
-    def find():
-        if ps := quick_pages(app):
-            return ps[0]
-        if any("quick.html" in (t.get("url") or "") for t in _cdp_targets(app)):
-            if not extra:
-                extra.append(app.pw.chromium.connect_over_cdp(f"http://127.0.0.1:{app.port}"))
-            for ctx in extra[0].contexts:
-                for p in ctx.pages:
-                    if "quick.html" in (p.url or "") and not p.is_closed():
-                        return p
+    根因：Playwright 主 CDP 连接偶发不挂接销毁重建/重新显示后的 WebView target；旧兜底只开一次备用连接，
+    且 connect_over_cdp 默认 30s 超时——备用连接本身卡住或同样没挂上时，整个等待额度被一次调用耗尽
+    （E-COLLECT-03 失败现场：超时后主连接立刻能看到已渲染的收纳页）。
+    现在：主连接优先；/json/list 里有 quick.html target 而主连接看不到时才用备用连接，连接限时 5s，
+    且每 3s 没找到就弃用旧连接重建，保证单次 find 有界、换新连接重新挂接。"""
+
+    CONNECT_TIMEOUT_MS = 5000
+    REBUILD_AFTER_S = 3.0
+
+    def __init__(self, app, pred: str | None = None):
+        self.app = app
+        self.pred = pred  # 页面就绪判断（JS 表达式）；None 表示只要 URL 匹配
+        self.extra = None
+        self.extra_at = 0.0
+        self.via = None
+
+    def _ok(self, p) -> bool:
+        if p.is_closed() or "quick.html" not in (p.url or ""):
+            return False
+        if self.pred is None:
+            return True
+        try:
+            return bool(p.evaluate(self.pred))
+        except Exception:  # noqa: BLE001  页面在销毁/导航中
+            return False
+
+    def _extra_pages(self):
+        now = time.monotonic()
+        if self.extra is not None and now - self.extra_at > self.REBUILD_AFTER_S:
+            self.close()
+        if self.extra is None:
+            try:
+                self.extra = self.app.pw.chromium.connect_over_cdp(
+                    f"http://127.0.0.1:{self.app.port}", timeout=self.CONNECT_TIMEOUT_MS)
+            except Exception:  # noqa: BLE001  下轮重试
+                return []
+            self.extra_at = time.monotonic()
+        return [p for ctx in self.extra.contexts for p in ctx.pages]
+
+    def find(self):
+        main = quick_pages(self.app)
+        for p in main:
+            if self._ok(p):
+                self.via = "main"
+                return p
+        if any("quick.html" in (t.get("url") or "") for t in _cdp_targets(self.app)):
+            for p in self._extra_pages():
+                if self._ok(p):
+                    self.via = "extra"
+                    return p
         return None
+
+    def close(self):
+        # 不调用 browser.close()：CDP 连接上 close 可能连带关闭 WebView（同 harness/app.py）；旧连接随进程结束释放
+        self.extra = None
+
+
+def quick_page(app, timeout: float = 20):
+    """快速窗是第二个 WebView：Playwright 的 CDP 连接按 target 自动挂接；挂接不到时用会定期重建的备用连接兜底。"""
+    finder = QuickPageFinder(app)
+    find = finder.find
 
     try:
         page = wait_until(find, timeout, "快速搜索窗页面未出现")
