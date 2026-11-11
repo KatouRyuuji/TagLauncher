@@ -126,6 +126,8 @@ def test_main_window_new_ui(app, sandbox, run_dir, request):
             set_dpr(pg, dpr)
             tag = f"{mode}-f{font}-d{dpr}"
             app.sidebar_tab("文件柜")
+            # 再点已选中的柜会取消选择（回到全部项目）：先回到全部项目，保证这次点击是「选中」
+            pg.locator("aside").get_by_text("全部项目", exact=True).first.click()
             cab_row(app, "资料").click()
             pg.get_by_test_id("cabinet-only-self").wait_for(timeout=5000)
             shots.take(pg, f"main-cabinets-{tag}", "aside, [data-testid=cabinet-only-self]")
