@@ -29,10 +29,15 @@ Log 'explorer_window' ([bool]$win)
 if (-not $win) { return }
 [Mouse]::SetForegroundWindow([IntPtr]$win.Current.NativeWindowHandle) | Out-Null
 $item = $null
-for ($i = 0; $i -lt 20 -and -not $item; $i++) {
+for ($i = 0; $i -lt 30 -and -not $item; $i++) {
     Start-Sleep -Milliseconds 500
-    $nc = New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, $FileName)
-    $item = $win.FindFirst($T::Descendants, $nc)
+    foreach ($n in @($FileName, [IO.Path]::GetFileNameWithoutExtension($FileName))) {
+        if ($item) { break }
+        $nc = New-Object System.Windows.Automation.AndCondition(
+            (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, $n)),
+            (New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)))
+        $item = $win.FindFirst($T::Descendants, $nc)
+    }
 }
 Log 'file_item' ([bool]$item)
 if (-not $item) { return }

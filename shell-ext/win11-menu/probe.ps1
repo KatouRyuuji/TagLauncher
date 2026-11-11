@@ -36,7 +36,7 @@ $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.e
 $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
 Push-Location $Work
-cmd /c "`"$vcvars`" >nul && cl /nologo /LD /EHsc /O2 /utf-8 /DUNICODE /D_UNICODE `"$Here\tl_menu.cpp`" /Fe:tl_menu.dll /link /DEF:`"$Here\tl_menu.def`" shlwapi.lib shell32.lib ole32.lib" | Out-Host
+cmd /c "`"$vcvars`" >nul && cl /nologo /LD /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE `"$Here\tl_menu.cpp`" /Fe:tl_menu.dll /link /DEF:`"$Here\tl_menu.def`" shlwapi.lib shell32.lib ole32.lib" | Out-Host
 Pop-Location
 Log 'dll_built' (Test-Path (Join-Path $Work 'tl_menu.dll'))
 Copy-Item (Join-Path $Work 'tl_menu.dll') $ext -Force

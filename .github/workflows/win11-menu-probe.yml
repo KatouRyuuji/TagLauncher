@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Probe (admin runner user)
-        shell: pwsh
+        shell: powershell
         run: ./shell-ext/win11-menu/probe.ps1
       - uses: actions/upload-artifact@v4
         if: always()
