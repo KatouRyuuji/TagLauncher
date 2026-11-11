@@ -57,13 +57,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # Win11 一级右键菜单组件（tl_menu.dll + 未签名稀疏包），bundle.resources 打包前必须就位；
+      # 须在 tl sidecar 之前：编译 tl 同样跑 tauri-build，它校验 resources 存在
+      - name: Build Win11 context menu component
+        run: node scripts/prepare-win11-menu.mjs ${{ matrix.portableArgs }}
+
       # CLI 二进制（tl.exe）sidecar：externalBin 打包前必须就位（x64 宿主构建 / ARM64 交叉编译）
       - name: Build tl CLI sidecar
         run: node scripts/prepare-cli-bin.mjs ${{ matrix.portableArgs }}
-
-      # Win11 一级右键菜单组件（tl_menu.dll + 未签名稀疏包），bundle.resources 打包前必须就位
-      - name: Build Win11 context menu component
-        run: node scripts/prepare-win11-menu.mjs ${{ matrix.portableArgs }}
 
       # 打 tag 触发：构建并上传安装包到草稿 Release
       - name: Build and upload to release

@@ -17,6 +17,13 @@ $A = [System.Windows.Automation.AutomationElement]
 $T = [System.Windows.Automation.TreeScope]
 $C = [System.Windows.Automation.Condition]::TrueCondition
 $leaf = Split-Path -Leaf $Folder
+# 关掉 runner 开机遗留的系统对话框（windows-11-arm 上有「临时分页文件」提示，会挡住右键菜单）
+foreach ($d in $A::RootElement.FindAll($T::Children, (New-Object System.Windows.Automation.PropertyCondition($A::ClassNameProperty, '#32770')))) {
+    $ok = $d.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, 'OK')))
+    try {
+        if ($ok) { $ok.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); Log 'dismissed_dialog' $d.Current.Name }
+    } catch { Log 'dismissed_dialog' "fail $($_.Exception.Message -replace '\s+',' ')" }
+}
 
 Get-Process explorer -ErrorAction SilentlyContinue | Out-Null
 Start-Process explorer.exe -ArgumentList "`"$Folder`""

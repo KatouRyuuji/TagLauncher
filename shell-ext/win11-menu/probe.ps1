@@ -28,6 +28,12 @@ $dev = (Get-ItemProperty $unlock -ErrorAction SilentlyContinue).AllowDevelopment
 Log 'devmode_initial' $dev
 Log 'variant' $Variant
 Log 'testsigning' ((bcdedit /enum '{current}' | Select-String -Pattern 'testsigning') -replace '\s+', ' ')
+try { Log 'secureboot' (Confirm-SecureBootUEFI -ErrorAction Stop) } catch { Log 'secureboot' "n/a $($_.Exception.Message -replace '\s+',' ')" }
+Log 'smart_app_control' ((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -ErrorAction SilentlyContinue).VerifiedAndReputablePolicyState)
+try {
+    $dg = Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard -ErrorAction Stop
+    Log 'codeintegrity' ("kmci=$($dg.CodeIntegrityPolicyEnforcementStatus) umci=$($dg.UsermodeCodeIntegrityPolicyEnforcementStatus)")
+} catch { Log 'codeintegrity' "n/a" }
 Remove-Item 'C:\Users\Public\tl-menu-*.txt', (Join-Path $env:LOCALAPPDATA 'TagLauncher\child-wrote.txt') -ErrorAction SilentlyContinue
 # 显式关闭开发者模式，确保结论不依赖它（runner 是一次性机器）
 New-Item -Force -Path $unlock -ErrorAction SilentlyContinue | Out-Null
@@ -144,6 +150,7 @@ if ($pkg) {
     Report-Invoke 'com'
 }
 
+Log 'tl_menu_dll_signed' ((Get-AuthenticodeSignature (Join-Path $res 'tl_menu.dll') -ErrorAction SilentlyContinue).Status)
 # ---- 资源管理器 Win11 一级菜单（UIA）----
 if ($pkg -and -not $SkipUi) {
     & (Join-Path $Here 'ui_probe.ps1') -Folder $Work -FileName 'probe-target.txt' -Title $Title -Shot (Join-Path $Work "menu-registered-$Variant.png") -Marker 'C:\Users\Public\tl-menu-invoked.txt' -Click
@@ -151,18 +158,24 @@ if ($pkg -and -not $SkipUi) {
 }
 
 # ---- 标准用户（非管理员）注册 ----
-if ($pkg) {
+# 两种情形都测：管理员已注册时（包已暂存）和系统里没有任何用户注册时（标准用户独立完成暂存+注册+移除）
+function StdUserLifecycle($label) {
     $user = 'tlstd'; $pw = 'Tl-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '!a'
     net user $user $pw /add | Out-Host
+    Log "std_${label}_is_admin" ([bool](net localgroup Administrators | Select-String -SimpleMatch $user))
+    Log "std_${label}_allusers_before" ((Get-AppxPackage -AllUsers -Name $PkgName | ForEach-Object { $_.PackageUserInformation.UserSecurityId.Username }) -join ',')
     $cred = New-Object Management.Automation.PSCredential ($user, (ConvertTo-SecureString $pw -AsPlainText -Force))
     $outFile = 'C:\Users\Public\tl-menu-std.txt'
-    $cmd = "try { Add-AppxPackage -Path '$msix' -ExternalLocation '$ext' -AllowUnsigned -ErrorAction Stop; `$p = Get-AppxPackage -Name $PkgName; 'ok ' + `$p.PackageFullName; Remove-AppxPackage `$p.PackageFullName; 'removed ' + [bool](Get-AppxPackage -Name $PkgName) } catch { 'fail ' + `$_.Exception.Message }"
+    Remove-Item $outFile -ErrorAction SilentlyContinue
+    $cmd = "try { `$el = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); 'elevated ' + `$el; `$sw = [Diagnostics.Stopwatch]::StartNew(); Add-AppxPackage -Path '$msix' -ExternalLocation '$ext' -AllowUnsigned -ErrorAction Stop; 'add_ms ' + `$sw.ElapsedMilliseconds; `$p = Get-AppxPackage -Name $PkgName; 'ok ' + `$p.PackageFullName; 'com ' + (Test-Path 'Registry::HKEY_CLASSES_ROOT\PackagedCom\ClassIndex\{$Clsid}'); Remove-AppxPackage `$p.PackageFullName -ErrorAction Stop; 'removed_still_present ' + [bool](Get-AppxPackage -Name $PkgName) } catch { 'fail ' + `$_.Exception.Message }"
     try {
         $proc = Start-Process powershell.exe -Credential $cred -LoadUserProfile -WorkingDirectory 'C:\Users\Public' -ArgumentList '-NoProfile', '-Command', "& { $cmd } *> '$outFile'" -Wait -PassThru -WindowStyle Hidden
-        Log 'standard_user' ("exit=$($proc.ExitCode) " + ((Get-Content $outFile -ErrorAction SilentlyContinue) -join ' | ') -replace '\s+', ' ')
-    } catch { Log 'standard_user' "launch-fail $($_.Exception.Message -replace '\s+',' ')" }
+        Log "std_${label}" ("exit=$($proc.ExitCode) " + ((Get-Content $outFile -ErrorAction SilentlyContinue) -join ' | ') -replace '\s+', ' ')
+    } catch { Log "std_${label}" "launch-fail $($_.Exception.Message -replace '\s+',' ')" }
+    Log "std_${label}_allusers_after" ((Get-AppxPackage -AllUsers -Name $PkgName | ForEach-Object { $_.PackageUserInformation.UserSecurityId.Username }) -join ',')
     net user $user /delete | Out-Null
 }
+if ($pkg) { StdUserLifecycle 'while_admin_registered' }
 
 # ---- 卸载与清理 ----
 if ($pkg) {
@@ -185,4 +198,6 @@ if ($pkg) {
     }
     Log 'hkcu_clsid_leftover' (Test-Path "Registry::HKEY_CURRENT_USER\Software\Classes\CLSID\{$Clsid}")
 }
+# 系统中没有任何用户注册时，标准用户独立注册/移除
+if ($pkg) { StdUserLifecycle 'alone' }
 Set-ItemProperty -Path $unlock -Name AllowDevelopmentWithoutDevLicense -Value $(if ($dev) { $dev } else { 0 }) -Type DWord
