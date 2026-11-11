@@ -22,7 +22,7 @@ export function WorkspaceLoadError({
           <h2 id="workspace-load-error-title" className="text-base font-semibold text-[var(--text-primary)]">
             对象列表加载失败
           </h2>
-          <p className="mt-2 break-words text-[13px] leading-5 text-[var(--text-muted)]">{message}</p>
+          <p className="mt-2 break-words text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">{message}</p>
           <button type="button" className="action-button mt-5" onClick={onRetry}>
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
             重试
@@ -118,7 +118,7 @@ export function WorkspaceEmptyState({
           <h2 id="workspace-empty-title" className="break-words text-base font-semibold text-[var(--text-primary)]">
             {copy.title}
           </h2>
-          <p className="mx-auto mt-2 max-w-[420px] font-body text-[13px] leading-5 text-[var(--text-muted)]">
+          <p className="mx-auto mt-2 max-w-[420px] font-body text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">
             {copy.description}
           </p>
           {variant === "library" && (
@@ -178,7 +178,7 @@ export function WorkspaceEmptyState({
             </p>
           )}
           {copy.footnote && (
-            <p className="mx-auto mt-4 max-w-[420px] text-[12px] leading-5 text-[var(--text-faint)]">
+            <p className="mx-auto mt-4 max-w-[420px] text-[length:calc(12px*var(--ui-font-scale,1))] leading-5 text-[var(--text-faint)]">
               {copy.footnote}
             </p>
           )}

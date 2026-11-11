@@ -140,7 +140,7 @@ export function FolderPreviewBody({
 
   return (
     <div className="preview-folder-body">
-      <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-2.5 text-[13px] text-[var(--text-muted)]">
+      <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-2.5 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-muted)]">
         <span className="data-readout text-[var(--text-secondary)]">{loading ? "…" : entries.length} 项</span>
         <span aria-hidden="true">·</span>
         <span>修改 {modified}</span>
@@ -151,7 +151,7 @@ export function FolderPreviewBody({
           </>
         )}
       </div>
-      <nav aria-label="当前位置" className="flex shrink-0 flex-wrap items-center gap-0.5 px-4 pb-1.5 text-[12px]">
+      <nav aria-label="当前位置" className="flex shrink-0 flex-wrap items-center gap-0.5 px-4 pb-1.5 text-[length:calc(12px*var(--ui-font-scale,1))]">
         {crumbs.map((crumb, i) => {
           const current = i === crumbs.length - 1;
           return (
@@ -213,7 +213,7 @@ export function FolderPreviewBody({
                   >
                     <button
                       type="button"
-                      className="action-button h-7 min-h-7 shrink-0 px-2 text-[12px]"
+                      className="action-button h-7 min-h-7 shrink-0 px-2 text-[length:calc(12px*var(--ui-font-scale,1))]"
                       onClick={() => (entry.is_dir ? openInExplorer(entry.path) : openFile(entry.path))}
                     >
                       打开
@@ -221,7 +221,7 @@ export function FolderPreviewBody({
                     {!entry.is_dir && (
                       <button
                         type="button"
-                        className="action-button h-7 min-h-7 shrink-0 px-2 text-[12px]"
+                        className="action-button h-7 min-h-7 shrink-0 px-2 text-[length:calc(12px*var(--ui-font-scale,1))]"
                         onClick={() => openInExplorer(entry.path)}
                       >
                         打开所在文件夹
@@ -230,7 +230,7 @@ export function FolderPreviewBody({
                     {onAddItems && (
                       <button
                         type="button"
-                        className="action-button h-7 min-h-7 shrink-0 px-2 text-[12px]"
+                        className="action-button h-7 min-h-7 shrink-0 px-2 text-[length:calc(12px*var(--ui-font-scale,1))]"
                         onClick={() => {
                           void onAddItems([entry.path]).catch((error) => {
                             showToast(`加入库失败：${errorText(error)}`, "error");

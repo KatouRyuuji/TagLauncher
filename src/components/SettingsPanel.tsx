@@ -7,6 +7,7 @@ import {
   Download,
   FolderOpen,
   Palette,
+  AppWindow,
   PanelRight,
   Puzzle,
   RefreshCw,
@@ -31,6 +32,8 @@ import { SyncSettingsSection } from "./SyncSettingsSection";
 import { ThemeFamilyGallery } from "./ThemeFamilyGallery";
 import { useThemeContext } from "./ThemeProvider";
 import { UpdateSettingsSection } from "./UpdateSettingsSection";
+import { DesktopSettingsSection } from "./DesktopSettingsSection";
+import { UiFontScaleSelect } from "./UiFontScaleSelect";
 
 interface SettingsPanelProps {
   open: boolean;
@@ -61,6 +64,7 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   theme: Palette,
   ai: Sparkles,
   data: Database,
+  desktop: AppWindow,
   sync: Cloud,
   update: RefreshCw,
   mods: Puzzle,
@@ -276,7 +280,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                       当前使用 <span className="font-semibold text-[var(--text-primary)]">{currentTheme.name}</span>
                     </p>
                     {themeDirectoryInfo?.themes_dir && (
-                      <p className="data-readout mt-1 truncate text-[13px] text-[var(--text-faint)]" title={`自定义主题目录：${themeDirectoryInfo.themes_dir}`}>
+                      <p className="data-readout mt-1 truncate text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]" title={`自定义主题目录：${themeDirectoryInfo.themes_dir}`}>
                         主题目录 {themeDirectoryInfo.themes_dir}
                       </p>
                     )}
@@ -319,6 +323,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                     onSelect={setTheme}
                   />
                   <ColorModeSelect colorMode={colorMode} onSelect={changeColorMode} disabled={!findFamilyByThemeId(currentTheme.id)} />
+                  <UiFontScaleSelect />
                 </div>
 
                 {currentTheme.variants && Object.keys(currentTheme.variants).length > 0 && (
@@ -345,6 +350,10 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
               <div id={settingsSectionDomId("data")} hidden={activeSection !== "data"} aria-labelledby="settings-nav-data">
                 {visitedSections.has("data") && <DataSettingsSection />}
+              </div>
+
+              <div id={settingsSectionDomId("desktop")} hidden={activeSection !== "desktop"} aria-labelledby="settings-nav-desktop">
+                {visitedSections.has("desktop") && <DesktopSettingsSection />}
               </div>
 
               <div id={settingsSectionDomId("sync")} hidden={activeSection !== "sync"} aria-labelledby="settings-nav-sync">
@@ -577,7 +586,7 @@ function ColorModeSelect({
           );
         })}
       </div>
-      <span className="mt-1.5 block text-[13px] text-[var(--text-faint)]">
+      <span className="mt-1.5 block text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]">
         亮/暗仅作用于内置主题；自定义与 Mod 主题自带配色方案
       </span>
     </div>

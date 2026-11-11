@@ -24,7 +24,7 @@ export function SettingsField({ label, children, htmlFor }: { label: string; chi
   const id = htmlFor ?? control?.props.id ?? generatedId;
   return (
     <div className="settings-field block min-w-0">
-      <label htmlFor={id} className="mb-1.5 block text-[13px] font-medium text-[var(--text-primary)]">{label}</label>
+      <label htmlFor={id} className="mb-1.5 block text-[length:calc(13px*var(--ui-font-scale,1))] font-medium text-[var(--text-primary)]">{label}</label>
       {control ? nodes.map((node, i) => (i === controlIndex ? cloneElement(control, { id }) : node)) : children}
     </div>
   );

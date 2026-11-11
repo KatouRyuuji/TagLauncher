@@ -434,7 +434,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                         className="flex min-w-0 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-card)] px-2 py-1.5"
                         title={it.name}
                       >
-                        <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] text-[15px]">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] text-[length:calc(15px*var(--ui-font-scale,1))]">
                           <ItemVisualIcon item={it} emojiClass="leading-none" imageClass="h-full w-full object-cover" />
                         </div>
                         <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-secondary)]">{it.name}</span>

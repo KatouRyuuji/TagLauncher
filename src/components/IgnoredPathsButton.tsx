@@ -41,7 +41,7 @@ export function IgnoredPathsButton({ under, className }: { under?: string; class
       <button
         type="button"
         onClick={() => { load(); setOpen(true); }}
-        className={className ?? "control-chip h-7 min-h-7 shrink-0 gap-1.5 px-2.5 text-[13px]"}
+        className={className ?? "control-chip h-7 min-h-7 shrink-0 gap-1.5 px-2.5 text-[length:calc(13px*var(--ui-font-scale,1))]"}
       >
         <EyeOff aria-hidden="true" size={14} strokeWidth={1.8} />
         已忽略 {paths.length} 项

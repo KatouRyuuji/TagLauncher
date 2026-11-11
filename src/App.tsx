@@ -13,6 +13,7 @@ import { InternalDragGhost, ItemDropActions } from "./components/InternalDragOve
 import { BatchSelectionToolbar } from "./components/BatchSelectionToolbar";
 import { RemoveFromAppConfirmDialog } from "./components/RemoveFromAppConfirmDialog";
 import { NoteEditorDialog } from "./components/NoteEditorDialog";
+import { AliasEditorDialog } from "./components/AliasEditorDialog";
 import { ItemTagsEditor } from "./components/ItemTagsEditor";
 import { RenameDialog } from "./components/RenameDialog";
 import { BatchRenameDialog } from "./components/BatchRenameDialog";
@@ -75,6 +76,7 @@ function App() {
     setItemTags,
     setManyItemTags,
     setItemNote,
+    setItemAlias,
     renameItem,
     batchRename,
     undoBatchRename,
@@ -102,6 +104,8 @@ function App() {
   const previewItemId = useAppStore((state) => state.previewItemId);
   const noteEditorItemId = useAppStore((state) => state.noteEditorItemId);
   const noteEditorItem = noteEditorItemId === null ? undefined : allItems.find((item) => item.id === noteEditorItemId);
+  const aliasEditorItemId = useAppStore((state) => state.aliasEditorItemId);
+  const aliasEditorItem = aliasEditorItemId === null ? undefined : allItems.find((item) => item.id === aliasEditorItemId);
   const renameItemId = useAppStore((state) => state.renameItemId);
   const renameTarget = renameItemId === null ? undefined : allItems.find((item) => item.id === renameItemId);
   const tagEditorItemId = useAppStore((state) => state.tagEditorItemId);
@@ -636,6 +640,14 @@ function App() {
           item={noteEditorItem}
           onSave={(note) => setItemNote(noteEditorItem.id, note)}
           onClose={() => useAppStore.getState().setNoteEditorItemId(null)}
+        />
+      )}
+      {aliasEditorItem && (
+        <AliasEditorDialog
+          key={aliasEditorItem.id}
+          item={aliasEditorItem}
+          onSave={(alias) => setItemAlias(aliasEditorItem.id, alias)}
+          onClose={() => useAppStore.getState().setAliasEditorItemId(null)}
         />
       )}
       {renameTarget && (

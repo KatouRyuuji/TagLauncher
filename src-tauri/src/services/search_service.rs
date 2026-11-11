@@ -53,15 +53,15 @@ fn query_items_by_text(conn: &Connection, query: &str) -> Result<Vec<Item>, Stri
     let sql = format!(
         "SELECT {ITEM_COLS_I}
          FROM items i
-         INNER JOIN items_fts ON i.id = items_fts.rowid
-         WHERE items_fts MATCH ?1
+         WHERE (i.id IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?1)
+                OR i.alias LIKE ?2 ESCAPE '\\')
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name"
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     // query_map 返回的是惰性迭代器，FTS 的 MATCH 运行期错误要在迭代取行时才会暴露，
     // 不能用 filter_map(|r| r.ok()) 吞掉（会把运行期错误变成空结果而不触发 LIKE 回退）。
     // 先整体 collect 成 Result，Err 时回退到 LIKE 路径。
-    let rows: Result<Vec<Item>, rusqlite::Error> = match stmt.query_map([search_query], item_from_row)
+    let rows: Result<Vec<Item>, rusqlite::Error> = match stmt.query_map([search_query, like_contains_pattern(query)], item_from_row)
     {
         Ok(rows) => rows.collect(),
         Err(_) => return query_items_by_text_like(conn, query),
@@ -91,7 +91,7 @@ fn like_contains_pattern(query: &str) -> String {
 fn query_items_by_text_like(conn: &Connection, query: &str) -> Result<Vec<Item>, String> {
     let search_query = like_contains_pattern(query);
     let sql = format!(
-        "SELECT {} FROM items WHERE name LIKE ?1 ESCAPE '\\' OR path LIKE ?1 ESCAPE '\\' ORDER BY {}",
+        "SELECT {} FROM items WHERE name LIKE ?1 ESCAPE '\\' OR path LIKE ?1 ESCAPE '\\' OR alias LIKE ?1 ESCAPE '\\' ORDER BY {}",
         ITEM_COLS, ITEM_ORDER
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
@@ -171,14 +171,15 @@ fn query_items_by_text_and_tags(
     let sql = format!(
         "SELECT {ITEM_COLS_I}
          FROM items i
-         INNER JOIN items_fts ON i.id = items_fts.rowid
-         WHERE items_fts MATCH ?1
+         WHERE (i.id IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?1)
+                OR i.alias LIKE ?2 ESCAPE '\\')
          AND {clause}
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name"
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
-    let mut params_values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(search_query)];
+    let mut params_values: Vec<Box<dyn rusqlite::ToSql>> =
+        vec![Box::new(search_query), Box::new(like_contains_pattern(query))];
     for id in group_params {
         params_values.push(Box::new(id));
     }
@@ -207,7 +208,7 @@ fn query_items_by_text_and_tags_like(
     let sql = format!(
         "SELECT {ITEM_COLS_I}
          FROM items i
-         WHERE (i.name LIKE ?1 ESCAPE '\\' OR i.path LIKE ?1 ESCAPE '\\')
+         WHERE (i.name LIKE ?1 ESCAPE '\\' OR i.path LIKE ?1 ESCAPE '\\' OR i.alias LIKE ?1 ESCAPE '\\')
          AND {clause}
          ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name"
     );
@@ -283,6 +284,42 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "测试工具");
+    }
+
+    #[test]
+    fn alias_is_searchable_without_changing_disk_name() {
+        let conn = setup_conn();
+        let id = insert_item(&conn, "setup.exe", r#"D:\Tools\setup.exe"#);
+        insert_item(&conn, "other.exe", r#"D:\Tools\other.exe"#);
+        crate::services::item_service::set_item_alias(&conn, id, "  安装器  ").expect("set alias");
+
+        let items = query_items_by_text(&conn, "安装").expect("search alias");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "setup.exe", "磁盘名不变");
+        assert_eq!(items[0].alias.as_deref(), Some("安装器"), "首尾空白去除");
+
+        let like = query_items_by_text_like(&conn, "安装").expect("like alias");
+        assert_eq!(like.len(), 1);
+        // 带标签筛选的两条路径（FTS / LIKE）也要命中别名（空标签列表不走这里，由 search_items 分流）
+        conn.execute("INSERT INTO tags (id, name) VALUES (1, '工具')", [])
+            .expect("insert tag");
+        conn.execute(
+            "INSERT INTO item_tags (item_id, tag_id) VALUES (?1, 1)",
+            params![id],
+        )
+        .expect("tag item");
+        let tagged =
+            query_items_by_text_and_tags_like(&conn, "安装", &[1], false).expect("tagged like alias");
+        assert_eq!(tagged.len(), 1);
+        let tagged_fts =
+            query_items_by_text_and_tags(&conn, "安装", &[1], false).expect("tagged fts alias");
+        assert_eq!(tagged_fts.len(), 1);
+
+        crate::services::item_service::set_item_alias(&conn, id, "   ").expect("clear alias");
+        assert!(query_items_by_text(&conn, "安装").unwrap().is_empty(), "清除后不再命中");
+        assert!(crate::services::item_service::set_item_alias(&conn, id, "a\nb").is_err(), "拒绝换行");
+        assert!(crate::services::item_service::set_item_alias(&conn, id, &"长".repeat(121)).is_err(), "超长报错不截断");
+        assert!(crate::services::item_service::set_item_alias(&conn, 9999, "x").is_err(), "不存在的对象报错");
     }
 
     #[test]

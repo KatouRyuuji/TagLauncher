@@ -10,11 +10,11 @@ use tauri::AppHandle;
 
 /// SELECT 查询中使用的列名常量
 pub const ITEM_COLS: &str =
-    "id, name, path, type, icon_path, created_at, last_used_at, is_favorite, is_missing, note, fs_created_at, fs_modified_at, hide_from_all";
+    "id, name, path, type, icon_path, created_at, last_used_at, is_favorite, is_missing, note, fs_created_at, fs_modified_at, hide_from_all, alias";
 
 /// `items i` 别名前缀，供 JOIN 查询与 ITEM_COLS 对齐。
 pub const ITEM_COLS_I: &str =
-    "i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note, i.fs_created_at, i.fs_modified_at, i.hide_from_all";
+    "i.id, i.name, i.path, i.type, i.icon_path, i.created_at, i.last_used_at, i.is_favorite, i.is_missing, i.note, i.fs_created_at, i.fs_modified_at, i.hide_from_all, i.alias";
 
 /// 默认排序：收藏优先 → 最近使用 → 名称
 pub const ITEM_ORDER: &str = "is_favorite DESC, last_used_at DESC NULLS LAST, name";
@@ -37,6 +37,7 @@ pub fn item_from_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
         fs_created_at: row.get(10)?,
         fs_modified_at: row.get(11)?,
         hide_from_all: row.get::<_, i64>(12)? != 0,
+        alias: row.get(13)?,
     })
 }
 
@@ -840,6 +841,31 @@ pub fn set_item_note(conn: &Connection, id: i64, note: &str) -> Result<(), Strin
     let value = if trimmed.is_empty() { None } else { Some(trimmed) };
     let changed = conn
         .execute("UPDATE items SET note = ?1 WHERE id = ?2", params![value, id])
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err(format!("对象不存在（id {}），可能已被删除", id));
+    }
+    Ok(())
+}
+
+/// 显示别名上限（按字符计）。
+pub const ALIAS_MAX_CHARS: usize = 120;
+
+/// 设置对象显示别名（F07）：只写 `alias` 列，不改磁盘、不改 `name`/`path`。
+/// 首尾空白去除后为空则清除（存 NULL）；超长或含换行等控制字符报错，不截断。
+pub fn set_item_alias(conn: &Connection, id: i64, alias: &str) -> Result<(), String> {
+    crate::db::ensure_writes_allowed()?;
+    let trimmed = alias.trim();
+    let len = trimmed.chars().count();
+    if len > ALIAS_MAX_CHARS {
+        return Err(format!("别名最多 {} 字，当前 {} 字", ALIAS_MAX_CHARS, len));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err("别名不能包含换行或控制字符".to_string());
+    }
+    let value = if trimmed.is_empty() { None } else { Some(trimmed) };
+    let changed = conn
+        .execute("UPDATE items SET alias = ?1 WHERE id = ?2", params![value, id])
         .map_err(|e| e.to_string())?;
     if changed == 0 {
         return Err(format!("对象不存在（id {}），可能已被删除", id));

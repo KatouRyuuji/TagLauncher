@@ -141,7 +141,7 @@ export function ShortcutsHelp() {
               <h2 id="shortcuts-help-title" className="text-base font-semibold leading-5 text-[var(--text-primary)]">
                 键盘快捷键
               </h2>
-              <p className="text-[12px] leading-4 text-[var(--text-faint)]">速查表</p>
+              <p className="text-[length:calc(12px*var(--ui-font-scale,1))] leading-4 text-[var(--text-faint)]">速查表</p>
             </div>
           </div>
           <div className="input-frame flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2.5">
@@ -181,7 +181,7 @@ export function ShortcutsHelp() {
                     <div className="flex items-center gap-1.5 border-b border-[var(--line-hairline)] pb-1">
                       <Icon aria-hidden="true" size={14} strokeWidth={1.8} className="text-[var(--accent-primary)]" />
                       <h3 className="instrument-label text-[var(--text-secondary)]">{group.title}</h3>
-                      <span className="data-readout ml-auto text-[12px] text-[var(--text-faint)]">
+                      <span className="data-readout ml-auto text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-faint)]">
                         {group.items.length} 条
                       </span>
                     </div>
@@ -207,7 +207,7 @@ export function ShortcutsHelp() {
                       })}
                     </ul>
                     {group.note && (
-                      <p className="mt-1.5 flex items-start gap-1 text-[12px] leading-4 text-[var(--text-faint)]">
+                      <p className="mt-1.5 flex items-start gap-1 text-[length:calc(12px*var(--ui-font-scale,1))] leading-4 text-[var(--text-faint)]">
                         <Info aria-hidden="true" size={12} strokeWidth={1.8} className="mt-0.5 shrink-0" />
                         {group.note}
                       </p>

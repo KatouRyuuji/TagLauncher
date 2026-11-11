@@ -1,4 +1,4 @@
-"""主题补充（E-TH-04/05/06）。"""
+"""主题补充（E-TH-04/05/06/08）。"""
 from __future__ import annotations
 
 import json
@@ -75,3 +75,42 @@ def test_custom_theme_disables_mode_toggle(app):
     assert mode.get_attribute("aria-disabled") == "true"
     assert "仅对内置主题生效" in (mode.get_attribute("title") or "")
     assert mode.get_by_role("radio", name="暗色").is_disabled()
+
+
+def _row_boxes(app):
+    return app.page.evaluate("""() => [...document.querySelectorAll('[data-selectable-item-id]')]
+        .map((el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; })
+        .sort((a, b) => a.top - b.top)""")
+
+
+@pytest.mark.case("E-TH-08")
+def test_ui_font_scale_persists_and_rows_remeasure(app, sandbox):
+    """F03：界面字号只放大文字、重启后保留；虚拟列表行随字号重测，行间不重叠。"""
+    paths = [files.write(sandbox.files / "字号" / f"字号对象{i:02d}.txt", str(i)) for i in range(4)]
+    app.seed(paths)
+    app.page.get_by_role("button", name="列表视图", exact=True).click()
+    app.wait_count(4)
+    name_el = app.page.get_by_text("字号对象00.txt", exact=True).first
+    base_px = float(name_el.evaluate("(el) => parseFloat(getComputedStyle(el).fontSize)"))
+    base_rows = _row_boxes(app)
+    try:
+        dlg = app.open_settings("主题外观")
+        group = dlg.get_by_role("radiogroup", name="界面字号")
+        group.get_by_role("radio", name="特大", exact=True).click()
+        wait_until(lambda: app.page.evaluate("() => document.documentElement.style.getPropertyValue('--ui-font-scale')") == "1.25", 5)
+        app.page.keyboard.press("Escape")
+        wait_until(lambda: float(name_el.evaluate("(el) => parseFloat(getComputedStyle(el).fontSize)")) > base_px * 1.2, 5,
+                   lambda: (base_px, name_el.evaluate("(el) => getComputedStyle(el).fontSize")))
+        # 行高随字号重测（ResizeObserver）：不重叠，且行不比原来矮
+        wait_until(lambda: len(_row_boxes(app)) == 4, 5)
+        rows = _row_boxes(app)
+        overlaps = [(a, b) for a, b in zip(rows, rows[1:]) if b["top"] < a["bottom"] - 0.5]
+        assert overlaps == [], overlaps
+        assert rows[0]["bottom"] - rows[0]["top"] >= base_rows[0]["bottom"] - base_rows[0]["top"] - 0.5, (rows, base_rows)
+        app.restart()
+        wait_until(lambda: app.page.evaluate("() => document.documentElement.style.getPropertyValue('--ui-font-scale')") == "1.25", 10)
+        assert app.js_errors() == []
+    finally:
+        app.page.evaluate("""() => { const k = 'taglauncher.workspace_prefs';
+            const p = JSON.parse(localStorage.getItem(k) || '{}'); delete p.uiFontScale; localStorage.setItem(k, JSON.stringify(p));
+            document.documentElement.style.removeProperty('--ui-font-scale'); }""")

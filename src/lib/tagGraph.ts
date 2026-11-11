@@ -188,3 +188,39 @@ export function computeLayers(nodeIds: number[], relations: TagRelation[]): Map<
   for (const id of nodeIds) depth(id);
   return layer;
 }
+
+export type GraphNodeRelation = "selected" | "parent" | "child" | "descendant";
+
+export interface GraphHighlight {
+  /** 节点 → 与选中标签的关系；不在表内的节点淡化 */
+  nodes: Map<number, GraphNodeRelation>;
+  /** 需高亮的连线（`${parentId}-${childId}`）：选中与直接父之间 + 选中整棵后代子树内的边 */
+  edges: Set<string>;
+  /** 后代数（不含自身） */
+  descendantCount: number;
+}
+
+/**
+ * 图谱选中高亮（F06）：除一层父/子外，高亮该标签的**全部后代**及子树内连线，
+ * 便于看清一个父标签筛选时会并入哪些标签。父方向只取直接父（祖先链不展开，避免整图变亮）。
+ */
+export function buildGraphHighlight(selectedId: number, relations: TagRelation[]): GraphHighlight {
+  const descendants = buildDescendantsMap(relations).get(selectedId) ?? new Set<number>([selectedId]);
+  const nodes = new Map<number, GraphNodeRelation>([[selectedId, "selected"]]);
+  const edges = new Set<string>();
+  for (const { parentId, childId } of relations) {
+    if (childId === selectedId) {
+      if (!nodes.has(parentId)) nodes.set(parentId, "parent");
+      edges.add(`${parentId}-${childId}`);
+    }
+    if (descendants.has(parentId) && descendants.has(childId) && childId !== selectedId) {
+      edges.add(`${parentId}-${childId}`);
+    }
+  }
+  for (const id of descendants) {
+    if (id === selectedId) continue;
+    const direct = relations.some((r) => r.parentId === selectedId && r.childId === id);
+    nodes.set(id, direct ? "child" : "descendant");
+  }
+  return { nodes, edges, descendantCount: descendants.size - 1 };
+}

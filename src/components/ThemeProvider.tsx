@@ -1,4 +1,5 @@
 import { createContext, useContext, useLayoutEffect, type ReactNode } from "react";
+import { getLaunchMode } from "../lib/db";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { restoreStateCurrent, StateFlags } from "@tauri-apps/plugin-window-state";
 import type {
@@ -51,10 +52,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (!loading) {
       document.documentElement.removeAttribute("data-app-preparing");
       requestAnimationFrame(() => {
-        // 上次最大化时，恢复会直接以最大化显示窗口；否则只是显示
-        void restoreStateCurrent(StateFlags.MAXIMIZED)
-          .catch(() => {})
-          .then(() => getCurrentWindow().show())
+        // 后台启动（--background，F18）：不显示主窗，只驻托盘；读不到启动方式按显示处理
+        void Promise.resolve()
+          .then(() => getLaunchMode())
+          .catch(() => "show" as const)
+          .then((mode) => {
+            if (mode === "background") return;
+            // 上次最大化时，恢复会直接以最大化显示窗口；否则只是显示
+            return restoreStateCurrent(StateFlags.MAXIMIZED)
+              .catch(() => {})
+              .then(() => getCurrentWindow().show());
+          })
           .catch(() => {});
       });
     }

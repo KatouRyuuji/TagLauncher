@@ -187,7 +187,7 @@ export function SelectMenu({ value, onChange, ariaLabel, options, groups, classN
               {(groups ?? [{ label: "", options: options ?? [] }]).map((group) => (
                 <div key={group.label || "__flat__"}>
                   {group.label && (
-                    <div className="px-3 pb-1 pt-2 text-[13px] font-semibold text-[var(--text-faint)]">
+                    <div className="px-3 pb-1 pt-2 text-[length:calc(13px*var(--ui-font-scale,1))] font-semibold text-[var(--text-faint)]">
                       {group.label}
                     </div>
                   )}
@@ -206,7 +206,7 @@ export function SelectMenu({ value, onChange, ariaLabel, options, groups, classN
                         title={option.hint}
                         onMouseEnter={() => setActiveIndex(index)}
                         onClick={() => pick(option.value)}
-                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] ${
+                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[length:calc(13px*var(--ui-font-scale,1))] ${
                           selected
                             ? "row-selected"
                             : active

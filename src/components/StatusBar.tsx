@@ -124,10 +124,10 @@ export function StatusBar({
     <footer
       data-region="statusbar"
       aria-label="工作区状态"
-      className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 text-[13px] text-[var(--text-faint)]"
+      className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-3 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]"
     >
       <div className="flex min-w-0 items-center gap-2">
-        {activityNotice && <span className="min-w-0 truncate text-[12px] text-[var(--text-muted)]">{activityNotice}</span>}
+        {activityNotice && <span className="min-w-0 truncate text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-muted)]">{activityNotice}</span>}
         {searchPending && (
           <span
             data-testid="search-pending"
@@ -169,7 +169,7 @@ export function StatusBar({
             <button
               type="button"
               onClick={() => setListDensity("comfortable")}
-              className={`control-chip h-5 min-h-5 rounded-[var(--radius-sm)] border-0 px-2 text-[12px] font-medium ${
+              className={`control-chip h-5 min-h-5 rounded-[var(--radius-sm)] border-0 px-2 text-[length:calc(12px*var(--ui-font-scale,1))] font-medium ${
                 listDensity === "comfortable" ? "control-chip-active" : ""
               }`}
               aria-pressed={listDensity === "comfortable"}
@@ -180,7 +180,7 @@ export function StatusBar({
             <button
               type="button"
               onClick={() => setListDensity("compact")}
-              className={`control-chip h-5 min-h-5 rounded-[var(--radius-sm)] border-0 px-2 text-[12px] font-medium ${
+              className={`control-chip h-5 min-h-5 rounded-[var(--radius-sm)] border-0 px-2 text-[length:calc(12px*var(--ui-font-scale,1))] font-medium ${
                 listDensity === "compact" ? "control-chip-active" : ""
               }`}
               aria-pressed={listDensity === "compact"}

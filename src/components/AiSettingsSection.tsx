@@ -227,7 +227,7 @@ export function AiSettingsSection() {
             className="settings-range block max-w-md"
             style={{ "--range-progress": `${((config.maxTags - 1) / 19) * 100}%` } as CSSProperties}
           />
-          <div className="mt-0.5 flex max-w-md items-center justify-between text-[11px] text-[var(--text-faint)]" aria-hidden="true">
+          <div className="mt-0.5 flex max-w-md items-center justify-between text-[length:calc(11px*var(--ui-font-scale,1))] text-[var(--text-faint)]" aria-hidden="true">
             <span>1</span>
             <span>5</span>
             <span>10</span>

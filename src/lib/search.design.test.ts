@@ -360,4 +360,23 @@ test("备注变化后搜索缓存失效", () => {
   assert.deepEqual(searchWithIndex(index, "新备注").map((entry) => entry.id), [93001]);
 });
 
+test("显示别名：名称/全部范围按别名命中（含拼音与 @ 严格），磁盘名仍可搜，标签范围不查别名", () => {
+  const aliased = { ...item(94001, "setup_x64.exe"), alias: "安装器" };
+  const other = item(94002, "readme.txt");
+  const nameIndex = buildSearchIndex([aliased, other], "name");
+  assert.deepEqual(searchWithIndex(nameIndex, "安装").map((entry) => entry.id), [94001]);
+  assert.deepEqual(searchWithIndex(nameIndex, "azq").map((entry) => entry.id), [94001]);
+  assert.deepEqual(searchWithIndex(nameIndex, "@安装器").map((entry) => entry.id), [94001]);
+  assert.deepEqual(searchWithIndex(nameIndex, "setup").map((entry) => entry.id), [94001]);
+  assert.deepEqual(searchWithIndex(buildSearchIndex([aliased, other], "all"), "安装器").map((entry) => entry.id), [94001]);
+  assert.deepEqual(searchWithIndex(buildSearchIndex([aliased, other], "tag"), "安装器").map((entry) => entry.id), []);
+});
+
+test("别名变化后搜索缓存失效", () => {
+  const before = { ...item(95001, "a.exe"), alias: "旧别名" };
+  assert.deepEqual(searchWithIndex(buildSearchIndex([before], "name"), "旧别名").map((entry) => entry.id), [95001]);
+  const index = buildSearchIndex([{ ...before, alias: null }], "name");
+  assert.deepEqual(searchWithIndex(index, "旧别名").map((entry) => entry.id), []);
+});
+
 await run("search");

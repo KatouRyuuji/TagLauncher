@@ -344,7 +344,7 @@ function FloatingPanel({ panel, zSerial, onBringToFront }: FloatingPanelProps) {
       <div
         ref={contentRef}
         className="mod-panel-body"
-        style={{ color: "var(--text-primary)", fontSize: "var(--font-size-sm)" }}
+        style={{ color: "var(--text-primary)", fontSize: "calc(var(--font-size-sm) * var(--ui-font-scale, 1))" }}
       />
 
       {/* Resize 句柄（可聚焦：方向键调整大小，Shift 大步进，Esc/Enter 结束） */}
@@ -452,7 +452,7 @@ function VisibleModalPanel({ panel }: ModalPanelProps) {
           <div
             ref={contentRef}
             className="flex-1 overflow-auto p-4"
-            style={{ color: "var(--text-primary)", fontSize: "var(--font-size-sm)" }}
+            style={{ color: "var(--text-primary)", fontSize: "calc(var(--font-size-sm) * var(--ui-font-scale, 1))" }}
           />
 
           {/* 按钮栏（可选） */}

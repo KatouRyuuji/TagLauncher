@@ -105,7 +105,7 @@ export function SidebarThemeSwitcher() {
       data-region="sidebar-theme"
       className="group/appearance shrink-0 px-3 py-2"
     >
-      <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-[var(--radius-sm)] px-1 text-[12px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] [&::-webkit-details-marker]:hidden" aria-label="主题与外观">
+      <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-[var(--radius-sm)] px-1 text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] [&::-webkit-details-marker]:hidden" aria-label="主题与外观">
         <Palette size={14} aria-hidden="true" />
         <span>外观</span><span className="ml-auto">{currentFamily?.name ?? currentTheme.name} · {lightSelected ? "浅色" : "深色"}</span>
         <ChevronDown size={12} aria-hidden="true" className="group-open/appearance:rotate-180" />

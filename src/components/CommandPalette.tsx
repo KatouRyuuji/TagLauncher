@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { itemDisplayName } from "../lib/itemDisplay";
 import { createPortal } from "react-dom";
 import {
   ArrowDownUp,
@@ -403,7 +404,7 @@ export function CommandPalette({
                 : "搜索命令或项目…"
             }
             aria-label="搜索命令或项目"
-            className="min-w-0 flex-1 bg-transparent text-[15px] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none"
+            className="min-w-0 flex-1 bg-transparent text-[length:calc(15px*var(--ui-font-scale,1))] text-[var(--text-primary)] placeholder-[var(--text-placeholder)] outline-none"
           />
           <button
             type="button"
@@ -418,7 +419,7 @@ export function CommandPalette({
         <div className="flex items-center justify-between gap-3 border-b border-[var(--line-hairline)] bg-[var(--surface-recessed)] px-4 py-2">
           <span className="instrument-label">命令 / 项目</span>
           {/* 计数不补零：个位数补零会被读成两个数字的拼接 bug；footer 已有命令/项目分项计数 */}
-          <span className="data-readout shrink-0 text-[13px] text-[var(--text-faint)]">{rows.length}</span>
+          <span className="data-readout shrink-0 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]">{rows.length}</span>
         </div>
         {/* 高度随内容自适应：结果少时面板收矮，不为空结果留半屏死白（上限防撑出视口） */}
         <div ref={listRef} className="max-h-[min(56vh,460px)] overflow-y-auto p-2">
@@ -460,18 +461,18 @@ export function CommandPalette({
               >
                 <PackageOpen aria-hidden="true" size={17} strokeWidth={1.8} className="row-sub shrink-0 text-[var(--text-faint)]" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate">{row.item.name}</span>
+                  <span className="block truncate">{itemDisplayName(row.item)}</span>
                   {/* 第二行展示中段折叠的路径：同名对象靠位置区分（盘符 + 文件名信息量最高） */}
-                  <span className="row-sub mt-0.5 block truncate text-[13px] leading-4 text-[var(--text-faint)]">
+                  <span className="row-sub mt-0.5 block truncate text-[length:calc(13px*var(--ui-font-scale,1))] leading-4 text-[var(--text-faint)]">
                     {truncatePathMiddle(row.item.path)}
                   </span>
                 </span>
-                <span className="row-sub shrink-0 text-[13px] text-[var(--text-faint)]" title={getTypeDetail(row.item.type)}>{getTypeLabel(row.item.type)}</span>
+                <span className="row-sub shrink-0 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]" title={getTypeDetail(row.item.type)}>{getTypeLabel(row.item.type)}</span>
               </button>
             );
           })}
         </div>
-        <div className="flex min-h-9 items-center justify-between border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 text-[13px] text-[var(--text-faint)]">
+        <div className="flex min-h-9 items-center justify-between border-t border-[var(--line-hairline)] bg-[var(--bg-surface)] px-4 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]">
           <span className="flex items-center gap-2">
             <span className="flex items-center gap-2"><span className="status-led" aria-hidden="true" />命令索引就绪</span>
             <span className="hidden sm:inline">↑↓ 选择 · Enter 执行 · Esc 关闭</span>

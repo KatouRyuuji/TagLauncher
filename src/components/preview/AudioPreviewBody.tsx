@@ -80,7 +80,7 @@ export function AudioPreviewBody({
           )}
           <div className="min-w-0">
             <p className="truncate font-medium text-[var(--text-primary)]">{audio?.title || item.name}</p>
-            <p className="mt-1 truncate text-[13px] text-[var(--text-muted)]">{artistAlbum || "音频对象"}</p>
+            <p className="mt-1 truncate text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-muted)]">{artistAlbum || "音频对象"}</p>
           </div>
         </div>
 
@@ -117,7 +117,7 @@ export function AudioPreviewBody({
         </div>
 
         {failed && (
-          <p className="text-[12px] text-[var(--text-muted)]">无法播放，可用外部播放器打开</p>
+          <p className="text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-muted)]">无法播放，可用外部播放器打开</p>
         )}
 
         {src && (

@@ -638,6 +638,72 @@
 "coverage": "CLI-02 tl.rs"
 },
 {
+"id": "E-OBJ-25",
+"module": "导入与对象",
+"scenario": "显示别名只改显示",
+"steps": "右键设置显示别名→搜索别名→清除",
+"expect": "卡片显示别名、搜索命中、磁盘文件名与库内 name 不变；清除后恢复磁盘名",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P1",
+"coverage": "F07"
+},
+{
+"id": "E-DSK-01",
+"module": "桌面驻留",
+"scenario": "默认不抢键、关闭即退出",
+"steps": "全新库打开设置→桌面驻留→关闭全屏忽略",
+"expect": "toggle_main 未启用、关闭=退出、全屏忽略默认开、无托盘；通用 set_setting 不能写 hotkey.*/desktop.*；全屏忽略可关并持久",
+"layer": "UI",
+"automation": "CDP + Win32 只读",
+"priority": "P1",
+"coverage": "F18"
+},
+{
+"id": "E-DSK-02",
+"module": "桌面驻留",
+"scenario": "全局快捷键真实注册并持久",
+"steps": "设置 Ctrl+Alt+Shift+F9→重启→清除",
+"expect": "系统层被占用（RegisterHotKey 探测失败）；重启后重新注册；清除后释放",
+"layer": "UI",
+"automation": "CDP + Win32 只读",
+"priority": "P1",
+"coverage": "F18"
+},
+{
+"id": "E-DSK-03",
+"module": "桌面驻留",
+"scenario": "快捷键冲突回滚",
+"steps": "外部进程占住 F10→改为 F10",
+"expect": "报错含「占用」，设置与系统注册保持旧值 F9",
+"layer": "UI",
+"automation": "CDP + Win32 只读",
+"priority": "P1",
+"coverage": "F18"
+},
+{
+"id": "E-DSK-04",
+"module": "桌面驻留",
+"scenario": "关闭到托盘",
+"steps": "关闭行为=托盘→点关闭→切回退出→关闭",
+"expect": "托盘模式隐藏不退出；退出模式关闭即退出",
+"layer": "UI",
+"automation": "CDP + Win32 只读",
+"priority": "P1",
+"coverage": "F18"
+},
+{
+"id": "E-DSK-05",
+"module": "桌面驻留",
+"scenario": "后台启动",
+"steps": "带 --background 启动",
+"expect": "主窗不显示、托盘存在、进程常驻",
+"layer": "UI",
+"automation": "CDP + Win32 只读",
+"priority": "P1",
+"coverage": "F18"
+},
+{
 "id": "E-LCH-01",
 "module": "启动对象",
 "scenario": "双击启动 .bat",
@@ -1945,6 +2011,17 @@
 "automation": "CDP 早截图",
 "priority": "P1",
 "coverage": "TH-03"
+},
+{
+"id": "E-TH-08",
+"module": "主题外观",
+"scenario": "界面字号独立调节并持久化",
+"steps": "列表视图→设置选特大→重启",
+"expect": "文字放大、行重测不重叠、重启保持",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P2",
+"coverage": "F03"
 },
 {
 "id": "E-MOD-01",

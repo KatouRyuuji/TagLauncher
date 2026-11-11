@@ -669,6 +669,13 @@ export function useItems() {
     });
   }, [refreshItemById]);
 
+  const setItemAlias = useCallback(async (id: number, alias: string) => {
+    await withErrorToast("保存别名", async () => {
+      await db.setItemAlias(id, alias);
+      await refreshItemById(id);
+    });
+  }, [refreshItemById]);
+
   // 文件夹改名会同步改写库内子对象路径，成功后整体重载
   const renameItem = useCallback(async (id: number, newName: string) => {
     await withErrorToast("重命名", async () => {
@@ -827,6 +834,7 @@ export function useItems() {
     setItemTags,
     setManyItemTags,
     setItemNote,
+    setItemAlias,
     renameItem,
     batchRename,
     undoBatchRename,

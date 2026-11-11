@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { ItemViewProps } from "../types";
 import { useAppStore } from "../stores/appStore";
+import { scaledRowEstimate } from "../lib/uiFontScale";
 import { isHeaderSortActive, isHeaderSortDesc, toggleHeaderSort, type ListHeaderColumn } from "../lib/itemQuery";
 import { peekPendingItemFocus, focusSelectableItem, clearPendingItemFocus } from "../lib/workspaceChrome";
 import { ITEM_LIST_BASE_ROW_HEIGHT, ITEM_LIST_COMPACT_ROW_HEIGHT, ITEM_LIST_GRID_TEMPLATE, ItemRow } from "./ItemRow";
@@ -135,7 +136,7 @@ function SortableHeaderCell({
             ? "再点一次回到智能排序"
             : `按${label}排序`
       }
-      className={`group inline-flex h-8 items-center gap-1 text-[13px] font-semibold transition-colors ${
+      className={`group inline-flex h-8 items-center gap-1 text-[length:calc(13px*var(--ui-font-scale,1))] font-semibold transition-colors ${
         align === "right" ? "justify-end text-right" : "text-left"
       } ${active ? "text-[var(--accent-primary)]" : "text-[var(--text-faint)] hover:text-[var(--text-secondary)]"} ${className ?? ""}`}
     >
@@ -220,7 +221,12 @@ export function ItemListView({
   const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
   const itemIds = useMemo(() => items.map((item) => item.id), [items]);
   const listDensity = useAppStore((state) => state.listDensity);
-  const rowHeightEstimate = listDensity === "compact" ? ITEM_LIST_COMPACT_ROW_HEIGHT : ITEM_LIST_BASE_ROW_HEIGHT;
+  const uiFontScale = useAppStore((state) => state.uiFontScale);
+  // 字号放大会撑高行：估计值同步放大；真实行高仍由 measureElement + ResizeObserver 测量（F03）
+  const rowHeightEstimate = scaledRowEstimate(
+    listDensity === "compact" ? ITEM_LIST_COMPACT_ROW_HEIGHT : ITEM_LIST_BASE_ROW_HEIGHT,
+    uiFontScale,
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowMetricsRef = useRef<Map<number, { start: number; size: number }>>(new Map());

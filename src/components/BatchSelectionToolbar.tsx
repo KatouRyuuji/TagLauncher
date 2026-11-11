@@ -413,7 +413,7 @@ function TagOwnershipMenu({
   return (
     <>
       {showTargetHint && (
-        <div className="px-3 py-1.5 text-[11px] text-[var(--text-faint)]">
+        <div className="px-3 py-1.5 text-[length:calc(11px*var(--ui-font-scale,1))] text-[var(--text-faint)]">
           {batchAddTagTargetCopy(selectedCount)}
         </div>
       )}
@@ -430,7 +430,7 @@ function TagOwnershipMenu({
             className="w-full rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
           />
           {/* 开关独占一行：与过滤框同行时右缘会被弹层裁切 */}
-          <label className="flex cursor-pointer items-center gap-1.5 px-0.5 text-[11px] text-[var(--text-muted)]">
+          <label className="flex cursor-pointer items-center gap-1.5 px-0.5 text-[length:calc(11px*var(--ui-font-scale,1))] text-[var(--text-muted)]">
             <input
               type="checkbox"
               checked={onlyPartial}
@@ -489,7 +489,7 @@ function MenuOption({
       <span className="min-w-0 flex-1 truncate">
         {label}
         {someOwned && (
-          <span className="data-readout ml-1.5 text-[11px] tabular-nums text-[var(--text-faint)]">
+          <span className="data-readout ml-1.5 text-[length:calc(11px*var(--ui-font-scale,1))] tabular-nums text-[var(--text-faint)]">
             已标 {ownership.have}/{ownership.total}
           </span>
         )}

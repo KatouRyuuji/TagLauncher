@@ -9,6 +9,7 @@
 // 数据在页面刷新后重置为初始演示数据集（demo 不追求持久化）。
 // ============================================================================
 
+import type { DesktopSettings } from "../lib/desktopShortcut";
 import type { Cabinet, Item, ItemWithTags, Tag, TagRelation } from "../types";
 import type { ModInfo } from "../types/mod";
 import type { ThemeDefinition } from "../types/theme";
@@ -42,6 +43,7 @@ interface DemoState {
   cabinets: Cabinet[];
   cabinetItems: Map<number, Set<number>>;
   settings: Map<string, string>;
+  desktop: DesktopSettings;
   ai: {
     baseUrl: string;
     apiKey: string;
@@ -80,6 +82,13 @@ function seedState(): DemoState {
     cabinetItems: new Map(
       Object.entries(DEMO_CABINET_ITEMS).map(([id, ids]) => [Number(id), new Set(ids)]),
     ),
+    desktop: {
+      hotkeys: [{ action: "toggle_main", label: "显示 / 隐藏主窗口", accelerator: null, error: null }],
+      closeAction: "exit",
+      ignoreFullscreen: true,
+      launchMode: "show",
+      trayActive: false,
+    },
     settings: new Map([
       // 演示主用主题：樱花粉（功能巡演与截图全覆盖）
       ["theme", "7f47aab2-74bb-4c77-b99b-550f0acf3c9c"],
@@ -494,6 +503,13 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       requireItem(num(args.id)).note = note || null;
       return null;
     }
+    case "set_item_alias": {
+      const alias = str(args.alias).trim();
+      if ([...alias].length > 120) throw new Error(`别名最多 120 字，当前 ${[...alias].length} 字`);
+      if (/[\u0000-\u001f\u007f]/.test(alias)) throw new Error("别名不能包含换行或控制字符");
+      requireItem(num(args.id)).alias = alias || null;
+      return null;
+    }
     case "rename_items": {
       // 演示版按后端主要规则校验，不触碰磁盘；目标正好是同批另一对象的原名时允许（互换、链式、成环），
       // 内存中一次性计算所有新路径，文件夹改名时其下对象的路径前缀随之替换。
@@ -820,6 +836,32 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "set_current_theme":
       state.settings.set("theme", str(args.themeId));
       return null;
+    case "get_desktop_settings":
+      return structuredClone(state.desktop);
+    case "get_launch_mode":
+      return "show";
+    case "set_hotkey": {
+      const action = str(args.action);
+      const entry = state.desktop.hotkeys.find((h) => h.action === action);
+      if (!entry) throw new Error(`未知的快捷键动作「${action}」`);
+      const next = typeof args.shortcut === "string" && args.shortcut.trim() ? args.shortcut.trim() : null;
+      if (next && !/(^|\+)(Ctrl|Control|Alt|Super)(\+|$)/i.test(next)) {
+        throw new Error(`全局快捷键「${next}」至少要包含 Ctrl、Alt 或 Win 之一，避免拦截日常输入`);
+      }
+      entry.accelerator = next;
+      entry.error = null;
+      return structuredClone(state.desktop);
+    }
+    case "set_close_action": {
+      const action = str(args.action);
+      if (action !== "exit" && action !== "tray") throw new Error(`未知的关闭行为「${action}」，只能是 exit 或 tray`);
+      state.desktop.closeAction = action;
+      state.desktop.trayActive = action === "tray";
+      return structuredClone(state.desktop);
+    }
+    case "set_hotkey_ignore_fullscreen":
+      state.desktop.ignoreFullscreen = Boolean(args.enabled);
+      return structuredClone(state.desktop);
     case "get_setting":
       return state.settings.get(str(args.key)) ?? null;
     case "set_setting":

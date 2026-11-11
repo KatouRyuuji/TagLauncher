@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
 @theme {
-  --text-xs: 12px;
+  /* F03 界面字号：Tailwind 字号工具类统一乘 --ui-font-scale（设置 → 主题外观 → 界面字号）。
+     只缩放文字，不动间距/卡片尺寸/列表密度；变量由 lib/uiFontScale 写在根节点上，主题切换不清除 */
+  --text-xs: calc(12px * var(--ui-font-scale, 1));
   --text-xs--line-height: 1.3;
+  --text-sm: calc(0.875rem * var(--ui-font-scale, 1));
+  --text-base: calc(1rem * var(--ui-font-scale, 1));
+  --text-lg: calc(1.125rem * var(--ui-font-scale, 1));
+  --text-xl: calc(1.25rem * var(--ui-font-scale, 1));
+  --text-2xl: calc(1.5rem * var(--ui-font-scale, 1));
 }
 
 @layer base {
@@ -166,7 +173,7 @@
     --workspace-grid: color-mix(in srgb, var(--border-default) 28%, transparent);
 
     font-family: var(--font-family);
-    font-size: var(--font-size-base);
+    font-size: calc(var(--font-size-base) * var(--ui-font-scale, 1));
     letter-spacing: var(--letter-spacing);
     /* 数字统一等宽数字（读数与计数列对齐） */
     font-variant-numeric: tabular-nums;
@@ -483,7 +490,7 @@ html.theme-switching * {
     background: var(--bg-input);
     color: var(--text-faint);
     font-family: inherit;
-    font-size: 13px;
+    font-size: calc(13px * var(--ui-font-scale, 1));
     line-height: 1;
     letter-spacing: 0;
   }
@@ -577,7 +584,7 @@ html.theme-switching * {
     max-width: 100%;
     min-height: 24px;
     padding: 2px 7px;
-    font-size: 12px;
+    font-size: calc(12px * var(--ui-font-scale, 1));
     line-height: 18px;
     white-space: nowrap;
   }
@@ -638,7 +645,7 @@ html.theme-switching * {
 
   /* 标签随卡片缩放，字体和颜色保持相同层级。 */
   .item-card-render-scope .item-tag {
-    font-size: max(12px, calc(12px * var(--card-text-scale, 1)));
+    font-size: calc(max(12px, calc(12px * var(--card-text-scale, 1))) * var(--ui-font-scale, 1));
   }
 
   /* 最小档（≤75%）：路径行隐藏，小卡片不再名称/路径双重截断 */
@@ -738,7 +745,7 @@ html.theme-switching * {
     flex-wrap: wrap;
     gap: 8px 14px;
     margin-top: 20px;
-    font-size: 12.5px;
+    font-size: calc(12.5px * var(--ui-font-scale, 1));
     color: var(--text-secondary);
     list-style: none;
     padding: 0;
@@ -778,7 +785,7 @@ html.theme-switching * {
   }
 
   .text-label {
-    font-size: 13px;
+    font-size: calc(13px * var(--ui-font-scale, 1));
     letter-spacing: 0;
     text-transform: uppercase;
     color: var(--text-faint);
@@ -892,7 +899,7 @@ html.theme-switching * {
   .instrument-label {
     color: var(--text-faint);
     font-family: var(--font-family-mono);
-    font-size: 13px;
+    font-size: calc(13px * var(--ui-font-scale, 1));
     font-weight: 600;
     letter-spacing: 0;
     line-height: 1.2;
@@ -1052,7 +1059,7 @@ html.theme-switching * {
   }
 
   .preview-video-fail-hint {
-    font-size: 12px;
+    font-size: calc(12px * var(--ui-font-scale, 1));
     line-height: 1.4;
     color: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
   }
@@ -1186,7 +1193,7 @@ html.theme-switching * {
   .preview-timecode {
     font-family: var(--font-family-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 12px;
+    font-size: calc(12px * var(--ui-font-scale, 1));
     color: var(--text-faint);
     white-space: nowrap;
   }
@@ -1198,7 +1205,7 @@ html.theme-switching * {
   .preview-meta-footnote {
     font-family: var(--font-family-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 12px;
+    font-size: calc(12px * var(--ui-font-scale, 1));
     line-height: 1.4;
     color: var(--text-faint);
   }
@@ -1216,7 +1223,7 @@ html.theme-switching * {
   }
 
   .preview-folder-hint {
-    font-size: 12px;
+    font-size: calc(12px * var(--ui-font-scale, 1));
     line-height: 1.4;
     color: var(--text-faint);
   }
@@ -1296,7 +1303,7 @@ html.theme-switching * {
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
     font-family: var(--font-family-mono);
-    font-size: 12px;
+    font-size: calc(12px * var(--ui-font-scale, 1));
     box-shadow: none;
   }
   :root[data-shape="a"][data-scheme="dark"] .kbd {

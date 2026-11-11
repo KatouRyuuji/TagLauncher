@@ -19,6 +19,7 @@ mod v018_ignored_paths;
 mod v019_sidebar_order;
 mod v020_text_type;
 mod v021_hide_from_all;
+mod v022_item_alias;
 
 use rusqlite::Connection;
 
@@ -193,6 +194,7 @@ fn all_migrations() -> Vec<Box<dyn Migration>> {
         Box::new(v019_sidebar_order::V019SidebarOrder),
         Box::new(v020_text_type::V020TextType),
         Box::new(v021_hide_from_all::V021HideFromAll),
+        Box::new(v022_item_alias::V022ItemAlias),
     ]
 }
 

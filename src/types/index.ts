@@ -16,6 +16,8 @@
   fs_modified_at?: number | null;
   /** 默认不出现在 All 总览（递归导入的夹内文件 / 中间目录）。旧对象缺省为 false。 */
   hide_from_all?: boolean;
+  /** 显示别名（F07）：只影响显示与搜索，磁盘名仍是 name；未设为 null。 */
+  alias?: string | null;
 }
 
 export interface Cabinet {

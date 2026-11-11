@@ -99,15 +99,15 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
               <Tag aria-hidden="true" size={20} strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
-              <h2 id="welcome-modal-title" className="truncate text-[21px] font-semibold tracking-[-0.02em] text-[var(--text-primary)]">
+              <h2 id="welcome-modal-title" className="truncate text-[length:calc(21px*var(--ui-font-scale,1))] font-semibold tracking-[-0.02em] text-[var(--text-primary)]">
                 欢迎使用 TagLauncher
                 {appVersion && (
-                  <span className="data-readout ml-2 align-middle text-[13px] font-normal text-[var(--text-faint)]">
+                  <span className="data-readout ml-2 align-middle text-[length:calc(13px*var(--ui-font-scale,1))] font-normal text-[var(--text-faint)]">
                     v{appVersion}
                   </span>
                 )}
               </h2>
-              <p className="mt-1 text-[13px] text-[var(--text-muted)]">{GREETING}</p>
+              <p className="mt-1 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-muted)]">{GREETING}</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -126,14 +126,14 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <section className="min-w-0 px-5 pt-2 pb-5 sm:px-8" aria-labelledby="welcome-steps-title">
-            <h3 id="welcome-steps-title" className="text-[12px] font-semibold text-[var(--text-muted)]">从这里开始</h3>
+            <h3 id="welcome-steps-title" className="text-[length:calc(12px*var(--ui-font-scale,1))] font-semibold text-[var(--text-muted)]">从这里开始</h3>
             <ol className="mt-4 space-y-4">
               {STEPS.map((step, index) => (
                 <li key={step.title} className="flex min-w-0 gap-4">
-                  <span className="data-readout w-6 shrink-0 pt-0.5 text-[12px] text-[var(--accent-primary)]">0{index + 1}</span>
+                  <span className="data-readout w-6 shrink-0 pt-0.5 text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--accent-primary)]">0{index + 1}</span>
                   <div className="min-w-0">
-                    <p className="text-[14px] font-semibold text-[var(--text-primary)]">{step.title}</p>
-                    <p className="mt-1 text-[13px] leading-5 text-[var(--text-muted)]">{step.description}</p>
+                    <p className="text-[length:calc(14px*var(--ui-font-scale,1))] font-semibold text-[var(--text-primary)]">{step.title}</p>
+                    <p className="mt-1 text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">{step.description}</p>
                   </div>
                 </li>
               ))}
@@ -141,7 +141,7 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
           </section>
 
           <details className="mx-5 mb-5 rounded-[var(--radius-md)] bg-[var(--surface-recessed)] px-4 py-3 sm:mx-8">
-            <summary className="flex cursor-pointer list-none items-center gap-2 text-[13px] font-medium text-[var(--text-secondary)] [&::-webkit-details-marker]:hidden">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium text-[var(--text-secondary)] [&::-webkit-details-marker]:hidden">
               <Heart aria-hidden="true" size={15} strokeWidth={1.8} />
               支持开发者
               <ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} className="ml-auto" />

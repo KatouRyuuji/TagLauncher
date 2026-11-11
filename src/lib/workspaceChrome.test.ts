@@ -16,6 +16,7 @@ const OVERLAY_FILES = [
   "src/components/AddFolderImportDialog.tsx",
   "src/components/MissingItemsReviewDialog.tsx",
   "src/components/NoteEditorDialog.tsx",
+  "src/components/AliasEditorDialog.tsx",
   "src/components/RenameDialog.tsx",
   "src/components/BatchRenameDialog.tsx",
   "src/components/RemoveFromAppConfirmDialog.tsx",

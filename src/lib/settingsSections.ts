@@ -16,6 +16,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
   { id: "theme", label: "主题外观" },
   { id: "ai", label: "AI 打标" },
   { id: "data", label: "数据管理" },
+  { id: "desktop", label: "桌面驻留" },
   { id: "sync", label: "云同步" },
   { id: "update", label: "更新" },
   { id: "mods", label: "扩展" },

@@ -120,6 +120,10 @@ fn is_integrity_setting_key(key: &str) -> bool {
         || key == "enabled_mods"
         || key == "last_known_version"
         || key.starts_with("migration::")
+        // desktop.* / hotkey.* 由 desktop 模块专属命令维护（set_hotkey / set_close_action 等）：
+        // 绕过它直接写库会让已注册的快捷键 / 托盘与设置不一致
+        || key.starts_with("desktop.")
+        || key.starts_with("hotkey.")
 }
 
 #[tauri::command]
@@ -225,5 +229,7 @@ mod tests {
         // 普通业务键不受影响
         assert!(!is_integrity_setting_key("theme"));
         assert!(!is_integrity_setting_key("migration_notes"));
+        assert!(is_integrity_setting_key("hotkey.toggle_main"));
+        assert!(is_integrity_setting_key("desktop.close_action"));
     }
 }

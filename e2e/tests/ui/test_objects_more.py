@@ -1,4 +1,4 @@
-"""对象管理 P1/P2（E-OBJ-03/04/09/12/13/14/17/19/21/22/23/24）。全部 CDP + IPC，不接管系统输入。"""
+"""对象管理 P1/P2（E-OBJ-03/04/09/12/13/14/17/19/21/22/23/24/25）。全部 CDP + IPC，不接管系统输入。"""
 from __future__ import annotations
 
 import os
@@ -309,4 +309,40 @@ def test_unicode_and_long_names(app, sandbox):
     wait_until(lambda: pv.locator('[aria-busy="true"]').count() == 0, 8)
     assert "超长路径.txt" in pv.inner_text()
     app.page.keyboard.press("Escape")
+    assert app.js_errors() == []
+
+
+@pytest.mark.case("E-OBJ-25")
+def test_display_alias_is_display_only(app, sandbox):
+    """F07：别名只改界面显示与搜索；磁盘文件、库内 name/path 不变；清空恢复磁盘名。"""
+    f = files.write(sandbox.files / "别名" / "setup_x64.exe.txt", "x")
+    app.seed([f])
+    app.wait_names(["setup_x64.exe.txt"])
+    app.menu_click("setup_x64.exe.txt", "设置显示别名…")
+    dlg = app.dialog("设置显示别名")
+    assert "setup_x64.exe.txt" in dlg.inner_text()
+    dlg.get_by_role("textbox", name="显示别名").fill("  安装器  ")
+    dlg.get_by_role("textbox", name="显示别名").press("Enter")
+    dlg.wait_for(state="detached", timeout=5000)
+    app.wait_names(["安装器"])
+    it = app.item("setup_x64.exe.txt")
+    assert it["alias"] == "安装器" and it["name"] == "setup_x64.exe.txt", it
+    assert Path(it["path"]).name == "setup_x64.exe.txt" and f.exists(), "磁盘文件不改名"
+    heading = app.card("setup_x64.exe.txt").get_by_role("heading", level=3)
+    assert "磁盘名：setup_x64.exe.txt" in (heading.get_attribute("title") or "")
+    # 搜索：别名（中文与拼音首字母）与磁盘名都能命中
+    for q in ("安装", "azq", "setup"):
+        app.search(q)
+        app.wait_names(["安装器"])
+    app.search("")
+    app.restart()
+    app.wait_names(["安装器"])
+    # 清空即恢复显示磁盘名
+    app.menu_click("setup_x64.exe.txt", "设置显示别名…")
+    dlg = app.dialog("设置显示别名")
+    dlg.get_by_role("textbox", name="显示别名").fill("")
+    dlg.get_by_role("button", name="保存", exact=True).click()
+    dlg.wait_for(state="detached", timeout=5000)
+    app.wait_names(["setup_x64.exe.txt"])
+    assert app.item("setup_x64.exe.txt")["alias"] is None
     assert app.js_errors() == []

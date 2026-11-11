@@ -122,7 +122,7 @@ export function MissingItemsReviewDialog({
               <CheckBox checked={allChecked} indeterminate={someChecked && !allChecked} />
               全选
             </button>
-            <span className="data-readout text-[13px] text-[var(--text-faint)]">
+            <span className="data-readout text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]">
               已选 {selectedIds.length} / {ordered.length}
             </span>
           </div>
@@ -150,7 +150,7 @@ export function MissingItemsReviewDialog({
                         <span className="truncate text-sm font-medium text-[var(--text-primary)]">{item.name}</span>
                         <TriangleAlert className="h-3 w-3 shrink-0 text-[var(--color-warning-ink)]" aria-hidden="true" />
                       </span>
-                      <span className="mt-0.5 block truncate text-[12px] text-[var(--text-faint)] line-through" title={item.path}>
+                      <span className="mt-0.5 block truncate text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-faint)] line-through" title={item.path}>
                         {truncatePathMiddle(item.path, 56)}
                       </span>
                     </span>

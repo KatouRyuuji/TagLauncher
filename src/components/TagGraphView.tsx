@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { computeLayers, orderLayersByBarycenter, pickDefaultGraphNode, resolveTagGraphEmptyState } from "../lib/tagGraph";
+import { buildGraphHighlight, computeLayers, orderLayersByBarycenter, pickDefaultGraphNode, resolveTagGraphEmptyState } from "../lib/tagGraph";
 import { compareNames } from "../lib/itemQuery";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import { DialogHeader } from "./DialogHeader";
@@ -154,15 +154,11 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
     };
   }, [layers, measure]);
 
-  const relatedNodeIds = useMemo(() => {
-    if (selectedNodeId == null) return null;
-    const ids = new Set<number>([selectedNodeId]);
-    for (const rel of validRelations) {
-      if (rel.parentId === selectedNodeId) ids.add(rel.childId);
-      if (rel.childId === selectedNodeId) ids.add(rel.parentId);
-    }
-    return ids;
-  }, [selectedNodeId, validRelations]);
+  // F06：高亮直接父 + 全部后代（及子树内连线），其余淡化
+  const highlight = useMemo(
+    () => (selectedNodeId == null ? null : buildGraphHighlight(selectedNodeId, validRelations)),
+    [selectedNodeId, validRelations],
+  );
 
   const clearSelection = useCallback(() => {
     userClearedSelectionRef.current = true;
@@ -272,9 +268,9 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                       <path d="M0,0 L6,3 L0,6 Z" fill="var(--accent-primary)" />
                     </marker>
                   </defs>
-                  {(selectedNodeId == null
+                  {(highlight == null
                     ? []
-                    : validRelations.filter((rel) => rel.parentId === selectedNodeId || rel.childId === selectedNodeId)
+                    : validRelations.filter((rel) => highlight.edges.has(`${rel.parentId}-${rel.childId}`))
                   ).map((rel) => {
                     const p = positions.get(rel.parentId);
                     const c = positions.get(rel.childId);
@@ -286,14 +282,18 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                     // 水平扫掠收在子节点正上方的空档走廊（y2-14），不再以 (y1+y2)/2
                     // 为中点横穿——后者在层内换行时会穿过同层兄弟节点的文字区
                     const channelY = y2 - 14;
+                    // 与选中直接相连的边加粗；后代子树内部的边细一档，层次一眼可分
+                    const direct = rel.parentId === selectedNodeId || rel.childId === selectedNodeId;
                     const active = true;
                     return (
                       <path
                         key={`${rel.parentId}-${rel.childId}`}
+                        data-graph-edge={`${rel.parentId}-${rel.childId}`}
                         d={`M ${x1} ${y1} C ${x1} ${channelY} ${x2} ${channelY} ${x2} ${y2}`}
                         fill="none"
                         stroke={active ? "var(--accent-primary)" : "var(--border-strong)"}
-                        strokeWidth={active ? 2 : 1.5}
+                        strokeWidth={direct ? 2 : 1.25}
+                        strokeOpacity={direct ? 1 : 0.7}
                         style={{ transition: "stroke 150ms ease-out, stroke-width 150ms ease-out" }}
                         markerEnd={`url(#${arrowMarkerId}${active ? "-active" : ""})`}
                       />
@@ -310,19 +310,21 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                       className="flex w-full items-stretch gap-4 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--bg-surface)_60%,transparent)] px-2 py-3"
                     >
                       {/* 层标列加宽并不换行：w-14 时「第 1 层」折成「第 1」/「层」竖排两行 */}
-                      <div className="data-readout flex w-16 shrink-0 items-center justify-end whitespace-nowrap border-r border-[var(--line-hairline)] pr-3 text-right text-[12px] font-medium text-[var(--text-secondary)]">
+                      <div className="data-readout flex w-16 shrink-0 items-center justify-end whitespace-nowrap border-r border-[var(--line-hairline)] pr-3 text-right text-[length:calc(12px*var(--ui-font-scale,1))] font-medium text-[var(--text-secondary)]">
                         第 {level + 1} 层
                       </div>
                       <div className="flex min-w-0 flex-1 flex-wrap gap-6">
                         {layerTags.map((tag) => {
                           const active = selectedNodeId === tag.id;
-                          const dimmed = relatedNodeIds != null && !relatedNodeIds.has(tag.id);
+                          const relation = highlight?.nodes.get(tag.id);
+                          const dimmed = highlight != null && relation == null;
                           const count = itemsByTag.get(tag.id)?.length ?? 0;
                           return (
                             <button
                               key={tag.id}
                               type="button"
                               data-graph-node-id={tag.id}
+                              data-graph-relation={relation}
                               aria-pressed={active}
                               ref={(el) => {
                                 if (el) nodeRefs.current.set(tag.id, el);
@@ -334,7 +336,9 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                               style={{
                                 borderColor: active
                                   ? "color-mix(in srgb, var(--accent-primary) 42%, var(--border-default))"
-                                  : "transparent",
+                                  : relation === "child" || relation === "descendant"
+                                    ? "color-mix(in srgb, var(--accent-primary) 24%, transparent)"
+                                    : "transparent",
                                 backgroundColor: active ? "var(--accent-primary-bg)" : "var(--bg-card)",
                                 color: `color-mix(in srgb, ${tag.color} 88%, var(--text-primary))`,
                                 fontWeight: 500,
@@ -344,7 +348,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                               <span className="h-[10px] w-[10px] shrink-0 rounded-[3px]" style={{ backgroundColor: tag.color }} />
                               <span className="min-w-0 max-w-[180px] truncate">{tag.name}</span>
                               <span
-                                className="ml-1 inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-full)] px-1.5 text-[13px] font-semibold"
+                                className="ml-1 inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-full)] px-1.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-semibold"
                                 style={{
                                   backgroundColor: "var(--bg-hover)",
                                   color: "var(--text-muted)",
@@ -383,6 +387,11 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                     </svg>
                   </button>
                 </div>
+                {highlight != null && highlight.descendantCount > 0 && (
+                  <p className="mt-2 text-xs text-[var(--text-muted)]" data-testid="graph-descendant-count">
+                    共 {highlight.descendantCount} 个后代标签（已在图中高亮）
+                  </p>
+                )}
                 {(selectedParents.length > 0 || selectedChildren.length > 0) && (
                   <div className="mt-2 space-y-1 text-xs text-[var(--text-muted)]">
                     {selectedParents.length > 0 && (
@@ -433,7 +442,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                         className="flex min-w-0 items-center gap-2.5 rounded-[var(--radius-md)] px-2 py-1.5 hover:bg-[var(--bg-hover)]"
                         title={it.path}
                       >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] text-[17px]">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-hover)] text-[length:calc(17px*var(--ui-font-scale,1))]">
                           <ItemVisualIcon item={it} emojiClass="leading-none" imageClass="h-full w-full object-cover" />
                         </div>
                         <span className="min-w-0 flex-1 truncate text-sm text-[var(--text-secondary)]">{it.name}</span>

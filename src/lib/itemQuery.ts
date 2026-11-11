@@ -7,6 +7,7 @@
 
 import { pinyinSync as pinyin } from "./pinyinProvider";
 import type { ItemWithTags } from "../types";
+import { itemDisplayName } from "./itemDisplay";
 
 /** 工作台排序：智能（收藏→最近使用→名称）/ 名称 / 最近使用 / 添加时间 / 文件创建时间 / 文件修改时间 / 类型；
  *  名称与添加时间带方向变体（-desc 后缀），文件时间带方向变体（-asc 后缀），其余模式固定方向。 */
@@ -167,7 +168,7 @@ export interface SortKeyOverrides {
 
 type SortableItem = Pick<
   ItemWithTags,
-  "id" | "name" | "type" | "is_favorite" | "last_used_at" | "created_at" | "fs_created_at" | "fs_modified_at"
+  "id" | "name" | "alias" | "type" | "is_favorite" | "last_used_at" | "created_at" | "fs_created_at" | "fs_modified_at"
 >;
 
 export function compareItems(
@@ -180,41 +181,41 @@ export function compareItems(
     overrides?.lastUsedAt?.has(item.id) ? overrides.lastUsedAt.get(item.id) : item.last_used_at;
   switch (mode) {
     case "name":
-      return compareNames(a.name, b.name);
+      return compareNames(itemDisplayName(a), itemDisplayName(b));
     case "name-desc":
-      return compareNames(b.name, a.name);
+      return compareNames(itemDisplayName(b), itemDisplayName(a));
     case "recent": {
       // 显式「最近使用」= 活视图：不经冻结键，启动立即升顶（见 SortKeyOverrides 注释）
       const used = compareTimestamps(b.last_used_at ?? "", a.last_used_at ?? "");
-      return used || compareNames(a.name, b.name);
+      return used || compareNames(itemDisplayName(a), itemDisplayName(b));
     }
     case "added": {
       const added = compareTimestamps(b.created_at, a.created_at);
-      return added || compareNames(a.name, b.name);
+      return added || compareNames(itemDisplayName(a), itemDisplayName(b));
     }
     case "added-desc": {
       const added = compareTimestamps(a.created_at, b.created_at);
-      return added || compareNames(a.name, b.name);
+      return added || compareNames(itemDisplayName(a), itemDisplayName(b));
     }
     case "fs-created":
     case "fs-created-asc": {
       const created = compareFileTimes(a.fs_created_at, b.fs_created_at, mode === "fs-created");
-      return created || compareNames(a.name, b.name);
+      return created || compareNames(itemDisplayName(a), itemDisplayName(b));
     }
     case "fs-modified":
     case "fs-modified-asc": {
       const modified = compareFileTimes(a.fs_modified_at, b.fs_modified_at, mode === "fs-modified");
-      return modified || compareNames(a.name, b.name);
+      return modified || compareNames(itemDisplayName(a), itemDisplayName(b));
     }
     case "type": {
       const order = (TYPE_ORDER[a.type] ?? 9) - (TYPE_ORDER[b.type] ?? 9);
-      return order || compareNames(a.name, b.name);
+      return order || compareNames(itemDisplayName(a), itemDisplayName(b));
     }
     case "smart":
     default: {
       if (a.is_favorite !== b.is_favorite) return a.is_favorite ? -1 : 1;
       const used = compareTimestamps(usedAt(b) ?? "", usedAt(a) ?? "");
-      return used || compareNames(a.name, b.name);
+      return used || compareNames(itemDisplayName(a), itemDisplayName(b));
     }
   }
 }
