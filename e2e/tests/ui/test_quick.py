@@ -43,13 +43,19 @@ def _cdp_targets(app) -> list[dict]:
 
 def _quick_diag(app) -> str:
     labels = app.page.evaluate("() => window.__TAURI__.window.getAllWindows().then(ws => ws.map(w => w.label))")
+    # 应用日志（tauri-plugin-log，<LOCALAPPDATA>/com.taglauncher.app/logs）；WebView2 的 leveldb LOG 不是文本，跳过
     logs = []
-    for f in app.sb.root.rglob("*.log"):
+    for f in sorted((app.sb.root / "LocalAppData").glob("com.taglauncher.app/logs/*.log")):
         try:
-            logs += [ln.strip() for ln in f.read_text(encoding="utf-8", errors="replace").splitlines() if "quick" in ln.lower()]
+            logs += [ln.strip() for ln in f.read_text(encoding="utf-8", errors="replace").splitlines()
+                     if any(k in ln.lower() for k in ("quick", "collect", "desktop", "warn", "error"))]
         except OSError:
             pass
-    return f"windows={labels} cdp={_cdp_targets(app)} logs={logs[-8:]}"
+    try:
+        session = app.invoke("collect_session")
+    except Exception as e:  # noqa: BLE001
+        session = f"<{e}>"
+    return f"windows={labels} cdp={_cdp_targets(app)} collect_session={session} logs={logs[-12:]}"
 
 
 def quick_page(app, timeout: float = 20):
