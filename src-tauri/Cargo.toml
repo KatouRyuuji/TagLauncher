@@ -45,6 +45,10 @@ crossterm = "0.28"
 # 与主依赖同版本，Cargo 统一为同一实例（不重复编译 sqlite）；仅暴露给测试，不入库产物。
 rusqlite = { version = "0.31", features = ["bundled"] }
 
+[features]
+# debug 构建也用 Windows GUI 子系统（见 main.rs；E2E desktop 作业用）
+gui-subsystem = []
+
 [target.'cfg(windows)'.dependencies]
 # 快速窗隐藏后降低 WebView2 内存目标（ICoreWebView2_19::SetMemoryUsageTargetLevel）；与 tauri/wry 同版本
 webview2-com = "0.39"

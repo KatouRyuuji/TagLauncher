@@ -37,8 +37,16 @@ export function AudioPreviewBody({
   const percent = total && total > 0 ? Math.min(100, (current / total) * 100) : 0;
   const artistAlbum = [audio?.artist, audio?.album].filter(Boolean).join(" · ");
 
+  // 元数据里的时长先到、<audio> 还没读到 duration 时拖动进度：先记下目标比例，元数据就绪后再定位
+  const pendingSeekRef = useRef<number | null>(null);
+
   const syncDuration = (el: HTMLAudioElement) => {
-    setElementDuration(Number.isFinite(el.duration) ? el.duration : null);
+    const ready = Number.isFinite(el.duration) && el.duration > 0;
+    setElementDuration(ready ? el.duration : null);
+    if (ready && pendingSeekRef.current != null) {
+      el.currentTime = pendingSeekRef.current * el.duration;
+      pendingSeekRef.current = null;
+    }
   };
 
   const togglePlay = () => {
@@ -54,7 +62,12 @@ export function AudioPreviewBody({
   const seek = (next: number) => {
     setCurrent(next);
     const el = audioRef.current;
-    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return;
+    if (!el) return;
+    if (!Number.isFinite(el.duration) || el.duration <= 0) {
+      if (total != null && total > 0) pendingSeekRef.current = Math.min(1, Math.max(0, next / total));
+      return;
+    }
+    pendingSeekRef.current = null;
     if (total != null && total > el.duration + 1) {
       el.currentTime = (next / total) * el.duration;
       return;
