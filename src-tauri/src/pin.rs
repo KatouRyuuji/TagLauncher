@@ -640,6 +640,7 @@ pub fn restore(app: &AppHandle) -> Result<(), String> {
             crate::pin_strip::hide(app);
             let _ = window.set_always_on_top(settings.topmost);
             let _ = window.set_resizable(true);
+            let _ = window.set_shadow(true);
             place_float(app, &window);
             emit_view(&window);
             show_no_activate(&window);
@@ -647,6 +648,9 @@ pub fn restore(app: &AppHandle) -> Result<(), String> {
         PinMode::Drawer => {
             let _ = window.set_always_on_top(true);
             let _ = window.set_resizable(false);
+            // 无阴影：tao 给带阴影的无边框窗口在客户区四周留出系统边框宽的内缩（Win10 每边约 8px），
+            // 抽屉的内容就会比窗口窄、且贴不到屏幕边（实测窗口 320 / 页面 304）
+            let _ = window.set_shadow(false);
             // 收起 = quick 窗口隐藏（WebView 不画），只留原生把手
             hide_window(&window);
             emit_view(&window);
@@ -679,6 +683,7 @@ pub fn enter_search(window: &WebviewWindow) {
         crate::pin_strip::hide(window.app_handle());
         let _ = window.set_resizable(false);
         let _ = window.set_always_on_top(true);
+        let _ = window.set_shadow(true);
         ignore_own_moves();
         emit_view(window);
     }
@@ -824,30 +829,6 @@ fn sync_webview_bounds(window: &WebviewWindow) {
             return;
         }
         let (w, hgt) = (rc.right - rc.left, rc.bottom - rc.top);
-        let mut wr = windows_sys::Win32::Foundation::RECT { left: 0, top: 0, right: 0, bottom: 0 };
-        // SAFETY：同上
-        unsafe {
-            windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect(h.0 as _, &mut wr);
-        }
-        if wr.right - wr.left != w {
-            // 无边框窗口的客户区应等于窗口：比窗口窄说明非客户区（缩放边框）被算进来了，重算一次框架
-            log::info!("[pin] 客户区 {w} 窄于窗口 {}，重算框架", wr.right - wr.left);
-            use windows_sys::Win32::UI::WindowsAndMessaging::{
-                SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-            };
-            // SAFETY：只触发 WM_NCCALCSIZE，不改几何
-            unsafe {
-                SetWindowPos(
-                    h.0 as _,
-                    std::ptr::null_mut(),
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
-                );
-            }
-        }
         let _ = window.with_webview(move |webview| {
             let controller = webview.controller();
             let mut b = windows::Win32::Foundation::RECT::default();
