@@ -302,6 +302,8 @@ pub struct DesktopSettings {
     pub launch_mode: LaunchMode,
     /// 托盘图标当前是否存在（托盘模式或后台启动时才有）
     pub tray_active: bool,
+    /// 快速窗选项（失焦隐藏 / 保留输入 / 唤出显示器）
+    pub quick: crate::quick::QuickOptions,
 }
 
 impl DesktopState {
@@ -329,6 +331,7 @@ impl DesktopState {
             ignore_fullscreen: self.ignore_fullscreen.load(Ordering::SeqCst),
             launch_mode: launch_mode(),
             tray_active: app.tray_by_id(TRAY_ID).is_some(),
+            quick: crate::quick::options(),
         }
     }
 }
@@ -625,6 +628,13 @@ pub fn init(app: &AppHandle, mode: LaunchMode) {
             settings_service::get_setting(&conn, IGNORE_FULLSCREEN_KEY).as_deref() != Some("0"),
         )
     };
+    {
+        let db = app.state::<Database>();
+        let conn = db.get_conn();
+        crate::quick::set_options(crate::quick::QuickOptions::from_settings(|k| {
+            settings_service::get_setting(&conn, k)
+        }));
+    }
     state
         .close_to_tray
         .store(close_action == CloseAction::Tray, Ordering::SeqCst);
@@ -837,6 +847,25 @@ pub fn set_hotkey_ignore_fullscreen(
     Ok(state.snapshot(&app))
 }
 
+/// 快速窗选项：落库后立即生效（下次唤出 / 失焦即按新值）。
+#[tauri::command]
+pub fn set_quick_options(
+    app: AppHandle,
+    options: crate::quick::QuickOptions,
+) -> Result<DesktopSettings, String> {
+    crate::db::ensure_writes_allowed()?;
+    {
+        let db = app.state::<Database>();
+        let conn = db.get_conn();
+        for (key, value) in options.to_settings() {
+            settings_service::set_setting(&conn, key, value)?;
+        }
+    }
+    crate::quick::set_options(options);
+    sync_tray(&app);
+    Ok(app.state::<DesktopState>().snapshot(&app))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -972,6 +1001,7 @@ mod tests {
             ignore_fullscreen: true,
             launch_mode: LaunchMode::Show,
             tray_active: true,
+            quick: crate::quick::QuickOptions::default(),
         }
     }
 
@@ -1051,7 +1081,10 @@ mod tests {
             HotkeyAction::CollectSelection.setting_key(),
             "hotkey.collect_selection"
         );
-        assert_eq!(HotkeyAction::CollectSelection.label(), "收纳资源管理器选中项");
+        assert_eq!(
+            HotkeyAction::CollectSelection.label(),
+            "收纳资源管理器选中项"
+        );
         // 托盘菜单只列显示主窗与快速搜索：绑定收纳热键不增加托盘项
         let mut settings = settings_with(Some("Ctrl+Alt+KeyK"));
         settings.hotkeys.push(HotkeyInfo {

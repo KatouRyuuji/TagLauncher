@@ -486,6 +486,7 @@ pub fn run() {
             set_hotkey,
             set_close_action,
             set_hotkey_ignore_fullscreen,
+            set_quick_options,
             // 项目 CRUD
             add_item,
             add_items,

@@ -27,6 +27,19 @@ export interface DesktopSettings {
   ignoreFullscreen: boolean;
   launchMode: LaunchMode;
   trayActive: boolean;
+  /** 快速窗选项 */
+  quick: QuickOptions;
+}
+
+export type QuickMonitor = "cursor" | "main";
+
+export interface QuickOptions {
+  /** 失焦自动隐藏（默认开） */
+  hideOnBlur: boolean;
+  /** 唤出时保留上次输入并全选（默认开；关则清空） */
+  keepInput: boolean;
+  /** 唤出到鼠标所在显示器（默认）或主窗所在显示器 */
+  monitor: QuickMonitor;
 }
 
 /** 后端设置变化广播的事件名（托盘菜单与设置页同步） */

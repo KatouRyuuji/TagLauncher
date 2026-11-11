@@ -223,14 +223,18 @@ function QuickSearch({ dropError }: { dropError: string | null }) {
     requestAnimationFrame(() => recordQuickQuery(q, total, performance.now() - pending.start, indexed));
   }, [res]);
 
-  // 唤出：聚焦并全选上次的输入（直接打字即替换）
+  // 唤出：聚焦并全选上次的输入（直接打字即替换）；选项「保留上次输入」关闭时清空
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | undefined;
-    void listen<{ t0Ms?: number }>(QUICK_SHOWN_EVENT, (event) => {
+    void listen<{ t0Ms?: number; keepInput?: boolean }>(QUICK_SHOWN_EVENT, (event) => {
       setPicker(null);
       setStatus(null);
       setPrefs(readPrefs());
+      if (event.payload?.keepInput === false) {
+        setQuery("");
+        setSelected(0);
+      }
       const input = inputRef.current;
       input?.focus();
       input?.select();

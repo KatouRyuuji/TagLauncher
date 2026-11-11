@@ -25,6 +25,85 @@ const PRECREATE_DELAY: Duration = Duration::from_millis(1500);
 /// 唤出时先恢复 Normal。不用 TrySuspend：恢复有延迟，和「极速」冲突。
 const LOW_MEMORY_AFTER: Duration = Duration::from_secs(300);
 pub const QUICK_MEMORY_EVENT: &str = "quick-memory-level";
+pub const HIDE_ON_BLUR_KEY: &str = "quick.hide_on_blur";
+pub const KEEP_INPUT_KEY: &str = "quick.keep_input";
+pub const MONITOR_KEY: &str = "quick.monitor";
+
+/// 快速窗唤出到哪块显示器
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum QuickMonitor {
+    /// 鼠标所在显示器（默认）
+    Cursor,
+    /// 主窗所在显示器
+    Main,
+}
+
+/// 快速窗选项（§3.1「失焦自动隐藏可设置；可选保留上次输入、唤出所在显示器」）。存 app_meta，
+/// 默认值即原行为：失焦隐藏、保留上次输入（唤出时全选）、鼠标所在显示器。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickOptions {
+    pub hide_on_blur: bool,
+    pub keep_input: bool,
+    pub monitor: QuickMonitor,
+}
+
+impl Default for QuickOptions {
+    fn default() -> Self {
+        Self {
+            hide_on_blur: true,
+            keep_input: true,
+            monitor: QuickMonitor::Cursor,
+        }
+    }
+}
+
+impl QuickOptions {
+    /// 从设置读：只有显式 "0" 关闭开关；显示器只认 "main"，其余按鼠标所在
+    pub fn from_settings(get: impl Fn(&str) -> Option<String>) -> Self {
+        let off = |k: &str| get(k).as_deref() == Some("0");
+        Self {
+            hide_on_blur: !off(HIDE_ON_BLUR_KEY),
+            keep_input: !off(KEEP_INPUT_KEY),
+            monitor: if get(MONITOR_KEY).as_deref() == Some("main") {
+                QuickMonitor::Main
+            } else {
+                QuickMonitor::Cursor
+            },
+        }
+    }
+
+    pub fn to_settings(self) -> [(&'static str, &'static str); 3] {
+        let flag = |b: bool| if b { "1" } else { "0" };
+        [
+            (HIDE_ON_BLUR_KEY, flag(self.hide_on_blur)),
+            (KEEP_INPUT_KEY, flag(self.keep_input)),
+            (
+                MONITOR_KEY,
+                match self.monitor {
+                    QuickMonitor::Cursor => "cursor",
+                    QuickMonitor::Main => "main",
+                },
+            ),
+        ]
+    }
+}
+
+static OPTIONS: std::sync::RwLock<QuickOptions> = std::sync::RwLock::new(QuickOptions {
+    hide_on_blur: true,
+    keep_input: true,
+    monitor: QuickMonitor::Cursor,
+});
+
+pub fn options() -> QuickOptions {
+    *OPTIONS.read().unwrap_or_else(|e| e.into_inner())
+}
+
+pub fn set_options(options: QuickOptions) {
+    *OPTIONS.write().unwrap_or_else(|e| e.into_inner()) = options;
+}
+
 /// 每次隐藏 / 唤出自增：过期的降内存计时器据此作废
 static VISIBILITY_GEN: AtomicU64 = AtomicU64::new(0);
 /// 当前是否处于低内存目标（唤出时只在确实降过时才恢复）
@@ -35,6 +114,8 @@ static LOW_MEMORY: AtomicBool = AtomicBool::new(false);
 pub struct QuickShown {
     /// 唤出请求时刻（Unix 毫秒）：热键回调或 quick_open 调用时
     pub t0_ms: u64,
+    /// false：唤出时清空上次输入（选项「保留上次输入」关闭）
+    pub keep_input: bool,
 }
 
 pub fn now_ms() -> u64 {
@@ -90,8 +171,11 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     let handle = app.clone();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(false) = event {
-            let _ = w.hide();
-            after_hidden(&handle);
+            // 收纳会话进行中也按选项走：不自动隐藏时由 Esc / 处理完收起
+            if options().hide_on_blur {
+                let _ = w.hide();
+                after_hidden(&handle);
+            }
         }
     });
     Ok(window)
@@ -123,14 +207,23 @@ pub fn sync_window(app: &AppHandle, enabled: bool) {
         });
 }
 
-/// 把快速窗放到鼠标所在显示器（取不到则主窗所在显示器）的工作区。
-fn place_on_cursor_monitor(app: &AppHandle, window: &WebviewWindow) {
-    let monitor = app
-        .cursor_position()
-        .ok()
-        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
-        .or_else(|| window.current_monitor().ok().flatten())
-        .or_else(|| app.primary_monitor().ok().flatten());
+/// 把快速窗放到选项指定的显示器（鼠标所在 / 主窗所在；取不到则退到另一个）的工作区。
+fn place_on_target_monitor(app: &AppHandle, window: &WebviewWindow) {
+    let main_monitor = || {
+        app.get_webview_window("main")
+            .and_then(|m| m.current_monitor().ok().flatten())
+    };
+    let cursor_monitor = || {
+        app.cursor_position()
+            .ok()
+            .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+    };
+    let monitor = match options().monitor {
+        QuickMonitor::Cursor => cursor_monitor().or_else(main_monitor),
+        QuickMonitor::Main => main_monitor().or_else(cursor_monitor),
+    }
+    .or_else(|| window.current_monitor().ok().flatten())
+    .or_else(|| app.primary_monitor().ok().flatten());
     let Some(m) = monitor else {
         let _ = window.center();
         return;
@@ -158,14 +251,20 @@ pub fn show(app: &AppHandle, t0_ms: u64, activate: bool) -> Result<(), String> {
     if LOW_MEMORY.load(Ordering::SeqCst) {
         set_memory_level(&window, false);
     }
-    place_on_cursor_monitor(app, &window);
+    place_on_target_monitor(app, &window);
     window.show().map_err(|e| e.to_string())?;
     // 快速窗可见期间按可见间隔检测外部写入，唤出时先检测一次
     crate::data_sync::poke();
     if activate {
         let _ = window.set_focus();
     }
-    let _ = window.emit(QUICK_SHOWN_EVENT, QuickShown { t0_ms });
+    let _ = window.emit(
+        QUICK_SHOWN_EVENT,
+        QuickShown {
+            t0_ms,
+            keep_input: options().keep_input,
+        },
+    );
     Ok(())
 }
 
@@ -337,5 +436,28 @@ mod tests {
         for f in [p.clone(), format!("{p}-wal"), format!("{p}-shm")] {
             let _ = std::fs::remove_file(&f);
         }
+    }
+}
+
+#[cfg(test)]
+mod option_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn options_default_to_previous_behaviour_and_round_trip() {
+        let none = QuickOptions::from_settings(|_| None);
+        assert_eq!(none, QuickOptions::default());
+        let custom = QuickOptions {
+            hide_on_blur: false,
+            keep_input: false,
+            monitor: QuickMonitor::Main,
+        };
+        let stored: HashMap<&str, &str> = custom.to_settings().into_iter().collect();
+        let back = QuickOptions::from_settings(|k| stored.get(k).map(|v| v.to_string()));
+        assert_eq!(back, custom);
+        // 未知值按默认
+        let odd = QuickOptions::from_settings(|k| (k == MONITOR_KEY).then(|| "left".to_string()));
+        assert_eq!(odd.monitor, QuickMonitor::Cursor);
     }
 }

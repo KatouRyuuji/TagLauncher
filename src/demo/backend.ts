@@ -111,6 +111,7 @@ function seedState(): DemoState {
       ignoreFullscreen: true,
       launchMode: "show",
       trayActive: false,
+      quick: { hideOnBlur: true, keepInput: true, monitor: "cursor" },
     },
     settings: new Map([
       // 演示主用主题：樱花粉（功能巡演与截图全覆盖）
@@ -1003,6 +1004,16 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "set_hotkey_ignore_fullscreen":
       state.desktop.ignoreFullscreen = Boolean(args.enabled);
       return structuredClone(state.desktop);
+    case "set_quick_options": {
+      const options = args.options as { hideOnBlur?: unknown; keepInput?: unknown; monitor?: unknown };
+      if (options.monitor !== "cursor" && options.monitor !== "main") throw new Error(`未知的显示器选项「${String(options.monitor)}」`);
+      state.desktop.quick = {
+        hideOnBlur: Boolean(options.hideOnBlur),
+        keepInput: Boolean(options.keepInput),
+        monitor: options.monitor,
+      };
+      return structuredClone(state.desktop);
+    }
     case "get_setting":
       return state.settings.get(str(args.key)) ?? null;
     case "set_setting":
