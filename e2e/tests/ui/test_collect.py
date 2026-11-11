@@ -25,6 +25,8 @@ MENU_TEXT = "用 TagLauncher 收纳…"
 VERB = "TagLauncher.Collect"
 CLASSES = {"*": "%1", "Directory": "%1", "Directory\\Background": "%V"}
 SENDTO = "用 TagLauncher 收纳.lnk"
+# 50 项收纳：首个调用 → 快速窗显示全部 50 项（见 E-COLLECT-05 docstring）
+COLLECT_LATENCY_MS = 4000
 
 
 # ---------------------------------------------------------------- 注册表 / 快捷方式
@@ -351,3 +353,45 @@ def test_collect_remembers_choice(app_factory, sandbox):
     qp.keyboard.press("Escape")
     wait_session_done(app)
     assert c.name not in by_name(app), "Esc 取消不应写入"
+
+
+def collect_perf(qp) -> list[dict]:
+    return qp.evaluate("() => window.__tlCollectPerf || []")
+
+
+@pytest.mark.case("E-COLLECT-05")
+def test_fifty_item_collect_latency(app_factory, sandbox):
+    """50 个选中项（经典动词每项一个进程）同时调用：合并成一个会话，记录首个调用 → 快速窗显示 50 项的时延。
+
+    COLLECT_LATENCY_MS 的依据：后端最后一次到达后静默 400 ms 才弹出（collect::QUIET），
+    50 个进程在 runner 上的创建与单实例转发本身要数百毫秒；用户侧期望右键后约 1.5 s 内出窗，
+    CI 是 debug 构建、4 核共享，阈值按实测分布定（见 PR 说明），不随单次结果调整。
+    """
+    app = collect_app(app_factory, sandbox)
+    paths = [files.write(sandbox.files / "fifty" / f"批量{i:02d}.txt", "x") for i in range(50)]
+    t0 = time.time() * 1000
+    invoke_collect(sandbox, [[p] for p in paths])
+    spawned = time.time() * 1000 - t0
+    qp = collect_page(app)
+    summary = qp.get_by_test_id("collect-summary")
+    wait_attr(summary, "data-count", "50", timeout=20)
+    wait_attr(summary, "data-invocations", "50", timeout=5)
+    perf = collect_perf(qp)
+    full = next(p for p in perf if p["count"] == 50)
+    first = perf[0]
+    m = {
+        "spawn_all_ms": round(spawned),
+        "first_arrival_ms": round(full["startedMs"] - t0),
+        "first_render_ms": round(first["renderedMs"] - t0),
+        "full_render_ms": round(full["renderedMs"] - t0),
+        "renders": len(perf),
+        "sessions": sorted({p["id"] for p in perf}),
+    }
+    print("COLLECT_PERF " + json.dumps(m))
+    assert len(m["sessions"]) == 1, f"50 项应合并为一个会话：{m}"
+    assert len(quick_pages(app)) == 1
+    assert m["full_render_ms"] <= COLLECT_LATENCY_MS, f"50 项收纳出窗过慢：{m}"
+    qp.get_by_test_id("collect-action-import").click()
+    r = result(qp)
+    assert r["created"] == "50", r
+    wait_session_done(app)

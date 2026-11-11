@@ -990,3 +990,14 @@ mod tests {
         assert_eq!(HotkeyAction::OpenQuick.label(), "打开快速搜索窗");
     }
 }
+
+/// 见 lib.rs `run()`：第二个实例把前台权让出，首个实例弹快速窗 / 唤主窗时能拿到前台。
+pub fn allow_foreground_handoff() {
+    #[cfg(windows)]
+    // SAFETY: 无参数指针；ASFW_ANY 允许任意进程下一次 SetForegroundWindow，失败只是没有前台权。
+    unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(
+            windows_sys::Win32::UI::WindowsAndMessaging::ASFW_ANY,
+        );
+    }
+}

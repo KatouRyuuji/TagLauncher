@@ -168,6 +168,10 @@ pub fn run() {
         }
     }
     install_startup_failure_dialog();
+    // 第二个实例（右键菜单 / 发送到 / 再次双击）由前台进程启动，持有前台权；单实例插件转发参数后
+    // 它马上退出，真正 show 窗口的是首个实例。先把前台权让给任意进程，首个实例的 set_focus 才不被
+    // Windows 前台锁拦下（只放行下一次 SetForegroundWindow，不常驻）。
+    desktop::allow_foreground_handoff();
     tauri::Builder::default()
         // 须为首个插件：第二个实例在初始化其余部分前即退出，只把已有主窗口唤到前台
         // 第二个实例转发的参数按参数路由处理（--show 默认唤主窗，--background 不打扰）

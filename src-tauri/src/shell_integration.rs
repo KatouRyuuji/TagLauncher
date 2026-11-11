@@ -282,10 +282,21 @@ pub fn disable() -> Result<ShellIntegrationStatus, String> {
     status()
 }
 
-/// 便携版命令行清理：`--shell-integration remove`。返回进程退出码；不是本参数时返回 None。
+/// 命令行：`--shell-integration remove`（便携版删目录前 / 卸载兜底清理）、
+/// `--shell-integration add`（部署脚本开启，等同设置里打开开关）。返回进程退出码；不是本参数时返回 None。
 pub fn handle_cli(args: &[String]) -> Option<i32> {
     let pos = args.iter().position(|a| a == CLI_ARG)?;
     match args.get(pos + 1).map(String::as_str) {
+        Some("add") => match enable() {
+            Ok(_) => {
+                println!("已添加资源管理器右键菜单与「发送到」");
+                Some(0)
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                Some(1)
+            }
+        },
         Some("remove") => match platform::remove_all() {
             Ok(()) => {
                 println!("已清理资源管理器右键菜单与「发送到」");
@@ -297,7 +308,7 @@ pub fn handle_cli(args: &[String]) -> Option<i32> {
             }
         },
         other => {
-            eprintln!("用法：tag-launcher.exe {CLI_ARG} remove（收到 {other:?}）");
+            eprintln!("用法：tag-launcher.exe {CLI_ARG} add|remove（收到 {other:?}）");
             Some(2)
         }
     }
