@@ -299,6 +299,9 @@ export function ItemGrid({
     // 行高测量走自定义 measureGridRow：挂载与尺寸变化都读真实 DOM 高度，
     // 不信任 itemSizeCache 的残留值（见 measureGridRow 注释）；实测值同时登记给 estimateSize。
     measureElement: measureRow,
+    // ResizeObserver 回调推迟到下一帧处理：同步处理时测量→提交在 RO 回调里挂载新行并开始观察，
+    // 浏览器报「ResizeObserver loop completed with undelivered notifications」（F19-MATRIX 改视口时实测 7–8 次）
+    useAnimationFrameWithResizeObserver: true,
     // 行 key 用内容身份（首项 id + 列数）而非默认行索引：换柜/筛选/排序/列数变化后
     // 行 key 随之变化，React 重建行 DOM 触发 measureElement 重测。索引复用的 key
     // 会让行 DOM 滞留旧内容的测量语义，行高与内容错位积累，表现为行间间隙/重叠。
