@@ -1,5 +1,6 @@
 import type { Item } from "../types";
 import { getItemVisual } from "./db";
+import { registerPerfStats } from "./mainPerf";
 
 type Listener = (path: string | null) => void;
 interface Entry {
@@ -14,6 +15,18 @@ const entries = new Map<string, Entry>();
 const MAX_CONCURRENT = 4;
 const MAX_CACHED = 512;
 let running = 0;
+
+registerPerfStats("itemVisuals", () => {
+  let valueChars = 0;
+  let resolved = 0;
+  for (const entry of entries.values()) {
+    if (typeof entry.value === "string") {
+      resolved += 1;
+      valueChars += entry.value.length;
+    }
+  }
+  return { entries: entries.size, resolved, valueChars };
+});
 
 export function itemVisualKey(item: Item): string {
   return JSON.stringify([item.id, item.path, item.type, item.is_missing, item.icon_path]);

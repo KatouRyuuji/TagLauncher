@@ -1,36 +1,37 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useItems } from "./useItems";
 import { useAppStore } from "../stores/appStore";
-import { buildSearchIndex } from "../lib/search";
-import { ensurePinyin } from "../lib/pinyinProvider";
 import type { ItemWithTags } from "../types";
 import * as db from "../lib/db";
 
-vi.mock("../lib/db", () => ({
-  getItems: vi.fn(async () => fixtures),
-  getCabinetItems: vi.fn(async () => []),
-  relocateMissing: vi.fn(),
-}));
-vi.mock("../lib/modApi", () => ({ notifyItemsChanged: vi.fn() }));
-vi.mock("../lib/search", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../lib/search")>();
-  return { ...original, buildSearchIndex: vi.fn(original.buildSearchIndex) };
+// 后端替身：view_query / library_stats / get_items_by_ids 走与演示后端同一套 TS 视图管线
+// （Rust 实现与它逐例对照一致，见 src-tauri/src/view/corpus_tests.rs）。这里测的是 useItems
+// 把工作台状态正确地交给后端、按视图结果分页取对象、在途只保留最新查询。
+const fake = vi.hoisted(() => ({ items: [] as ItemWithTags[], cabinets: new Map<number, { members: number[]; folder: string | null }>() }));
+vi.mock("../lib/db", async () => {
+  const { fakeViewDb } = await import("../test/fakeViewBackend");
+  return { ...fakeViewDb(fake), relocateMissing: vi.fn(), clearIconNoneMarkers: vi.fn(async () => {}) };
 });
+vi.mock("../lib/modApi", () => ({ notifyItemsChanged: vi.fn(), notifyCabinetItemsChanged: vi.fn(), notifyItemLaunched: vi.fn() }));
+
+function useLibrary(items: ItemWithTags[]) {
+  fake.items = items;
+}
+
+const ids = (result: { current: { view: { ids: readonly number[] } } }) => [...result.current.view.ids];
+const queries = () => vi.mocked(db.viewQuery).mock.calls.map(([args]) => args.query);
 
 const fixtures: ItemWithTags[] = [
   { id: 1, name: "项目文档", path: "D:/项目文档", type: "folder", created_at: "2026-01-01", is_favorite: false, tags: [{ id: 1, name: "工作", color: "#5064d8" }] },
   { id: 2, name: "Visual Studio Code", path: "D:/Code.exe", type: "exe", created_at: "2026-01-01", is_favorite: true, tags: [] },
 ];
 
-describe("对象搜索按需索引", () => {
-  beforeAll(async () => {
-    // 搜索/高亮链路经 pinyinProvider 懒加载：测试同步调用前确保模块就绪
-    await ensurePinyin();
-  });
-
+describe("对象搜索（后端索引）与筛选", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fake.items = fixtures;
+    fake.cabinets = new Map();
     useAppStore.setState({ searchQuery: "", searchMode: "all", selectedTagIds: [], excludedTagIds: [], selectedCabinetId: null, showFavorites: false, showRecent: false, typeFilter: "all", hideMissing: false, showNestedContents: false, libraryBrowseRoot: null, libraryBrowseDir: null, sortMode: "smart", tagRelations: [], tagFilterMode: "descendants" });
   });
 
@@ -51,46 +52,76 @@ describe("对象搜索按需索引", () => {
     expect(db.relocateMissing).toHaveBeenCalledTimes(2);
   });
 
-  it("索引闲时预热只建一次；首屏、类型和标签筛选不触发新构建", async () => {
+  it("浏览与搜索走同一个 view_query：工作台状态原样交给后端，标签按后代展开成组", async () => {
     const { result } = renderHook(useItems);
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.items.map((item) => item.id)).toEqual([2, 1]);
-    // loadAll 后的闲时预热（含 pinyin-pro 懒加载）只建一次索引
-    await waitFor(() => expect(buildSearchIndex).toHaveBeenCalledTimes(1));
-    act(() => useAppStore.setState({ selectedTagIds: [1], typeFilter: "folder" }));
-    expect(result.current.items.map((item) => item.id)).toEqual([1]);
-    expect(buildSearchIndex).toHaveBeenCalledTimes(1);
+    expect(ids(result)).toEqual([2, 1]);
+    expect(db.viewQuery).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "all", query: "", sortMode: "smart", refreeze: true }));
+    // 按 ID 取的数据进缓存；视图小于缓存上限时 hook 在空闲里补齐其余对象（不必等列表滚到）
+    await act(async () => { await result.current.view.load([2]); });
+    expect(result.current.view.get(2)?.name).toBe("Visual Studio Code");
+    await waitFor(() => expect(result.current.view.get(1)?.name).toBe("项目文档"));
+    act(() => useAppStore.setState({ searchQuery: "xmwd" }));
+    await waitFor(() => expect(ids(result)).toEqual([1]));
+    expect(db.viewQuery).toHaveBeenLastCalledWith(expect.objectContaining({ query: "xmwd", mode: "all", selectedGroups: [], typeFilter: "all", hideMissing: false, refreeze: false }));
+    act(() => useAppStore.setState({ searchQuery: "vsc", searchMode: "name" }));
+    await waitFor(() => expect(ids(result)).toEqual([2]));
+    useAppStore.setState({ tagRelations: [{ parentId: 1, childId: 7 }] });
+    act(() => useAppStore.setState({ searchQuery: "项目", selectedTagIds: [1], typeFilter: "folder" }));
+    await waitFor(() => expect(db.viewQuery).toHaveBeenLastCalledWith(expect.objectContaining({ query: "项目", mode: "name", selectedGroups: [[1, 7]], typeFilter: "folder" })));
+    await waitFor(() => expect(ids(result)).toEqual([1]));
+    act(() => useAppStore.setState({ searchQuery: "", selectedTagIds: [], typeFilter: "folder" }));
+    await waitFor(() => expect(ids(result)).toEqual([1]));
   });
 
-  it("首次搜索仅一次索引调用（命中预热缓存），继续输入与清空不再新建", async () => {
+  it("新结果到达前沿用上一次结果；在途期间只保留最新查询，过期响应被丢弃", async () => {
     const { result } = renderHook(useItems);
     await waitFor(() => expect(result.current.loading).toBe(false));
-    // 预热完成（1 次调用）
-    await waitFor(() => expect(buildSearchIndex).toHaveBeenCalledTimes(1));
-    // 首次搜索：memo 调用一次 buildSearchIndex，但内部命中预热缓存不做全量构建
     act(() => useAppStore.setState({ searchQuery: "xmwd" }));
-    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([1]));
-    expect(buildSearchIndex).toHaveBeenCalledTimes(2);
-    // 继续输入：source 未变，memo 复用，零新调用
+    await waitFor(() => expect(ids(result)).toEqual([1]));
+    let releaseSlow!: (value: { ids: number[]; browseDir: null; libraryTotal: number }) => void;
+    vi.mocked(db.viewQuery).mockImplementationOnce(() => new Promise((resolve) => { releaseSlow = resolve; }));
+    const before = queries().length;
+    act(() => useAppStore.setState({ searchQuery: "vs" }));
+    await waitFor(() => expect(ids(result)).toEqual([1]));
     act(() => useAppStore.setState({ searchQuery: "vsc" }));
-    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([2]));
-    expect(buildSearchIndex).toHaveBeenCalledTimes(2);
-    act(() => useAppStore.setState({ searchQuery: "", typeFilter: "folder" }));
-    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([1]));
-    expect(buildSearchIndex).toHaveBeenCalledTimes(2);
+    // 在途的 "vs" 未返回前不再发新请求；"vsc" 排队，界面仍是上一次结果
+    await new Promise((r) => setTimeout(r, 50));
+    expect(queries().slice(before)).toEqual(["vs"]);
+    expect(ids(result)).toEqual([1]);
+    // "vs" 返回后其结果作废，紧接着只发出 "vsc"
+    await act(async () => releaseSlow({ ids: [1, 2], browseDir: null, libraryTotal: 2 }));
+    await waitFor(() => expect(ids(result)).toEqual([2]));
+    expect(queries().slice(before)).toEqual(["vs", "vsc"]);
+  });
+
+  it("smart 排序冻结：只在排序/视图域切换或全量刷新时要求后端重拍", async () => {
+    const { result } = renderHook(useItems);
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const refreezes = () => vi.mocked(db.viewQuery).mock.calls.map(([args]) => args.refreeze);
+    expect(refreezes()).toEqual([true]);
+    act(() => useAppStore.setState({ searchQuery: "xmwd" }));
+    await waitFor(() => expect(ids(result)).toEqual([1]));
+    act(() => useAppStore.setState({ searchQuery: "", sortMode: "name" }));
+    await waitFor(() => expect(refreezes().at(-1)).toBe(true));
+    const before = refreezes().length;
+    await act(async () => { await result.current.refresh(); });
+    expect(refreezes().slice(before)).toEqual([true]);
+    // 搜索词变化本身不重拍（在途期间排队的那次可能仍带着未完成的重拍请求，重拍多一次无害）
+    expect(vi.mocked(db.viewQuery).mock.calls.filter(([args]) => args.sortMode === "smart" && args.query === "xmwd").map(([args]) => args.refreeze)).toEqual([false]);
   });
 
   it("隐藏失效同时作用于浏览与搜索结果", async () => {
     const missing: ItemWithTags = { id: 3, name: "项目备份", path: "E:/项目备份", type: "folder", created_at: "2026-01-01", is_favorite: false, is_missing: true, tags: [] };
-    vi.mocked(db.getItems).mockResolvedValueOnce([...fixtures, missing]);
+    useLibrary([...fixtures, missing]);
     const { result } = renderHook(useItems);
-    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([2, 3, 1]));
+    await waitFor(() => expect(ids(result)).toEqual([2, 3, 1]));
     act(() => useAppStore.setState({ hideMissing: true }));
-    expect(result.current.items.map((item) => item.id)).toEqual([2, 1]);
+    await waitFor(() => expect(ids(result)).toEqual([2, 1]));
     act(() => useAppStore.setState({ searchQuery: "项目" }));
-    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([1]));
+    await waitFor(() => expect(ids(result)).toEqual([1]));
     act(() => useAppStore.setState({ hideMissing: false }));
-    await waitFor(() => expect(result.current.items.map((item) => item.id).sort()).toEqual([1, 3]));
+    await waitFor(() => expect(ids(result).sort()).toEqual([1, 3]));
   });
 
   it("All 默认隐藏目录内文件，搜索仍能命中，打开显示开关不丢内容", async () => {
@@ -99,15 +130,15 @@ describe("对象搜索按需索引", () => {
       { id: 11, name: "隐藏笔记", path: "D:\\Lib\\notes.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [{ id: 1, name: "工作", color: "#5064d8" }] },
       { id: 12, name: "散文件", path: "D:\\loose.exe", type: "exe", created_at: "2026-01-01", is_favorite: false, tags: [] },
     ];
-    vi.mocked(db.getItems).mockResolvedValueOnce(nested);
+    useLibrary(nested);
     const { result } = renderHook(useItems);
-    await waitFor(() => expect(result.current.items.map((item) => item.id).sort()).toEqual([10, 12]));
+    await waitFor(() => expect(ids(result).sort()).toEqual([10, 12]));
     act(() => useAppStore.setState({ searchQuery: "隐藏笔记" }));
-    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([11]));
+    await waitFor(() => expect(ids(result)).toEqual([11]));
     act(() => useAppStore.setState({ searchQuery: "", showNestedContents: true }));
-    await waitFor(() => expect(result.current.items.map((item) => item.id).sort()).toEqual([10, 11, 12]));
+    await waitFor(() => expect(ids(result).sort()).toEqual([10, 11, 12]));
     act(() => useAppStore.setState({ showNestedContents: false }));
-    expect(result.current.items.map((item) => item.id).sort()).toEqual([10, 12]);
+    await waitFor(() => expect(ids(result).sort()).toEqual([10, 12]));
   });
 
   it("标签筛选与柜视图能看到 hide_from_all 对象，总览隐藏不是全局抹除", async () => {
@@ -115,14 +146,14 @@ describe("对象搜索按需索引", () => {
       { id: 10, name: "资料库", path: "D:\\Lib", type: "folder", created_at: "2026-01-01", is_favorite: false, tags: [] },
       { id: 11, name: "隐藏笔记", path: "D:\\Lib\\notes.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [{ id: 1, name: "工作", color: "#5064d8" }] },
     ];
-    vi.mocked(db.getItems).mockResolvedValueOnce(nested);
-    vi.mocked(db.getCabinetItems).mockResolvedValueOnce([nested[1]]);
+    useLibrary(nested);
+    fake.cabinets.set(3, { members: [11], folder: null });
     const { result } = renderHook(useItems);
-    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([10]));
+    await waitFor(() => expect(ids(result)).toEqual([10]));
     act(() => useAppStore.setState({ selectedTagIds: [1] }));
-    expect(result.current.items.map((item) => item.id)).toEqual([11]);
+    await waitFor(() => expect(ids(result)).toEqual([11]));
     act(() => useAppStore.setState({ selectedTagIds: [], selectedCabinetId: 3 }));
-    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([11]));
+    await waitFor(() => expect(ids(result)).toEqual([11]));
   });
 
   it("仅直接标签不并入后代对象", async () => {
@@ -130,14 +161,14 @@ describe("对象搜索按需索引", () => {
       { id: 1, name: "父对象", path: "D:\\a.exe", type: "exe", created_at: "2026-01-01", is_favorite: false, tags: [{ id: 10, name: "A", color: "#111" }] },
       { id: 2, name: "子对象", path: "D:\\c.exe", type: "exe", created_at: "2026-01-01", is_favorite: false, tags: [{ id: 12, name: "C", color: "#333" }] },
     ];
-    vi.mocked(db.getItems).mockResolvedValueOnce(nested);
+    useLibrary(nested);
     useAppStore.setState({ tagRelations: [{ parentId: 10, childId: 12 }], tagFilterMode: "descendants" });
     const { result } = renderHook(useItems);
     await waitFor(() => expect(result.current.loading).toBe(false));
     act(() => useAppStore.setState({ selectedTagIds: [10] }));
-    expect(result.current.items.map((item) => item.id).sort()).toEqual([1, 2]);
+    await waitFor(() => expect(ids(result).sort()).toEqual([1, 2]));
     act(() => useAppStore.setState({ tagFilterMode: "direct" }));
-    expect(result.current.items.map((item) => item.id)).toEqual([1]);
+    await waitFor(() => expect(ids(result)).toEqual([1]));
   });
 
   it("库内浏览只列出当前层，含被 All 隐藏的子文件", async () => {
@@ -147,13 +178,13 @@ describe("对象搜索按需索引", () => {
       { id: 12, name: "子目录", path: "D:\\Lib\\Sub", type: "folder", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
       { id: 13, name: "深层", path: "D:\\Lib\\Sub\\deep.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
     ];
-    vi.mocked(db.getItems).mockResolvedValueOnce(nested);
+    useLibrary(nested);
     const { result } = renderHook(useItems);
-    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual([10]));
+    await waitFor(() => expect(ids(result)).toEqual([10]));
     act(() => useAppStore.setState({ libraryBrowseRoot: "D:\\Lib", libraryBrowseDir: null }));
-    expect(result.current.items.map((item) => item.id).sort()).toEqual([11, 12]);
+    await waitFor(() => expect(ids(result).sort()).toEqual([11, 12]));
     act(() => useAppStore.setState({ libraryBrowseDir: "D:\\Lib\\Sub" }));
-    expect(result.current.items.map((item) => item.id)).toEqual([13]);
+    await waitFor(() => expect(ids(result)).toEqual([13]));
   });
 
   it("contents 没有可见投放根时，按路径浏览仍能列出隐藏的中间目录和文件", async () => {
@@ -162,12 +193,12 @@ describe("对象搜索按需索引", () => {
       { id: 22, name: "a.txt", path: "D:\\Lib\\Docs\\Sub\\a.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
       { id: 23, name: "b.txt", path: "D:\\Lib\\Docs\\b.txt", type: "text", created_at: "2026-01-01", is_favorite: false, hide_from_all: true, tags: [] },
     ];
-    vi.mocked(db.getItems).mockResolvedValueOnce(nested);
+    useLibrary(nested);
     const { result } = renderHook(useItems);
-    await waitFor(() => expect(result.current.items).toEqual([]));
+    await waitFor(() => expect(ids(result)).toEqual([]));
     act(() => useAppStore.setState({ libraryBrowseRoot: "D:\\Lib\\Docs", libraryBrowseDir: null }));
-    expect(result.current.items.map((item) => item.id).sort()).toEqual([21, 23]);
+    await waitFor(() => expect(ids(result).sort()).toEqual([21, 23]));
     act(() => useAppStore.setState({ libraryBrowseDir: "D:\\Lib\\Docs\\Sub" }));
-    expect(result.current.items.map((item) => item.id)).toEqual([22]);
+    await waitFor(() => expect(ids(result)).toEqual([22]));
   });
 });

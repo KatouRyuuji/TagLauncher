@@ -175,7 +175,8 @@ class AppSession:
                     for cand in ctx.pages:
                         url = cand.url or ""
                         seen.add(url)
-                        if url and url != "about:blank" and not url.startswith("chrome-error:"):
+                        # 快速搜索窗（quick.html）也是 page target，主页面只认主窗
+                        if url and url != "about:blank" and not url.startswith("chrome-error:") and "quick.html" not in url:
                             page = cand
                             break
                     if page:
@@ -422,7 +423,7 @@ class AppSession:
         self.page.reload(wait_until="domcontentloaded")
         self.page.locator('[data-region="root"]').wait_for(state="attached", timeout=60_000)
         self.page.wait_for_function("() => window.__e2e && window.__e2e.calls.some((c) => c.cmd === 'get_tags')"
-                                    " && window.__e2e.calls.some((c) => c.cmd === 'get_items')", timeout=30_000)
+                                    " && window.__e2e.calls.some((c) => c.cmd === 'view_query')", timeout=30_000)
         self.page.wait_for_timeout(300)
         if self.dismiss_welcome:
             self.close_welcome(timeout_ms=2500)

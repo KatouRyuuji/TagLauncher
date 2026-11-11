@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ItemListView } from "./ItemListView";
+import { staticView } from "../lib/itemView";
 import { useAppStore } from "../stores/appStore";
 import { ITEM_LIST_BASE_ROW_HEIGHT, ITEM_LIST_COMPACT_ROW_HEIGHT } from "./ItemRow";
 import type { ItemViewProps, ItemWithTags, Tag } from "../types";
@@ -61,7 +62,7 @@ function item(id: number, tags: Tag[] = []): ItemWithTags {
 }
 
 const asyncNoop = async () => {};
-const baseProps: Omit<ItemViewProps, "items" | "selectedItemIds" | "onSelectItems" | "loading"> = {
+const baseProps: Omit<ItemViewProps, "view" | "selectedItemIds" | "onSelectItems" | "loading"> = {
   tags: [],
   cabinets: [],
   currentCabinetId: null,
@@ -102,7 +103,7 @@ describe("ItemListView 虚拟列表（F19 可执行检查）", () => {
     const short = long.slice(0, 3);
     const { rerender } = render(
       <div style={{ height: 400 }}>
-        <ItemListView {...baseProps} items={long} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />
+        <ItemListView {...baseProps} view={staticView(long)} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />
       </div>,
     );
     const scroller = screen.getByRole("list", { name: "项目列表" }).parentElement?.parentElement as HTMLElement;
@@ -111,7 +112,7 @@ describe("ItemListView 虚拟列表（F19 可执行检查）", () => {
 
     rerender(
       <div style={{ height: 400 }}>
-        <ItemListView {...baseProps} items={short} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />
+        <ItemListView {...baseProps} view={staticView(short)} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />
       </div>,
     );
     const box = listBox();
@@ -121,7 +122,7 @@ describe("ItemListView 虚拟列表（F19 可执行检查）", () => {
     act(() => { scroller.scrollTop = 0; });
     rerender(
       <div style={{ height: 400 }}>
-        <ItemListView {...baseProps} items={short} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />
+        <ItemListView {...baseProps} view={staticView(short)} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />
       </div>,
     );
     expect(firstRowTop(listBox())).toBe(0);
@@ -131,19 +132,19 @@ describe("ItemListView 虚拟列表（F19 可执行检查）", () => {
   it("密度切换后估算行高跟着变", () => {
     const items = Array.from({ length: 12 }, (_, index) => item(index + 1));
     const { rerender, unmount } = render(
-      <ItemListView {...baseProps} items={items} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
+      <ItemListView {...baseProps} view={staticView(items)} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
     );
     expect(Number.parseFloat(listBox().style.height)).toBe(12 * ITEM_LIST_BASE_ROW_HEIGHT + 12);
     act(() => { useAppStore.setState({ listDensity: "compact" }); });
     rerender(
-      <ItemListView {...baseProps} items={items} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
+      <ItemListView {...baseProps} view={staticView(items)} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
     );
     const row = listBox().querySelector<HTMLElement>('[role="listitem"]');
     expect(row?.style.minHeight).toBe(`${ITEM_LIST_COMPACT_ROW_HEIGHT}px`);
     // jsdom 不发 ResizeObserver；虚拟器会保留已测行高。重挂后按紧凑密度重新 measure。
     unmount();
     render(
-      <ItemListView {...baseProps} items={items} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
+      <ItemListView {...baseProps} view={staticView(items)} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
     );
     expect(Number.parseFloat(listBox().style.height)).toBe(12 * ITEM_LIST_COMPACT_ROW_HEIGHT + 12);
     expect(firstRowTop(listBox())).toBe(0);
@@ -154,10 +155,10 @@ describe("ItemListView 虚拟列表（F19 可执行检查）", () => {
     const wrapped = item(1, tags);
     const many = [wrapped, ...Array.from({ length: 40 }, (_, index) => item(index + 2))];
     const { rerender } = render(
-      <ItemListView {...baseProps} items={many} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
+      <ItemListView {...baseProps} view={staticView(many)} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
     );
     rerender(
-      <ItemListView {...baseProps} items={[wrapped]} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
+      <ItemListView {...baseProps} view={staticView([wrapped])} loading={false} selectedItemIds={[]} onSelectItems={vi.fn()} />,
     );
     expect(firstRowTop(listBox())).toBe(0);
     expect(screen.getByText("对象 1")).toBeInTheDocument();

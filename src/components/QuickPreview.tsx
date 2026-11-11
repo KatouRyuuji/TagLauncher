@@ -19,17 +19,20 @@ import { VideoPreviewBody } from "./preview/VideoPreviewBody";
 import { toAssetUrl } from "./preview/previewFormat";
 
 interface QuickPreviewProps {
-  items: ItemWithTags[];
+  /** 预览对象（App 按 previewItemId 取齐；可能不在当前视图里） */
+  item: ItemWithTags | undefined;
+  /** 已确认对象不存在（取回结果为空）：自动关闭预览 */
+  gone: boolean;
   onLaunch: (id: number) => void;
   onAddItems?: (paths: string[]) => Promise<void>;
 }
 
-export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps) {
+export function QuickPreview({ item: loadedItem, gone, onLaunch, onAddItems }: QuickPreviewProps) {
   const previewItemId = useAppStore((state) => state.previewItemId);
   const setPreviewItemId = useAppStore((state) => state.setPreviewItemId);
   const setSelectedTagIds = useAppStore((state) => state.setSelectedTagIds);
   const noteEditorOpen = useAppStore((state) => state.noteEditorItemId !== null);
-  const item = previewItemId == null ? null : items.find((entry) => entry.id === previewItemId) ?? null;
+  const item = previewItemId != null && loadedItem?.id === previewItemId ? loadedItem : null;
   // 备注弹窗叠在预览之上时交出焦点陷阱，避免两层陷阱争抢 Tab 焦点
   const trapRef = useFocusTrap<HTMLDivElement>({ active: item !== null && !noteEditorOpen });
 
@@ -37,10 +40,8 @@ export function QuickPreview({ items, onLaunch, onAddItems }: QuickPreviewProps)
 
   useEffect(() => {
     if (previewItemId == null) return;
-    if (!items.some((entry) => entry.id === previewItemId)) {
-      setPreviewItemId(null);
-    }
-  }, [items, previewItemId, setPreviewItemId]);
+    if (gone) setPreviewItemId(null);
+  }, [gone, previewItemId, setPreviewItemId]);
 
   if (!item) return null;
 

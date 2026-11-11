@@ -6,7 +6,8 @@ import { buildGraphHighlight, computeLayers, orderLayersByBarycenter, pickDefaul
 import { compareNames } from "../lib/itemQuery";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import { DialogHeader } from "./DialogHeader";
-import type { ItemWithTags } from "../types";
+import { libraryStats } from "../lib/db";
+import { useTagItems } from "../hooks/useTagItems";
 
 /** 右侧关联对象列表每页展示数量（点击"显示更多"递增） */
 const RIGHT_PANEL_PAGE_SIZE = 50;
@@ -18,7 +19,8 @@ interface NodePos {
 }
 
 interface TagGraphViewProps {
-  allItems: ItemWithTags[];
+  /** 数据代：对象数据变化时重取计数与关联对象 */
+  dataEpoch: number;
 }
 
 /**
@@ -27,7 +29,7 @@ interface TagGraphViewProps {
  * 点击节点在右侧面板展示该标签关联的对象（图标+名称）与父子关系，并可一键筛选。
  * 纯 SVG/CSS，零额外依赖，保持轻量。
  */
-export function TagGraphView({ allItems }: TagGraphViewProps) {
+export function TagGraphView({ dataEpoch }: TagGraphViewProps) {
   const tags = useAppStore((s) => s.tags);
   const relations = useAppStore((s) => s.tagRelations);
   const setSelectedTagIds = useAppStore((s) => s.setSelectedTagIds);
@@ -61,18 +63,19 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
   const sortedTags = useMemo(() => [...tags].sort((a, b) => compareNames(a.name, b.name)), [tags]);
   const tagById = useMemo(() => new Map(sortedTags.map((t) => [t.id, t])), [sortedTags]);
 
-  // 每个标签直接关联的对象
-  const itemsByTag = useMemo(() => {
-    const map = new Map<number, ItemWithTags[]>();
-    for (const item of allItems) {
-      for (const tag of item.tags) {
-        const arr = map.get(tag.id);
-        if (arr) arr.push(item);
-        else map.set(tag.id, [item]);
-      }
-    }
-    return map;
-  }, [allItems]);
+  // 每个标签直接关联的对象数（后端按全库算，图谱不持有对象数据）
+  const [directCounts, setDirectCounts] = useState<Map<number, number>>(() => new Map());
+  useEffect(() => {
+    let cancelled = false;
+    void libraryStats(tags.map((t) => [t.id, [t.id]]))
+      .then((stats) => {
+        if (!cancelled) setDirectCounts(new Map(stats.tagCounts));
+      })
+      .catch((error: unknown) => console.error("读取标签计数失败:", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [tags, dataEpoch]);
 
   // 仅保留端点存在的关系边
   const validRelations = useMemo(() => {
@@ -185,7 +188,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
   }, [clearSelection, selectedNodeId]);
 
   const selectedTag = selectedNodeId == null ? null : tagById.get(selectedNodeId) ?? null;
-  const selectedItems = selectedNodeId == null ? [] : itemsByTag.get(selectedNodeId) ?? [];
+  const { count: selectedCount, items: selectedItems } = useTagItems(selectedNodeId, visibleCount, dataEpoch);
   const selectedParents = selectedNodeId == null
     ? []
     : validRelations.filter((r) => r.childId === selectedNodeId).map((r) => tagById.get(r.parentId)).filter((t): t is NonNullable<typeof t> => t != null);
@@ -318,7 +321,7 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                           const active = selectedNodeId === tag.id;
                           const relation = highlight?.nodes.get(tag.id);
                           const dimmed = highlight != null && relation == null;
-                          const count = itemsByTag.get(tag.id)?.length ?? 0;
+                          const count = directCounts.get(tag.id) ?? 0;
                           return (
                             <button
                               key={tag.id}
@@ -431,12 +434,12 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-                <div className="px-2 pb-2 text-label">关联对象 · {selectedItems.length}</div>
-                {selectedItems.length === 0 ? (
+                <div className="px-2 pb-2 text-label">关联对象 · {selectedCount}</div>
+                {selectedCount === 0 ? (
                   <p className="px-2 text-xs text-[var(--text-faint)]">还没有对象打上此标签</p>
                 ) : (
                   <div className="space-y-1">
-                    {selectedItems.slice(0, visibleCount).map((it) => (
+                    {selectedItems.map((it) => (
                       <div
                         key={it.id}
                         className="flex min-w-0 items-center gap-2.5 rounded-[var(--radius-md)] px-2 py-1.5 hover:bg-[var(--bg-hover)]"
@@ -448,13 +451,13 @@ export function TagGraphView({ allItems }: TagGraphViewProps) {
                         <span className="min-w-0 flex-1 truncate text-sm text-[var(--text-secondary)]">{it.name}</span>
                       </div>
                     ))}
-                    {selectedItems.length > visibleCount && (
+                    {selectedCount > visibleCount && (
                       <button
                         type="button"
                         onClick={() => setVisibleCount((n) => n + RIGHT_PANEL_PAGE_SIZE)}
                         className="mt-1 w-full rounded-[var(--radius-md)] px-2 py-1.5 text-center text-xs text-[var(--accent-primary)] hover:bg-[var(--bg-hover)]"
                       >
-                        显示更多（剩 {selectedItems.length - visibleCount}）
+                        显示更多（剩 {selectedCount - visibleCount}）
                       </button>
                     )}
                   </div>

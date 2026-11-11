@@ -68,7 +68,7 @@ export type SidebarTab = "tags" | "cabinets";
 
 export type { SortMode, TypeFilter, ViewMode };
 
-const PREFS_KEY = "taglauncher.workspace_prefs";
+export const PREFS_KEY = "taglauncher.workspace_prefs";
 const SIDEBAR_HINT_DISMISSED_KEY = "taglauncher.sidebar_hint_dismissed";
 
 function loadSidebarHintDismissed(): boolean {
@@ -127,7 +127,7 @@ function loadSizeScale(raw: unknown, range: { min: number; max: number }): numbe
   return clampSizeScale(raw, range);
 }
 
-function loadWorkspacePrefs(): WorkspacePrefs {
+export function loadWorkspacePrefs(): WorkspacePrefs {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return {};

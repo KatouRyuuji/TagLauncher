@@ -289,18 +289,9 @@ export function selectionStep(
   }
 }
 
-/** 预览对象仍在当前可见列表时沿可见列表切换，否则沿全库（命令面板 Tab 预览筛出项）。 */
-export function previewNavigationItems<T extends { id: number }>(
-  visible: T[],
-  all: T[],
-  previewId: number,
-): T[] {
-  return visible.some((item) => item.id === previewId) ? visible : all;
-}
-
 /** 从锚点到焦点的闭区间（含两端）。焦点始终放在数组末尾，便于 Shift+↑ 继续向外扩。 */
 export function rangeSelectionIds<T extends { id: number }>(
-  items: T[],
+  items: readonly T[],
   anchorId: number | null | undefined,
   focusId: number,
 ): number[] {
@@ -318,7 +309,7 @@ export function rangeSelectionIds<T extends { id: number }>(
 
 /** 单击 / Ctrl 加选 / Shift 范围点选。 */
 export function applyPointerSelection(
-  orderedIds: number[],
+  orderedIds: readonly number[],
   selectedIds: number[],
   clickedId: number,
   opts: { shift: boolean; additive: boolean; anchorId: number | null },

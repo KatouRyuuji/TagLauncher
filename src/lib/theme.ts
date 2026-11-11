@@ -1,4 +1,5 @@
 import type { ThemeDefinition, ThemeTokenLayers } from "../types/theme";
+import { saveThemeSnapshot } from "./themeSnapshot";
 import { showToast } from "./toast";
 import { DEFAULT_THEME_VARIABLES, THEME_VARIABLE_KEYS } from "../themes";
 import { inferThemeScheme, resolveShapeLang } from "../themes/shapeLang";
@@ -335,6 +336,9 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
   } else if (styleEl) {
     styleEl.textContent = "";
   }
+
+  // 5. 供快速搜索窗跟随（它不跑 useTheme）
+  saveThemeSnapshot(root);
 }
 
 function flattenComponentTokens(

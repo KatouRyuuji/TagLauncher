@@ -26,7 +26,9 @@ pub fn get_cabinets(conn: &Connection) -> Result<Vec<Cabinet>, String> {
             })
         })
         .map_err(|e| e.to_string())?
-        .filter_map(crate::services::item_service::skip_err_with_log("get_cabinets"))
+        .filter_map(crate::services::item_service::skip_err_with_log(
+            "get_cabinets",
+        ))
         .collect();
 
     Ok(cabinets)
@@ -53,7 +55,11 @@ pub fn add_cabinet(conn: &Connection, name: &str, color: &str) -> Result<Cabinet
     }
     // 新建排在末尾
     let sort_order: i64 = conn
-        .query_row("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cabinets", [], |r| r.get(0))
+        .query_row(
+            "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cabinets",
+            [],
+            |r| r.get(0),
+        )
         .map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO cabinets (name, color, sort_order) VALUES (?1, ?2, ?3)",
@@ -163,10 +169,13 @@ pub fn add_items_to_cabinet(
     ensure_not_linked(&tx, cabinet_id)?;
     tag_service::ensure_ids_exist(&tx, "items", item_ids, "对象")?;
     {
-        let mut insert = tx.prepare("INSERT OR IGNORE INTO cabinet_items (cabinet_id, item_id) VALUES (?1, ?2)")
+        let mut insert = tx
+            .prepare("INSERT OR IGNORE INTO cabinet_items (cabinet_id, item_id) VALUES (?1, ?2)")
             .map_err(|e| e.to_string())?;
         for item_id in item_ids {
-            insert.execute(params![cabinet_id, *item_id]).map_err(|e| e.to_string())?;
+            insert
+                .execute(params![cabinet_id, *item_id])
+                .map_err(|e| e.to_string())?;
         }
     }
     tx.commit().map_err(|e| e.to_string())?;
@@ -217,7 +226,9 @@ pub fn get_cabinet_item_counts(conn: &Connection) -> Result<Vec<(i64, i64)>, Str
     let mut counts: Vec<(i64, i64)> = stmt
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
         .map_err(|e| e.to_string())?
-        .filter_map(crate::services::item_service::skip_err_with_log("get_cabinet_item_counts"))
+        .filter_map(crate::services::item_service::skip_err_with_log(
+            "get_cabinet_item_counts",
+        ))
         .collect();
     for (cabinet_id, folder) in bound_folders(conn)? {
         let count: i64 = conn
@@ -233,10 +244,7 @@ pub fn get_cabinet_item_counts(conn: &Connection) -> Result<Vec<(i64, i64)>, Str
 }
 
 /// 获取文件柜内的所有项目：关联柜按路径取文件夹下的全部对象，普通柜取 cabinet_items 成员。
-pub fn get_cabinet_items(
-    conn: &Connection,
-    cabinet_id: i64,
-) -> Result<Vec<ItemWithTags>, String> {
+pub fn get_cabinet_items(conn: &Connection, cabinet_id: i64) -> Result<Vec<ItemWithTags>, String> {
     const COLUMNS: &str = crate::services::item_service::ITEM_COLS_I;
     const ORDER: &str = "ORDER BY i.is_favorite DESC, i.last_used_at DESC NULLS LAST, i.name";
     let items: Vec<Item> = match linked_folder(conn, cabinet_id)? {
@@ -250,7 +258,9 @@ pub fn get_cabinet_items(
             let rows = stmt
                 .query_map([like_pattern(&folder)], item_from_row)
                 .map_err(|e| e.to_string())?
-                .filter_map(crate::services::item_service::skip_err_with_log("get_cabinet_items"))
+                .filter_map(crate::services::item_service::skip_err_with_log(
+                    "get_cabinet_items",
+                ))
                 .collect();
             rows
         }
@@ -265,7 +275,9 @@ pub fn get_cabinet_items(
             let rows = stmt
                 .query_map([cabinet_id], item_from_row)
                 .map_err(|e| e.to_string())?
-                .filter_map(crate::services::item_service::skip_err_with_log("get_cabinet_items"))
+                .filter_map(crate::services::item_service::skip_err_with_log(
+                    "get_cabinet_items",
+                ))
                 .collect();
             rows
         }
@@ -302,7 +314,9 @@ pub fn folder_prefix(folder: &str) -> String {
 
 /// 路径是否位于前缀（folder_prefix 的结果）之下，不区分大小写。
 pub fn path_under(path: &str, prefix: &str) -> bool {
-    path.replace('/', "\\").to_lowercase().starts_with(&prefix.to_lowercase())
+    path.replace('/', "\\")
+        .to_lowercase()
+        .starts_with(&prefix.to_lowercase())
 }
 
 fn like_pattern(folder: &str) -> String {
@@ -315,6 +329,39 @@ fn like_pattern(folder: &str) -> String {
     }
     pattern.push('%');
     pattern
+}
+
+/// 柜成员 ID（与 get_cabinet_items 同一成员口径）与关联文件夹。主窗视图查询用，不取对象数据。
+pub fn cabinet_member_ids(
+    conn: &Connection,
+    cabinet_id: i64,
+) -> Result<(Vec<i64>, Option<String>), String> {
+    let folder = linked_folder(conn, cabinet_id)?;
+    let ids = match &folder {
+        Some(f) => {
+            let mut stmt = conn
+                .prepare(&format!("SELECT id FROM items WHERE {UNDER_FOLDER}"))
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([like_pattern(f)], |r| r.get::<_, i64>(0))
+                .map_err(|e| e.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            rows
+        }
+        None => {
+            let mut stmt = conn
+                .prepare("SELECT item_id FROM cabinet_items WHERE cabinet_id = ?1")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([cabinet_id], |r| r.get::<_, i64>(0))
+                .map_err(|e| e.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            rows
+        }
+    };
+    Ok((ids, folder))
 }
 
 fn linked_folder(conn: &Connection, cabinet_id: i64) -> Result<Option<String>, String> {
@@ -390,8 +437,11 @@ pub fn set_cabinet_folder(
             if normalized.is_empty() || !std::path::Path::new(&normalized).is_dir() {
                 return Err(format!("文件夹不存在或不可访问：{}", folder.trim()));
             }
-            tx.execute("DELETE FROM cabinet_items WHERE cabinet_id = ?1", [cabinet_id])
-                .map_err(|e| e.to_string())?;
+            tx.execute(
+                "DELETE FROM cabinet_items WHERE cabinet_id = ?1",
+                [cabinet_id],
+            )
+            .map_err(|e| e.to_string())?;
             tx.execute(
                 "UPDATE cabinets SET folder_path = ?2, folder_truncated = 0 WHERE id = ?1",
                 params![cabinet_id, normalized],
@@ -444,7 +494,10 @@ mod tests {
         let conn = setup();
         add_cabinet(&conn, "Games", "#fff").expect("first add");
         let err = add_cabinet(&conn, "Games", "#000").expect_err("duplicate should fail");
-        assert_eq!(err, "已存在同名文件柜，请换一个名称", "UNIQUE 冲突应映射为友好文案");
+        assert_eq!(
+            err, "已存在同名文件柜，请换一个名称",
+            "UNIQUE 冲突应映射为友好文案"
+        );
     }
 
     #[test]
@@ -477,8 +530,10 @@ mod tests {
         add_items_to_cabinet(&conn, cab_a.id, &[x.id, y.id]).expect("batch add a");
         add_items_to_cabinet(&conn, cab_b.id, &[y.id]).expect("batch add b");
 
-        let counts: std::collections::HashMap<i64, i64> =
-            get_cabinet_item_counts(&conn).unwrap().into_iter().collect();
+        let counts: std::collections::HashMap<i64, i64> = get_cabinet_item_counts(&conn)
+            .unwrap()
+            .into_iter()
+            .collect();
         assert_eq!(counts.get(&cab_a.id), Some(&2));
         assert_eq!(counts.get(&cab_b.id), Some(&1));
     }
@@ -489,7 +544,10 @@ mod tests {
         assert_eq!(normalize_folder("D:/"), r"D:\");
         assert_eq!(folder_prefix("D:"), r"D:\");
         assert_eq!(like_pattern(r"D:\a_b%c^"), r"D:\a^_b^%c^^\%");
-        assert!(path_under("d:/media/shows/x.mkv", &folder_prefix(r"D:\Media")));
+        assert!(path_under(
+            "d:/media/shows/x.mkv",
+            &folder_prefix(r"D:\Media")
+        ));
         assert!(!path_under(r"D:\Media", &folder_prefix(r"D:\Media")));
         assert!(!path_under(r"D:\MediaX\y", &folder_prefix(r"D:\Media")));
     }

@@ -22,6 +22,12 @@ export default defineConfig(({ mode }) => ({
           },
         }
       : undefined,
+  // 两个页面：主窗 index.html、全局快速搜索窗 quick.html（共享搜索代码分片）
+  build: {
+    rollupOptions: {
+      input: { main: r("./index.html"), quick: r("./quick.html") },
+    },
+  },
   server: {
     port: 3456,
     strictPort: true,

@@ -1,26 +1,17 @@
-import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue, useSyncExternalStore } from "react";
 import { autoRelocateFailureNotice } from "../lib/relocateScan";
-import { onExternalDataChanged } from "../lib/dataSync";
+import { onExternalDataChanged, onWindowDataWritten } from "../lib/dataSync";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
-import { buildSearchIndex, expandForTagFilter, filterItemsByTags, filterSearchIndex, searchWithIndex } from "../lib/search";
-import { ensurePinyin } from "../lib/pinyinProvider";
-import { applyMissingFilter, applyTypeFilter, applyWorkspaceQuery, sortItemsByMode } from "../lib/itemQuery";
+import { expandForTagFilter } from "../lib/tagFilter";
 import { buildDescendantsMap } from "../lib/tagGraph";
-import { currentBrowseDir, itemsInDir } from "../lib/cabinetBrowse";
-import { applyNestedVisibility, libraryBrowseDirOf, shouldRevealNested } from "../lib/nestedVisibility";
+import { ItemStore } from "../lib/itemView";
 import type { AddItemsContext } from "../lib/db";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
+import { markSearchResult } from "../lib/searchPerf";
+import { latestOnly, SKIPPED } from "../lib/latestOnly";
 import { TAGS_WRITTEN_EVENT } from "./useTags";
-
-/** 搜索索引闲时预热的单片大小（1000 条/片，片间让出主线程） */
-const SEARCH_WARM_SLICE = 1000;
-/** 预热片间隔：单片构建 ~100-200ms，间隔拉长避免 IPC/交互排队超过人感阈值 */
-const SEARCH_WARM_GAP_MS = 250;
-/** 预热条目上限：超大库不为全量预热付首分钟成本——
- *  前 5000 条（最近使用头部）覆盖高频命中，其余靠首次搜索的防抖窗口构建 */
-const SEARCH_WARM_MAX_ENTRIES = 5000;
 
 /** 主题换色后的就地改色事件：detail.tagColors = { tagId: color }。
  *  只改颜色不动结构，无需 TAGS_WRITTEN_EVENT 的全量重取级联。 */
@@ -53,48 +44,20 @@ function getPathDisplayName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
-// 与 itemQuery.compareItems 的 "smart" 模式同一实现：收藏 → 最近使用 → 名称。
-function sortItems(items: ItemWithTags[]): ItemWithTags[] {
-  return sortItemsByMode(items, "smart");
-}
-
-function upsertItem(items: ItemWithTags[], item: ItemWithTags): ItemWithTags[] {
-  const index = items.findIndex((current) => current.id === item.id);
-  if (index === -1) {
-    return sortItems([...items, item]);
-  }
-
-  const next = [...items];
-  next[index] = item;
-  return sortItems(next);
-}
-
-function upsertItems(items: ItemWithTags[], changedItems: ItemWithTags[]): ItemWithTags[] {
-  if (changedItems.length === 0) return items;
-
-  const byId = new Map(items.map((item) => [item.id, item]));
-  for (const item of changedItems) {
-    byId.set(item.id, item);
-  }
-
-  return sortItems(Array.from(byId.values()));
-}
-
-function removeItemFromList(items: ItemWithTags[], id: number): ItemWithTags[] {
-  return items.filter((item) => item.id !== id);
-}
-
-/** 稳定的空数组引用：切柜期间 cabinetItems 尚未归属新柜时回退，避免闪现旧柜内容。 */
-const EMPTY_ITEMS: ItemWithTags[] = [];
 const EMPTY_IDS: number[] = [];
 
+/**
+ * 主窗对象视图（分页）：视图的全部 ID 由后端 view_query 给出（筛选、排序、搜索、目录浏览、
+ * 冻结排序键都在 Rust，src-tauri/src/view），对象数据经 ItemStore 按可视区间分页取并有上限缓存。
+ * 前端不再持有全量对象：总数 / 全选 / 批量 / 定位基于 ID，需要对象本体时 view.load(ids)。
+ */
 export function useItems() {
   const searchQuery = useAppStore((state) => state.searchQuery);
   const searchMode = useAppStore((state) => state.searchMode);
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
   const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const selectedCabinetId = useAppStore((state) => state.selectedCabinetId);
-  // 选中柜的关联文件夹：关联 / 解除后成员集合整体改变，需重新拉取柜内对象
+  // 选中柜的关联文件夹：关联 / 解除后成员集合整体改变，需重新查询
   const linkedFolder = useAppStore((state) =>
     state.selectedCabinetId === null
       ? null
@@ -111,161 +74,44 @@ export function useItems() {
   const libraryBrowseRoot = useAppStore((state) => state.libraryBrowseRoot);
   const libraryBrowseDir = useAppStore((state) => state.libraryBrowseDir);
   const tagRelations = useAppStore((state) => state.tagRelations);
+  const tagList = useAppStore((state) => state.tags);
   const tagFilterMode = useAppStore((state) => state.tagFilterMode);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
-  const [allItems, setAllItems] = useState<ItemWithTags[]>([]);
-  const [cabinetItems, setCabinetItems] = useState<ItemWithTags[]>([]);
-  // cabinetItems 当前归属的文件柜 id：切柜后新数据到达前，用它判断 cabinetItems 是否已对应
-  // 当前选中柜，避免短暂显示上一个柜子的内容（竞态视觉错位）。
-  const [cabinetItemsOwner, setCabinetItemsOwner] = useState<number | null>(null);
-  // 柜视图重取计数：全量加载成功且当前在柜视图时自增，驱动柜内容按同一数据版本重取
-  const [cabinetReloadTick, setCabinetReloadTick] = useState(0);
+  const [store] = useState(() => new ItemStore((ids, kind) => db.getItemsPage(ids, kind === "warm"), { warm: true }));
+  const view = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  // StrictMode 下 useState 初始化会跑两次：统计在挂载后登记，确保指向实际使用的那个实例
+  useEffect(() => store.registerPerf(), [store]);
   const [loading, setLoading] = useState(true);
-  // 最近一次列表加载失败的可读错误（成功后清空）：供 UI 在库为空时渲染
-  // 可重试的错误面板，而不是把后端故障静默呈现为「暂无项目」。
+  // 最近一次列表加载失败的可读错误（成功后清空）：供 UI 在库为空时渲染可重试的错误面板
   const [loadError, setLoadError] = useState<string | null>(null);
-  const allItemsRef = useRef<ItemWithTags[]>([]);
-  const cabinetItemsRef = useRef<ItemWithTags[]>([]);
+  // 数据代：任何写入（本应用 / 快速窗 / 外部）后自增，驱动视图重查与计数刷新
+  const [dataEpoch, setDataEpoch] = useState(0);
+  const bumpData = useCallback(() => setDataEpoch((n) => n + 1), []);
+  // 全量刷新代：自增 = 显式重排点（重拍冻结排序键）+ 缓存整体过期
+  const [reloadEpoch, setReloadEpoch] = useState(0);
+  const reloadWaitersRef = useRef<Array<{ epoch: number; resolve: () => void }>>([]);
+  const reloadEpochRef = useRef(0);
+  const [viewMeta, setViewMeta] = useState<{ browseDir: string | null; libraryTotal: number; cabinetId: number | null; query: string } | null>(null);
+  const [stats, setStats] = useState<db.LibraryStats | null>(null);
   const relocatingRef = useRef<Promise<number> | null>(null);
   const relocateMissingRef = useRef<() => void>(() => {});
-  // 闲时预热定时器（取消/卸载清理用）
-  const warmupTimerRef = useRef<{ kind: "idle"; id: number } | { kind: "timeout"; id: ReturnType<typeof setTimeout> } | null>(null);
-  // 会话内冻结排序键：启动对象只刷新 last_used_at 不重排视图（Explorer 语义）。
-  // 快照重拍时机 = loadAll 成功 / 排序变更 / 视图域切换；launch 的 refreshItemById 不重拍
-  const frozenSortKeysRef = useRef<ReadonlyMap<number, string | null | undefined> | null>(null);
-  const captureFrozenSortKeys = useCallback(
-    (items: ItemWithTags[]) => new Map(items.map((item) => [item.id, item.last_used_at] as const)),
-    [],
-  );
-  // 预热代数：每次取消/重调度自增；挂在 pinyin 分片与切片链上的回调凭代数判断是否已被取代
-  const warmupGenRef = useRef(0);
-  const cancelSearchWarmup = useCallback(() => {
-    warmupGenRef.current += 1;
-    if (warmupTimerRef.current === null) return;
-    if (warmupTimerRef.current.kind === "idle") window.cancelIdleCallback?.(warmupTimerRef.current.id);
-    else clearTimeout(warmupTimerRef.current.id);
-    warmupTimerRef.current = null;
-  }, []);
-  useEffect(() => cancelSearchWarmup, [cancelSearchWarmup]);
-  // 仅首屏加载显示整屏 loading；后台刷新（刷新按钮/跨盘找回后）保留旧列表原地更新，
-  // 不清空、不闪 spinner、不丢滚动位置。
-  const initialLoadRef = useRef(true);
-  // 进行中的加载 Promise：并发触发 refresh（刷新按钮 + Mod 桥接 + 跨盘找回等）
-  // 时共享同一次请求，避免多次全量 IO 与响应交错互相覆盖。
-  const loadInFlightRef = useRef<Promise<void> | null>(null);
-  // 在途期间又有人请求加载：在途那次的 get_items 可能发出于最新写库（对账/重定位）之前，
-  // 复用它会读到旧数据。此时排队一次跟进加载，多次触发合并为一次。
-  const loadQueuedRef = useRef<Promise<void> | null>(null);
+  const prevMissingRef = useRef<Set<number> | null>(null);
 
   useEffect(() => {
-    allItemsRef.current = allItems;
-    notifyItemsChanged(allItems);
-  }, [allItems]);
+    notifyItemsChanged();
+  }, [dataEpoch]);
 
-  useEffect(() => {
-    cabinetItemsRef.current = cabinetItems;
-  }, [cabinetItems]);
-
-  const startLoad = useCallback((): Promise<void> => {
-    const task = (async () => {
-      if (initialLoadRef.current) setLoading(true);
-      try {
-        // 记录刷新前的失效态，用于检测"本次新变为失效"的对象并主动提示
-        const prev = new Map(allItemsRef.current.map((i) => [i.id, i]));
-        const data = await db.getItems(false);
-        // 不在此失效图标缓存：getItems(false) 不触碰 icon_path，内部级联（标签写/
-        // 主题换色）不应引发图标重取；手动刷新入口单独负责图标失效
-        setAllItems(data);
-        if (useAppStore.getState().selectedCabinetId !== null) {
-          setCabinetReloadTick((tick) => tick + 1);
-        }
-        // 全量加载 = 显式重排点：重拍冻结排序键
-        frozenSortKeysRef.current = captureFrozenSortKeys(data);
-        // 搜索索引闲时预热（含 pinyin-pro 懒加载分片）：首次击键不再全量构建。
-        // 模块级 searchFieldsCache 按内容指纹跨刷新复用，预热只补未命中条目。
-        // 取消上一次未触发的预热并随卸载清理：避免陈旧定时器在新数据/新会话上误建
-        cancelSearchWarmup();
-        const warmupGen = warmupGenRef.current;
-        const warm = () => {
-          warmupTimerRef.current = null;
-          void ensurePinyin().then(() => {
-            // 分片到达时本轮预热可能已被取代（新一轮 loadAll）：代数不符直接放弃，
-            // 否则旧链会用陈旧数据建片并与新链交错、双倍占用主线程
-            if (warmupGen !== warmupGenRef.current) return;
-            // 1000 条/片 × 250ms 间隔的空闲切片预热（上限 5000 条）：
-            // 整块构建在 10k+ 库上会冻结主线程数秒；超大库只暖头部高频区
-            const warmTarget = Math.min(data.length, SEARCH_WARM_MAX_ENTRIES);
-            const step = (start: number) => {
-              if (warmupGen !== warmupGenRef.current) return; // 已被取消/取代
-              if (start >= warmTarget) {
-                warmupTimerRef.current = null;
-                return;
-              }
-              buildSearchIndex(data.slice(0, start + SEARCH_WARM_SLICE), "all");
-              if (start + SEARCH_WARM_SLICE >= warmTarget) {
-                warmupTimerRef.current = null;
-                return;
-              }
-              const next = start + SEARCH_WARM_SLICE;
-              warmupTimerRef.current = { kind: "timeout", id: setTimeout(() => step(next), SEARCH_WARM_GAP_MS) };
-            };
-            step(0);
-          }).catch(() => {
-            // 分片加载失败（pinyinProvider 已重置）：本轮预热放弃，下次 loadAll/输入重试
-          });
-        };
-        if (typeof window.requestIdleCallback === "function") {
-          warmupTimerRef.current = { kind: "idle", id: window.requestIdleCallback(warm, { timeout: 2000 }) };
-        } else {
-          warmupTimerRef.current = { kind: "timeout", id: setTimeout(warm, 200) };
-        }
-        setLoadError(null);
-
-        const newlyMissing = data.filter(
-          (i) => i.is_missing && prev.has(i.id) && !prev.get(i.id)?.is_missing,
-        );
-        if (newlyMissing.length > 0) {
-          const names = newlyMissing
-            .slice(0, 3)
-            .map((i) => i.name)
-            .join("、");
-          const suffix = newlyMissing.length > 3 ? ` 等 ${newlyMissing.length} 个` : "";
-          showToast(
-            `${newlyMissing.length} 个对象的文件已丢失或移动到其他磁盘：${names}${suffix}（归类已保留，文件恢复后会自动重新关联）`,
-            "warning",
-          );
-          // 兜底：后台按内容签名尝试跨盘找回（扫描在后端 DB 锁外执行，不阻塞）。
-          relocateMissingRef.current();
-        }
-      } catch (e) {
-        console.error("Failed to load items:", e);
-        const detail = e instanceof Error ? e.message : String(e);
-        setLoadError(detail);
-        showToast(`加载对象列表失败：${detail}`, "error");
-      } finally {
-        initialLoadRef.current = false;
-        setLoading(false);
-      }
-    })().finally(() => {
-      loadInFlightRef.current = null;
-    });
-
-    loadInFlightRef.current = task;
-    return task;
-  }, [captureFrozenSortKeys]);
-
+  // 全量刷新：缓存过期 + 重拍冻结键；返回的 Promise 在新视图到达后完成。
   const loadAll = useCallback((): Promise<void> => {
-    const inFlight = loadInFlightRef.current;
-    if (!inFlight) return startLoad();
-    if (!loadQueuedRef.current) {
-      loadQueuedRef.current = inFlight.then(() => {
-        loadQueuedRef.current = null;
-        return startLoad();
-      });
-    }
-    return loadQueuedRef.current;
-  }, [startLoad]);
+    store.invalidateAll();
+    return new Promise<void>((resolve) => {
+      reloadEpochRef.current += 1;
+      reloadWaitersRef.current.push({ epoch: reloadEpochRef.current, resolve });
+      setReloadEpoch(reloadEpochRef.current);
+      setDataEpoch((n) => n + 1);
+    });
+  }, [store]);
 
   // 跨盘符兜底找回：对失效对象按内容签名扫描候选盘，命中则刷新并提示。
   // 用 relocatingRef 防止并发/重复扫描；成功找回 0 个时保持安静。
@@ -299,38 +145,115 @@ export function useItems() {
     };
   }, [relocateMissing]);
 
+  // ---------------------------------------------------------------- 视图查询
+  const descendantsMap = useMemo(() => buildDescendantsMap(tagRelations), [tagRelations]);
+  const hasSearchQuery = deferredSearchQuery.trim().length > 0;
+  const scope: db.ViewQueryArgs["scope"] = showFavorites ? "favorites" : showRecent ? "recent" : selectedCabinetId !== null ? "cabinet" : "all";
+  const viewArgs = useMemo((): Omit<db.ViewQueryArgs, "refreeze"> => {
+    const expand = expandForTagFilter(tagFilterMode !== "direct", descendantsMap);
+    const group = (id: number) => (expand ? [...expand(id)] : [id]);
+    return {
+      scope,
+      cabinetId: scope === "cabinet" ? selectedCabinetId : null,
+      selectedGroups: selectedTagIds.map(group),
+      excludedGroups: excludedTagIds.map(group),
+      typeFilter,
+      hideMissing,
+      sortMode,
+      showNestedContents,
+      libraryBrowseRoot,
+      libraryBrowseDir,
+      cabinetDir: linkedFolder !== null ? cabinetDir : null,
+      cabinetFlat,
+      query: hasSearchQuery ? deferredSearchQuery : "",
+      mode: searchMode,
+    };
+    // linkedFolder：关联/解除后柜成员整体变化，需重查
+  }, [scope, selectedCabinetId, selectedTagIds, excludedTagIds, tagFilterMode, descendantsMap, typeFilter, hideMissing, sortMode, showNestedContents, libraryBrowseRoot, libraryBrowseDir, linkedFolder, cabinetDir, cabinetFlat, hasSearchQuery, deferredSearchQuery, searchMode]);
+  const viewArgsRef = useRef(viewArgs);
   useEffect(() => {
-    if (selectedCabinetId === null) {
-      // 离开文件柜视图时重置归属：否则再次切回同一柜会因 owner 仍相等而
-      // 直接回显离开期间的旧数据（违背"切柜期间回退空数组避免闪现旧数据"的设计）。
-      setCabinetItemsOwner(null);
-      return;
-    }
-    // 竞态防护：快速切换文件柜时，慢响应不得覆盖已切换的新选择；
-    // 数据到达时一并记录归属，供 source 判定是否已对应当前选中柜。
-    let cancelled = false;
-    db.getCabinetItems(selectedCabinetId, false)
-      .then((data) => {
-        if (!cancelled) {
-          setCabinetItems(data);
-          setCabinetItemsOwner(selectedCabinetId);
-        }
+    viewArgsRef.current = viewArgs;
+  }, [viewArgs]);
+  /** 视图内名称跳转（typeahead）：后端在同一组视图参数下找，不重拍冻结键 */
+  const typeahead = useCallback(
+    (text: string) => db.viewTypeahead({ ...viewArgsRef.current, refreeze: false }, text),
+    [],
+  );
+  // 排序变更 / 视图域切换 / 全量刷新 = 显式重排点：重拍 smart 排序的冻结键
+  const scopeKey = `${sortMode}|${showFavorites}|${showRecent}|${selectedCabinetId}|${reloadEpoch}`;
+  const queriedScopeRef = useRef<string | null>(null);
+  // 重拍请求要「粘住」直到某次带重拍的查询真正完成（被 latestOnly 跳过的那次不算）
+  const pendingRefreezeRef = useRef(false);
+  const viewSeqRef = useRef(0);
+  // 同一时刻只一个查询在途，期间的新参数只保留最后一次（后端索引锁串行，避免慢机排队）
+  const [runView] = useState(() => latestOnly((args: db.ViewQueryArgs) => db.viewQuery(args)));
+  useEffect(() => {
+    const seq = ++viewSeqRef.current;
+    if (queriedScopeRef.current !== scopeKey) pendingRefreezeRef.current = true;
+    queriedScopeRef.current = scopeKey;
+    const args = { ...viewArgs, refreeze: pendingRefreezeRef.current };
+    const epoch = reloadEpoch;
+    const settle = () => {
+      const waiters = reloadWaitersRef.current;
+      reloadWaitersRef.current = waiters.filter((w) => w.epoch > epoch);
+      for (const w of waiters) if (w.epoch <= epoch) w.resolve();
+    };
+    runView(args)
+      .then((res) => {
+        if (res === SKIPPED) return;
+        if (args.refreeze) pendingRefreezeRef.current = false;
+        settle();
+        if (seq !== viewSeqRef.current) return;
+        store.setIds(res.ids);
+        setViewMeta({ browseDir: res.browseDir, libraryTotal: res.libraryTotal, cabinetId: args.cabinetId ?? null, query: args.query });
+        setLoadError(null);
+        if (args.query) markSearchResult(args.query, res.ids.length);
       })
-      .catch((e) => {
-        console.error(e);
-        // 失败时柜内容停留在空集（owner 未更新），须让用户可感知而非呈现"空柜"假象
-        if (!cancelled) {
-          showToast(`加载文件柜内容失败：${e instanceof Error ? e.message : String(e)}`, "error");
-        }
+      .catch((error: unknown) => {
+        settle();
+        if (seq !== viewSeqRef.current) return;
+        const detail = error instanceof Error ? error.message : String(error);
+        console.error(args.query ? "搜索失败:" : "Failed to load items:", error);
+        setLoadError(detail);
+        showToast(args.query ? `搜索失败：${detail}` : `加载对象列表失败：${detail}`, "error");
+      })
+      .finally(() => {
+        if (seq === viewSeqRef.current) setLoading(false);
       });
+  }, [viewArgs, scopeKey, reloadEpoch, dataEpoch, runView, store]);
+
+  // 侧栏标签计数与单击筛选同一口径：父标签并入后代
+  const tagGroups = useMemo(
+    (): [number, number[]][] => tagList.map((tag) => [tag.id, [...(descendantsMap.get(tag.id) ?? new Set([tag.id]))]]),
+    [tagList, descendantsMap],
+  );
+  // 首屏后预建搜索索引已由 view_query 完成（同一索引）；计数与失效提示
+  useEffect(() => {
+    let cancelled = false;
+    void db.libraryStats(tagGroups)
+      .then(async (next) => {
+        if (cancelled) return;
+        setStats(next);
+        const prev = prevMissingRef.current;
+        const now = new Set(next.missingIds);
+        prevMissingRef.current = now;
+        if (prev === null) return;
+        const newly = next.missingIds.filter((id) => !prev.has(id));
+        if (newly.length === 0) return;
+        const names = (await store.load(newly.slice(0, 3))).map((item) => item.name).join("、");
+        const suffix = newly.length > 3 ? ` 等 ${newly.length} 个` : "";
+        showToast(
+          `${newly.length} 个对象的文件已丢失或移动到其他磁盘：${names}${suffix}（归类已保留，文件恢复后会自动重新关联）`,
+          "warning",
+        );
+        // 兜底：后台按内容签名尝试跨盘找回（扫描在后端 DB 锁外执行，不阻塞）。
+        relocateMissingRef.current();
+      })
+      .catch((error: unknown) => console.error("读取库计数失败:", error));
     return () => {
       cancelled = true;
     };
-  }, [selectedCabinetId, linkedFolder, cabinetReloadTick]);
-
-  useEffect(() => {
-    loadAll();
-  }, [loadAll]);
+  }, [dataEpoch, store, tagGroups]);
 
   useEffect(() => {
     let cancelled = false;
@@ -352,11 +275,10 @@ export function useItems() {
     };
   }, [loadAll]);
 
-  // 外部进程（tl CLI 等）写库：后端 data_version 检测到后广播，纯读 loadAll 同步
+  // 外部进程（tl CLI 等）写库：后端 data_version 检测到后广播
   useEffect(() => onExternalDataChanged(() => { void loadAll(); }), [loadAll]);
 
-  // 对账解耦：后台对账（启动首跑/60s 节流/手动刷新）有实际写入时，
-  // 走纯读 loadAll 同步失效标记与重定位结果（此时已不含对账成本）
+  // 对账解耦：后台对账有实际写入时同步失效标记与重定位结果
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -375,46 +297,42 @@ export function useItems() {
     };
   }, [loadAll]);
 
-  // 标签改名/删除后，对象卡片上的标签 pill 渲染自 item.tags：监听标签写事件
-  // 全量刷新对象，避免卡片残留幽灵标签（旧名称/已删标签）。
+  // 标签改名/删除后，对象卡片上的标签 pill 渲染自 item.tags：全量刷新，避免残留幽灵标签
   useEffect(() => {
     const handler = () => { void loadAll(); };
     window.addEventListener(TAGS_WRITTEN_EVENT, handler);
     return () => window.removeEventListener(TAGS_WRITTEN_EVENT, handler);
   }, [loadAll]);
 
-  // 主题换色（色位写回）只变 color：按 tag id 就地更新对象内嵌标签色，不走全量重取。
+  // 主题换色（色位写回）只变 color：按 tag id 就地更新已缓存对象的内嵌标签色，不重取
   useEffect(() => {
-    const patch = (items: ItemWithTags[], tagColors: Record<number, string>): ItemWithTags[] =>
-      items.map((item) => {
-        if (!item.tags.some((tag) => tagColors[tag.id] !== undefined)) return item;
-        return {
-          ...item,
-          tags: item.tags.map((tag) =>
-            tagColors[tag.id] !== undefined ? { ...tag, color: tagColors[tag.id] } : tag,
-          ),
-        };
-      });
     const handler = (event: Event) => {
       const tagColors = (event as CustomEvent<{ tagColors?: Record<number, string> }>).detail?.tagColors;
       if (!tagColors) return;
-      setAllItems((current) => patch(current, tagColors));
-      setCabinetItems((current) => patch(current, tagColors));
+      store.patch((item) => {
+        if (!item.tags.some((tag) => tagColors[tag.id] !== undefined)) return item;
+        return {
+          ...item,
+          tags: item.tags.map((tag) => (tagColors[tag.id] !== undefined ? { ...tag, color: tagColors[tag.id] } : tag)),
+        };
+      });
     };
     window.addEventListener(ITEM_TAG_COLORS_PATCH_EVENT, handler);
     return () => window.removeEventListener(ITEM_TAG_COLORS_PATCH_EVENT, handler);
-  }, []);
+  }, [store]);
+
+  // 把一批已变更对象并入缓存并重查视图（收藏/最近使用/标签变化可能改变归属与顺序）
+  const applyChangedItems = useCallback((changedItems: ItemWithTags[]) => {
+    if (changedItems.length === 0) return;
+    store.upsert(changedItems);
+    bumpData();
+  }, [store, bumpData]);
 
   const refreshItemById = useCallback(async (itemId: number) => {
     const item = await db.getItem(itemId);
-    setAllItems((current) => upsertItem(current, item));
-    setCabinetItems((current) =>
-      current.some((cabinetItem) => cabinetItem.id === itemId)
-        ? upsertItem(current, item)
-        : current,
-    );
+    applyChangedItems([item]);
     return item;
-  }, []);
+  }, [applyChangedItems]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -426,129 +344,44 @@ export function useItems() {
     return () => window.removeEventListener(ITEM_REFRESH_EVENT, handler);
   }, [refreshItemById]);
 
-  const removeLocalItem = useCallback((itemId: number) => {
-    setAllItems((current) => removeItemFromList(current, itemId));
-    setCabinetItems((current) => removeItemFromList(current, itemId));
-  }, []);
+  const removeLocalItems = useCallback((ids: number[]) => {
+    store.remove(ids);
+    bumpData();
+  }, [store, bumpData]);
 
-  // 把一批已变更对象并入本地缓存：全量列表直接 upsert；柜内列表只更新已在柜中的
-  // 对象（不新增成员——柜的成员关系变化由 add/removeItemsToCabinet 专门维护）。
-  const applyChangedItems = useCallback((changedItems: ItemWithTags[]) => {
-    if (changedItems.length === 0) return;
-    setAllItems((current) => upsertItems(current, changedItems));
-    setCabinetItems((current) => {
-      const currentIds = new Set(current.map((item) => item.id));
-      return upsertItems(
-        current,
-        changedItems.filter((item) => currentIds.has(item.id)),
-      );
-    });
-  }, []);
+  // 快速搜索窗写库（打标签、启动刷新最近使用）后按对象 ID 增量刷新，不全量重载
+  useEffect(() => onWindowDataWritten("main", ({ itemIds }) => {
+    if (itemIds.length === 0) return;
+    void db.getItemsByIds(itemIds, false)
+      .then(applyChangedItems)
+      .catch((error: unknown) => console.error("增量刷新对象失败:", error));
+  }), [applyChangedItems]);
 
-  const source = useMemo(() => {
-    if (showFavorites) {
-      return allItems.filter((item) => item.is_favorite);
-    }
-    if (showRecent) {
-      return allItems.filter((item) => Boolean(item.last_used_at));
-    }
-    if (selectedCabinetId !== null) {
-      // 仅当 cabinetItems 已归属当前选中柜时采用，否则回退空集（等待本柜数据到达），
-      // 避免切柜瞬间闪现上一个柜子的内容。
-      return cabinetItemsOwner === selectedCabinetId ? cabinetItems : EMPTY_ITEMS;
-    }
-    return allItems;
-  }, [allItems, cabinetItems, cabinetItemsOwner, selectedCabinetId, showFavorites, showRecent]);
-
-  // 标签后代闭包：选中父标签时并入其所有后代标签的对象（图状层级筛选）。
-  const descendantsMap = useMemo(() => buildDescendantsMap(tagRelations), [tagRelations]);
-
-  const tagFiltered = useMemo(
-    () =>
-      filterItemsByTags(
-        source,
-        selectedTagIds,
-        expandForTagFilter(tagFilterMode !== "direct", descendantsMap),
-        excludedTagIds,
-      ),
-    [source, selectedTagIds, excludedTagIds, descendantsMap, tagFilterMode],
-  );
-
-  const hasSearchQuery = deferredSearchQuery.trim().length > 0;
-  // 关联柜按目录浏览：只显示当前目录这一层；搜索或标签筛选时在整个关联文件夹内查找
-  const browseDir =
-    linkedFolder !== null && !cabinetFlat && !hasSearchQuery && selectedTagIds.length === 0 && excludedTagIds.length === 0
-      ? currentBrowseDir(linkedFolder, cabinetDir)
-      : null;
-  const libraryDir = libraryBrowseDirOf(libraryBrowseRoot, libraryBrowseDir, {
-    hasSearchQuery,
-    selectedTagIds,
-    excludedTagIds,
-  });
-  const revealNested = shouldRevealNested({
-    showNestedContents,
-    hasSearchQuery,
-    selectedTagIds,
-    excludedTagIds,
-    selectedCabinetId,
-    showFavorites,
-    showRecent,
-    libraryBrowseRoot,
-  });
-  // 浏览和筛选直接使用对象数据；输入搜索词时才构建拼音等派生字段。
-  const sourceSearchIndex = useMemo(
-    () => hasSearchQuery ? buildSearchIndex(source, searchMode) : null,
-    [source, searchMode, hasSearchQuery],
-  );
-
-  const tagFilteredIds = useMemo(
-    () => new Set(tagFiltered.map((item) => item.id)),
-    [tagFiltered],
-  );
-
-  const searchIndex = useMemo(
-    () => sourceSearchIndex ? filterSearchIndex(sourceSearchIndex, tagFilteredIds) : null,
-    [sourceSearchIndex, tagFilteredIds],
-  );
-
-  // 排序变更 / 视图域切换 = 显式重排点：渲染期同步重拍冻结排序键，
-  // 本帧即按新快照排序（effect 后拍会先按旧快照渲一帧、且不再触发 memo 重算）。
-  // 柜内数据未归属当前选中柜时不拍（scopeKey 置 null 跳过），等数据到达的这次渲染
-  // 再按新柜数据拍——拿上一柜/空残留做快照会让整个文件柜会话冻结失效。
-  // 渲染期写 ref 此处安全：capture 是纯函数、按 key 幂等，被丢弃的渲染留下的
-  // 旧 key 会在下一次渲染因不匹配而重拍自愈。
-  const cabinetReady = selectedCabinetId === null || cabinetItemsOwner === selectedCabinetId;
-  const scopeKey = cabinetReady ? `${sortMode}|${showFavorites}|${showRecent}|${selectedCabinetId}` : null;
-  const frozenScopeRef = useRef<string | null>(null);
-  if (scopeKey !== null && frozenScopeRef.current !== scopeKey) {
-    frozenScopeRef.current = scopeKey;
-    frozenSortKeysRef.current = captureFrozenSortKeys(selectedCabinetId !== null ? cabinetItems : allItems);
-  }
-
-  const filtered = useMemo(() => {
-    if (searchIndex) {
-      return applyMissingFilter(applyTypeFilter(searchWithIndex(searchIndex, deferredSearchQuery), typeFilter), hideMissing);
-    }
-    const layerDir = browseDir ?? libraryDir;
-    const scoped = layerDir !== null
-      ? itemsInDir(tagFiltered, layerDir)
-      : applyNestedVisibility(tagFiltered, revealNested);
-    return applyWorkspaceQuery(applyMissingFilter(scoped, hideMissing), {
-      typeFilter,
-      sortMode,
-      // 冻结键只服务反瞬移场景：显式 recent 排序 / 最近使用域是活视图，启动必须立即升顶
-      sortKeyOverrides:
-        showRecent || sortMode === "recent"
-          ? undefined
-          : { lastUsedAt: frozenSortKeysRef.current ?? undefined },
-    });
-  }, [searchIndex, tagFiltered, browseDir, libraryDir, revealNested, deferredSearchQuery, typeFilter, hideMissing, sortMode, showRecent]);
+  const browseDir = viewMeta?.browseDir ?? null;
+  const cabinetReady = scope !== "cabinet" || viewMeta?.cabinetId === selectedCabinetId;
 
   // 关联柜内的失效对象（「清理失效」用）：取整个关联文件夹，不受当前目录与筛选影响
-  const linkedMissingIds = useMemo(
-    () => linkedFolder !== null && cabinetReady ? source.filter((item) => item.is_missing).map((item) => item.id) : EMPTY_IDS,
-    [linkedFolder, cabinetReady, source],
-  );
+  const [linkedMissingIds, setLinkedMissingIds] = useState<number[]>(EMPTY_IDS);
+  useEffect(() => {
+    if (linkedFolder === null || selectedCabinetId === null || !stats || stats.missingIds.length === 0) {
+      setLinkedMissingIds(EMPTY_IDS);
+      return;
+    }
+    let cancelled = false;
+    const missing = new Set(stats.missingIds);
+    void db.viewQuery({
+      scope: "cabinet", cabinetId: selectedCabinetId, selectedGroups: [], excludedGroups: [], typeFilter: "all",
+      hideMissing: false, sortMode: "smart", showNestedContents: true, libraryBrowseRoot: null, libraryBrowseDir: null,
+      cabinetDir: null, cabinetFlat: true, query: "", mode: "all", refreeze: false,
+    })
+      .then((res) => {
+        if (!cancelled) setLinkedMissingIds(res.ids.filter((id) => missing.has(id)));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [linkedFolder, selectedCabinetId, stats]);
 
   const addItems = useCallback(async (paths: string[], context?: AddItemsContext) => {
     await withErrorToast("批量导入", async () => {
@@ -575,9 +408,6 @@ export function useItems() {
       applyChangedItems(changedItems);
       const cabinetId = context?.cabinetId;
       if (cabinetId != null) {
-        if (useAppStore.getState().selectedCabinetId === cabinetId) {
-          setCabinetItems((current) => upsertItems(current, changedItems));
-        }
         notifyCabinetItemsChanged(cabinetId, changedItems.map((item) => item.id));
       }
 
@@ -594,9 +424,9 @@ export function useItems() {
   const removeItem = useCallback(async (id: number) => {
     await withErrorToast("删除项目", async () => {
       await db.removeItem(id);
-      removeLocalItem(id);
+      removeLocalItems([id]);
     });
-  }, [removeLocalItem]);
+  }, [removeLocalItems]);
 
   const removeItems = useCallback(async (ids: number[], options?: { deleteFiles?: boolean }) => {
     if (ids.length === 0) return;
@@ -604,9 +434,7 @@ export function useItems() {
     if (options?.deleteFiles) {
       await withErrorToast("删除本地文件", async () => {
         const result = await db.removeItemsAndFiles(ids);
-        const idSet = new Set(result.removedIds);
-        setAllItems((current) => current.filter((item) => !idSet.has(item.id)));
-        setCabinetItems((current) => current.filter((item) => !idSet.has(item.id)));
+        removeLocalItems(result.removedIds);
         if (result.failed.length > 0) {
           const first = result.failed[0];
           showToast(
@@ -626,11 +454,9 @@ export function useItems() {
     await withErrorToast("从库中移除", async () => {
       await db.removeItems(ids);
 
-      const idSet = new Set(ids);
-      setAllItems((current) => current.filter((item) => !idSet.has(item.id)));
-      setCabinetItems((current) => current.filter((item) => !idSet.has(item.id)));
+      removeLocalItems(ids);
     });
-  }, []);
+  }, [removeLocalItems]);
 
   const updateItemIcon = useCallback(async (itemId: number, iconPath: string | null) => {
     await withErrorToast("更新图标", async () => {
@@ -661,7 +487,7 @@ export function useItems() {
     try {
       await withErrorToast("启动项目", async () => {
         await db.launchItem(id);
-        const item = allItemsRef.current.find((i) => i.id === id);
+        const item = store.getSnapshot().get(id);
         if (item) notifyItemLaunched(id, item.name);
       });
       // 启动成功后刷新该项，同步 last_used_at 排序
@@ -752,58 +578,42 @@ export function useItems() {
   const addItemToCabinet = useCallback(async (cabinetId: number, itemId: number) => {
     await withErrorToast("添加到文件柜", async () => {
       await db.addItemToCabinet(cabinetId, itemId);
-      if (useAppStore.getState().selectedCabinetId === cabinetId) {
-        const item = allItemsRef.current.find((current) => current.id === itemId) ?? await db.getItem(itemId);
-        setCabinetItems((current) => upsertItem(current, item));
-      }
+      bumpData();
     });
     notifyCabinetItemsChanged(cabinetId, [itemId]);
-  }, []);
+  }, [bumpData]);
 
   const addItemsToCabinet = useCallback(async (cabinetId: number, itemIds: number[]) => {
     if (itemIds.length === 0) return;
 
     await withErrorToast("批量添加到文件柜", async () => {
       await db.addItemsToCabinet(cabinetId, itemIds);
-
-      if (useAppStore.getState().selectedCabinetId === cabinetId) {
-        const changedItems = await db.getItemsByIds(itemIds, false);
-        setCabinetItems((current) => upsertItems(current, changedItems));
-      }
+      bumpData();
     });
     notifyCabinetItemsChanged(cabinetId, itemIds);
-  }, []);
+  }, [bumpData]);
 
   const removeItemFromCabinet = useCallback(async (cabinetId: number, itemId: number) => {
     await withErrorToast("从文件柜移除", async () => {
       await db.removeItemFromCabinet(cabinetId, itemId);
-      if (useAppStore.getState().selectedCabinetId === cabinetId) {
-        setCabinetItems((current) => removeItemFromList(current, itemId));
-      }
+      bumpData();
     });
     notifyCabinetItemsChanged(cabinetId, [itemId]);
-  }, []);
+  }, [bumpData]);
 
   const removeItemsFromCabinet = useCallback(async (cabinetId: number, itemIds: number[]) => {
     if (itemIds.length === 0) return;
 
     await withErrorToast("批量从文件柜移除", async () => {
       await db.removeItemsFromCabinet(cabinetId, itemIds);
-
-      if (useAppStore.getState().selectedCabinetId === cabinetId) {
-        const idSet = new Set(itemIds);
-        setCabinetItems((current) => current.filter((item) => !idSet.has(item.id)));
-      }
+      bumpData();
     });
     notifyCabinetItemsChanged(cabinetId, itemIds);
-  }, []);
+  }, [bumpData]);
 
-  const findItemById = useCallback(
-    (itemId: number) =>
-      allItemsRef.current.find((item) => item.id === itemId) ??
-      cabinetItemsRef.current.find((item) => item.id === itemId),
-    [],
-  );
+  // 缓存内查找（同步）；不在缓存里的对象用 view.load / loadItems 异步取
+  const findItemById = useCallback((itemId: number) => store.getSnapshot().get(itemId), [store]);
+  const loadItems = useCallback((ids: readonly number[]) => store.load(ids), [store]);
 
   // 手动刷新入口（刷新按钮/命令面板）：用户点刷新 = 图标缓存一并失效重取
   // （前端缓存 + 后端 .none 失败标记双清，瞬时失败不再锁到冷却结束），
@@ -830,12 +640,17 @@ export function useItems() {
   }, [refresh]);
 
   return {
-    items: filtered,
-    allItems,
+    view,
+    /** 库内对象总数（空库判定） */
+    libraryTotal: viewMeta?.libraryTotal ?? 0,
+    stats,
+    dataEpoch,
+    loadItems,
+    typeahead,
     loading,
     browseDir,
     linkedMissingIds,
-    cabinetPending: selectedCabinetId !== null && !showFavorites && !showRecent && cabinetItemsOwner !== selectedCabinetId,
+    cabinetPending: !cabinetReady,
     loadError,
     refresh,
     relocateMissing,

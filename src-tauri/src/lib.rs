@@ -2,6 +2,9 @@ mod commands;
 mod data_sync;
 /// F18 托盘 / 全局快捷键 / 关闭行为（仅 GUI 使用）
 mod desktop;
+mod quick;
+pub mod search;
+pub mod view;
 // 集成测试（tests/ 目录把本 crate 当外部 rlib 使用）与 CLI 二进制（src/bin/tl.rs）
 // 只能访问 pub 项，故将以下模块公开，使其 service/db/model/extension/cli 层可被直接调用。
 // 仅放宽可见性，不改变任何业务逻辑。
@@ -15,6 +18,8 @@ pub use commands::*;
 pub use db::Database;
 // 桌面驻留命令（含 #[tauri::command] 生成的 __cmd__ 宏）需在 generate_handler! 处可见
 use desktop::*;
+// 快速搜索窗命令（阶段②）
+use quick::{quick_hide, quick_locate_in_main, quick_open};
 
 use extensions::mod_loader;
 use extensions::mod_registry::ModRegistry;
@@ -192,8 +197,22 @@ pub fn run() {
         .on_window_event(|window, event| {
             // 主窗获焦：立即检测一次外部写入（tl 在后台改了库，切回来就能看到）
             if let tauri::WindowEvent::Focused(true) = event {
-                if window.label() == "main" {
+                if window.label() == "main" || window.label() == quick::QUICK_LABEL {
                     data_sync::poke();
+                }
+            }
+            // 快速搜索窗不会真正关闭（Alt+F4 也只是收起），下次唤出复用
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == quick::QUICK_LABEL {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    return;
+                }
+            }
+            // 主窗真正关闭（关闭行为 = 退出）：一并销毁隐藏的快速搜索窗，否则它会让进程留在后台
+            if let tauri::WindowEvent::Destroyed = event {
+                if window.label() == "main" {
+                    quick::destroy_window(window.app_handle());
                 }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -374,6 +393,7 @@ pub fn run() {
             }
 
             app.manage(database);
+            app.manage(services::search_index::SearchIndex::default());
             data_sync::start(app.handle());
             app.manage(registry);
             desktop::init(app.handle(), desktop::parse_launch_args(std::env::args().skip(1)));
@@ -415,6 +435,10 @@ pub fn run() {
             get_desktop_settings,
             get_launch_mode,
             wake_data_sync,
+            // 快速搜索窗（阶段②）
+            quick_open,
+            quick_hide,
+            quick_locate_in_main,
             set_hotkey,
             set_close_action,
             set_hotkey_ignore_fullscreen,
@@ -456,6 +480,14 @@ pub fn run() {
             recolor_tags_and_cabinets,
             // 搜索
             search_items,
+            quick_search,
+            search_warm,
+            search_index_stats,
+            view_query,
+            library_stats,
+            view_typeahead,
+            get_items_page,
+            browse_target,
             // 启动/打开
             launch_item,
             open_in_explorer,

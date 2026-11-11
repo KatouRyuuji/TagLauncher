@@ -28,6 +28,8 @@ async function invokeCmd<T>(cmd: string, args?: Record<string, unknown>): Promis
 }
 import type { ModInfo, ModLoadError } from "../types/mod";
 import type { CloseAction, DesktopSettings, HotkeyAction, LaunchMode } from "./desktopShortcut";
+import type { SearchMode } from "../stores/appStore";
+import type { SortMode, TypeFilter } from "./itemQuery";
 import type {
   CustomThemesResult,
   ThemeDefinition,
@@ -80,6 +82,11 @@ export async function getItem(id: number): Promise<ItemWithTags> {
 /** 批量获取指定项目及标签，自动图标默认开启。 */
 export async function getItemsByIds(ids: number[], includeVisuals = true): Promise<ItemWithTags[]> {
   return invokeCmd("get_items_by_ids", { ids, includeVisuals });
+}
+
+/** 主窗取页：后端从内存索引按 ID 组装（不含自动图标），按请求顺序返回，已不存在的略去 */
+export async function getItemsPage(ids: number[], warm = false): Promise<ItemWithTags[]> {
+  return invokeCmd("get_items_page", { ids, warm });
 }
 
 /** 添加项目，传入文件/文件夹的完整路径，后端自动检测类型 */
@@ -261,6 +268,101 @@ export async function searchItems(
   includeDescendants = true,
 ): Promise<ItemWithTags[]> {
   return invokeCmd("search_items", { query, tagIds, includeDescendants });
+}
+
+export interface QuickSearchResult {
+  /** 命中总数（items 只含前 limit 条） */
+  total: number;
+  /** 索引中的对象总数 */
+  indexed: number;
+  items: ItemWithTags[];
+}
+
+/** 快速窗搜索：只取前 limit（默认 50）条；空查询 = 默认排序（收藏 → 最近使用 → 名称）的前若干项 */
+export async function quickSearch(args: { query: string; mode: SearchMode; hideMissing: boolean; limit?: number }): Promise<QuickSearchResult> {
+  return invokeCmd("quick_search", { query: args.query, mode: args.mode, hideMissing: args.hideMissing, limit: args.limit ?? 50 });
+}
+
+export interface SearchIndexStats {
+  entries: number;
+  builds: number;
+  lastBuildMs: number;
+  lastBuildNewTexts: number;
+  cachedTexts: number;
+  approxBytes: number;
+}
+
+/** 预建后端搜索索引（主窗首屏加载后调用），第一次搜索不承担建索引耗时 */
+export async function searchWarm(): Promise<SearchIndexStats> {
+  return invokeCmd("search_warm");
+}
+
+/** 后端搜索索引统计（诊断 / E2E） */
+export async function searchIndexStats(): Promise<SearchIndexStats> {
+  return invokeCmd("search_index_stats");
+}
+
+// ---- 主窗视图（分页：后端给全部 ID，数据按可视区间取） ----
+
+export interface ViewQueryArgs {
+  scope: "all" | "favorites" | "recent" | "cabinet";
+  cabinetId?: number | null;
+  /** 每个正选标签的命中集合（直接标签 = 仅自身；后代模式 = 自身 ∪ 后代） */
+  selectedGroups: number[][];
+  excludedGroups: number[][];
+  typeFilter: TypeFilter;
+  hideMissing: boolean;
+  sortMode: SortMode;
+  showNestedContents: boolean;
+  libraryBrowseRoot: string | null;
+  libraryBrowseDir: string | null;
+  cabinetDir: string | null;
+  cabinetFlat: boolean;
+  query: string;
+  mode: SearchMode;
+  /** 显式重排点：重拍 smart 排序的冻结键 */
+  refreeze: boolean;
+}
+
+export interface ViewQueryResult {
+  ids: number[];
+  browseDir: string | null;
+  libraryTotal: number;
+}
+
+/** 主窗当前视图的全部 ID（已筛选排序；搜索时为命中顺序）。 */
+export async function viewQuery(args: ViewQueryArgs): Promise<ViewQueryResult> {
+  return (await invokeCmd("view_query", { args })) as ViewQueryResult;
+}
+
+/** 主窗 typeahead：与 viewQuery 同参数的视图里名称（小写）前缀优先、子串兜底的首项 */
+export async function viewTypeahead(args: ViewQueryArgs, text: string): Promise<number | null> {
+  return (await invokeCmd("view_typeahead", { args, text })) as number | null;
+}
+
+export interface LibraryStats {
+  total: number;
+  favorites: number;
+  recent: number;
+  untagged: number;
+  missingIds: number[];
+  /** [标签, 计数]：对象拥有「自身 ∪ 后代」中任一标签即计一次 */
+  tagCounts: [number, number][];
+}
+
+/** 侧栏/状态栏计数（不把全量对象交给前端）。 */
+export async function libraryStats(tagGroups: [number, number[]][]): Promise<LibraryStats> {
+  return (await invokeCmd("library_stats", { tagGroups })) as LibraryStats;
+}
+
+export interface BrowseTarget {
+  root: string;
+  dir: string | null;
+}
+
+/** 打开对象时的逐级浏览落点（后端按库内全部路径判定）；null = 照常启动 */
+export async function browseTarget(id: number): Promise<BrowseTarget | null> {
+  return (await invokeCmd("browse_target", { id })) as BrowseTarget | null;
 }
 
 /** 读取同义词分组（每组内词互为同义，供搜索扩展） */
@@ -534,6 +636,22 @@ export async function getDesktopSettings(): Promise<DesktopSettings> {
 /** 主窗刚显示：通知后端立即检测外部写入（无焦点显示不触发获焦检测） */
 export async function wakeDataSync(): Promise<void> {
   return invokeCmd("wake_data_sync");
+}
+
+// ---- 全局快速搜索窗（阶段②） ----
+
+/** 唤出快速搜索窗（与热键同一入口）。t0Ms = 唤出请求时刻；activate=false 只供 E2E（不抢前台） */
+export async function quickOpen(opts?: { t0Ms?: number; activate?: boolean }): Promise<void> {
+  return invokeCmd("quick_open", { t0Ms: opts?.t0Ms, activate: opts?.activate });
+}
+
+export async function quickHide(): Promise<void> {
+  return invokeCmd("quick_hide");
+}
+
+/** 收起快速窗、显示主窗并在主窗中定位该对象 */
+export async function quickLocateInMain(id: number): Promise<void> {
+  return invokeCmd("quick_locate_in_main", { id });
 }
 
 /** 首个实例的启动方式：background 时主题就绪后不显示主窗 */

@@ -20,8 +20,19 @@ def stub_raw(app, cmd, spec):
 @pytest.mark.expected_js_errors
 @pytest.mark.case("E-ERR-02")
 def test_list_load_failure_and_retry(app):
-    stub_raw(app, "get_items", {"queue": [{"error": INJECT + "：列表"}, {"passthrough": True}]})
-    app.refresh_items()
+    # 命令面板输入时自己也会查 view_query（对象结果区）：先输完、等它回包，再注入，
+    # 让注入的失败落在「刷新」触发的列表加载上
+    app.page.keyboard.press("Control+k")
+    dlg = app.page.get_by_role("dialog", name="命令面板")
+    dlg.wait_for(timeout=5000)
+    dlg.get_by_label("搜索命令或项目").fill("刷新")
+    row = dlg.locator("button").filter(has=app.page.get_by_text("刷新", exact=True)).first
+    row.wait_for(timeout=8000)
+    app.page.wait_for_function("() => window.__e2e.calls.some((c) => c.cmd === 'view_query' && c.done"
+                               " && c.args && c.args.args && c.args.args.query === '刷新')", timeout=8000)
+    stub_raw(app, "view_query", {"queue": [{"error": INJECT + "：列表"}, {"passthrough": True}]})
+    row.click(timeout=8000)
+    dlg.wait_for(state="hidden", timeout=5000)
     panel = app.page.get_by_role("heading", name="对象列表加载失败")
     panel.wait_for(timeout=8000)
     app.page.get_by_role("button", name="重试").click()

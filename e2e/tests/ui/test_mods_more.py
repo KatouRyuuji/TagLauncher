@@ -140,9 +140,12 @@ def test_dependency_cycle(app_factory, sandbox):
     assert not app.js_errors()
 
 
+# 读写要等用例放行（__e2eGo）：harness 启动时会在注入桩后整页重载，重载前那一页也会执行 mod，
+# 若它在 set 与 put 之间被重载打断，计数与记录数就对不上（CI 35079d5 实测 prev=2、prevRecs=1）。
 DATA_JS = HEAD + """
 (async () => {
   try {
+  while (!window.__e2eGo) await new Promise((res) => setTimeout(res, 20));
   await t("get", () => api.data.get("counter"));
   await t("list", async () => (await api.data.list("notes")).length);
   r.prev = r.get.v; r.prevRecs = r.list.v;
@@ -164,6 +167,7 @@ def test_data_persistence_and_fs_escape(app_factory, sandbox):
     write_mod(sandbox.mods_dir, "e2e-data", "css+js", js=DATA_JS, permissions=["data", "fs:read", "fs:write"])
     app = app_factory(start=False).start()
     enable_and_reload(app, "e2e-data")
+    app.page.evaluate("window.__e2eGo = true")
     r = probe(app, "e2e-data")
     assert r["set"]["ok"] and r["put"]["ok"] and r["fsw"]["ok"], r
     assert r["fsr"] == {"ok": True, "v": "hi"}, r
@@ -172,6 +176,7 @@ def test_data_persistence_and_fs_escape(app_factory, sandbox):
     assert not (sandbox.mods_dir / "escape.txt").exists()
     app.restart()
     app.close_welcome(3000)
+    app.page.evaluate("window.__e2eGo = true")
     r2 = probe(app, "e2e-data")
     assert r2["prev"] >= 1 and r2["prevRecs"] == r2["prev"], r2
 

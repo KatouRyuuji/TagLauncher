@@ -1,7 +1,7 @@
 import { compareSortOrder } from "../lib/sidebarOrder";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import type { Tag, ItemWithTags } from "../types";
+import type { Tag } from "../types";
 import { useAppStore } from "../stores/appStore";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useImeComposition } from "../hooks/useImeComposition";
@@ -13,10 +13,12 @@ import { flattenTagTree } from "../lib/tagTree";
 import { compareNames } from "../lib/itemQuery";
 import { findTagByNameInsensitive } from "../lib/tagNames";
 import { pickRandomTagColor } from "../lib/tagColors";
+import { useTagItems } from "../hooks/useTagItems";
 
 interface TagRelationsEditorProps {
   tags: Tag[];
-  allItems: ItemWithTags[];
+  /** 数据代：对象数据变化时重取关联对象 */
+  dataEpoch: number;
   onAddRelation: (parentId: number, childId: number) => Promise<void>;
   onRemoveRelation: (parentId: number, childId: number) => Promise<void>;
   onAddTag: (name: string, color: string) => Promise<Tag>;
@@ -30,7 +32,7 @@ interface TagRelationsEditorProps {
  * 标签关系编辑器：为每个标签维护父标签（多继承），并预览该标签关联的对象。
  * 父标签是子标签的超集；筛选时选中父标签会并入其所有后代对象。后端拒绝成环关系。
  */
-export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRelation, onAddTag, onRemoveTag, onClose, initialTagId = null }: TagRelationsEditorProps) {
+export function TagRelationsEditor({ tags, dataEpoch, onAddRelation, onRemoveRelation, onAddTag, onRemoveTag, onClose, initialTagId = null }: TagRelationsEditorProps) {
   const relations = useAppStore((s) => s.tagRelations);
   const tagRows = useMemo(() => flattenTagTree(tags, relations, (a, b) => compareSortOrder(a, b) || compareNames(a.name, b.name), { uniqueIds: true }), [tags, relations]);
   const initialTarget = initialTagId != null && tags.some((t) => t.id === initialTagId) ? initialTagId : null;
@@ -116,10 +118,7 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
   }, [focusedId]);
 
   // 当前标签关联的对象（直接打了该标签的对象）
-  const focusedItems = useMemo(
-    () => (focused ? allItems.filter((it) => it.tags.some((t) => t.id === focused.id)) : []),
-    [focused, allItems],
-  );
+  const { count: focusedCount, items: focusedItems } = useTagItems(focused?.id ?? null, 30, dataEpoch);
 
   const runMutation = async (action: () => Promise<void>) => {
     setError(null);
@@ -422,11 +421,11 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
               </div>
 
               {/* 该标签关联的对象（图标 + 名称）；空态用一行提示，不渲染大空盒 */}
-              {focusedItems.length === 0 ? (
+              {focusedCount === 0 ? (
                 <p className="mt-4 text-xs text-[var(--text-faint)]">关联对象 · 0 —— 还没有对象打上此标签</p>
               ) : (
                 <div className="mt-4 rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_70%,transparent)] p-4">
-                  <div className="text-label">关联对象 · {focusedItems.length}</div>
+                  <div className="text-label">关联对象 · {focusedCount}</div>
                   <div className="mt-2 grid max-h-[180px] grid-cols-2 gap-2 overflow-y-auto">
                     {focusedItems.slice(0, 30).map((it) => (
                       <div
@@ -440,9 +439,9 @@ export function TagRelationsEditor({ tags, allItems, onAddRelation, onRemoveRela
                         <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-secondary)]">{it.name}</span>
                       </div>
                     ))}
-                    {focusedItems.length > 30 && (
+                    {focusedCount > 30 && (
                       <div className="col-span-2 px-1 py-1 text-center text-xs text-[var(--text-faint)]">
-                        还有 {focusedItems.length - 30} 个…
+                        还有 {focusedCount - 30} 个…
                       </div>
                     )}
                   </div>

@@ -5,7 +5,7 @@ export interface HighlightSegment {
   highlighted: boolean;
 }
 
-/** 汉字判定（与 search.ts 的 CJK 口径一致；拼音取音只覆盖汉字） */
+/** 汉字判定（与 Rust 搜索引擎 engine.rs 的 CJK 口径一致；拼音取音只覆盖汉字） */
 const HAN_CHAR_RE = /[㐀-䶿一-鿿豈-﫿]/;
 /** 连续汉字段切分（/g/：exec 循环内提前 return 会残留 lastIndex，用前必须归零） */
 const HAN_RUN_RE = /[㐀-䶿一-鿿豈-﫿]+/g;
@@ -27,7 +27,7 @@ function extractHighlightTerms(query: string): string[] {
  * 拼音高亮：term 为纯字母时，在文本的连续汉字段上按段首尝试两种命中——
  * 首字母缩写（段首字母串以 term 为前缀 → 高亮前 term.length 个汉字）；
  * 整词拼音前缀（段全拼逐字累加以 term 为前缀 → 高亮覆盖该前缀的汉字区间）。
- * 与 search.ts 的前缀匹配口径一致。
+ * 与 Rust 搜索引擎 engine.rs 的前缀匹配口径一致。
  * 拼音转换按汉字段 LRU 缓存：同一批名称/标签在逐击键高亮中不再重复跑 pinyin-pro。
  */
 const PINYIN_CACHE_MAX = 1024;

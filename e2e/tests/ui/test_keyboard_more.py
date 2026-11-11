@@ -146,10 +146,12 @@ def test_reload_keeps_state(app, sandbox):
     app.wait_count(4)
     assert sorted((i["name"], i["id"]) for i in app.items()) == before
     app.page.get_by_text("正在监视 1 个文件夹").wait_for(timeout=8000)
-    # 空闲期没有成倍的轮询（重复初始化的定时器会让 get_items 在静置时持续出现）
+    # 空闲期没有成倍的轮询（重复初始化的定时器会让整表/视图重载在静置时持续出现）
     n0 = len(app.calls("get_items"))
+    v0 = len(app.calls("view_query"))
     time.sleep(3)
     assert len(app.calls("get_items")) - n0 <= 1, app.calls("get_items")[n0:]
+    assert len(app.calls("view_query")) - v0 <= 1, app.calls("view_query")[v0:]
     # 后端监视未因刷新重复注册：新文件只入库一次
     files.write(root / "刷新后新增.txt", "n")
     wait_until(lambda: any(i["name"] == "刷新后新增.txt" for i in app.items()), 10)

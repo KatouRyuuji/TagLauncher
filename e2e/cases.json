@@ -653,7 +653,7 @@
 "module": "桌面驻留",
 "scenario": "默认不抢键、关闭即退出",
 "steps": "全新库打开设置→桌面驻留→关闭全屏忽略",
-"expect": "toggle_main 未启用、关闭=退出、全屏忽略默认开、无托盘；通用 set_setting 不能写 hotkey.*/desktop.*；全屏忽略可关并持久",
+"expect": "toggle_main、open_quick 均未启用、关闭=退出、全屏忽略默认开、无托盘；通用 set_setting 不能写 hotkey.*/desktop.*；全屏忽略可关并持久",
 "layer": "UI",
 "automation": "CDP + Win32 只读",
 "priority": "P1",
@@ -735,6 +735,72 @@
 "automation": "Win32 GetProcessTimes",
 "priority": "P1",
 "coverage": "全局极速阶段①"
+},
+{
+"id": "E-QUICK-01",
+"module": "快速搜索窗",
+"scenario": "热键绑定即开启",
+"steps": "默认等待→绑定「打开快速搜索窗」→重启→清除",
+"expect": "默认不建窗；绑定后预创建且隐藏；重启按设置预创建；清除后销毁",
+"layer": "UI",
+"automation": "CDP 多页面",
+"priority": "P1",
+"coverage": "全局极速阶段②"
+},
+{
+"id": "E-QUICK-02",
+"module": "快速搜索窗",
+"scenario": "搜索与键盘动作",
+"steps": "入库 4 个对象→唤出→输入拼音缩写→Ctrl+Shift+C/Ctrl+Enter/Ctrl+T/Enter/Esc→主窗定位事件",
+"expect": "结果与主窗同口径；复制路径、显示位置、打标签（主窗按 ID 增量刷新，不整表重载）、打开后收起、Esc 先清空再收起；主窗定位选中目标",
+"layer": "UI",
+"automation": "CDP + IPC 桩",
+"priority": "P1",
+"coverage": "全局极速阶段②"
+},
+{
+"id": "E-QUICK-03",
+"module": "快速搜索窗",
+"scenario": "外部写入同步",
+"steps": "快速窗隐藏时 tl add",
+"expect": "快速窗经 data-changed 自动重载，唤出即可搜到",
+"layer": "UI",
+"automation": "CDP + tl CLI",
+"priority": "P1",
+"coverage": "全局极速阶段②"
+},
+{
+"id": "E-PERF-QUICK",
+"module": "快速搜索窗",
+"scenario": "快速窗性能（5k/50k）",
+"steps": "预创建前后测进程树内存→唤出 20 次→10 组查询逐字输入",
+"expect": "唤出到可输入 p95≤80ms；输入到出结果 p95 5k≤30ms、50k≤100ms；隐藏常驻私有内存增量 5k≤60MB、50k≤120MB",
+"layer": "UI",
+"automation": "CDP + Win32 GetProcessMemoryInfo",
+"priority": "P1",
+"coverage": "全局极速阶段②"
+},
+{
+"id": "E-PERF-MAIN-SEARCH",
+"module": "搜索",
+"scenario": "主窗搜索耗时（5k/50k，只测量）",
+"steps": "主窗搜索框逐字输入 10 组查询（每字间隔超过防抖）",
+"expect": "记录搜索词生效→结果提交后下一帧、输入→结果的 p50/p95，写入 artifacts/main-search-perf-*.json；不设阈值，用于搜索后端迁移前后对比",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P2",
+"coverage": "搜索挪到 Rust 前后对比"
+},
+{
+"id": "E-PERF-MAIN-MEM",
+"module": "性能",
+"scenario": "主窗内存构成与首屏/滚动耗时（5k/50k，只测量）",
+"steps": "启动后记录首屏时间，静置后采进程树内存（按 WebView2 进程类型）、渲染进程 JS 堆、图标缓存与索引规模；把列表滚到 10 个位置，等视口内卡片出齐",
+"expect": "写入 artifacts/main-perf-*.json；不设阈值，用于主窗分页前后对比",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P2",
+"coverage": "主窗分页前后对比"
 },
 {
 "id": "E-LCH-01",

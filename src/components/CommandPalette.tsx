@@ -28,13 +28,13 @@ import {
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
-import { filterCommandsByQuery, isImeKeyboardEvent, SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter, applyTypeFilter } from "../lib/itemQuery";
-import { buildSearchIndex, expandForTagFilter, filterItemsByTags, searchWithIndex } from "../lib/search";
+import { filterCommandsByQuery, isImeKeyboardEvent, SORT_OPTIONS, TYPE_FILTERS, nextTypeFilter } from "../lib/itemQuery";
+import { expandForTagFilter } from "../lib/tagFilter";
 import { requestEditItemTags } from "../lib/tagEditIntent";
 import { showToast } from "../lib/toast";
 import { ensurePinyin } from "../lib/pinyinProvider";
 import { buildDescendantsMap } from "../lib/tagGraph";
-import { getCabinetItems } from "../lib/db";
+import { getItemsByIds, viewQuery, type ViewQueryArgs } from "../lib/db";
 import { onCabinetItemsChanged } from "../lib/modApi";
 import { focusWorkspaceSearch, resetWorkspaceSearchInput } from "../lib/workspaceChrome";
 import { useAppStore } from "../stores/appStore";
@@ -67,7 +67,6 @@ interface CommandDef {
 }
 
 interface CommandPaletteProps {
-  items: ItemWithTags[];
   selectedItemIds: number[];
   onLaunch: (id: number) => void;
   onAddItems: (paths: string[]) => Promise<void>;
@@ -79,7 +78,6 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({
-  items,
   selectedItemIds,
   onLaunch,
   onAddItems,
@@ -120,56 +118,31 @@ export function CommandPalette({
   const lastScheduledRef = useRef("");
   const trapRef = useFocusTrap<HTMLDivElement>({ active: open, autoFocus: false });
 
-  const [cabinetItemIds, setCabinetItemIds] = useState<Set<number> | null>(null);
-
-  // 命令面板的对象候选跟随工作台筛选：选中文件柜时先拉取柜内对象 id 集做收窄。
-  // 新柜数据到达前先收窄为空，避免闪现上一个柜（或全量）的内容（与 useItems 的归属判定同理）。
-  // 面板打开期间柜成员增删经 onCabinetItemsChanged 即时同步。
-  useEffect(() => {
-    if (!open || selectedCabinetId === null) {
-      setCabinetItemIds(null);
-      return;
-    }
-    let cancelled = false;
-    setCabinetItemIds(new Set());
-    void getCabinetItems(selectedCabinetId, false)
-      .then((cabinetItems) => {
-        if (!cancelled) setCabinetItemIds(new Set(cabinetItems.map((item) => item.id)));
-      })
-      .catch(() => {
-        if (!cancelled) setCabinetItemIds(null);
-      });
-    const unsubscribe = onCabinetItemsChanged((cabinetId, itemIds) => {
-      if (!cancelled && cabinetId === selectedCabinetId) {
-        setCabinetItemIds(new Set(itemIds));
-      }
-    });
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [open, selectedCabinetId]);
-
-  // 对象候选收窄与工作台 useItems 同一口径：收藏 > 最近使用 > 文件柜 > 全量，
-  // 再按选中标签（含后代闭包）与类型筛选过滤。
+  // 对象候选收窄与工作台同一口径：收藏 > 最近使用 > 文件柜 > 全量，再按选中标签（含后代闭包）
+  // 与类型筛选；不隐藏夹内对象、关联柜不按目录分层（面板查的是「范围内全部」）。
+  // 范围与搜索都在后端（view_query），前端只取前 8 条命中的对象。
   const descendantsMap = useMemo(() => buildDescendantsMap(tagRelations), [tagRelations]);
-  const scopedItems = useMemo(() => {
-    let base = items;
-    if (showFavorites) {
-      base = items.filter((item) => item.is_favorite);
-    } else if (showRecent) {
-      base = items.filter((item) => Boolean(item.last_used_at));
-    } else if (selectedCabinetId !== null) {
-      base = cabinetItemIds ? items.filter((item) => cabinetItemIds.has(item.id)) : [];
-    }
-    const tagScoped = filterItemsByTags(
-      base,
-      selectedTagIds,
-      expandForTagFilter(tagFilterMode !== "direct", descendantsMap),
-      excludedTagIds,
-    );
-    return applyTypeFilter(tagScoped, typeFilter);
-  }, [items, showFavorites, showRecent, selectedCabinetId, cabinetItemIds, selectedTagIds, excludedTagIds, descendantsMap, tagFilterMode, typeFilter]);
+  const paletteArgs = useMemo((): Omit<ViewQueryArgs, "query"> => {
+    const expand = expandForTagFilter(tagFilterMode !== "direct", descendantsMap);
+    const group = (id: number) => (expand ? [...expand(id)] : [id]);
+    const scope = showFavorites ? "favorites" : showRecent ? "recent" : selectedCabinetId !== null ? "cabinet" : "all";
+    return {
+      scope,
+      cabinetId: scope === "cabinet" ? selectedCabinetId : null,
+      selectedGroups: selectedTagIds.map(group),
+      excludedGroups: excludedTagIds.map(group),
+      typeFilter,
+      hideMissing: false,
+      sortMode: "smart",
+      showNestedContents: true,
+      libraryBrowseRoot: null,
+      libraryBrowseDir: null,
+      cabinetDir: null,
+      cabinetFlat: true,
+      mode: "all",
+      refreeze: false,
+    };
+  }, [showFavorites, showRecent, selectedCabinetId, selectedTagIds, excludedTagIds, descendantsMap, tagFilterMode, typeFilter]);
 
   const commands = useMemo<CommandDef[]>(() => [
     { id: "search", title: "聚焦搜索", hint: "/", keywords: "search 搜索 find", icon: Search, run: () => focusWorkspaceSearch() },
@@ -234,19 +207,36 @@ export function CommandPalette({
   }, [commands, filterQuery]);
   // 对象候选搜索固定用「全部」模式（名称+标签均可命中），不跟随工作台的「仅标签」类模式，
   // 否则切到「仅标签」后在面板里输对象名命中不了对象。
-  // ≥2 字符才建索引并起搜：单字符（尤其单 CJK 字）扫全库既贵又不出有效候选
+  // ≥2 字符才起搜：单字符（尤其单 CJK 字）扫全库既贵又不出有效候选。
+  // 搜索走后端内存索引（与主窗/快速窗同一实现），范围 = 上面收窄后的候选，取前 8 条。
   const itemSearchQuery = filterQuery.trim().length >= 2 ? filterQuery.trim() : "";
-  // 索引与查询词无关（buildSearchIndex 只读 scopedItems）：门控用布尔，
-  // 否则 ≥2 字符后每次防抖击键都把全库索引重建一遍
-  const hasItemQuery = itemSearchQuery.length > 0;
-  const searchIndex = useMemo(
-    () => (open && hasItemQuery ? buildSearchIndex(scopedItems, "all") : { entries: [], mode: "all" as const }),
-    [open, scopedItems, hasItemQuery],
-  );
-  const matchedItems = useMemo(() => {
-    if (!itemSearchQuery) return [];
-    return searchWithIndex(searchIndex, itemSearchQuery).slice(0, 8);
-  }, [searchIndex, itemSearchQuery]);
+  const [matchedItems, setMatchedItems] = useState<ItemWithTags[]>([]);
+  // 面板打开期间柜成员增删：重查一次（与工作台的柜成员同步同源）
+  const [cabinetEpoch, setCabinetEpoch] = useState(0);
+  useEffect(() => {
+    if (!open || selectedCabinetId === null) return;
+    return onCabinetItemsChanged((cabinetId) => {
+      if (cabinetId === selectedCabinetId) setCabinetEpoch((n) => n + 1);
+    });
+  }, [open, selectedCabinetId]);
+  useEffect(() => {
+    if (!open || !itemSearchQuery) {
+      setMatchedItems([]);
+      return;
+    }
+    let cancelled = false;
+    void viewQuery({ ...paletteArgs, query: itemSearchQuery })
+      .then(({ ids }) => (cancelled ? [] : getItemsByIds(ids.slice(0, 8), false)))
+      .then((items) => {
+        if (!cancelled) setMatchedItems(items);
+      })
+      .catch(() => {
+        if (!cancelled) setMatchedItems([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, itemSearchQuery, paletteArgs, cabinetEpoch]);
 
   type Row = { kind: "command"; command: CommandDef } | { kind: "item"; item: ItemWithTags };
   const rows = useMemo<Row[]>(() => {

@@ -23,7 +23,7 @@ describe("TagRelationsEditor 添加子标签", () => {
     render(
       <TagRelationsEditor
         tags={tags}
-        allItems={[]}
+        dataEpoch={0}
         onAddRelation={onAddRelation}
         onRemoveRelation={vi.fn(async () => {})}
         onAddTag={onAddTag}
@@ -68,7 +68,7 @@ describe("TagRelationsEditor 添加子标签", () => {
     render(
       <TagRelationsEditor
         tags={tags}
-        allItems={[]}
+        dataEpoch={0}
         onAddRelation={onAddRelation}
         onRemoveRelation={vi.fn(async () => {})}
         onAddTag={onAddTag}
@@ -88,7 +88,7 @@ describe("TagRelationsEditor 添加子标签", () => {
     render(
       <TagRelationsEditor
         tags={tags}
-        allItems={[]}
+        dataEpoch={0}
         onAddRelation={vi.fn(async () => {})}
         onRemoveRelation={vi.fn(async () => {})}
         onAddTag={onAddTag}
@@ -114,7 +114,7 @@ describe("TagRelationsEditor 打开时对准指定标签", () => {
     render(
       <TagRelationsEditor
         tags={tags}
-        allItems={[]}
+        dataEpoch={0}
         initialTagId={initialTagId}
         onAddRelation={onAddRelation}
         onRemoveRelation={vi.fn(async () => {})}

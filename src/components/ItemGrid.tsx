@@ -1,4 +1,6 @@
-import type { ItemViewProps } from "../types";
+import type { ItemViewProps, ItemWithTags } from "../types";
+import { ItemPlaceholder, useLoadedRowHeight } from "./ItemPlaceholder";
+import { useViewData } from "../hooks/useViewData";
 import { ItemCard } from "./ItemCard";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
@@ -55,7 +57,8 @@ function estimateInitialLanes(iconLayout: boolean): number {
 
 type ItemCardViewProps = Omit<
   ItemViewProps,
-  | "items"
+  | "view"
+  | "contextSelection"
   | "loading"
   | "onSetManyTags"
   | "onRemoveItemsFromCabinet"
@@ -75,7 +78,7 @@ const ItemGridCard = memo(function ItemGridCard({
   selectedItemIds,
   active,
 }: {
-  item: ItemViewProps["items"][number];
+  item: ItemWithTags;
   viewProps: ItemCardViewProps;
   selected: boolean;
   contextSelection: ContextSelectionInfo | null;
@@ -143,7 +146,8 @@ const ItemGridCard = memo(function ItemGridCard({
 });
 
 export function ItemGrid({
-  items,
+  view,
+  contextSelection: contextSelectionInfo = null,
   tags,
   cabinets,
   loading,
@@ -178,7 +182,11 @@ export function ItemGrid({
   const sizeScale = iconLayout ? iconSizeScale : cardSizeScale;
   const rowEstimate = iconLayout ? ICONS_ROW_EST : GRID_ROW_EST;
   /** 少结果旁路：1–3 张卡顶左一组（与满网格同锚点）；icons 仍走虚拟化主路径 */
-  const fewResults = Boolean(!libraryEmpty && items.length > 0 && items.length <= 3 && !iconLayout);
+  // 页数据到达只重渲染列表（返回值仅用于触发重渲染）
+  useViewData(view);
+  const ids = view.ids;
+  const count = ids.length;
+  const fewResults = Boolean(!libraryEmpty && count > 0 && count <= 3 && !iconLayout);
   const viewProps = useMemo(() => ({
     tags,
     cabinets,
@@ -220,11 +228,11 @@ export function ItemGrid({
   ]);
 
   const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
-  const itemIds = useMemo(() => items.map((item) => item.id), [items]);
+  const itemIds = ids;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [lanes, setLanes] = useState(() => estimateInitialLanes(iconLayout));
-  const rowCount = Math.ceil(items.length / Math.max(1, lanes));
+  const rowCount = Math.ceil(count / Math.max(1, lanes));
 
   // 记录每一行的虚拟化测量位置与高度；缺失行用 estimate 估算。
   const rowMetricsRef = useRef<Map<number, { start: number; size: number }>>(new Map());
@@ -259,26 +267,46 @@ export function ItemGrid({
 
   useEffect(() => {
     // 少结果视为单行，键盘左右在组内移动；主路径仍用测量列数
-    setWorkspaceGridLanes(fewResults ? items.length : lanes);
+    setWorkspaceGridLanes(fewResults ? count : lanes);
     return () => setWorkspaceGridLanes(1);
-  }, [fewResults, items.length, lanes]);
+  }, [fewResults, count, lanes]);
 
+  // 已加载行的真实行高（含 paddingBottom 行间距）：未测量行与占位都按它估算，跳转/取页时行高不再骤变
+  const loadedRowHeight = useLoadedRowHeight(scrollRef, rowEstimate);
+  // onChange 在滚动事件里调用：经 ref 读最新视图与列数
+  const viewRef = useRef(view);
+  const lanesRef = useRef(lanes);
+  const fewResultsRef = useRef(fewResults);
+  useLayoutEffect(() => {
+    viewRef.current = view;
+    lanesRef.current = lanes;
+    fewResultsRef.current = fewResults;
+  });
+  // getItemKey 是虚拟器测量表的 memo 依赖：每次渲染换新函数会让它把全部行重算一遍（50k 时每次取页到达都付一次）
+  const getRowKey = useCallback((index: number) => {
+    const first = ids[index * lanes];
+    return first !== undefined ? `${first}@${lanes}@${iconLayout ? "icons" : "grid"}` : index;
+  }, [ids, lanes, iconLayout]);
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowEstimate,
+    estimateSize: () => loadedRowHeight,
     // 行高测量走自定义 measureGridRow：挂载与尺寸变化都读真实 DOM 高度，
     // 不信任 itemSizeCache 的残留值（见 measureGridRow 注释）。
     measureElement: measureGridRow,
     // 行 key 用内容身份（首项 id + 列数）而非默认行索引：换柜/筛选/排序/列数变化后
     // 行 key 随之变化，React 重建行 DOM 触发 measureElement 重测。索引复用的 key
     // 会让行 DOM 滞留旧内容的测量语义，行高与内容错位积累，表现为行间间隙/重叠。
-    getItemKey: (index) => {
-      const first = items[index * lanes];
-      return first ? `${first.id}@${lanes}@${iconLayout ? "icons" : "grid"}` : index;
-    },
+    getItemKey: getRowKey,
     // 列数自适应 overscan：一行卡片越多预渲染越贵，行数相应减少
     overscan: gridOverscanRows(lanes),
+    // 滚动回调里就发起取页（不等 React 提交后的 effect），跳转时省掉一轮渲染
+    onChange: (instance) => {
+      const rows = instance.getVirtualIndexes();
+      if (rows.length === 0 || fewResultsRef.current) return;
+      const n = Math.max(1, lanesRef.current);
+      viewRef.current.ensureRange(rows[0] * n, (rows[rows.length - 1] + 1) * n);
+    },
   });
 
   // 每次渲染把可见行的真实测量数据记录下来，供 getItemRects 使用。
@@ -289,12 +317,20 @@ export function ItemGrid({
   const activeId = selectedItemIds[selectedItemIds.length - 1] ?? null;
   const activeMounted = useMemo(() => {
     if (activeId == null) return false;
-    if (fewResults) return items.some((item) => item.id === activeId);
-    const idx = items.findIndex((item) => item.id === activeId);
+    const idx = view.indexOf(activeId);
     if (idx < 0) return false;
+    if (fewResults) return true;
     const row = Math.floor(idx / Math.max(1, lanes));
     return virtualItems.some((v) => v.index === row);
-  }, [activeId, fewResults, items, lanes, virtualItems]);
+  }, [activeId, fewResults, view, lanes, virtualItems]);
+
+  // 按可视行区间取页（首屏 + 滚动/跳转按需；已缓存的页不重取，过期页重取）
+  const firstRow = virtualItems[0]?.index ?? 0;
+  const lastRow = virtualItems[virtualItems.length - 1]?.index ?? -1;
+  useEffect(() => {
+    if (fewResults) view.ensureRange(0, count);
+    else if (lastRow >= firstRow) view.ensureRange(firstRow * lanes, (lastRow + 1) * lanes);
+  }, [view, fewResults, count, firstRow, lastRow, lanes]);
 
   // pending 焦点消费：挂载即聚焦（未挂载则等下一次渲染，虚拟化滚动后自然重跑）
   useEffect(() => {
@@ -318,7 +354,7 @@ export function ItemGrid({
   // lanes 变化后行数重排，旧行索引的度量对应到错误的行，清空等待重新测量，避免框选短暂错位
   useLayoutEffect(() => {
     rowMetricsRef.current.clear();
-  }, [lanes, items, iconLayout]);
+  }, [lanes, ids, iconLayout]);
 
   // 行高重测无需 virtualizer.measure()：getItemKey 已按内容身份变化触发
   // measureElement 重测；同 key 行的纯高度变化（编辑标签等）由虚拟器内部
@@ -344,25 +380,20 @@ export function ItemGrid({
     // 框选、批量选择不设置跟随标记，视图保持原地（SelectionCanvas 顶部有标记说明）。
     if (consumeSelectionScrollFollow() !== lastSelectedId) return;
     if (fewResults) return;
-    const index = items.findIndex((item) => item.id === lastSelectedId);
+    const index = view.indexOf(lastSelectedId);
     if (index < 0) return;
     virtualizer.scrollToIndex(Math.floor(index / Math.max(1, lanes)), { align: "auto" });
-  }, [lastSelectedId, items, lanes, virtualizer, fewResults]);
+  }, [lastSelectedId, view, lanes, virtualizer, fewResults]);
 
-  // 右键命中多选集时，右键菜单的删除/收藏/复制路径作用于整个选中集；
-  // 仅多选（>1）时构造，单选/未选中为 null（菜单回退单对象语义）。
-  const contextSelectionInfo = useMemo<ContextSelectionInfo | null>(() => {
-    if (selectedItemIds.length <= 1) return null;
-    const idSet = new Set(selectedItemIds);
-    const selected = items.filter((item) => idSet.has(item.id));
-    return {
-      ids: selected.map((item) => item.id),
-      paths: selected.map((item) => item.path),
-      favoriteTarget: selected.some((item) => !item.is_favorite),
-    };
-  }, [items, selectedItemIds]);
+  // 右键命中多选集时的 contextSelection 由 App 按 ID 取齐对象后统一给出（选中集可能含未缓存对象）。
 
-  const renderItemGridCard = (item: ItemViewProps["items"][number]) => {
+  const renderItemGridCard = (id: number) => {
+    const item = view.get(id);
+    if (!item) {
+      return (
+        <ItemPlaceholder key={id} height={Math.max(40, loadedRowHeight - GRID_GAP)} />
+      );
+    }
     const isSelected = selectedItemIdSet.has(item.id);
     return (
       <ItemGridCard
@@ -403,22 +434,22 @@ export function ItemGrid({
 
       for (let colIndex = 0; colIndex < lanes; colIndex++) {
         const itemIndex = rowIndex * lanes + colIndex;
-        if (itemIndex >= items.length) break;
+        if (itemIndex >= count) break;
         const left = paddingLeft + colIndex * (colWidth + GRID_GAP);
         const right = left + colWidth;
         const top = paddingTop + rowStart;
         const bottom = top + rowSize - GRID_GAP; // 行间距不算入卡片
-        map.set(items[itemIndex].id, { left, top, right, bottom });
+        map.set(ids[itemIndex], { left, top, right, bottom });
       }
     }
     return map;
-  }, [lanes, rowCount, items, rowEstimate]);
+  }, [lanes, rowCount, ids, count, rowEstimate]);
 
   if (loading) {
     return <WorkspaceSkeleton view={iconLayout ? "icons" : "grid"} />;
   }
 
-  if (items.length === 0) {
+  if (count === 0) {
     // 空态也挂在 SelectionCanvas 里：空白右键背景菜单（添加文件/刷新）在空库/空筛选时同样可用
     return (
       <SelectionCanvas
@@ -452,9 +483,9 @@ export function ItemGrid({
     >
       {fewResults ? (
         <div data-region="item-grid-inner" role="list" aria-label="项目列表" className="item-grid-few">
-          {items.map((item) => (
-            <div key={item.id} className="item-grid-few-card">
-              {renderItemGridCard(item)}
+          {ids.map((id) => (
+            <div key={id} className="item-grid-few-card">
+              {renderItemGridCard(id)}
             </div>
           ))}
         </div>
@@ -468,7 +499,7 @@ export function ItemGrid({
         >
           {virtualizer.getVirtualItems().map((vRow) => {
             const startIdx = vRow.index * lanes;
-            const rowItems = items.slice(startIdx, Math.min(startIdx + lanes, items.length));
+            const rowIds = ids.slice(startIdx, Math.min(startIdx + lanes, count));
             return (
               <div
                 key={vRow.key}
@@ -490,7 +521,7 @@ export function ItemGrid({
                   gap: GRID_GAP,
                 }}
               >
-                {rowItems.map((item) => renderItemGridCard(item))}
+                {rowIds.map((id) => renderItemGridCard(id))}
               </div>
             );
           })}

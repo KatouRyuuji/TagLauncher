@@ -15,6 +15,7 @@ import { WORKSPACE_SEARCH_ID } from "../lib/workspaceChrome";
 import { useAppStore } from "../stores/appStore";
 import type { ItemWithTags } from "../types";
 import { showToast } from "../lib/toast";
+import { staticView } from "../lib/itemView";
 
 vi.mock("../lib/toast", () => ({ showToast: vi.fn() }));
 
@@ -26,8 +27,10 @@ function setup(options: { items?: ItemWithTags[]; selectedItemIds?: number[]; on
   renderHook(() =>
     useWorkspaceHotkeys({
       blocked: false,
-      items: options.items ?? [],
-      allItems: options.items ?? [],
+      view: staticView(options.items ?? []),
+      selectedItems: (options.items ?? []).filter((item) => (options.selectedItemIds ?? []).includes(item.id)),
+      previewItem: (options.items ?? []).find((item) => item.id === useAppStore.getState().previewItemId),
+      typeahead: async () => null,
       selectedItemIds: options.selectedItemIds ?? [],
       setSelectedItemIds: () => {},
       onLaunch: options.onLaunch ?? (() => {}),

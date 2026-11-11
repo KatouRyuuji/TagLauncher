@@ -26,6 +26,7 @@ pub const TRAY_ID: &str = "taglauncher-tray";
 pub const SETTINGS_CHANGED_EVENT: &str = "desktop-settings-changed";
 const MENU_SHOW: &str = "tray-show";
 const MENU_QUIT: &str = "tray-quit";
+const MENU_QUICK: &str = "tray-quick";
 /// 前台全屏时被忽略的热键：窗口期内连按 3 次强制执行
 const FORCE_PRESSES: usize = 3;
 const FORCE_WINDOW: Duration = Duration::from_secs(2);
@@ -37,21 +38,25 @@ const FORCE_WINDOW: Duration = Duration::from_secs(2);
 #[serde(rename_all = "snake_case")]
 pub enum HotkeyAction {
     ToggleMain,
+    /// 全局快速搜索窗（阶段②）。绑定快捷键即开启功能（预创建隐藏窗口），清除即关闭（销毁窗口）。
+    OpenQuick,
 }
 
 impl HotkeyAction {
     /// 本批开放的动作（设置页只显示这些）
-    pub const ALL: [HotkeyAction; 1] = [HotkeyAction::ToggleMain];
+    pub const ALL: [HotkeyAction; 2] = [HotkeyAction::ToggleMain, HotkeyAction::OpenQuick];
 
     pub fn id(self) -> &'static str {
         match self {
             HotkeyAction::ToggleMain => "toggle_main",
+            HotkeyAction::OpenQuick => "open_quick",
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
             HotkeyAction::ToggleMain => "显示 / 隐藏主窗口",
+            HotkeyAction::OpenQuick => "打开快速搜索窗",
         }
     }
 
@@ -326,6 +331,7 @@ pub fn launch_mode() -> LaunchMode {
 
 /// 全局快捷键回调：按快捷键 id 查表得到动作，经「全屏忽略」闸门后分派。
 pub fn on_shortcut_pressed(app: &AppHandle, shortcut: &Shortcut) {
+    let t0_ms = crate::quick::now_ms();
     let Some(state) = app.try_state::<DesktopState>() else {
         return;
     };
@@ -351,6 +357,7 @@ pub fn on_shortcut_pressed(app: &AppHandle, shortcut: &Shortcut) {
     };
     match action {
         HotkeyAction::ToggleMain => toggle_main_window(app),
+        HotkeyAction::OpenQuick => crate::quick::toggle(app, t0_ms),
     }
 }
 
@@ -406,26 +413,38 @@ pub enum TrayEntry {
 
 /// 托盘菜单模型：由设置生成，设置变化即重建。以后加「快速搜索」「右键菜单：已开启」等项在此扩展。
 pub fn tray_menu_model(settings: &DesktopSettings) -> Vec<TrayEntry> {
-    let toggle = settings
-        .hotkeys
-        .iter()
-        .find(|h| h.action == HotkeyAction::ToggleMain)
-        .and_then(|h| h.accelerator.as_deref());
+    let toggle = accelerator_of(settings, HotkeyAction::ToggleMain);
     let show_label = match toggle {
         Some(acc) => format!("显示 TagLauncher（{}）", display_accelerator(acc)),
         None => "显示 TagLauncher".to_string(),
     };
-    vec![
-        TrayEntry::Item {
-            id: MENU_SHOW,
-            label: show_label,
-        },
+    let mut model = vec![TrayEntry::Item {
+        id: MENU_SHOW,
+        label: show_label,
+    }];
+    // 快速搜索窗开启（已绑定快捷键）时才出现
+    if let Some(acc) = accelerator_of(settings, HotkeyAction::OpenQuick) {
+        model.push(TrayEntry::Item {
+            id: MENU_QUICK,
+            label: format!("快速搜索（{}）", display_accelerator(acc)),
+        });
+    }
+    model.extend([
         TrayEntry::Separator,
         TrayEntry::Item {
             id: MENU_QUIT,
             label: "退出".to_string(),
         },
-    ]
+    ]);
+    model
+}
+
+fn accelerator_of(settings: &DesktopSettings, action: HotkeyAction) -> Option<&str> {
+    settings
+        .hotkeys
+        .iter()
+        .find(|h| h.action == action)
+        .and_then(|h| h.accelerator.as_deref())
 }
 
 /// 是否需要托盘：关闭到托盘，或后台启动（否则没有入口唤回主窗）
@@ -456,6 +475,7 @@ fn create_tray(app: &AppHandle, menu: &Menu<tauri::Wry>) -> Result<(), String> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             MENU_SHOW => show_main_window(app),
+            MENU_QUICK => crate::quick::toggle(app, crate::quick::now_ms()),
             // 真正退出：走正常退出流程（RunEvent::Exit 里的清理照常执行）
             MENU_QUIT => app.exit(0),
             _ => {}
@@ -571,8 +591,26 @@ pub fn init(app: &AppHandle, mode: LaunchMode) {
             }
         }
     }
+    let quick_enabled = state
+        .inner
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .registered
+        .contains_key(&HotkeyAction::OpenQuick);
     app.manage(state);
     sync_tray(app);
+    crate::quick::sync_window(app, quick_enabled);
+}
+
+/// 快速搜索窗是否开启（「打开快速搜索窗」已绑定快捷键）
+pub fn quick_enabled(app: &AppHandle) -> bool {
+    app.try_state::<DesktopState>().is_some_and(|s| {
+        s.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .registered
+            .contains_key(&HotkeyAction::OpenQuick)
+    })
 }
 
 // ───────────────────────────── 命令 ─────────────────────────────
@@ -687,6 +725,9 @@ pub async fn set_hotkey(
             inner.startup_errors.remove(&action);
         }
     }
+    if action == HotkeyAction::OpenQuick {
+        crate::quick::sync_window(&app, quick_enabled(&app));
+    }
     sync_tray(&app);
     Ok(state.snapshot(&app))
 }
@@ -765,9 +806,14 @@ mod tests {
             HotkeyAction::parse("toggle_main").unwrap(),
             HotkeyAction::ToggleMain
         );
+        assert_eq!(
+            HotkeyAction::parse("open_quick").unwrap(),
+            HotkeyAction::OpenQuick
+        );
+        assert_eq!(HotkeyAction::OpenQuick.setting_key(), "hotkey.open_quick");
         assert!(
             HotkeyAction::parse("quick_search").is_err(),
-            "本批只开放 toggle_main"
+            "未开放的动作一律拒绝"
         );
     }
 
@@ -842,13 +888,23 @@ mod tests {
     }
 
     fn settings_with(accelerator: Option<&str>) -> DesktopSettings {
+        settings_with_quick(accelerator, None)
+    }
+
+    fn settings_with_quick(accelerator: Option<&str>, quick: Option<&str>) -> DesktopSettings {
         DesktopSettings {
-            hotkeys: vec![HotkeyInfo {
-                action: HotkeyAction::ToggleMain,
-                label: HotkeyAction::ToggleMain.label(),
-                accelerator: accelerator.map(str::to_string),
+            hotkeys: [
+                (HotkeyAction::ToggleMain, accelerator),
+                (HotkeyAction::OpenQuick, quick),
+            ]
+            .into_iter()
+            .map(|(action, acc)| HotkeyInfo {
+                action,
+                label: action.label(),
+                accelerator: acc.map(str::to_string),
                 error: None,
-            }],
+            })
+            .collect(),
             close_action: CloseAction::Tray,
             ignore_fullscreen: true,
             launch_mode: LaunchMode::Show,
@@ -881,5 +937,40 @@ mod tests {
                 label: "显示 TagLauncher（Ctrl+Alt+K）".into()
             }
         );
+    }
+
+    #[test]
+    fn tray_menu_lists_quick_search_only_when_bound() {
+        let model = tray_menu_model(&settings_with_quick(None, Some("Alt+Space")));
+        assert_eq!(
+            model,
+            vec![
+                TrayEntry::Item {
+                    id: MENU_SHOW,
+                    label: "显示 TagLauncher".into()
+                },
+                TrayEntry::Item {
+                    id: MENU_QUICK,
+                    label: "快速搜索（Alt+Space）".into()
+                },
+                TrayEntry::Separator,
+                TrayEntry::Item {
+                    id: MENU_QUIT,
+                    label: "退出".into()
+                },
+            ]
+        );
+        assert!(!tray_menu_model(&settings_with(None))
+            .iter()
+            .any(|e| matches!(e, TrayEntry::Item { id, .. } if *id == MENU_QUICK)));
+    }
+
+    #[test]
+    fn quick_action_is_listed_after_toggle_main_and_unbound_by_default() {
+        assert_eq!(
+            HotkeyAction::ALL,
+            [HotkeyAction::ToggleMain, HotkeyAction::OpenQuick]
+        );
+        assert_eq!(HotkeyAction::OpenQuick.label(), "打开快速搜索窗");
     }
 }

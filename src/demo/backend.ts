@@ -16,6 +16,9 @@ import type { ThemeDefinition } from "../types/theme";
 import pkg from "../../package.json";
 import { demoAlbumCover } from "./assets";
 import { isUnderDir } from "../lib/cabinetBrowse";
+import { demoLibraryStats, demoView } from "./demoView";
+import { browseTargetForItem } from "../lib/nestedVisibility";
+import type { SortMode, TypeFilter } from "../lib/itemQuery";
 import { planUntrack, watchRootPaths } from "../lib/untrack";
 import { applySortOrder, compareSortOrder } from "../lib/sidebarOrder";
 import {
@@ -73,9 +76,25 @@ interface DemoState {
   ignoredPaths: string[];
 }
 
+/** URL 加 ?demo-extra=<n> 追加 n 个合成文本对象（分页/滚动巡检用，不改动任何命令契约） */
+function extraDemoItems(): DemoItemSeed[] {
+  const raw = Number(new URLSearchParams(window.location.search).get("demo-extra"));
+  const n = Number.isFinite(raw) ? Math.min(Math.max(0, Math.floor(raw)), 100_000) : 0;
+  return Array.from({ length: n }, (_, i) => ({
+    id: 100_000 + i,
+    name: `合成对象 ${String(i).padStart(5, "0")}`,
+    path: `D:\\Demo\\合成\\${String(Math.floor(i / 1000)).padStart(2, "0")}\\obj${i}.txt`,
+    type: "text",
+    icon_path: null,
+    created_at: "2025-01-01T00:00:00Z",
+    is_favorite: false,
+    tagIds: [],
+  }));
+}
+
 function seedState(): DemoState {
   return {
-    items: DEMO_ITEMS.map((item) => ({ ...item, tagIds: [...item.tagIds] })),
+    items: [...DEMO_ITEMS, ...extraDemoItems()].map((item) => ({ ...item, tagIds: [...item.tagIds] })),
     tags: DEMO_TAGS.map((tag) => ({ ...tag })),
     relations: DEMO_TAG_RELATIONS.map((rel) => ({ ...rel })),
     cabinets: DEMO_CABINETS.map((cabinet) => ({ ...cabinet })),
@@ -83,7 +102,10 @@ function seedState(): DemoState {
       Object.entries(DEMO_CABINET_ITEMS).map(([id, ids]) => [Number(id), new Set(ids)]),
     ),
     desktop: {
-      hotkeys: [{ action: "toggle_main", label: "显示 / 隐藏主窗口", accelerator: null, error: null }],
+      hotkeys: [
+        { action: "toggle_main", label: "显示 / 隐藏主窗口", accelerator: null, error: null },
+        { action: "open_quick", label: "打开快速搜索窗", accelerator: null, error: null },
+      ],
       closeAction: "exit",
       ignoreFullscreen: true,
       launchMode: "show",
@@ -204,6 +226,22 @@ function sortItems(items: DemoItemSeed[]): DemoItemSeed[] {
   });
 }
 
+/** 演示桩搜索：名称/别名/标签名子串（不分大小写）；scope 给出时按其顺序，否则按默认排序 */
+function demoSearch(query: string, scope: number[] | null, hideMissing: boolean, typeFilter: string): number[] {
+  const q = query.trim().toLowerCase();
+  const byId = new Map(state.items.map((item) => [item.id, item]));
+  const base = scope ? scope.map((id) => byId.get(id)).filter((item): item is DemoItemSeed => item !== undefined) : sortItems(state.items);
+  return base
+    .filter((item) => {
+      if (hideMissing && item.is_missing) return false;
+      if (typeFilter === "script" ? item.type !== "bat" && item.type !== "ps1" : typeFilter !== "all" && item.type !== typeFilter) return false;
+      if (!q) return true;
+      const tags = item.tagIds.map((id) => state.tags.find((tag) => tag.id === id)?.name ?? "");
+      return [item.name, item.alias ?? "", ...tags].some((text) => text.toLowerCase().includes(q));
+    })
+    .map((item) => item.id);
+}
+
 function requireItem(id: number): DemoItemSeed {
   const item = state.items.find((entry) => entry.id === id);
   if (!item) throw new Error(`对象不存在（id=${id}）`);
@@ -304,6 +342,33 @@ type Args = Record<string, unknown>;
 const num = (value: unknown): number => Number(value);
 const str = (value: unknown): string => String(value);
 const ids = (value: unknown): number[] => (value as number[]).map(Number);
+
+function demoViewQuery(raw: unknown) {
+  const v = (raw ?? {}) as Record<string, unknown>;
+  const cabinetId = typeof v.cabinetId === "number" ? v.cabinetId : null;
+  const folder = v.scope === "cabinet" ? state.cabinets.find((entry) => entry.id === cabinetId)?.folder_path ?? null : null;
+  const members = v.scope === "cabinet" ? (folder ? new Set(linkedMembers(folder)) : state.cabinetItems.get(cabinetId ?? -1) ?? new Set<number>()) : null;
+  const groups = (x: unknown) => (Array.isArray(x) ? x.map((g) => ids(g)) : []);
+  const strOrNull = (x: unknown) => (typeof x === "string" ? x : null);
+  return demoView(sortItems(state.items).map(withTags), {
+    scope: str(v.scope) || "all",
+    members,
+    linkedFolder: folder,
+    selectedGroups: groups(v.selectedGroups),
+    excludedGroups: groups(v.excludedGroups),
+    typeFilter: (str(v.typeFilter) || "all") as TypeFilter,
+    hideMissing: v.hideMissing === true,
+    sortMode: (str(v.sortMode) || "smart") as SortMode,
+    showNestedContents: v.showNestedContents === true,
+    libraryBrowseRoot: strOrNull(v.libraryBrowseRoot),
+    libraryBrowseDir: strOrNull(v.libraryBrowseDir),
+    cabinetDir: strOrNull(v.cabinetDir),
+    cabinetFlat: v.cabinetFlat === true,
+    query: str(v.query),
+    search: (scope) => demoSearch(str(v.query), scope, v.hideMissing === true, str(v.typeFilter) || "all"),
+  });
+}
+
 /** 新建排末尾，与后端 MAX(sort_order) + 1 一致 */
 const nextSortOrder = (list: Array<{ sort_order?: number }>): number =>
   list.reduce((max, entry) => Math.max(max, entry.sort_order ?? 0), 0) + 1;
@@ -332,6 +397,13 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "get_item_visual": {
       const item = requireItem(num(args.id));
       return { path: item.path, icon_path: item.icon_path ?? (item.is_missing ? null : item.path) };
+    }
+    case "get_items_page": {
+      const byId = new Map(state.items.map((item) => [item.id, item] as const));
+      return ids(args.ids).flatMap((id) => {
+        const item = byId.get(id);
+        return item ? [withTags(item)] : [];
+      });
     }
     case "get_items_by_ids": {
       const wanted = new Set(ids(args.ids));
@@ -845,6 +917,48 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return structuredClone(state.desktop);
     case "get_launch_mode":
       return "show";
+    // 快速搜索窗：演示模式没有第二个窗口
+    case "quick_open":
+    case "quick_hide":
+    case "quick_locate_in_main":
+      return null;
+    // 演示模式没有 Rust 后端：搜索只做名称/别名/标签名的不分大小写子串匹配（演示桩，不是产品搜索语义）
+    case "quick_search": {
+      const hits = demoSearch(str(args.query), null, args.hideMissing === true, "all");
+      const limit = typeof args.limit === "number" ? args.limit : 50;
+      const byId = new Map(state.items.map((item) => [item.id, item]));
+      return {
+        total: hits.length,
+        indexed: state.items.length,
+        items: hits.slice(0, limit).map((id) => withTags(byId.get(id)!)),
+      };
+    }
+    case "view_query":
+      return demoViewQuery(args.args);
+    case "view_typeahead": {
+      const text = str(args.text);
+      const { ids: viewIds } = demoViewQuery(args.args);
+      const byId = new Map(state.items.map((item) => [item.id, item.name.toLowerCase()] as const));
+      let substring: number | null = null;
+      for (const id of viewIds) {
+        const name = byId.get(id) ?? "";
+        if (name.startsWith(text)) return id;
+        if (substring === null && name.includes(text)) substring = id;
+      }
+      return substring;
+    }
+    case "browse_target": {
+      const all = state.items.map(withTags);
+      const item = all.find((it) => it.id === Number(args.id));
+      return item ? browseTargetForItem(item, all) : null;
+    }
+    case "library_stats": {
+      const groups = Array.isArray(args.tagGroups) ? (args.tagGroups as [number, number[]][]) : [];
+      return demoLibraryStats(state.items.map(withTags), groups);
+    }
+    case "search_warm":
+    case "search_index_stats":
+      return { entries: state.items.length, builds: 0, lastBuildMs: 0, lastBuildNewTexts: 0, cachedTexts: 0, approxBytes: 0 };
     case "wake_data_sync":
       return null;
     case "set_hotkey": {

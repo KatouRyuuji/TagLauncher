@@ -11,6 +11,7 @@ pub mod recolor_service;
 pub mod reconcile_runtime;
 pub mod recycle_bin;
 pub mod rename_service;
+pub mod search_index;
 pub mod search_service;
 pub mod settings_service;
 pub mod shell_thumbnail;

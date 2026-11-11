@@ -5,7 +5,7 @@
 //   - 提供 getVocabulary / ensureTag / applyItemTags 三个原语；
 //   - 监听设置页「一键打标」事件（AI_TAG_ALL_EVENT），按 scope 选目标启动；
 //   - 监听「新对象已加入」事件，在开启 autoTagOnAdd 且已配置密钥时后台静默打标。
-// 用 allItemsSnapshotRef 让事件回调读取最新全库，避免闭包过期。
+// 主窗不持有全量对象：一键打标时临时向后端取全库，新对象排水时按 ID 取最新数据。
 // 从 App.tsx 抽离，行为完全保持一致。
 // ============================================================================
 
@@ -20,7 +20,8 @@ import { selectAutoTagTargets } from "../lib/autoTagTargets";
 import type { ItemWithTags, Tag } from "../types";
 
 interface UseAiTagOrchestrationParams {
-  allItems: ItemWithTags[];
+  /** 按 ID 取最新对象（缓存优先，写入后缓存已就地更新） */
+  loadItems: (ids: readonly number[]) => Promise<ItemWithTags[]>;
   addTag: (name: string, color: string) => Promise<Tag>;
   setItemTags: (itemId: number, tagIds: number[]) => Promise<void>;
 }
@@ -33,17 +34,11 @@ export interface UseAiTagOrchestrationResult {
 }
 
 export function useAiTagOrchestration({
-  allItems,
+  loadItems,
   addTag,
   setItemTags,
 }: UseAiTagOrchestrationParams): UseAiTagOrchestrationResult {
   const { state, start, cancel: rawCancel, reset, isRunning } = useAiTagging();
-
-  // App 级 allItems 快照（供事件回调读取最新全库，避免闭包过期）
-  const allItemsSnapshotRef = useRef(allItems);
-  useEffect(() => {
-    allItemsSnapshotRef.current = allItems;
-  }, [allItems]);
 
   // 待打标队列：任务进行中（或紧凑连续）导入的新对象先入队，由 flushQueuedAutoTag
   // 统一排水。运行态判断一律用 isRunning()（useAiTagging 内部同步 ref，无镜像滞后）——
@@ -100,7 +95,7 @@ export function useAiTagOrchestration({
         return;
       }
       allowNewTagsRef.current = cfg.allowNewTags;
-      const all = allItemsSnapshotRef.current;
+      const all = await db.getItems().catch(() => [] as ItemWithTags[]);
       const targets = scope === "untagged" ? all.filter((item) => item.tags.length === 0) : all;
       if (targets.length === 0) {
         showToast(scope === "untagged" ? "没有未打标的对象" : "当前没有对象", "info");
@@ -126,7 +121,8 @@ export function useAiTagOrchestration({
     if (queued.length === 0) return;
     pendingAutoTagRef.current = [];
 
-    const targets = selectAutoTagTargets(queued, allItemsSnapshotRef.current);
+    const fresh = await loadItems(queued.map((item) => item.id)).catch(() => [] as ItemWithTags[]);
+    const targets = selectAutoTagTargets(queued, fresh);
     if (targets.length === 0) return;
 
     // 取配置失败（DB 暂不可读等瞬态）或配置不完整：恢复队列不丢该批对象，
@@ -163,7 +159,7 @@ export function useAiTagOrchestration({
       console.warn("[AI 自动打标] 自动打标批次异常中断，待打标对象已回排", e);
       pendingAutoTagRef.current.push(...targets);
     }
-  }, [isRunning, start, aiPrimitives]);
+  }, [isRunning, start, aiPrimitives, loadItems]);
 
   // 新对象自动打标（后台静默）：先入队再排水，任务运行中由补跑 effect 接手
   useEffect(() => {

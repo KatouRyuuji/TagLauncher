@@ -21,11 +21,10 @@ import { TagEditor } from "./TagEditor";
 import { TagRelationsEditor } from "./TagRelationsEditor";
 import { SidebarThemeSwitcher } from "./SidebarThemeSwitcher";
 import { resolvePanel, destroyPanel } from "../lib/panelRegistry";
-import { buildDescendantsMap } from "../lib/tagGraph";
 import { filterCollapsedTagRows, flattenTagTree } from "../lib/tagTree";
 import { compareSortOrder, moveBeside } from "../lib/sidebarOrder";
 import { compareNames } from "../lib/itemQuery";
-import { matchesNameQuery } from "../lib/search";
+import { matchesNameQuery } from "../lib/nameMatch";
 import { findTagByNameInsensitive } from "../lib/tagNames";
 import { ensurePinyin } from "../lib/pinyinProvider";
 import { onCabinetItemsChanged } from "../lib/modApi";
@@ -41,7 +40,8 @@ import {
   shouldSuppressInternalDragClick,
   useInternalDragStore,
 } from "../stores/internalDragStore";
-import type { Cabinet, Tag, ItemWithTags } from "../types";
+import type { Cabinet, Tag } from "../types";
+import type { LibraryStats } from "../lib/db";
 import type { PanelDescriptor } from "../types/panel";
 
 interface SidebarProps {
@@ -64,7 +64,10 @@ interface SidebarProps {
   onAddTagToItem: (itemId: number, tagId: number) => Promise<void>;
   onAddTagRelation: (parentId: number, childId: number) => Promise<void>;
   onRemoveTagRelation: (parentId: number, childId: number) => Promise<void>;
-  allItems: ItemWithTags[];
+  /** 库计数（后端按全库算；侧栏不持有对象数据） */
+  stats: LibraryStats | null;
+  /** 数据代：对象数据变化时递增（关系编辑器的关联对象据此重取） */
+  dataEpoch: number;
   modPanels?: PanelDescriptor[];
 }
 
@@ -88,7 +91,8 @@ export function Sidebar({
   onAddTagToItem,
   onAddTagRelation,
   onRemoveTagRelation,
-  allItems,
+  stats,
+  dataEpoch,
   modPanels = [],
 }: SidebarProps) {
   const selectedTagIds = useAppStore((state) => state.selectedTagIds);
@@ -132,40 +136,14 @@ export function Sidebar({
   const [relationsEditor, setRelationsEditor] = useState<{ initialTagId: number | null } | null>(null);
   const [collapsedTagPaths, setCollapsedTagPaths] = useState<Set<string>>(() => new Set());
   const initializedTagTreeRef = useRef(false);
-  const wasLibraryEmptyRef = useRef(allItems.length === 0);
+  const libraryTotal = stats?.total ?? 0;
+  const wasLibraryEmptyRef = useRef(libraryTotal === 0);
   const visibleSection = activeDragKind === "item" ? "cabinets" : sidebarTab;
-  const favoriteCount = useMemo(
-    () => allItems.reduce((count, item) => count + (item.is_favorite ? 1 : 0), 0),
-    [allItems],
-  );
-  const recentCount = useMemo(
-    () => allItems.reduce((count, item) => count + (item.last_used_at ? 1 : 0), 0),
-    [allItems],
-  );
+  const favoriteCount = stats?.favorites ?? 0;
+  const recentCount = stats?.recent ?? 0;
 
-  // 计数与单击筛选同一口径：父标签并入后代，避免侧栏写 3、点开却是 4。
-  const itemCountByTag = useMemo(() => {
-    const descendants = buildDescendantsMap(tagRelations);
-    const includedBy = new Map<number, number[]>();
-    const tagIds = new Set(tags.map((tag) => tag.id));
-    for (const tagId of tagIds) {
-      const closure = descendants.get(tagId) ?? new Set([tagId]);
-      for (const member of closure) {
-        const owners = includedBy.get(member) ?? [];
-        owners.push(tagId);
-        includedBy.set(member, owners);
-      }
-    }
-    const counts = new Map<number, number>();
-    for (const item of allItems) {
-      const credited = new Set<number>();
-      for (const tag of item.tags) {
-        for (const owner of includedBy.get(tag.id) ?? [tag.id]) credited.add(owner);
-      }
-      for (const id of credited) counts.set(id, (counts.get(id) ?? 0) + 1);
-    }
-    return counts;
-  }, [allItems, tags, tagRelations]);
+  // 计数与单击筛选同一口径：父标签并入后代，避免侧栏写 3、点开却是 4（后端按 useItems 给的后代组算）。
+  const itemCountByTag = useMemo(() => new Map<number, number>(stats?.tagCounts ?? []), [stats]);
 
   // 同级先按手动顺序，未拖动过的（同为 0）按计数降序、再按名称
   const compareTagRows = useCallback(
@@ -202,7 +180,7 @@ export function Sidebar({
 
   useEffect(() => {
     if (tags.length === 0) return;
-    const libraryEmpty = allItems.length === 0;
+    const libraryEmpty = libraryTotal === 0;
     if (!initializedTagTreeRef.current || libraryEmpty !== wasLibraryEmptyRef.current) {
       setCollapsedTagPaths(
         libraryEmpty
@@ -212,7 +190,7 @@ export function Sidebar({
       initializedTagTreeRef.current = true;
       wasLibraryEmptyRef.current = libraryEmpty;
     }
-  }, [allItems.length, tags.length, tagRows]);
+  }, [libraryTotal, tags.length, tagRows]);
 
   const visibleTagRows = useMemo(() => {
     if (appliedTagQuery.trim()) return filteredTagRows;
@@ -254,7 +232,7 @@ export function Sidebar({
       cancelled = true;
       unsubCabinetItems();
     };
-  }, [cabinets, allItems.length]);
+  }, [cabinets, libraryTotal]);
 
   // 拖动排序失败时提示；成功由列表本身反映
   const reorderWithToast = async (write: () => Promise<void>) => {
@@ -364,7 +342,7 @@ export function Sidebar({
               title="全部项目"
               subtitle="查看库里的全部项目"
               icon={Library}
-              count={allItems.length}
+              count={libraryTotal}
               onClick={() => {
                 setSelectedTagIds([]);
                 setSelectedCabinetId(null);
@@ -750,7 +728,7 @@ export function Sidebar({
         <TagRelationsEditor
           initialTagId={relationsEditor.initialTagId}
           tags={tags}
-          allItems={allItems}
+          dataEpoch={dataEpoch}
           onAddRelation={onAddTagRelation}
           onRemoveRelation={onRemoveTagRelation}
           onAddTag={onAddTag}

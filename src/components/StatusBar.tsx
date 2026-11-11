@@ -16,10 +16,14 @@ import type { ItemWithTags } from "../types";
 import { MissingItemsReviewDialog } from "./MissingItemsReviewDialog";
 
 export function StatusBar({
+  missingCount,
   missingItems,
   onRelocateMissing,
   onRemoveMissing,
 }: {
+  /** 失效对象总数（来自 library_stats，不需取齐对象） */
+  missingCount: number;
+  /** 失效对象本体：只在审阅对话框打开时由 App 按 ID 取齐 */
   missingItems: ItemWithTags[];
   onRelocateMissing: (roots?: string[]) => Promise<number>;
   onRemoveMissing: (ids: number[]) => Promise<void>;
@@ -42,7 +46,6 @@ export function StatusBar({
   const [relocateNote, setRelocateNote] = useState<{ kind: "info" | "warning"; text: string } | null>(null);
   const scan = useRelocateScan();
   const [watchCount, setWatchCount] = useState(0);
-  const missingCount = missingItems.length;
 
   useEffect(() => {
     let alive = true;

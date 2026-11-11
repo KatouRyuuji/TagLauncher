@@ -7,8 +7,8 @@
 // ============================================================================
 
 export type CloseAction = "exit" | "tray";
-/** 可绑定全局快捷键的动作（本批只开放 toggle_main）；与后端 HotkeyAction 一致 */
-export type HotkeyAction = "toggle_main";
+/** 可绑定全局快捷键的动作；与后端 HotkeyAction 一致。open_quick 绑定即开启快速搜索窗 */
+export type HotkeyAction = "toggle_main" | "open_quick";
 export type LaunchMode = "show" | "background";
 
 export interface HotkeyInfo {

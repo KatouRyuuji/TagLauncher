@@ -10,7 +10,7 @@ import { useOverlayGate } from "../lib/overlayGate";
 import { MenuItem } from "./ContextMenu";
 
 interface SelectionCanvasProps {
-  itemIds: number[];
+  itemIds: readonly number[];
   selectedItemIds: number[];
   onSelectItems: (itemIds: number[]) => void;
   children: React.ReactNode;
@@ -112,7 +112,8 @@ function shouldStartSelection(target: EventTarget, container: HTMLElement) {
   return container.contains(target);
 }
 
-function sameNumberArray(a: number[], b: number[]) {
+function sameNumberArray(a: readonly number[], b: readonly number[]) {
+  if (a === b) return true;
   if (a.length !== b.length) return false;
   return a.every((value, index) => value === b[index]);
 }
@@ -155,7 +156,7 @@ export function SelectionCanvas({
   } | null>(null);
   const selectedItemIdsRef = useRef(selectedItemIds);
   const itemIdsRef = useRef(itemIds);
-  const prevItemIdsRef = useRef<number[] | null>(null);
+  const prevItemIdsRef = useRef<readonly number[] | null>(null);
   const onSelectItemsRef = useRef(onSelectItems);
   const autoScrollRafRef = useRef<number | null>(null);
   const ignoreClickRef = useRef(false);

@@ -30,7 +30,7 @@ describe("Mod 写入事件与广播分离（S2 回归）", () => {
     const spy = vi.fn();
     const unsub = onModWrite(spy);
     try {
-      notifyItemsChanged([]);
+      notifyItemsChanged();
       expect(spy).not.toHaveBeenCalled();
     } finally {
       unsub();

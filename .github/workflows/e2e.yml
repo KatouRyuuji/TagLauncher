@@ -46,6 +46,10 @@ jobs:
           python -m pip install -r e2e/requirements-e2e.txt
 
       - name: Build debug app (embedded frontend) + CLI
+        # 仍是 debug 构建（保留 debug_assertions 与测试钩子），但按发布版的优化级别编译：
+        # 搜索已在 Rust，-O0 下的索引/SQLite 耗时不代表真实产品，性能用例测的应是优化后的代码
+        env:
+          CARGO_PROFILE_DEV_OPT_LEVEL: '3'
         run: |
           node scripts/prepare-cli-bin.mjs --placeholder
           npx tauri build --debug --no-bundle
