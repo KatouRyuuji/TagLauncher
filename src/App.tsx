@@ -53,6 +53,7 @@ import { ToastContainer } from "./components/ToastContainer";
 import { FloatingPanels } from "./components/FloatingPanels";
 import * as db from "./lib/db";
 import { showToast } from "./lib/toast";
+import { installListDiagHotkey } from "./lib/listDiagnostics";
 
 const WELCOME_HIDE_KEY = "taglauncher.hide_welcome_modal";
 
@@ -445,6 +446,9 @@ function App() {
       favoriteTarget: selectedNeedsFavorite,
     };
   }, [selectedItemIds.length, orderedSelectedIds, selectedItems, selectedNeedsFavorite]);
+
+  // F19 取证：Ctrl+Alt+Shift+L 复制主列表诊断
+  useEffect(() => installListDiagHotkey(), []);
 
   useWorkspaceHotkeys({
     blocked: overlaysBlocked,

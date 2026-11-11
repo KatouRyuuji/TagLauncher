@@ -36,6 +36,7 @@ const GROUPS: { title: string; icon: LucideIcon; note?: string; items: ShortcutI
       { keys: "Backspace", action: "关联柜返回上一级目录" },
       { keys: "Space", action: "快速预览" },
       { keys: "Esc", action: "关闭浮层 / 清空搜索" },
+      { keys: "Ctrl+Alt+Shift+L", action: "复制列表显示诊断（列表空白/错位时取证，粘贴给开发者）" },
     ],
   },
   {

@@ -211,3 +211,122 @@ def test_no_blank_band_across_add_remove_resize_filter_sequences(app, sandbox, c
     print(f"F19_DRIFT {json.dumps(drift, ensure_ascii=False)}")
     print(f"F19_SUMMARY steps={len(p.log)} bad={len(p.bad)} {json.dumps(summary, ensure_ascii=False)}")
     assert not p.bad, f"出现视口空带（复现步骤见 mode）：{json.dumps(summary, ensure_ascii=False)}"
+
+
+def set_font_scale(app, label: str, value: str) -> None:
+    dlg = app.open_settings("主题外观")
+    dlg.get_by_role("radiogroup", name="界面字号").get_by_role("radio", name=label, exact=True).click()
+    wait_until(lambda: app.page.evaluate(
+        "() => document.documentElement.style.getPropertyValue('--ui-font-scale') || '1'") == value, 5)
+    app.page.keyboard.press("Escape")
+    dlg.wait_for(state="hidden")
+
+
+@pytest.mark.case("F19-MATRIX-2")
+def test_no_blank_band_window_move_dpi_shrink_filter_view_font_rapid_resize(app, sandbox, cli_path):
+    """F19 扩展矩阵（用户点名场景）：真实移动/改窗口（SetWindowPos，走真实 resize + ResizeObserver）、
+    快速连续改尺寸、设备像素比变化（CDP 模拟跨显示器 DPI）、中部增删使总高变小、筛选保留 scrollTop、
+    列表/网格互切、界面字号。每步同一「视口无空带」不变量；最后验证 Ctrl+Alt+Shift+L 一键复制诊断。"""
+    from win import win32
+
+    tl = Tl(sandbox, cli_path)
+    paths = [files.write(sandbox.files / "f19x" / f"条目{i:03d}{'-长名' * (i % 3)}.txt", str(i)) for i in range(400)]
+    app.seed(paths)
+    tag_ids = [app.add_tag(f"很长的标签名称{i}") for i in range(6)]
+    items = sorted(app.items(), key=lambda x: x["name"])
+    app.invoke("set_many_item_tags", {"changes": [[it["id"], tag_ids] for it in items[::5]]})
+    app.reload_page()
+    p = Probe(app)
+    hwnd = win32.main_window(app.proc.pid)
+    x0, y0, x1, y1 = win32.rect(hwnd)
+    W, H = x1 - x0, y1 - y0
+    cdp = app.page.context.new_cdp_session(app.page)
+    try:
+        for mode, other in (("列表视图", "网格视图"), ("网格视图", "列表视图")):
+            view(app, mode)
+            wait_until(lambda: (g := app.page.evaluate(PROBE_JS, "init")) and g["rows"] > 3, 10)
+            if len(app.items()) < 250:  # 上一轮删过：补回足够多的对象
+                more = [files.write(sandbox.files / "f19x" / f"补充{mode}{i:03d}.txt", "m") for i in range(200)]
+                tl.run("add", *[str(x) for x in more])
+                wait_until(lambda: len(app.items()) >= 250, 15)
+            p.check(f"{mode}: 初始")
+
+            # 1) 真实移动窗口（拖动标题栏的效果）
+            app.page.evaluate(SCROLL_JS, 0.5)
+            win32.move_window(hwnd, x0 + 160, y0 + 40, W, H)
+            p.check(f"{mode}: 50% 处移动窗口")
+            win32.move_window(hwnd, x0, y0, W, H)
+            p.check(f"{mode}: 移回")
+
+            # 2) 快速连续改窗口尺寸（不等渲染），停下后与途中各查一次
+            for k in range(16):
+                win32.move_window(hwnd, x0, y0, W - (k % 4) * 110, H - (k % 3) * 90)
+            p.check(f"{mode}: 连续 16 次改尺寸后（立即）", 0)
+            p.check(f"{mode}: 连续 16 次改尺寸后（稳定）")
+            win32.move_window(hwnd, x0, y0, W, H)
+            app.page.evaluate(SCROLL_JS, 1.0)
+            for k in range(10):
+                win32.move_window(hwnd, x0, y0, W - (k % 2) * 300, H)
+            p.check(f"{mode}: 底部快速改宽")
+            win32.move_window(hwnd, x0, y0, W, H)
+
+            # 3) 设备像素比变化（跨显示器 DPI）
+            app.page.evaluate(SCROLL_JS, 0.5)
+            vw, vh = app.page.evaluate("() => [innerWidth, innerHeight]")
+            for dpr in (1.5, 1.25, 2.0):
+                cdp.send("Emulation.setDeviceMetricsOverride",
+                         {"width": vw, "height": vh, "deviceScaleFactor": dpr, "mobile": False})
+                p.check(f"{mode}: DPR {dpr}")
+            cdp.send("Emulation.clearDeviceMetricsOverride")
+            p.check(f"{mode}: DPR 恢复")
+
+            # 4) 中部筛选：scrollTop 保留时新结果更短/更长
+            app.page.evaluate(SCROLL_JS, 0.6)
+            app.search("长名")
+            p.check(f"{mode}: 60% 处筛选「长名」")
+            app.page.evaluate(SCROLL_JS, 0.9)
+            app.search("")
+            p.check(f"{mode}: 90% 处清空筛选")
+
+            # 5) 中部互切列表/网格
+            app.page.evaluate(SCROLL_JS, 0.6)
+            view(app, other)
+            p.check(f"{mode}→{other}: 60% 处切换")
+            app.page.evaluate(SCROLL_JS, 1.0)
+            view(app, mode)
+            p.check(f"{other}→{mode}: 底部切回")
+
+            # 6) 界面字号（行高整体变化）
+            app.page.evaluate(SCROLL_JS, 0.5)
+            set_font_scale(app, "特大", "1.25")
+            p.check(f"{mode}: 50% 处字号特大")
+            app.page.evaluate(SCROLL_JS, 1.0)
+            set_font_scale(app, "标准", "1")
+            p.check(f"{mode}: 底部字号恢复")
+
+            # 7) 滚到 70% 后外部删除 70% 对象（总高度骤减到 scrollTop 以下）
+            app.page.evaluate(SCROLL_JS, 0.7)
+            cur = sorted(app.items(), key=lambda x: x["name"])
+            gone = cur[len(cur) * 3 // 10:]
+            tl.run("remove", *[str(it["id"]) for it in gone])
+            wait_until(lambda: len(app.items()) == len(cur) - len(gone), 15)
+            p.check(f"{mode}: 70% 处删除 70%（总高变小）", 1500)
+            app.page.evaluate(SCROLL_JS, 0.5)
+            p.check(f"{mode}: 删除后滚到 50%")
+    finally:
+        try:
+            cdp.send("Emulation.clearDeviceMetricsOverride")
+        except Exception:
+            pass
+        win32.move_window(hwnd, x0, y0, W, H)
+
+    # 一键取证：Ctrl+Alt+Shift+L 复制诊断（toast 确认）
+    view(app, "列表视图")
+    app.page.keyboard.press("Control+Alt+Shift+KeyL")
+    app.wait_toast("已复制列表诊断")
+    summary = [{k: b.get(k) for k in ("mode", "maxGap", "gapAtFromViewportTop", "firstIndex", "scrollTop", "scrollHeight",
+                                      "clientHeight", "listHeight", "rendered", "mismatch", "after3s", "virt")} for b in p.bad]
+    drift = [{"mode": g["mode"], "mismatch": g["mismatch"]} for g in p.log if g and g.get("mismatch")]
+    print(f"F19X_DRIFT {json.dumps(drift, ensure_ascii=False)}")
+    print(f"F19X_SUMMARY steps={len(p.log)} bad={len(p.bad)} {json.dumps(summary, ensure_ascii=False)}")
+    assert not p.bad, f"出现视口空带（复现步骤见 mode）：{json.dumps(summary, ensure_ascii=False)}"
