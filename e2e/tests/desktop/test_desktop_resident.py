@@ -233,3 +233,54 @@ def test_external_writes_while_minimized_or_in_tray(app, sandbox, cli_path):
             app.card(p.name).wait_for(timeout=3000)
             print(f"BG_SYNC {how} appear_ms={round((time.time() - t0) * 1000)}")
     assert {i["name"] for i in app.items()} >= {"常驻.txt", "后台新增-minimized.txt", "后台新增-tray.txt"}
+
+
+QUICK_HOTKEY = "Ctrl+Alt+Shift+F12"
+QUICK_KEYS = (oswin.VK["CTRL"], oswin.VK["ALT"], oswin.VK["SHIFT"], oswin.VK["F12"])
+QUICK_TITLE = "TagLauncher 快速搜索"
+
+
+def quick_visible(app) -> bool:
+    return bool(oswin.window_by_title(app.proc.pid, QUICK_TITLE))
+
+
+@pytest.mark.case("D-RES-07")
+def test_quick_window_options_blur_and_keep_input(app, sandbox):
+    """快速窗选项（§3.1）：默认失焦即隐藏、保留上次输入；关掉后失焦不隐藏、每次唤出输入框为空。真实热键 + 真实前台切换。"""
+    from tests.ui.test_quick import quick_page
+
+    s = app.invoke("set_hotkey", {"action": "open_quick", "shortcut": QUICK_HOTKEY})
+    assert s["quick"] == {"hideOnBlur": True, "keepInput": True, "monitor": "cursor"}, s["quick"]
+    qp = quick_page(app, timeout=30)
+    inp = qp.get_by_test_id("quick-input")
+    with oswin.FgHelper(env=sandbox.env(None)) as fg:
+        def summon():
+            fg.focus()
+            oswin.press(*QUICK_KEYS)
+            wait_until(lambda: quick_visible(app), 5, lambda: f"热键未唤出快速窗：{oswin.foreground_info()}")
+
+        # 默认：失焦隐藏，保留输入
+        summon()
+        inp.fill("保留词")
+        fg.focus()
+        wait_until(lambda: not quick_visible(app), 3, "默认应失焦即隐藏")
+        summon()
+        wait_until(lambda: inp.input_value() == "保留词", 3, lambda: inp.input_value())
+
+        # 关闭两项：失焦不隐藏；唤出清空
+        s = app.invoke("set_quick_options", {"options": {"hideOnBlur": False, "keepInput": False, "monitor": "main"}})
+        assert s["quick"] == {"hideOnBlur": False, "keepInput": False, "monitor": "main"}, s["quick"]
+        fg.focus()
+        time.sleep(1.0)
+        print(f"QUICK_OPTIONS blur_off visible_after_blur={quick_visible(app)} fg={oswin.foreground_info()}")
+        assert quick_visible(app), "关闭「失焦自动隐藏」后，切到别的程序快速窗应仍在"
+        app.invoke("quick_hide")
+        wait_until(lambda: not quick_visible(app), 3)
+        summon()
+        wait_until(lambda: inp.input_value() == "", 3, lambda: f"关闭「保留上次输入」后唤出应清空：{inp.input_value()!r}")
+        app.invoke("quick_hide")
+
+    # 落库：重启后仍生效
+    app.restart()
+    s = app.invoke("get_desktop_settings")
+    assert s["quick"] == {"hideOnBlur": False, "keepInput": False, "monitor": "main"}, s["quick"]

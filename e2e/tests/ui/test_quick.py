@@ -26,6 +26,7 @@ HOTKEY = "Ctrl+Alt+Shift+F10"
 SUMMON_P95_MS = 80
 SUMMON_P99_MS = 150  # §3.3：p99 ≤ 150 ms（100 次唤出，p99 才有意义）
 SUMMONS = 100
+CROSS_WINDOW_MS = 300  # §3.3：快速窗打标签后主窗可见 ≤ 300 ms
 QUERY_P95_MS = {5000: 30, 50000: 100}
 HIDDEN_MEM_MB = {5000: 60, 50000: 120}
 
@@ -196,9 +197,20 @@ def test_quick_search_and_keyboard_actions(app, sandbox):
     tag_inp = qp.get_by_test_id("quick-tag-input")
     tag_inp.wait_for(timeout=3000)
     tag_inp.press_sequentially("快速")
+    # §3.3「跨窗一致延迟」：快速窗打标签 → 主窗可见 ≤ CROSS_WINDOW_MS。两页共用墙钟（Date.now），
+    # 主窗用 MutationObserver 记下卡片出现新标签的时刻，避免轮询粒度
+    app.page.evaluate("""(id) => { window.__tlCross = null; const t = () => {
+      const el = document.querySelector(`[data-selectable-item-id="${id}"]`);
+      if (el && el.innerText.includes('快速标签')) { window.__tlCross = Date.now(); return true; } return false; };
+      const mo = new MutationObserver(() => { if (t()) mo.disconnect(); });
+      mo.observe(document.body, { subtree: true, childList: true, characterData: true }); }""", target)
+    t0 = qp.evaluate("() => Date.now()")
     tag_inp.press("Enter")
     qp.get_by_test_id("quick-status").filter(has_text="已添加标签「快速标签」").wait_for(timeout=3000)
     wait_until(lambda: "快速标签" in card.inner_text(), 2, lambda: card.inner_text())
+    cross_ms = wait_until(lambda: app.page.evaluate("() => window.__tlCross"), 2, "主窗未记录到新标签") - t0
+    print(f"QUICK_CROSS_WINDOW tag_visible_in_main_ms={cross_ms}")
+    assert cross_ms <= CROSS_WINDOW_MS, f"快速窗打标签后主窗 {cross_ms} ms 才可见，目标 ≤ {CROSS_WINDOW_MS} ms"
     assert len(app.calls("get_items")) == full_loads, "快速窗打标签后主窗应按 ID 增量刷新，而不是整表重载"
     assert app.calls("get_items_by_ids"), "主窗应按对象 ID 取回变化"
     assert [t["id"] for t in app.item("项目文档.txt")["tags"]] == [tag["id"]]
@@ -443,3 +455,52 @@ def test_idle_cpu_with_both_windows_hidden(app_factory, sandbox):
     (sandbox.artifacts / "idle-cpu.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print("IDLE_CPU", json.dumps(out, ensure_ascii=False))
     assert pct <= IDLE_CPU_PCT, f"两窗隐藏时平均 CPU {pct}% > {IDLE_CPU_PCT}%：{out}"
+
+
+CONSISTENCY_NAMES = ("report-2026.txt", "Report Final.txt", "设计稿.txt", "设计说明.md", "项目文档.txt",
+                     "repo-notes.txt", "notes report.txt", "代码 review.txt", "季度报告.txt", "预算表.txt")
+# 搜索语义是前缀 / 词首缩写 / 拼音（CJK 才做子串），所以不用 "2026" 这种词中子串
+CONSISTENCY_QUERIES = ("rep", "re", "设计", "sj", "notes", "rf", "季度", "报告", "-notes rep")
+
+
+def main_view_ids(app, query: str, mode: str) -> list[int]:
+    args = {"scope": "all", "selectedGroups": [], "excludedGroups": [], "typeFilter": "all", "hideMissing": False,
+            "sortMode": "smart", "showNestedContents": False, "libraryBrowseRoot": None, "libraryBrowseDir": None,
+            "cabinetDir": None, "cabinetFlat": False, "query": query, "mode": mode, "refreeze": False}
+    return app.invoke("view_query", {"args": args})["ids"]
+
+
+def main_dom_ids(app) -> list[int]:
+    return [int(x) for x in app.page.eval_on_selector_all("[data-selectable-item-id]",
+                                                          "els => els.map(e => e.dataset.selectableItemId)")]
+
+
+@pytest.mark.case("E-QUICK-06")
+def test_quick_and_main_return_same_ids_in_same_order(app, sandbox):
+    """§5 阶段 2 验收：同一份数据和查询，主窗与快速窗结果 ID 序列相同（共享 Rust 索引）。
+    界面层：主窗搜索框 vs 快速窗输入框渲染出的顺序；接口层：三种搜索模式下 view_query 与 quick_search。"""
+    paths = [files.write(sandbox.files / "same" / n, "x") for n in CONSISTENCY_NAMES]
+    app.seed(paths)
+    tag = app.invoke("add_tag", {"name": "报告", "color": "#5064d8"})
+    for n in ("report-2026.txt", "代码 review.txt"):
+        app.invoke("set_item_tags", {"itemId": app.item(n)["id"], "tagIds": [tag["id"]]})
+    qp = enable_quick(app)
+    wait_loaded(qp, len(paths))
+    summon(app, qp)
+    inp = qp.get_by_test_id("quick-input")
+    report = {}
+    for q in CONSISTENCY_QUERIES:
+        app.search(q)
+        inp.fill(q)
+        want = main_view_ids(app, q, "all")
+        assert want, f"查询 {q!r} 应有命中"
+        wait_until(lambda: main_dom_ids(app) == want, 5, lambda: f"{q!r} 主窗 DOM {main_dom_ids(app)} ≠ view_query {want}")
+        wait_until(lambda: result_ids(qp) == want, 5, lambda: f"{q!r} 快速窗 {result_ids(qp)} ≠ 主窗 {want}")
+        report[q] = len(want)
+        for mode in ("all", "name", "tag"):
+            quick = [i["id"]
+                     for i in app.invoke("quick_search", {"query": q, "mode": mode, "hideMissing": False, "limit": 50})["items"]]
+            assert quick == main_view_ids(app, q, mode)[:50], f"{q!r}/{mode}：快速窗 {quick} ≠ 主窗"
+    print(f"QUICK_CONSISTENCY {json.dumps(report, ensure_ascii=False)}")
+    app.search("")
+    hide(app)

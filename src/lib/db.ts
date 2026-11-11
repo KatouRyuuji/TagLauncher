@@ -27,7 +27,7 @@ async function invokeCmd<T>(cmd: string, args?: Record<string, unknown>): Promis
   }
 }
 import type { ModInfo, ModLoadError } from "../types/mod";
-import type { CloseAction, DesktopSettings, HotkeyAction, LaunchMode } from "./desktopShortcut";
+import type { CloseAction, DesktopSettings, HotkeyAction, LaunchMode, QuickOptions } from "./desktopShortcut";
 import type { SearchMode } from "../stores/appStore";
 import type { SortMode, TypeFilter } from "./itemQuery";
 import type {
@@ -739,6 +739,11 @@ export async function setCloseAction(action: CloseAction): Promise<DesktopSettin
 
 export async function setHotkeyIgnoreFullscreen(enabled: boolean): Promise<DesktopSettings> {
   return invokeCmd("set_hotkey_ignore_fullscreen", { enabled });
+}
+
+/** 快速窗选项（失焦隐藏 / 保留输入 / 唤出显示器），立即生效 */
+export async function setQuickOptions(options: QuickOptions): Promise<DesktopSettings> {
+  return invokeCmd("set_quick_options", { options });
 }
 
 export async function getSetting(key: string): Promise<string | null> {

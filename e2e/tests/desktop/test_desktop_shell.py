@@ -188,6 +188,46 @@ def test_send_to_shortcut_launch(shell_on, sandbox):
         wait_session_done(app)
 
 
+SENDTO_ARGS_MIN = 30000  # 设计 §2.2：多选「发送到」一次启动，全部路径在命令行里，总长上限 32767 字符
+SENDTO_ARGS_MAX = 32000  # 留出 exe 路径与 --collect 的余量
+
+
+@pytest.mark.case("D-SHELL-05")
+def test_send_to_near_command_line_limit(shell_on, sandbox):
+    """「发送到」长路径（计划 §2.2 真机项）：多选总命令行接近 32767 字符时，仍是一次启动、全部路径进同一会话、无截断。"""
+    app = shell_on
+    link = send_to_link(sandbox)
+    folder = sandbox.files / "sendto-long" / ("d" * 100)
+    paths, args = [], ""
+    i = 0
+    while True:
+        p = folder / f"f{i:03}-{'x' * 60}.txt"
+        piece = f'"{p}" '
+        if len(args) + len(piece) > SENDTO_ARGS_MAX:
+            break
+        files.write(p, "x")
+        paths.append(p)
+        args += piece
+        i += 1
+    args = args.rstrip()
+    assert len(args) >= SENDTO_ARGS_MIN, len(args)
+    print(f"SENDTO_LONG files={len(paths)} args_chars={len(args)} longest_path={max(len(str(p)) for p in paths)}")
+    with oswin.FgHelper(env=sandbox.env(None)) as fg:
+        fg.focus()
+        t0 = time.time()
+        fg.startfile(link, "open", args)
+        qp = collect_page(app)
+        summary = qp.get_by_test_id("collect-summary")
+        wait_attr(summary, "data-count", str(len(paths)), timeout=30)
+        print(f"SENDTO_LONG all_ms={round((time.time() - t0) * 1000)}")
+        assert summary.get_attribute("data-invocations") == "1", "接近上限的「发送到」也应是一个进程带全部路径"
+        got = app.invoke("collect_session")["paths"]
+        assert len(got) == len(paths) and all(same_path(g, p) for g, p in zip(got, paths)), "路径不应被截断或重排"
+        qp.get_by_test_id("collect-action-import").click()
+        assert result(qp)["created"] == str(len(paths))
+        wait_session_done(app)
+
+
 @pytest.mark.case("D-SHELL-04")
 def test_fifty_items_via_shell_verb_latency(shell_on, sandbox):
     """资源管理器多选 50 项（Player 模型 = 每项一个进程）：前台进程逐个调用动词，

@@ -16,6 +16,7 @@ function fresh(over: Partial<DesktopSettings> = {}, accelerator: string | null =
     ignoreFullscreen: true,
     launchMode: "show",
     trayActive: false,
+    quick: { hideOnBlur: true, keepInput: true, monitor: "cursor" },
     ...over,
   };
 }
@@ -44,6 +45,10 @@ vi.mock("../lib/db", () => ({
   }),
   setHotkeyIgnoreFullscreen: vi.fn(async (enabled: boolean) => {
     desktop.state = { ...desktop.state, ignoreFullscreen: enabled };
+    return structuredClone(desktop.state);
+  }),
+  setQuickOptions: vi.fn(async (quick: DesktopSettings["quick"]) => {
+    desktop.state = { ...desktop.state, quick };
     return structuredClone(desktop.state);
   }),
   // 右键菜单区块有自己的用例（ShellIntegrationSection.spec），这里让它按「不支持」不渲染
@@ -123,6 +128,24 @@ describe("桌面驻留设置", () => {
     expect(db.setCloseAction).toHaveBeenCalledWith("tray");
     await userEvent.click(screen.getByRole("switch", { name: "全屏时忽略全局快捷键" }));
     await waitFor(() => expect(db.setHotkeyIgnoreFullscreen).toHaveBeenCalledWith(false));
+  });
+
+  it("快速窗选项：失焦隐藏 / 保留输入 / 唤出显示器各自保存，其余选项不变", async () => {
+    render(<DesktopSettingsSection />);
+    const blur = await screen.findByRole("switch", { name: "失去焦点时自动隐藏" });
+    await waitFor(() => expect(blur).toBeEnabled());
+    expect(blur).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(blur);
+    await waitFor(() => expect(db.setQuickOptions).toHaveBeenLastCalledWith({ hideOnBlur: false, keepInput: true, monitor: "cursor" }));
+    await waitFor(() => expect(blur).toHaveAttribute("aria-checked", "false"));
+    await userEvent.click(screen.getByRole("switch", { name: "保留上次输入" }));
+    await waitFor(() => expect(db.setQuickOptions).toHaveBeenLastCalledWith({ hideOnBlur: false, keepInput: false, monitor: "cursor" }));
+    const main = screen.getByRole("radio", { name: /主窗所在显示器/ });
+    await waitFor(() => expect(main).toBeEnabled());
+    await userEvent.click(main);
+    await waitFor(() => expect(db.setQuickOptions).toHaveBeenLastCalledWith({ hideOnBlur: false, keepInput: false, monitor: "main" }));
+    await waitFor(() => expect(main).toHaveAttribute("aria-checked", "true"));
+    expect(screen.getByRole("radio", { name: /鼠标所在显示器/ })).toHaveAttribute("aria-checked", "false");
   });
 
   it("启动时注册失败的原因可见；后端广播的设置变化会同步", async () => {

@@ -9,6 +9,8 @@ import {
   type DesktopSettings,
   type HotkeyAction,
   type HotkeyInfo,
+  type QuickMonitor,
+  type QuickOptions,
 } from "../lib/desktopShortcut";
 import { showToast } from "../lib/toast";
 import { SettingsToggle } from "./SettingsField";
@@ -17,6 +19,11 @@ import { ShellIntegrationSection } from "./ShellIntegrationSection";
 const CLOSE_OPTIONS: Array<{ value: CloseAction; label: string; hint: string }> = [
   { value: "exit", label: "退出程序", hint: "点关闭即退出（默认）。程序退出后全局快捷键随之失效" },
   { value: "tray", label: "最小化到托盘", hint: "点关闭只隐藏窗口，从托盘图标或全局快捷键唤回；托盘菜单「退出」才真正退出" },
+];
+
+const QUICK_MONITOR_OPTIONS: Array<{ value: QuickMonitor; label: string; hint: string }> = [
+  { value: "cursor", label: "鼠标所在显示器", hint: "在哪块屏幕操作就在哪块屏幕弹出（默认）" },
+  { value: "main", label: "主窗所在显示器", hint: "始终跟随主窗口所在的屏幕" },
 ];
 
 /** 各动作的补充说明（按动作，不按顺序） */
@@ -166,6 +173,18 @@ export function DesktopSettingsSection() {
     }
   };
 
+  const applyQuickOptions = async (patch: Partial<QuickOptions>) => {
+    if (!settings) return;
+    setBusy(true);
+    try {
+      setSettings(await db.setQuickOptions({ ...settings.quick, ...patch }));
+    } catch (e) {
+      showToast(`保存失败：${errorText(e)}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const anyHotkey = settings?.hotkeys.some((h) => h.accelerator) ?? false;
 
   return (
@@ -194,6 +213,49 @@ export function DesktopSettingsSection() {
           />
         )}
       </div>
+
+      {settings && (
+        <div data-testid="quick-options" className="mt-5 space-y-3">
+          <span className="instrument-label block">快速搜索窗</span>
+          <SettingsToggle
+            checked={settings.quick.hideOnBlur}
+            disabled={busy}
+            onChange={(checked) => void applyQuickOptions({ hideOnBlur: checked })}
+            title="失去焦点时自动隐藏"
+            description="点到别的窗口时收起快速窗；关闭后需按 Esc 或再次按快捷键收起。"
+          />
+          <SettingsToggle
+            checked={settings.quick.keepInput}
+            disabled={busy}
+            onChange={(checked) => void applyQuickOptions({ keepInput: checked })}
+            title="保留上次输入"
+            description="唤出时保留上次的搜索词并全选（直接打字即替换）；关闭后每次唤出都是空白输入框。"
+          />
+          <div role="radiogroup" aria-label="快速窗唤出位置" className="grid gap-2 sm:grid-cols-2">
+            {QUICK_MONITOR_OPTIONS.map((option) => {
+              const active = settings.quick.monitor === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={busy}
+                  onClick={() => void applyQuickOptions({ monitor: option.value })}
+                  className={`rounded-[var(--radius-md)] border px-3 py-2 text-left transition-colors ${
+                    active
+                      ? "border-[var(--accent-primary)] bg-[var(--accent-primary-bg)]"
+                      : "border-[var(--border-subtle)] hover:bg-[var(--bg-hover)]"
+                  }`}
+                >
+                  <span className="block text-sm font-medium text-[var(--text-primary)]">{option.label}</span>
+                  <span className="mt-0.5 block text-xs leading-5 text-[var(--text-secondary)]">{option.hint}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="mt-5">
         <span className="instrument-label mb-2 block">关闭窗口时</span>

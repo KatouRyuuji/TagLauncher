@@ -167,6 +167,19 @@ describe("QuickApp", () => {
     await waitFor(() => expect(db.quickSearch).toHaveBeenCalledTimes(2));
   });
 
+  it("唤出事件带 keepInput=false 时清空上次输入，默认保留并全选", async () => {
+    const user = userEvent.setup();
+    await setup();
+    const input = screen.getByTestId("quick-input") as HTMLInputElement;
+    await user.type(input, "rep");
+    fire(QUICK_SHOWN_EVENT, { t0Ms: Date.now(), keepInput: true });
+    expect(input.value).toBe("rep");
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, 3]);
+    fire(QUICK_SHOWN_EVENT, { t0Ms: Date.now(), keepInput: false });
+    await waitFor(() => expect(input.value).toBe(""));
+    expect(input).toHaveFocus();
+  });
+
   it("记录后端切换 WebView2 内存目标的事件（隐藏久了 low、唤出 normal）", async () => {
     await setup();
     await waitFor(() => expect(bus.handlers.get(QUICK_MEMORY_EVENT)?.size ?? 0).toBeGreaterThan(0));

@@ -125,15 +125,19 @@ def collect_page(app, timeout: float = 30):
     extra = []
 
     def find():
-        pages = quick_pages(app)
+        pages = [("main", p) for p in quick_pages(app)]
         # 主连接挂上的页面不一定是当前这个快速窗（销毁重建后旧连接可能停在旧 target）：另开连接一并查
         if any("quick.html" in (t.get("url") or "") for t in _cdp_targets(app)):
             if not extra:
                 extra.append(app.pw.chromium.connect_over_cdp(f"http://127.0.0.1:{app.port}"))
-            pages = pages + [p for ctx in extra[0].contexts for p in ctx.pages if "quick.html" in (p.url or "") and not p.is_closed()]
-        for p in pages:
+            pages += [("extra", p) for ctx in extra[0].contexts for p in ctx.pages
+                      if "quick.html" in (p.url or "") and not p.is_closed()]
+        for via, p in pages:
             try:
                 if p.evaluate("() => !!document.querySelector('[data-testid=quick-collect]')"):
+                    # 记录走哪条连接找到：统计 E-COLLECT-05 偶发的根因（主连接未挂上新 WebView target）
+                    print(f"COLLECT_PAGE via={via} main_pages={sum(v == 'main' for v, _ in pages)} "
+                          f"extra_pages={sum(v == 'extra' for v, _ in pages)}")
                     return p
             except Exception:  # noqa: BLE001  页面在销毁中
                 pass
