@@ -95,7 +95,26 @@ def test_snap_top_maximize(win):
 
 @pytest.mark.case("E-WIN-20")
 def test_resize_no_blank_flash(win):
-    import numpy as np  # noqa: F401  # capture_window 依赖
+    """拖右边缘连续改尺寸，逐帧截屏：大面积纯白/纯黑（WebView 没来得及重绘）的帧 ≤ 2。
+
+    截的是屏幕上窗口所在区域（用户实际看到的），不用 PrintWindow：无 GPU 的虚拟机上
+    PrintWindow(PW_RENDERFULLCONTENT) 抓 WebView2 合成内容整帧为黑（CI 实测 40/40），量不到闪烁。
+    先截一帧静止画面校验截图方式本身有效。"""
+    import numpy as np
+    from PIL import ImageGrab
+
+    def grab():
+        return ImageGrab.grab(bbox=win32.rect(win.hwnd), all_screens=True)
+
+    def blank(img) -> tuple[float, float]:
+        a = np.asarray(img.convert("L"))
+        return float((a > 250).mean()), float((a < 5).mean())
+
+    win.front()
+    time.sleep(0.3)
+    base = blank(grab())
+    print(f"E-WIN-20 baseline white={base[0]:.2f} black={base[1]:.2f}")
+    assert base[0] <= 0.6 and base[1] <= 0.6, f"静止画面已判为空白，截图方式无效：{base}"
     ex, ey = win32.find_edge(win.hwnd, "RIGHT")
     frames = []
     win32.mouse_move(ex, ey); win32.mouse_down()
@@ -103,14 +122,12 @@ def test_resize_no_blank_flash(win):
         for i in range(40):
             win32.mouse_move(ex + (i % 20) * 8 - 80, ey)
             time.sleep(0.05)
-            frames.append(win32.capture_window(win.hwnd))
+            frames.append(grab())
     finally:
         win32.mouse_up()
-    bad = 0
-    for f in frames:
-        a = np.asarray(f.convert("L"))
-        if (a > 250).mean() > 0.6 or (a < 5).mean() > 0.6:
-            bad += 1
+    stats = [blank(f) for f in frames]
+    bad = sum(1 for w, b in stats if w > 0.6 or b > 0.6)
+    print(f"E-WIN-20 frames={len(frames)} bad={bad} worst_white={max(w for w, _ in stats):.2f} worst_black={max(b for _, b in stats):.2f}")
     assert bad <= 2, f"{bad}/{len(frames)} 帧为大面积纯白/纯黑"
 
 

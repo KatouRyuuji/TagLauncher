@@ -206,6 +206,18 @@ def test_fifty_items_via_shell_verb_latency(shell_on, sandbox):
     qp0.get_by_test_id("collect-action-import").click()
     wait_session_done(app, timeout=30)
     with oswin.FgHelper(env=sandbox.env(None)) as fg:
+        # 同一个转发经前台进程 ShellExecute 动词启动（与资源管理器同路径），逐个串行
+        verb_single = []
+        for i in range(3):
+            q = files.write(sandbox.files / "fifty-probe" / f"verb{i}.txt", "x")
+            t = time.time()
+            fg.startfile(q, verb=VERB)
+            wait_until(lambda: (app.invoke("collect_session") or {}).get("invocations", 0) >= 1, 15)
+            verb_single.append(round((time.time() - t) * 1000))
+            time.sleep(0.6)  # 过静默窗口，快速窗弹出
+            cp = collect_page(app)
+            cp.get_by_test_id("collect-action-import").click()
+            wait_session_done(app, timeout=30)
         fg.focus()
         t0 = time.time()
         arrivals = []
@@ -224,7 +236,7 @@ def test_fifty_items_via_shell_verb_latency(shell_on, sandbox):
         m = {"spawn_all_ms": round((t_spawned - t0) * 1000), "window_ms": round((t_window - t0) * 1000),
              "full_render_ms": round(perf[-1]["renderedMs"] - t0 * 1000), "renders": len(perf),
              "sessions": sorted({p["id"] for p in perf}), "foreground": foreground_report(app),
-             "single_forward_ms": single, "arrivals_during_spawn": arrivals[::5]}
+             "single_forward_ms": single, "single_verb_ms": verb_single, "arrivals_during_spawn": arrivals[::5]}
         print(f"COLLECT_SHELL_PERF {json.dumps(m, ensure_ascii=False)}")
         assert len(m["sessions"]) == 1 and len(quick_pages(app)) == 1, m
         assert m["full_render_ms"] <= COLLECT_LATENCY_MS, m
