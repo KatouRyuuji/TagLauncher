@@ -277,10 +277,7 @@ pub fn snap(window: Rect, monitors: &[Rect]) -> Option<(usize, PinEdge, f64)> {
         };
         dx * dx + dy * dy
     };
-    let (index, m) = monitors
-        .iter()
-        .enumerate()
-        .min_by_key(|(_, m)| dist(m))?;
+    let (index, m) = monitors.iter().enumerate().min_by_key(|(_, m)| dist(m))?;
     let edge = if cx < m.0 + m.2 as i32 / 2 {
         PinEdge::Left
     } else {
@@ -516,7 +513,11 @@ fn place_float(app: &AppHandle, window: &WebviewWindow) {
     let (x, y, lw, lh) = match remembered {
         Some((x, y, w, h)) if point_on_any(x, y, &works) => (x, y, w, h),
         _ => {
-            let m = app.primary_monitor().ok().flatten().or_else(|| all.first().cloned());
+            let m = app
+                .primary_monitor()
+                .ok()
+                .flatten()
+                .or_else(|| all.first().cloned());
             let Some(m) = m else {
                 let _ = window.center();
                 return;
@@ -561,6 +562,18 @@ fn drawer_geometry(app: &AppHandle, expanded: bool) -> Option<(Rect, u32, u32)> 
     Some((drawer_rect(work, edge, offset, width, ph), pw, hw))
 }
 
+/// 展开动画的起始宽度：从面板宽的 1/4 起滑（不让 WebView 经过极窄宽度）
+fn anim_start(pw: u32, hw: u32) -> u32 {
+    (pw / 4).max(hw)
+}
+
+/// 收起：quick 窗口隐藏，原生把手贴边显示（见 pin_strip）
+fn show_handle(app: &AppHandle) {
+    if let Some((rect, _, _)) = drawer_geometry(app, false) {
+        crate::pin_strip::show(app, rect);
+    }
+}
+
 /// 切到钉住视图表面（搜索收起、设置变化、启动、托盘切换时调用）。未开启时隐藏窗口。
 pub fn restore(app: &AppHandle) -> Result<(), String> {
     ANIM_GEN.fetch_add(1, Ordering::SeqCst);
@@ -568,6 +581,7 @@ pub fn restore(app: &AppHandle) -> Result<(), String> {
     if !settings.active() {
         rt().surface = Surface::Search;
         set_foreground_hook(app, false);
+        crate::pin_strip::hide(app);
         if let Some(w) = app.get_webview_window(crate::quick::QUICK_LABEL) {
             let _ = w.hide();
             emit_view(&w);
@@ -583,6 +597,7 @@ pub fn restore(app: &AppHandle) -> Result<(), String> {
     match settings.mode {
         PinMode::Float => {
             set_foreground_hook(app, false);
+            crate::pin_strip::hide(app);
             let _ = window.set_always_on_top(settings.topmost);
             let _ = window.set_resizable(true);
             place_float(app, &window);
@@ -592,18 +607,18 @@ pub fn restore(app: &AppHandle) -> Result<(), String> {
         PinMode::Drawer => {
             let _ = window.set_always_on_top(true);
             let _ = window.set_resizable(false);
-            if let Some((rect, _, _)) = drawer_geometry(app, false) {
-                set_bounds(&window, rect);
-                set_bounds(&window, rect);
-            }
+            // 收起 = quick 窗口隐藏（WebView 不画），只留原生把手
+            let _ = window.hide();
             emit_view(&window);
             set_foreground_hook(app, true);
-            if fullscreen_on_drawer_monitor(&window) {
+            if crate::desktop::fullscreen_foreground_monitor()
+                .is_some_and(|fs| Some(fs) == drawer_hmonitor(app))
+            {
                 rt().drawer = DrawerState::HiddenFullscreen;
-                let _ = window.hide();
+                crate::pin_strip::hide(app);
                 emit_view(&window);
             } else {
-                show_no_activate(&window);
+                show_handle(app);
             }
         }
     }
@@ -621,6 +636,7 @@ pub fn enter_search(window: &WebviewWindow) {
         was
     };
     if was_pin {
+        crate::pin_strip::hide(window.app_handle());
         let _ = window.set_resizable(false);
         let _ = window.set_always_on_top(true);
         ignore_own_moves();
@@ -628,24 +644,31 @@ pub fn enter_search(window: &WebviewWindow) {
     }
 }
 
-fn fullscreen_on_drawer_monitor(window: &WebviewWindow) -> bool {
+/// 抽屉所在显示器的 HMONITOR（按把手矩形中心点取；收起时 quick 窗口是隐藏的，不能按窗口取）
+fn drawer_hmonitor(app: &AppHandle) -> Option<isize> {
     #[cfg(windows)]
     {
-        use windows_sys::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONEAREST};
-        let Some(fs) = crate::desktop::fullscreen_foreground_monitor() else {
-            return false;
-        };
-        let Ok(h) = window.hwnd() else {
-            return true;
+        use windows_sys::Win32::Foundation::POINT;
+        use windows_sys::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTONEAREST};
+        let (rect, _, _) = drawer_geometry(app, false)?;
+        let pt = POINT {
+            x: rect.0 + rect.2 as i32 / 2,
+            y: rect.1 + rect.3 as i32 / 2,
         };
         // SAFETY：只读查询
-        let mine = unsafe { MonitorFromWindow(h.0 as _, MONITOR_DEFAULTTONEAREST) } as isize;
-        mine == fs
+        Some(unsafe { MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST) } as isize)
     }
     #[cfg(not(windows))]
     {
-        let _ = window;
-        false
+        let _ = app;
+        None
+    }
+}
+
+fn fullscreen_on_drawer_monitor(app: &AppHandle) -> bool {
+    match crate::desktop::fullscreen_foreground_monitor() {
+        Some(fs) => drawer_hmonitor(app).map_or(true, |m| m == fs),
+        None => false,
     }
 }
 
@@ -663,8 +686,9 @@ pub fn expand(app: &AppHandle) -> Result<bool, String> {
             return Ok(false);
         }
     }
-    if fullscreen_on_drawer_monitor(&window) {
+    if fullscreen_on_drawer_monitor(app) {
         rt().drawer = DrawerState::HiddenFullscreen;
+        crate::pin_strip::hide(app);
         let _ = window.hide();
         emit_view(&window);
         return Ok(false);
@@ -674,7 +698,19 @@ pub fn expand(app: &AppHandle) -> Result<bool, String> {
     };
     rt().drawer = DrawerState::Expanded;
     emit_view(&window);
-    animate(app, &window, hw, pw);
+    let start = anim_start(pw, hw);
+    if let Some((r, _, _)) = drawer_geometry(app, true) {
+        let (edge, x) = (rt().settings.edge, r.0);
+        let sx = if edge == PinEdge::Right {
+            x + (pw - start) as i32
+        } else {
+            x
+        };
+        set_bounds(&window, (sx, r.1, start, r.3));
+    }
+    show_no_activate(&window);
+    crate::pin_strip::hide(app);
+    animate(app, &window, start, pw);
     Ok(true)
 }
 
@@ -693,7 +729,9 @@ pub fn collapse(app: &AppHandle) -> Result<bool, String> {
         return Ok(false);
     };
     rt().drawer = DrawerState::Collapsed;
-    animate(app, &window, pw, hw);
+    animate(app, &window, pw, anim_start(pw, hw));
+    show_handle(app);
+    let _ = window.hide();
     emit_view(&window);
     Ok(true)
 }
@@ -801,7 +839,11 @@ fn settle_after_move(app: &AppHandle) {
             if changed_edge {
                 let db = app.state::<Database>();
                 let conn = db.get_conn();
-                let edge_value = if edge == PinEdge::Left { "left" } else { "right" };
+                let edge_value = if edge == PinEdge::Left {
+                    "left"
+                } else {
+                    "right"
+                };
                 let _ = settings_service::set_setting(&conn, EDGE_KEY, edge_value);
             }
             if let Some((r, _, _)) = drawer_geometry(app, true) {
@@ -825,19 +867,17 @@ fn on_foreground_changed(app: &AppHandle) {
     let Some(window) = app.get_webview_window(crate::quick::QUICK_LABEL) else {
         return;
     };
-    let fullscreen = fullscreen_on_drawer_monitor(&window);
+    let fullscreen = fullscreen_on_drawer_monitor(app);
     match (drawer, fullscreen) {
         (DrawerState::HiddenFullscreen, false) => {
             rt().drawer = DrawerState::Collapsed;
-            if let Some((rect, _, _)) = drawer_geometry(app, false) {
-                set_bounds(&window, rect);
-            }
             emit_view(&window);
-            show_no_activate(&window);
+            show_handle(app);
         }
         (DrawerState::Collapsed | DrawerState::Expanded, true) => {
             ANIM_GEN.fetch_add(1, Ordering::SeqCst);
             rt().drawer = DrawerState::HiddenFullscreen;
+            crate::pin_strip::hide(app);
             let _ = window.hide();
             emit_view(&window);
         }
@@ -876,7 +916,9 @@ unsafe extern "system" fn movesize_proc(
     }
     let dragging_drawer = {
         let r = rt();
-        r.surface == Surface::Pin && r.settings.mode == PinMode::Drawer && r.drawer == DrawerState::Expanded
+        r.surface == Surface::Pin
+            && r.settings.mode == PinMode::Drawer
+            && r.drawer == DrawerState::Expanded
     };
     if dragging_drawer {
         let app = app.clone();
@@ -1124,7 +1166,10 @@ pub fn get_pin_settings() -> PinSettings {
 }
 
 #[tauri::command]
-pub async fn set_pin_settings(app: AppHandle, settings: PinSettings) -> Result<PinSettings, String> {
+pub async fn set_pin_settings(
+    app: AppHandle,
+    settings: PinSettings,
+) -> Result<PinSettings, String> {
     apply_settings(&app, settings)
 }
 
@@ -1139,14 +1184,20 @@ pub struct PinDiag {
     pub view: PinView,
     pub hook_installed: bool,
     pub counts_as_visible: bool,
+    /// 原生把手：是否显示与物理矩形 [x, y, w, h]
+    pub handle_visible: bool,
+    pub handle_rect: [i64; 4],
 }
 
 #[tauri::command]
 pub fn pin_diag() -> PinDiag {
+    let (handle_visible, r) = crate::pin_strip::state();
     PinDiag {
         view: view(),
         hook_installed: hook_installed(),
         counts_as_visible: counts_as_visible(),
+        handle_visible,
+        handle_rect: [r.0 as i64, r.1 as i64, r.2 as i64, r.3 as i64],
     }
 }
 
@@ -1164,6 +1215,12 @@ pub async fn pin_expand(app: AppHandle) -> Result<bool, String> {
 #[tauri::command]
 pub async fn pin_collapse(app: AppHandle) -> Result<bool, String> {
     collapse(&app)
+}
+
+/// 前端告知主题强调色，用于原生把手
+#[tauri::command]
+pub fn pin_handle_color(app: AppHandle, color: String) {
+    crate::pin_strip::set_color(&app, &color);
 }
 
 #[cfg(test)]
@@ -1187,9 +1244,7 @@ mod tests {
         let back = PinSettings::from_settings(|k| stored.get(k).cloned());
         assert_eq!(back, s);
         assert!(back.active());
-        let bad = PinSettings::from_settings(|k| {
-            (k == SOURCE_KEY).then(|| "folder:3".to_string())
-        });
+        let bad = PinSettings::from_settings(|k| (k == SOURCE_KEY).then(|| "folder:3".to_string()));
         assert_eq!(bad.source, None);
         assert_eq!(
             serde_json::to_value(PinSource::Tag(3)).unwrap(),
@@ -1218,9 +1273,18 @@ mod tests {
     #[test]
     fn drawer_rect_anchors_to_edge_and_offset() {
         let work = (0, 0, 1920, 1040);
-        assert_eq!(drawer_rect(work, PinEdge::Right, 0.5, 320, 640), (1600, 200, 320, 640));
-        assert_eq!(drawer_rect(work, PinEdge::Left, 0.0, 4, 640), (0, 0, 4, 640));
-        assert_eq!(drawer_rect(work, PinEdge::Right, 1.0, 4, 640), (1916, 400, 4, 640));
+        assert_eq!(
+            drawer_rect(work, PinEdge::Right, 0.5, 320, 640),
+            (1600, 200, 320, 640)
+        );
+        assert_eq!(
+            drawer_rect(work, PinEdge::Left, 0.0, 4, 640),
+            (0, 0, 4, 640)
+        );
+        assert_eq!(
+            drawer_rect(work, PinEdge::Right, 1.0, 4, 640),
+            (1916, 400, 4, 640)
+        );
         // 副屏在左侧负坐标
         let left = (-2560, 0, 2560, 1400);
         assert_eq!(drawer_rect(left, PinEdge::Right, 0.0, 480, 896).0, -480);
@@ -1251,7 +1315,10 @@ mod tests {
     fn snap_picks_monitor_edge_and_offset() {
         let mons = [(0, 0, 1920, 1040), (1920, 0, 2560, 1400)];
         // 拖到第一块屏左半边、偏上
-        assert_eq!(snap((100, 100, 320, 640), &mons), Some((0, PinEdge::Left, 0.25)));
+        assert_eq!(
+            snap((100, 100, 320, 640), &mons),
+            Some((0, PinEdge::Left, 0.25))
+        );
         // 拖到第二块屏右半边、最底
         let (i, e, o) = snap((3900, 760, 320, 640), &mons).unwrap();
         assert_eq!((i, e), (1, PinEdge::Right));
@@ -1266,7 +1333,10 @@ mod tests {
         let mons = [(0, 0, 1920, 1040)];
         assert!(point_on_any(100, 100, &mons));
         assert!(!point_on_any(-1500, 40, &mons), "副屏拔掉后回退默认位置");
-        assert_eq!(float_default((0, 0, 1920, 1040), 340, 480, 1.0), (1556, 280));
+        assert_eq!(
+            float_default((0, 0, 1920, 1040), 340, 480, 1.0),
+            (1556, 280)
+        );
     }
 
     fn db() -> rusqlite::Connection {
@@ -1302,10 +1372,15 @@ mod tests {
         let child = load_items(&conn, Some(PinSource::Cabinet(2))).unwrap();
         assert_eq!(child.title.as_deref(), Some("资料 / 项目"));
         let tag = load_items(&conn, Some(PinSource::Tag(10))).unwrap();
-        assert_eq!(tag.items.iter().map(|i| i.item.id).collect::<Vec<_>>(), vec![3]);
+        assert_eq!(
+            tag.items.iter().map(|i| i.item.id).collect::<Vec<_>>(),
+            vec![3]
+        );
         let gone = load_items(&conn, Some(PinSource::Cabinet(99))).unwrap();
         assert!(gone.title.is_none() && gone.items.is_empty());
         assert!(validate_source(&conn, PinSource::Tag(10)).is_ok());
-        assert!(validate_source(&conn, PinSource::Tag(99)).unwrap_err().contains("标签不存在"));
+        assert!(validate_source(&conn, PinSource::Tag(99))
+            .unwrap_err()
+            .contains("标签不存在"));
     }
 }

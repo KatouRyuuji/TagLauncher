@@ -5,9 +5,10 @@ mod data_sync;
 /// F18 托盘 / 全局快捷键 / 关闭行为（仅 GUI 使用）
 mod desktop;
 mod explorer_selection;
-mod quick;
 /// 钉住视图 / 边缘抽屉（复用快速窗 WebView）
 mod pin;
+mod pin_strip;
+mod quick;
 pub mod search;
 /// 资源管理器右键菜单 / 发送到（阶段③）
 mod shell_clipboard;
@@ -29,8 +30,11 @@ pub use db::Database;
 // 桌面驻留命令（含 #[tauri::command] 生成的 __cmd__ 宏）需在 generate_handler! 处可见
 use desktop::*;
 // 快速搜索窗命令（阶段②）
+use pin::{
+    get_pin_settings, pin_collapse, pin_diag, pin_expand, pin_handle_color, pin_items, pin_state,
+    set_pin_settings,
+};
 use quick::{quick_hide, quick_locate_in_main, quick_open};
-use pin::{get_pin_settings, pin_collapse, pin_diag, pin_expand, pin_items, pin_state, set_pin_settings};
 // 收纳会话与右键菜单（阶段③）
 use collect::{
     collect_finish, collect_session, collect_submit, get_collect_preference, set_collect_preference,
@@ -510,6 +514,7 @@ pub fn run() {
             pin_items,
             pin_expand,
             pin_collapse,
+            pin_handle_color,
             // 项目 CRUD
             add_item,
             add_items,

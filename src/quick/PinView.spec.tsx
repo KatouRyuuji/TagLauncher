@@ -21,13 +21,14 @@ vi.mock("../lib/db", () => ({
   pinItems: vi.fn(async () => ({ source: { kind: "cabinet", id: 1 }, title: data.title, total: data.total, items: data.items })),
   pinExpand: vi.fn(async () => true),
   pinCollapse: vi.fn(async () => true),
+  pinHandleColor: vi.fn(async () => {}),
   launchItem: vi.fn(async () => {}),
   openInExplorerById: vi.fn(async () => {}),
   getItemVisual: vi.fn(async () => ({ path: "", icon_path: null })),
 }));
 
 const { PinView } = await import("./PinView");
-const { filterPinItems, pinCountText, PIN_HOVER_EXPAND_MS, PIN_LEAVE_COLLAPSE_MS } = await import("./pinModel");
+const { filterPinItems, pinCountText, PIN_LEAVE_COLLAPSE_MS } = await import("./pinModel");
 
 const item = (id: number, name: string, extra: Partial<ItemWithTags> = {}): ItemWithTags => ({
   id, name, path: `D:/pin/${name}`, type: "file", created_at: "2026-11-11", is_favorite: false, tags: [], ...extra,
@@ -94,18 +95,17 @@ describe("PinView", () => {
     expect(await screen.findByTestId("pin-missing")).toHaveTextContent("已被删除");
   });
 
-  it("抽屉收起只渲染把手：鼠标停留才滑出，划过不弹；展开后离开面板收回", async () => {
+  it("抽屉收起时面板已渲染（窗口由后端隐藏、原生把手负责悬停）、把手取主题色；展开后离开面板收回", async () => {
     vi.useFakeTimers();
+    document.documentElement.style.setProperty("--accent", "#c0647d");
     const { rerender } = render(<PinView view={view({ mode: "drawer" })} />);
-    const handle = screen.getByTestId("pin-handle");
-    fireEvent.mouseEnter(handle);
-    act(() => { vi.advanceTimersByTime(PIN_HOVER_EXPAND_MS - 20); });
-    fireEvent.mouseLeave(handle);
-    act(() => { vi.advanceTimersByTime(500); });
-    expect(db.pinExpand).not.toHaveBeenCalled();
-    fireEvent.mouseEnter(handle);
-    act(() => { vi.advanceTimersByTime(PIN_HOVER_EXPAND_MS + 5); });
-    expect(db.pinExpand).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("pin-panel")).toHaveAttribute("data-mode", "drawer");
+    expect(screen.queryByTestId("pin-handle")).toBeNull();
+    expect(db.pinHandleColor).toHaveBeenCalledWith("#c0647d");
+    // 收起状态下离开不触发收回
+    fireEvent.mouseLeave(document.documentElement);
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(db.pinCollapse).not.toHaveBeenCalled();
 
     rerender(<PinView view={view({ mode: "drawer" }, "expanded")} />);
     expect(screen.getByTestId("pin-panel")).toHaveAttribute("data-mode", "drawer");

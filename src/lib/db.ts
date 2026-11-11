@@ -827,6 +827,11 @@ export async function pinCollapse(): Promise<boolean> {
   return invokeCmd("pin_collapse");
 }
 
+/** 告知后端主题强调色：边缘抽屉的原生把手用它着色 */
+export async function pinHandleColor(color: string): Promise<void> {
+  return invokeCmd("pin_handle_color", { color });
+}
+
 export async function getSetting(key: string): Promise<string | null> {
   return invokeCmd("get_setting", { key });
 }

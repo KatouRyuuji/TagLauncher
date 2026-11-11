@@ -152,26 +152,31 @@ def test_pin_shares_window_with_quick_search(app, sandbox):
 
 @pytest.mark.case("E-PIN-04")
 def test_drawer_handle_expand_collapse_sizes(app, sandbox):
-    """边缘抽屉：收起时窗口是贴边把手（4 逻辑像素宽），展开到面板宽 320；收起后不计为可见（不提高检测频率）。"""
+    """边缘抽屉：收起时 quick 窗口隐藏、只留原生把手（4 逻辑像素宽，贴工作区边）；展开到面板宽 320；
+    收起后不计为可见（不提高检测频率）。"""
     _, parent, _ = seed(app, sandbox)
     pin_settings(app, enabled=True, source={"kind": "cabinet", "id": parent}, mode="drawer", edge="right")
     qp = quick_page(app, timeout=20)
-    qp.get_by_test_id("pin-handle").wait_for(timeout=5000)
-    wait_until(lambda: qp.evaluate("() => innerWidth") <= 6, 3, lambda: qp.evaluate("() => innerWidth"))
+    wait_until(lambda: diag(app)["handleVisible"], 5, lambda: diag(app))
     d = diag(app)
+    assert not is_visible(qp), "收起时 quick 窗口（WebView）应隐藏"
     assert d["view"]["drawer"] == "collapsed" and d["countsAsVisible"] is False, d
     assert d["hookInstalled"] is True, "抽屉模式应装前台切换事件钩子"
+    scale = qp.evaluate("() => devicePixelRatio")
+    assert 3 <= d["handleRect"][2] <= round(4 * scale) + 1, d
+    qp.get_by_test_id("pin-panel").wait_for(state="attached", timeout=3000)
     assert app.invoke("pin_expand") is True
-    qp.get_by_test_id("pin-panel").wait_for(timeout=3000)
-    wait_until(lambda: qp.evaluate("() => innerWidth") == 320, 3, lambda: qp.evaluate("() => innerWidth"))
-    assert diag(app)["countsAsVisible"] is True
+    wait_until(lambda: is_visible(qp) and qp.evaluate("() => innerWidth") == 320, 3,
+               lambda: (is_visible(qp), qp.evaluate("() => innerWidth")))
+    d = diag(app)
+    assert d["countsAsVisible"] is True and d["handleVisible"] is False, d
     assert app.invoke("pin_expand") is False, "已展开时不重复展开"
     assert app.invoke("pin_collapse") is True
-    qp.get_by_test_id("pin-handle").wait_for(timeout=3000)
-    wait_until(lambda: qp.evaluate("() => innerWidth") <= 6, 3, lambda: qp.evaluate("() => innerWidth"))
+    wait_until(lambda: not is_visible(qp) and diag(app)["handleVisible"], 3, lambda: diag(app))
     pin_settings(app, mode="float")
-    qp.get_by_test_id("pin-panel").wait_for(timeout=3000)
-    assert diag(app)["hookInstalled"] is False, "离开抽屉模式应卸载钩子"
+    wait_until(lambda: is_visible(qp), 3)
+    d = diag(app)
+    assert d["hookInstalled"] is False and d["handleVisible"] is False, "离开抽屉模式应卸载钩子、收起把手"
 
 
 @pytest.mark.case("E-PERF-PIN")
@@ -222,7 +227,7 @@ def test_pin_resident_memory_and_idle_cpu(sandbox, app_factory):
 
     idle_float = idle("float-visible")
     pin_settings(app, mode="drawer")
-    qp.get_by_test_id("pin-handle").wait_for(timeout=5000)
+    wait_until(lambda: diag(app)["handleVisible"], 5, lambda: diag(app))
     idle_drawer = idle("drawer-collapsed")
     out = {"items": 5000, "pin_items": 300, "resident_private_mb_delta": delta,
            "resident_working_set_mb_delta": round(after["working_set_mb"] - before["working_set_mb"], 1),

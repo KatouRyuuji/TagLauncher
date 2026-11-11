@@ -15,11 +15,25 @@ from win import win32
 
 pytestmark = [pytest.mark.physical_input, pytest.mark.visible_window]
 QUICK_TITLE = "TagLauncher 快速搜索"
+HANDLE_TITLE = "TagLauncher 钉住把手"
 
 
 def quick_hwnd(app, visible_only: bool = False) -> int:
     return wait_until(lambda: oswin.window_by_title(app.proc.pid, QUICK_TITLE, visible_only=visible_only), 20,
                       "没有找到 quick 窗口")
+
+
+def handle_hwnd(app) -> int:
+    return wait_until(lambda: oswin.window_by_title(app.proc.pid, HANDLE_TITLE, visible_only=False), 10,
+                      "没有找到原生把手窗口")
+
+
+def collapsed(app, strip: int, quick: int) -> bool:
+    return win32.is_visible(strip) and width(strip) <= round(6 * scale(strip)) and not win32.is_visible(quick)
+
+
+def expanded(app, quick: int) -> bool:
+    return win32.is_visible(quick) and width(quick) == round(320 * scale(quick))
 
 
 def pin_settings(app, **patch) -> dict:
@@ -48,10 +62,11 @@ def setup_drawer(app, sandbox, edge: str = "right") -> int:
     cab = app.invoke("add_cabinet", {"name": "桌面柜", "color": "#22c55e"})["id"]
     app.invoke("add_items_to_cabinet", {"cabinetId": cab, "itemIds": [app.item("甲.txt")["id"], app.item("乙.txt")["id"]]})
     pin_settings(app, enabled=True, source={"kind": "cabinet", "id": cab}, mode="drawer", edge=edge)
-    h = quick_hwnd(app)
-    wait_until(lambda: win32.is_visible(h) and width(h) <= round(6 * scale(h)), 8,
-               lambda: f"抽屉应收起为贴边把手：visible={win32.is_visible(h)} rect={win32.rect(h)}")
-    return h
+    q = quick_hwnd(app)
+    h = handle_hwnd(app)
+    wait_until(lambda: collapsed(app, h, q), 8,
+               lambda: f"抽屉应收起为贴边把手：handle={win32.is_visible(h)} {win32.rect(h)} quick={win32.is_visible(q)}")
+    return h, q
 
 
 def park_mouse(h: int) -> None:
@@ -71,10 +86,11 @@ def hit_edge(h: int) -> tuple[int, int]:
 @pytest.mark.case("D-PIN-01")
 def test_drawer_slides_out_on_edge_hover_and_collapses_on_leave(app, sandbox):
     """把手贴在工作区右边缘；鼠标碰边停留 → 滑出到面板宽；划过（不停留）不弹；离开面板 → 收回。"""
-    h = setup_drawer(app, sandbox)
+    h, q = setup_drawer(app, sandbox)
     work = win32.monitor_info(h)["work"]
     l, t, r, b = win32.rect(h)
     assert r == work[2], f"把手应贴工作区右边：rect={(l, t, r, b)} work={work}"
+    assert oswin.is_topmost(h), "把手应置顶"
     park_mouse(h)
 
     # 划过：碰到边立刻离开
@@ -82,31 +98,32 @@ def test_drawer_slides_out_on_edge_hover_and_collapses_on_leave(app, sandbox):
     time.sleep(0.04)
     park_mouse(h)
     time.sleep(0.6)
-    assert drawer(app) == "collapsed" and width(h) <= round(6 * scale(h)), "划过边缘不应弹出"
+    assert drawer(app) == "collapsed" and collapsed(app, h, q), "划过边缘不应弹出"
 
     t0 = time.time()
     hit_edge(h)
-    panel = round(320 * scale(h))
-    wait_until(lambda: width(h) == panel, 3, lambda: f"碰边停留应滑出：rect={win32.rect(h)} drawer={drawer(app)}")
+    wait_until(lambda: expanded(app, q), 3,
+               lambda: f"碰边停留应滑出：quick={win32.is_visible(q)} {win32.rect(q)} drawer={drawer(app)}")
     expand_ms = round((time.time() - t0) * 1000)
-    assert win32.rect(h)[2] == work[2], "滑出后仍贴右边"
-    assert oswin.is_topmost(h), "抽屉应置顶"
+    assert win32.rect(q)[2] == work[2], "滑出后仍贴右边"
+    assert oswin.is_topmost(q), "抽屉应置顶"
+    assert not win32.is_visible(h), "展开后把手隐藏"
     # 鼠标在面板里移动不收回
-    l, t, r, b = win32.rect(h)
+    l, t, r, b = win32.rect(q)
     win32.mouse_move((l + r) // 2, (t + b) // 2)
     time.sleep(1.0)
     assert drawer(app) == "expanded"
     t0 = time.time()
     park_mouse(h)
-    wait_until(lambda: width(h) <= round(6 * scale(h)), 3, lambda: f"离开面板应收回：rect={win32.rect(h)}")
+    wait_until(lambda: collapsed(app, h, q), 3, lambda: f"离开面板应收回：quick={win32.rect(q)} handle={win32.rect(h)}")
     collapse_ms = round((time.time() - t0) * 1000)
-    print(f"PIN_DRAWER expand_ms={expand_ms} collapse_ms={collapse_ms} rect={win32.rect(h)} work={work}")
+    print(f"PIN_DRAWER expand_ms={expand_ms} collapse_ms={collapse_ms} handle={win32.rect(h)} work={work}")
 
 
 @pytest.mark.case("D-PIN-02")
 def test_drawer_hides_and_never_pops_over_fullscreen(app, sandbox):
     """前台切到全屏程序：把手隐藏、碰边不弹出（展开请求也被拒）；切回普通窗口后把手恢复、可再滑出。"""
-    h = setup_drawer(app, sandbox)
+    h, q = setup_drawer(app, sandbox)
     assert app.invoke("pin_diag")["hookInstalled"] is True
     with oswin.FgHelper(env=sandbox.env(None)) as normal, oswin.FgHelper(env=sandbox.env(None), fullscreen=True) as fs:
         normal.focus()
@@ -118,7 +135,7 @@ def test_drawer_hides_and_never_pops_over_fullscreen(app, sandbox):
         assert drawer(app) == "hiddenFullscreen"
         hit_edge(h)
         time.sleep(0.8)
-        assert not win32.is_visible(h) and drawer(app) == "hiddenFullscreen", "全屏时碰边不应弹出"
+        assert not win32.is_visible(h) and not win32.is_visible(q) and drawer(app) == "hiddenFullscreen", "全屏时碰边不应弹出"
         assert app.invoke("pin_expand") is False
         normal.focus()
         wait_until(lambda: win32.is_visible(h) and drawer(app) == "collapsed", 3,
@@ -133,28 +150,30 @@ def test_drawer_hides_and_never_pops_over_fullscreen(app, sandbox):
 @pytest.mark.case("D-PIN-03")
 def test_drawer_drag_switches_edge_and_position_survives_restart(app, sandbox):
     """拖动展开的抽屉到屏幕左侧偏上：松手吸附到左边并记住显示器 / 边 / 上下比例；重启后把手仍在原处。"""
-    h = setup_drawer(app, sandbox)
+    h, q = setup_drawer(app, sandbox)
     work = win32.monitor_info(h)["work"]
     park_mouse(h)
     hit_edge(h)
-    wait_until(lambda: drawer(app) == "expanded" and width(h) == round(320 * scale(h)), 3)
-    l, t, r, b = win32.rect(h)
-    hx, hy = (l + r) // 2, t + round(16 * scale(h))  # 标题栏（拖动区）
+    wait_until(lambda: drawer(app) == "expanded" and expanded(app, q), 3)
+    l, t, r, b = win32.rect(q)
+    hx, hy = (l + r) // 2, t + round(16 * scale(q))  # 标题栏（拖动区）
     tx, ty = work[0] + 200, work[1] + 60 + (hy - t)
     win32.drag(hx, hy, tx, ty, steps=30)
     wait_until(lambda: app.invoke("get_pin_settings")["edge"] == "left", 5,
-               lambda: f"松手应吸附到左边：rect={win32.rect(h)} settings={app.invoke('get_pin_settings')}")
-    wait_until(lambda: win32.rect(h)[0] == work[0], 3, lambda: f"应贴左边：rect={win32.rect(h)} work={work}")
+               lambda: f"松手应吸附到左边：rect={win32.rect(q)} settings={app.invoke('get_pin_settings')}")
+    wait_until(lambda: win32.rect(q)[0] == work[0], 3, lambda: f"应贴左边：rect={win32.rect(q)} work={work}")
     offset = float(dbh.meta(sandbox.db_path, "pin.drawer_offset"))
     assert offset < 0.3, f"上下比例应偏上：{offset}"
     assert dbh.meta(sandbox.db_path, "pin.edge") == "left"
-    top_before = win32.rect(h)[1]
+    top_before = win32.rect(q)[1]
     park_mouse(h)
-    wait_until(lambda: drawer(app) == "collapsed", 3)
+    wait_until(lambda: collapsed(app, h, q), 3)
+    assert win32.rect(h)[0] == work[0] and abs(win32.rect(h)[1] - top_before) <= 2, win32.rect(h)
 
     app.restart()
-    h = quick_hwnd(app)
-    wait_until(lambda: win32.is_visible(h) and win32.rect(h)[0] == work[0] and width(h) <= round(6 * scale(h)), 10,
+    q = quick_hwnd(app)
+    h = handle_hwnd(app)
+    wait_until(lambda: collapsed(app, h, q) and win32.rect(h)[0] == work[0], 10,
                lambda: f"重启后把手应在左边：rect={win32.rect(h)}")
     assert abs(win32.rect(h)[1] - top_before) <= 2, f"上下位置应记住：{win32.rect(h)[1]} vs {top_before}"
     print(f"PIN_REMEMBER offset={offset} rect={win32.rect(h)} monitor={dbh.meta(sandbox.db_path, 'pin.drawer_monitor')}")

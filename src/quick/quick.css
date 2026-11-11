@@ -63,5 +63,3 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
 .pin-count { color: var(--text-muted, #777); font-size: 0.85em; }
 .pin-row { grid-template-columns: 1.6em minmax(0, 1fr); padding: 4px 8px; }
 .pin-row .quick-icon { grid-row: auto; }
-.pin-handle { width: 100%; background: var(--accent, #c0647d); opacity: 0.55; cursor: pointer; }
-.pin-handle:hover { opacity: 0.9; }

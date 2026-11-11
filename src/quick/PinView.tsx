@@ -2,8 +2,9 @@
 // quick/PinView.tsx — 钉住视图 / 边缘抽屉（与快速搜索共用 quick 窗口的 WebView）
 // ============================================================================
 // 浮动窗：标题可拖动（后端记位置），列表双击 / Enter 打开。
-// 边缘抽屉：收起时整个窗口就是贴边的把手，鼠标停留 PIN_HOVER_EXPAND_MS 后请求滑出；
-// 展开后鼠标离开面板 PIN_LEAVE_COLLAPSE_MS 收回（失焦由后端收回）。没有任何轮询。
+// 边缘抽屉：收起时本窗口隐藏，贴边的是后端的原生把手（pin_strip.rs，系统悬停判定后滑出）；
+// 面板始终渲染好，滑出即见内容。展开后鼠标离开面板 PIN_LEAVE_COLLAPSE_MS 收回（失焦由后端收回）。
+// 把手颜色跟随主题强调色（pin_handle_color）。没有任何轮询。
 // 数据：任何来源的写入（主窗、快速窗、tl CLI）都重新取 pin_items。
 // ============================================================================
 
@@ -14,7 +15,7 @@ import { announceWindowWrite, onAnyDataChanged } from "../lib/dataSync";
 import { itemDisplayName } from "../lib/itemDisplay";
 import type { PinViewState } from "../lib/desktopShortcut";
 import { quickKeyAction, stepIndex } from "./quickModel";
-import { filterPinItems, PIN_HOVER_EXPAND_MS, PIN_ICON_LIMIT, PIN_LEAVE_COLLAPSE_MS, pinCountText } from "./pinModel";
+import { filterPinItems, PIN_ICON_LIMIT, PIN_LEAVE_COLLAPSE_MS, pinCountText } from "./pinModel";
 import { ItemTypeIcon, ItemVisualIcon } from "../components/ItemVisualIcon";
 
 function errorText(e: unknown): string {
@@ -32,7 +33,6 @@ export function PinView({ view }: { view: PinViewState }) {
   const [selected, setSelected] = useState(0);
   const [tick, setTick] = useState(0);
   const [load] = useState(() => latestOnly((_: null) => db.pinItems()));
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => onAnyDataChanged(() => setTick((t) => t + 1)), []);
@@ -51,11 +51,15 @@ export function PinView({ view }: { view: PinViewState }) {
   }, [load, sourceKey, tick]);
 
   const clearTimers = () => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
-    hoverTimer.current = null;
     leaveTimer.current = null;
   };
+  // 原生把手跟随主题强调色（主题在本窗口启动时从快照套用；切换主题后下次视图变化时同步）
+  useEffect(() => {
+    if (!isDrawer) return;
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    if (accent) void db.pinHandleColor(accent).catch(() => {});
+  }, [isDrawer, drawer]);
   useEffect(() => clearTimers, []);
   useEffect(() => clearTimers(), [collapsed]);
 
@@ -93,24 +97,6 @@ export function PinView({ view }: { view: PinViewState }) {
     }
   }, [isDrawer]);
 
-  if (collapsed) {
-    return (
-      <div
-        className="pin-shell pin-handle"
-        data-testid="pin-handle"
-        data-edge={settings.edge}
-        title={data?.title ?? "钉住视图"}
-        onMouseEnter={() => {
-          if (hoverTimer.current) clearTimeout(hoverTimer.current);
-          hoverTimer.current = setTimeout(() => void db.pinExpand().catch(() => {}), PIN_HOVER_EXPAND_MS);
-        }}
-        onMouseLeave={() => {
-          if (hoverTimer.current) clearTimeout(hoverTimer.current);
-          hoverTimer.current = null;
-        }}
-      />
-    );
-  }
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     const action = quickKeyAction(event);
