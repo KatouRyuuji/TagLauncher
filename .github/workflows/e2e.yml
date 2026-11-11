@@ -1,5 +1,5 @@
 # 面向用户的 E2E（真实 exe + WebView2 CDP）。独立、非必需（continue-on-error），不影响 ci.yml。
-# CI 只跑 CLI / UI / 视觉三层：视觉层在 CI 只截图上传、不比基线；窗口层需要交互桌面，不在 CI 跑。
+# e2e 作业跑 CLI / UI / 视觉三层（视觉层在 CI 只截图上传、不比基线）；desktop 作业在临时 runner 的交互桌面上跑 desktop + 窗口层。
 name: E2E
 
 on:
@@ -96,4 +96,89 @@ jobs:
             .tmp-test/e2e/ci-run/report.html
             .tmp-test/e2e/ci-run/visual/
             .tmp-test/e2e/ci-run/artifacts/
+          if-no-files-found: warn
+
+  # 原「真机确认」项：右键菜单 / 发送到 / 前台 / 托盘 / 全局热键 / 全屏忽略 / 安装卸载 + 窗口层（真实 SendInput）。
+  # 临时 runner 有交互桌面，且用完即弃：允许写 HKCU、接管鼠标键盘、窗口真实可见并抢前台。绝不在用户电脑上这样跑。
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          python -m pip install -r e2e/requirements-e2e.txt
+
+      - name: Build debug app + NSIS installer + CLI
+        env:
+          CARGO_PROFILE_DEV_OPT_LEVEL: '3'
+        shell: pwsh
+        run: |
+          node scripts/prepare-cli-bin.mjs --placeholder
+          npx tauri build --debug --bundles nsis
+          cargo build --manifest-path src-tauri/Cargo.toml --bin tl
+          $nsis = Get-ChildItem src-tauri/target/debug/bundle/nsis/*-setup.exe | Select-Object -First 1
+          "TL_E2E_NSIS=$($nsis.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Get-Item src-tauri/target/debug/tag-launcher.exe, src-tauri/target/debug/tl.exe, $nsis | Format-Table Name, Length
+
+      - name: Desktop diagnostics (OS / session / notification area)
+        shell: pwsh
+        run: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          "OS: $($os.Caption) $($os.Version)  Session: $([Environment]::UserInteractive) user=$env:USERNAME"
+          Add-Type -AssemblyName System.Windows.Forms
+          "Screens: " + (([System.Windows.Forms.Screen]::AllScreens | ForEach-Object { "$($_.Bounds) primary=$($_.Primary)" }) -join '; ')
+          # 通知区图标不折叠进溢出区（Win10 系有效；Win11 系由用例按需处理）
+          New-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer' -Name EnableAutoTray -Value 0 -PropertyType DWord -Force | Out-Null
+          Get-Process explorer -ErrorAction SilentlyContinue | Format-Table Id, SessionId, StartTime
+
+      - name: Run desktop E2E (desktop + window layers)
+        timeout-minutes: 40
+        env:
+          CI: '1'
+          TL_E2E_RUN_DIR: ${{ github.workspace }}/.tmp-test/e2e/desktop-run
+          TL_E2E_WEBVIEW2_HKLM_POLICY: '1'
+          TL_E2E_ALLOW_REGISTRY: '1'
+          TL_E2E_ALLOW_PHYSICAL: '1'
+          TL_E2E_ALLOW_WINDOW: '1'
+          TL_E2E_ALLOW_VISIBLE: '1'
+          TL_E2E_DESKTOP: '1'
+          PYTHONIOENCODING: utf-8
+        run: python -m pytest -c e2e/pytest.ini e2e/tests/desktop e2e/tests/window --allow-physical-input --window-countdown 0 -s --junitxml=.tmp-test/e2e/desktop-run/junit.xml
+
+      - name: Desktop summary
+        if: always()
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python e2e/tools/ci_summary.py .tmp-test/e2e/desktop-run
+
+      - name: Upload desktop report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-desktop
+          path: |
+            .tmp-test/e2e/desktop-run/results.json
+            .tmp-test/e2e/desktop-run/results.jsonl
+            .tmp-test/e2e/desktop-run/junit.xml
+            .tmp-test/e2e/desktop-run/report.html
+            .tmp-test/e2e/desktop-run/artifacts/
           if-no-files-found: warn
