@@ -51,13 +51,41 @@ def _processes() -> list[tuple[int, int, str]]:
     return out
 
 
+def create_time(pid: int) -> int | None:
+    """进程创建时刻（FILETIME 100ns）；打不开（受保护/已退出）返回 None。"""
+    h = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not h:
+        return None
+    try:
+        c, e, k, u = (wintypes.FILETIME() for _ in range(4))
+        if not k32.GetProcessTimes(h, ctypes.byref(c), ctypes.byref(e), ctypes.byref(k), ctypes.byref(u)):
+            return None
+        return (c.dwHighDateTime << 32) | c.dwLowDateTime
+    finally:
+        k32.CloseHandle(h)
+
+
 def tree(root_pid: int) -> list[tuple[int, str]]:
+    """root 及其子孙。th32ParentProcessID 只是「创建时的父 PID」，父进程退出后该 PID 会被复用：
+    若某个子孙复用了系统早期进程（如已退出的 smss.exe）的 PID，按 PPID 递归会把 wininit/services/
+    Runner/WindowsTerminal… 整个系统拉进来（PR62 desktop-release IDLE_CPU 9.8% 即此误归属，
+    tag-launcher 自身 0.109 s）。故要求子进程创建时刻不早于父进程（标准的 PID 复用判别）。"""
     procs = _processes()
+    born: dict[int, int | None] = {}
+
+    def t(pid: int) -> int | None:
+        if pid not in born:
+            born[pid] = create_time(pid)
+        return born[pid]
+
     keep, frontier = {root_pid}, [root_pid]
     while frontier:
         parent = frontier.pop()
         for pid, ppid, _ in procs:
             if ppid == parent and pid not in keep and pid != ppid:
+                pt, ct = t(parent), t(pid)
+                if pt is None or ct is None or ct < pt:
+                    continue
                 keep.add(pid)
                 frontier.append(pid)
     return [(pid, exe) for pid, _, exe in procs if pid in keep]
