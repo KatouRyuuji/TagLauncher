@@ -151,6 +151,7 @@ def test_pin_shares_window_with_quick_search(app, sandbox):
 
 
 @pytest.mark.case("E-PIN-04")
+@pytest.mark.visible_window  # 抽屉按设计贴在屏幕边、展开动画在屏幕内：放到允许可见窗口的 desktop 作业跑（后台分片的隐身守护会判违规）
 def test_drawer_handle_expand_collapse_sizes(app, sandbox):
     """边缘抽屉：收起时 quick 窗口隐藏、只留原生把手（4 逻辑像素宽，贴工作区边）；展开到面板宽 320；
     收起后不计为可见（不提高检测频率）。"""

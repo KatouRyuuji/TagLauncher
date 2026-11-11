@@ -197,6 +197,7 @@ def test_main_window_new_ui(app, sandbox, run_dir, request):
 
 
 @pytest.mark.case("E-VIS-NEWUI-02")
+@pytest.mark.visible_window  # 含展开的抽屉（贴屏幕边）：在 desktop 作业跑，截图随 e2e-desktop 产物上传
 def test_quick_and_pin_windows_new_ui(app, sandbox, run_dir, request):
     """快速窗搜索、钉住浮动窗、展开的抽屉、收纳页：随主窗主题与字号（快照）一致。"""
     app.close_welcome(3000)
