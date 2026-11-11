@@ -95,26 +95,31 @@ def test_snap_top_maximize(win):
 
 @pytest.mark.case("E-WIN-20")
 def test_resize_no_blank_flash(win):
-    """拖右边缘连续改尺寸，逐帧截屏：大面积纯白/纯黑（WebView 没来得及重绘）的帧 ≤ 2。
+    """拖右边缘连续改尺寸，逐帧截屏：没重绘的空白帧（整片纯色填充）≤ 2。
 
-    截的是屏幕上窗口所在区域（用户实际看到的），不用 PrintWindow：无 GPU 的虚拟机上
-    PrintWindow(PW_RENDERFULLCONTENT) 抓 WebView2 合成内容整帧为黑（CI 实测 40/40），量不到闪烁。
-    先截一帧静止画面校验截图方式本身有效。"""
+    - 截屏幕上窗口所在区域（用户实际看到的），不用 PrintWindow：无 GPU 的虚拟机上
+      PrintWindow(PW_RENDERFULLCONTENT) 抓 WebView2 合成内容整帧为黑（CI 实测 40/40）。
+    - 判据是「同一颜色占 ≥ 97% 像素」：WebView 来不及重绘时露出的是纯白/纯黑底色。原先的
+      「亮度 > 250 占 60%」在浅色主题下静止画面就命中（背景 #fcfdfe，CI 实测 76%），不能区分空白。
+    - 先截一帧静止画面，确认它不被判为空白（截图方式与判据有效）。"""
     import numpy as np
     from PIL import ImageGrab
 
     def grab():
-        return ImageGrab.grab(bbox=win32.rect(win.hwnd), all_screens=True)
+        # GetWindowRect 含不可见的 8px 缩放边框（露出桌面），各边内缩 10px 只取窗口内容
+        l, t, r, b = win32.rect(win.hwnd)
+        return ImageGrab.grab(bbox=(l + 10, t + 10, r - 10, b - 10), all_screens=True)
 
-    def blank(img) -> tuple[float, float]:
-        a = np.asarray(img.convert("L"))
-        return float((a > 250).mean()), float((a < 5).mean())
+    def solid_share(img) -> float:
+        a = np.asarray(img.convert("RGB")).reshape(-1, 3)
+        _, counts = np.unique(a, axis=0, return_counts=True)
+        return float(counts.max() / len(a))
 
     win.front()
     time.sleep(0.3)
-    base = blank(grab())
-    print(f"E-WIN-20 baseline white={base[0]:.2f} black={base[1]:.2f}")
-    assert base[0] <= 0.6 and base[1] <= 0.6, f"静止画面已判为空白，截图方式无效：{base}"
+    base = solid_share(grab())
+    print(f"E-WIN-20 baseline solid_share={base:.3f}")
+    assert base < 0.97, f"静止画面已判为空白，截图方式无效：{base}"
     ex, ey = win32.find_edge(win.hwnd, "RIGHT")
     frames = []
     win32.mouse_move(ex, ey); win32.mouse_down()
@@ -125,10 +130,10 @@ def test_resize_no_blank_flash(win):
             frames.append(grab())
     finally:
         win32.mouse_up()
-    stats = [blank(f) for f in frames]
-    bad = sum(1 for w, b in stats if w > 0.6 or b > 0.6)
-    print(f"E-WIN-20 frames={len(frames)} bad={bad} worst_white={max(w for w, _ in stats):.2f} worst_black={max(b for _, b in stats):.2f}")
-    assert bad <= 2, f"{bad}/{len(frames)} 帧为大面积纯白/纯黑"
+    shares = [solid_share(f) for f in frames]
+    bad = sum(1 for x in shares if x >= 0.97)
+    print(f"E-WIN-20 frames={len(frames)} bad={bad} max_solid_share={max(shares):.3f} median={sorted(shares)[len(shares) // 2]:.3f}")
+    assert bad <= 2, f"{bad}/{len(frames)} 帧为整片纯色（未重绘）"
 
 
 @pytest.mark.case("E-ENV-07")
