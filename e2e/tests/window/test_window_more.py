@@ -96,7 +96,7 @@ def test_snap_top_maximize(win):
 @pytest.mark.case("E-WIN-20")
 def test_resize_no_blank_flash(win):
     import numpy as np  # noqa: F401  # capture_window 依赖
-    ex, ey = win32.find_edge(win.hwnd, "right")
+    ex, ey = win32.find_edge(win.hwnd, "RIGHT")
     frames = []
     win32.mouse_move(ex, ey); win32.mouse_down()
     try:
