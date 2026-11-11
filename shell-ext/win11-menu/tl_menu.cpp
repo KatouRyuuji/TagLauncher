@@ -38,6 +38,11 @@ static void AppendMarker(const std::wstring& text) {
     DWORD written = 0;
     WriteFile(h, utf8.data(), (DWORD)utf8.size(), &written, nullptr);
     CloseHandle(h);
+#ifdef TL_MENU_PROBE
+    // 探针构建：额外写到不受 AppData 虚拟化影响的公共目录，用来判定 dllhost 是否被虚拟化
+    HANDLE p = CreateFileW(L"C:\\Users\\Public\\tl-menu-invoked.txt", FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (p != INVALID_HANDLE_VALUE) { WriteFile(p, utf8.data(), (DWORD)utf8.size(), &written, nullptr); CloseHandle(p); }
+#endif
 }
 
 class TagLauncherCommand final : public IExplorerCommand {

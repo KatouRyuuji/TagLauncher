@@ -46,18 +46,21 @@ $r = $item.Current.BoundingRectangle
 Start-Sleep -Milliseconds 1500
 $names = New-Object System.Collections.Generic.List[string]
 $ours = $null
-$menuCond = New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::MenuItem)
+$tops = New-Object System.Collections.Generic.List[string]
 foreach ($top in $A::RootElement.FindAll($T::Children, $C)) {
     $cls = $top.Current.ClassName
-    if ($cls -notmatch 'Popup|Xaml|#32768|Flyout|Menu') { continue }
-    foreach ($mi in $top.FindAll($T::Descendants, $menuCond)) {
+    $tops.Add($cls)
+    if ($cls -eq 'CabinetWClass' -or $cls -eq 'Shell_TrayWnd' -or $cls -eq 'ConsoleWindowClass' -or $cls -eq 'CASCADIA_HOSTING_WINDOW_CLASS') { continue }
+    foreach ($mi in $top.FindAll($T::Descendants, $C)) {
         $n = $mi.Current.Name
-        if ($n) { $names.Add("$cls|$n") }
-        if ($n -eq $Title) { $ours = $mi }
+        if (-not $n) { continue }
+        $names.Add("$cls|$($mi.Current.ControlType.ProgrammaticName -replace 'ControlType.', '')|$n")
+        if ($n -eq $Title -and -not $ours) { $ours = $mi }
     }
 }
+Log 'top_classes' (($tops | Select-Object -Unique) -join ',')
 Log 'menu_items' (($names | Select-Object -First 40) -join ' ; ')
-Log 'menu_modern' ([bool]($names | Where-Object { $_ -notlike '#32768|*' }))
+Log 'menu_modern' ([bool]($names | Where-Object { $_ -like '*Show more options*' -or $_ -like '*显示更多选项*' }))
 Log 'our_item_visible' ([bool]$ours)
 $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height

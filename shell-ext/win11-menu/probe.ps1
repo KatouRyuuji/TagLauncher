@@ -3,6 +3,7 @@
 # 每个结论打印为 `W11MENU key=value`，便于从日志 grep。
 param(
     [string]$Work = (Join-Path $env:RUNNER_TEMP 'win11menu'),
+    [ValidateSet('default', 'novirt')][string]$Variant = 'default',
     [switch]$SkipUi
 )
 $ErrorActionPreference = 'Continue'
@@ -25,6 +26,9 @@ Log 'admin' $isAdmin
 $unlock = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
 $dev = (Get-ItemProperty $unlock -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense
 Log 'devmode_initial' $dev
+Log 'variant' $Variant
+Log 'testsigning' ((bcdedit /enum '{current}' | Select-String -Pattern 'testsigning') -replace '\s+', ' ')
+Remove-Item 'C:\Users\Public\tl-menu-*.txt', (Join-Path $env:LOCALAPPDATA 'TagLauncher\child-wrote.txt') -ErrorAction SilentlyContinue
 # 显式关闭开发者模式，确保结论不依赖它（runner 是一次性机器）
 New-Item -Force -Path $unlock -ErrorAction SilentlyContinue | Out-Null
 Set-ItemProperty -Path $unlock -Name AllowDevelopmentWithoutDevLicense -Value 0 -Type DWord
@@ -36,18 +40,22 @@ $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.e
 $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
 Push-Location $Work
-cmd /c "`"$vcvars`" >nul && cl /nologo /LD /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE `"$Here\tl_menu.cpp`" /Fe:tl_menu.dll /link /DEF:`"$Here\tl_menu.def`" shlwapi.lib shell32.lib ole32.lib" | Out-Host
+cmd /c "`"$vcvars`" >nul && cl /nologo /LD /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE /DTL_MENU_PROBE `"$Here\tl_menu.cpp`" /Fe:tl_menu.dll /link /DEF:`"$Here\tl_menu.def`" shlwapi.lib shell32.lib ole32.lib && cl /nologo /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE `"$Here\child_probe.cpp`" /Fe:child_probe.exe /link shell32.lib ole32.lib kernel32.lib" | Out-Host
 Pop-Location
 Log 'dll_built' (Test-Path (Join-Path $Work 'tl_menu.dll'))
 Copy-Item (Join-Path $Work 'tl_menu.dll') $ext -Force
-Copy-Item "$env:windir\System32\whoami.exe" (Join-Path $ext 'tag-launcher.exe') -Force
+Copy-Item (Join-Path $Work 'child_probe.exe') (Join-Path $ext 'tag-launcher.exe') -Force
 
 Add-Type -AssemblyName System.Drawing
 $bmp = New-Object System.Drawing.Bitmap 44, 44
 $g = [System.Drawing.Graphics]::FromImage($bmp); $g.Clear([System.Drawing.Color]::SteelBlue); $g.Dispose()
 $bmp.Save((Join-Path $ext 'tl_menu_logo.png'), [System.Drawing.Imaging.ImageFormat]::Png)
 Copy-Item (Join-Path $ext 'tl_menu_logo.png') $pkgDir -Force
-Copy-Item (Join-Path $Here 'AppxManifest.xml') $pkgDir -Force
+$manifest = Get-Content (Join-Path $Here 'AppxManifest.xml') -Raw -Encoding UTF8
+if ($Variant -eq 'novirt') {
+    $manifest = $manifest.Replace('xmlns:com=', 'xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6" xmlns:com=').Replace('IgnorableNamespaces="uap uap10', 'IgnorableNamespaces="desktop6 uap uap10').Replace('</Properties>', "  <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>`n    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>`n  </Properties>")
+}
+[IO.File]::WriteAllText((Join-Path $pkgDir 'AppxManifest.xml'), $manifest, (New-Object Text.UTF8Encoding $false))
 
 # ---- 打包（未签名）----
 $sdkBin = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64\makeappx.exe" | Sort-Object FullName -Descending | Select-Object -First 1
@@ -55,6 +63,22 @@ $msix = Join-Path $Work "$PkgName.msix"
 & $sdkBin.FullName pack /o /nv /d $pkgDir /p $msix | Out-Host
 Log 'msix_built' (Test-Path $msix)
 
+function Report-Invoke($tag) {
+    Start-Sleep -Seconds 2
+    $pub = 'C:\Users\Public\tl-menu-invoked.txt'
+    Log "${tag}_dll_public_marker" ((Test-Path $pub) -and ((Get-Content $pub -Raw -Encoding UTF8) -like '*probe-target*'))
+    $p = Get-Pkg
+    if ($p) {
+        $virt = Join-Path $env:LOCALAPPDATA "Packages\$($p.PackageFamilyName)\LocalCache\Local\TagLauncher"
+        Log "${tag}_dll_marker_virtualized" (Test-Path (Join-Path $virt 'win11-menu-invoked.txt'))
+        Log "${tag}_child_wrote_virtualized" (Test-Path (Join-Path $virt 'child-wrote.txt'))
+    }
+    Log "${tag}_child_wrote_real" (Test-Path (Join-Path $env:LOCALAPPDATA 'TagLauncher\child-wrote.txt'))
+    $child = 'C:\Users\Public\tl-menu-child.txt'
+    Log "${tag}_child" $(if (Test-Path $child) { ((Get-Content $child -Encoding UTF8) -join ' | ') } else { 'not-launched' })
+    Remove-Item 'C:\Users\Public\tl-menu-*.txt', (Join-Path $env:LOCALAPPDATA 'TagLauncher\child-wrote.txt') -ErrorAction SilentlyContinue
+    if ($p) { Remove-Item (Join-Path $env:LOCALAPPDATA "Packages\$($p.PackageFamilyName)\LocalCache\Local\TagLauncher") -Recurse -ErrorAction SilentlyContinue }
+}
 function Get-Pkg { Get-AppxPackage -Name $PkgName -ErrorAction SilentlyContinue }
 function Remove-Pkg { $p = Get-Pkg; if ($p) { Remove-AppxPackage -Package $p.PackageFullName -ErrorAction SilentlyContinue } }
 
@@ -113,11 +137,27 @@ if ($pkg) {
     } catch { Log 'com_invoke' "fail $($_.Exception.Message -replace '\s+',' ')" }
     Start-Sleep -Milliseconds 500
     Log 'com_marker_has_target' ((Test-Path $marker) -and ((Get-Content $marker -Raw) -like "*probe-target.txt*"))
+    Report-Invoke 'com'
 }
 
 # ---- 资源管理器 Win11 一级菜单（UIA）----
 if ($pkg -and -not $SkipUi) {
-    & (Join-Path $Here 'ui_probe.ps1') -Folder $Work -FileName 'probe-target.txt' -Title $Title -Shot (Join-Path $Work 'menu-registered.png') -Marker $marker -Click
+    & (Join-Path $Here 'ui_probe.ps1') -Folder $Work -FileName 'probe-target.txt' -Title $Title -Shot (Join-Path $Work "menu-registered-$Variant.png") -Marker 'C:\Users\Public\tl-menu-invoked.txt' -Click
+    Report-Invoke 'ui'
+}
+
+# ---- 标准用户（非管理员）注册 ----
+if ($pkg) {
+    $user = 'tlstd'; $pw = 'Tl-' + [Guid]::NewGuid().ToString('N').Substring(0, 12) + '!a'
+    net user $user $pw /add | Out-Null
+    $cred = New-Object Management.Automation.PSCredential ($user, (ConvertTo-SecureString $pw -AsPlainText -Force))
+    $outFile = 'C:\Users\Public\tl-menu-std.txt'
+    $cmd = "try { Add-AppxPackage -Path '$msix' -ExternalLocation '$ext' -AllowUnsigned -ErrorAction Stop; `$p = Get-AppxPackage -Name $PkgName; 'ok ' + `$p.PackageFullName; Remove-AppxPackage `$p.PackageFullName; 'removed ' + [bool](Get-AppxPackage -Name $PkgName) } catch { 'fail ' + `$_.Exception.Message }"
+    try {
+        $proc = Start-Process powershell.exe -Credential $cred -LoadUserProfile -WorkingDirectory 'C:\Users\Public' -ArgumentList '-NoProfile', '-Command', "& { $cmd } *> '$outFile'" -Wait -PassThru -WindowStyle Hidden
+        Log 'standard_user' ("exit=$($proc.ExitCode) " + ((Get-Content $outFile -ErrorAction SilentlyContinue) -join ' | ') -replace '\s+', ' ')
+    } catch { Log 'standard_user' "launch-fail $($_.Exception.Message -replace '\s+',' ')" }
+    net user $user /delete | Out-Null
 }
 
 # ---- 卸载与清理 ----
@@ -137,7 +177,7 @@ if ($pkg) {
     }
     Log 'dll_deletable_after_remove' $deleted
     if (-not $SkipUi) {
-        & (Join-Path $Here 'ui_probe.ps1') -Folder $Work -FileName 'probe-target.txt' -Title $Title -Shot (Join-Path $Work 'menu-removed.png') -Marker $marker -Tag 'after_remove'
+        & (Join-Path $Here 'ui_probe.ps1') -Folder $Work -FileName 'probe-target.txt' -Title $Title -Shot (Join-Path $Work "menu-removed-$Variant.png") -Marker $marker -Tag 'after_remove'
     }
     Log 'hkcu_clsid_leftover' (Test-Path "Registry::HKEY_CURRENT_USER\Software\Classes\CLSID\{$Clsid}")
 }

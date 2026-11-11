@@ -12,16 +12,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2025, windows-2022]
+        include:
+          - { os: windows-2025, variant: default }
+          - { os: windows-2025, variant: novirt }
+          - { os: windows-2022, variant: default }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Probe (admin runner user)
         shell: powershell
-        run: ./shell-ext/win11-menu/probe.ps1
+        run: ./shell-ext/win11-menu/probe.ps1 -Variant ${{ matrix.variant }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: win11-menu-${{ matrix.os }}
+          name: win11-menu-${{ matrix.os }}-${{ matrix.variant }}
           path: ${{ runner.temp }}/win11menu/*.png
