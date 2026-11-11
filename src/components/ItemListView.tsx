@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { registerVirtualDiag } from "../lib/virtualDiag";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { ItemViewProps, ItemWithTags } from "../types";
 import { ItemPlaceholder, useLoadedRowHeight } from "./ItemPlaceholder";
@@ -262,6 +263,9 @@ export function ItemListView({
       if (rows.length > 0) viewRef.current.ensureRange(rows[0], rows[rows.length - 1] + 1);
     },
   });
+
+  // F19 现场快照：E2E 读取虚拟器缓存与 DOM 实测是否一致（只在被调用时读）
+  useEffect(() => registerVirtualDiag("listVirtual", virtualizer, () => scrollRef.current), [virtualizer]);
 
   // 记录可见行真实测量数据；缺失行用 estimateSize 估算。
   // 注意：写 ref 属于副作用，必须放在 useLayoutEffect 中（渲染期写入在并发渲染被丢弃时会残留脏数据）。

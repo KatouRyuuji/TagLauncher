@@ -28,8 +28,12 @@ PROBE_JS = """(mode) => {
   const sticky = [...sc.querySelectorAll('.sticky')].find((e) => e.getBoundingClientRect().height > 0 && sc.contains(e));
   const headerH = sticky ? sticky.getBoundingClientRect().height : 0;
   const L = list.getBoundingClientRect();
-  const rows = [...list.children].filter((c) => c.hasAttribute('data-index'))
-    .map((c) => ({ i: Number(c.dataset.index), r: c.getBoundingClientRect(), ph: !c.querySelector('[data-selectable-item-id]') }))
+  // 虚拟行带 data-index；网格「≤3 项」不虚拟化，按卡片算
+  let kids = [...list.children].filter((c) => c.hasAttribute('data-index'));
+  const few = kids.length === 0;
+  if (few) kids = [...list.querySelectorAll('.item-grid-few-card')];
+  const rows = kids
+    .map((c, k) => ({ i: few ? k : Number(c.dataset.index), r: c.getBoundingClientRect(), ph: !c.querySelector('[data-selectable-item-id]') }))
     .filter((x) => x.r.height > 0).sort((a, b) => a.r.top - b.r.top);
   const contentEnd = rows.length ? Math.max(...rows.map((x) => x.r.bottom)) : L.top;
   const lastIndex = rows.length ? Math.max(...rows.map((x) => x.i)) : -1;
@@ -45,8 +49,17 @@ PROBE_JS = """(mode) => {
     if (cursor >= want[1]) break;
   }
   if (cursor < want[1] && want[1] - cursor > maxGap) { maxGap = want[1] - cursor; gapAt = Math.round(cursor - scr.top); }
+  const stats = (window.__tlMainPerf && window.__tlMainPerf.stats) || {};
+  const vd = (stats.gridVirtual && list.dataset.region === 'item-grid-inner' && !few) ? stats.gridVirtual()
+    : (stats.listVirtual && list.dataset.region !== 'item-grid-inner' && !few) ? stats.listVirtual() : null;
+  // 虚拟器缓存尺寸与 DOM 实测不一致的已渲染行（>1px）：空带/重叠的直接证据
+  const mismatch = vd ? vd.items.filter((x) => x.dom != null && x.cached != null && Math.abs(x.cached - x.dom) > 1) : [];
   return {
-    mode, rows: rows.length, placeholders: rows.filter((x) => x.ph).length,
+    mode, few, rows: rows.length, mismatch: mismatch.slice(0, 6), virt: vd && {
+      count: vd.count, scrollOffset: vd.scrollOffset, scrollTop: vd.scrollTop, isScrolling: vd.isScrolling, totalSize: vd.totalSize,
+      unobserved: vd.items.filter((x) => x.dom != null && !x.observed).map((x) => x.i).slice(0, 10),
+      items: vd.items.slice(0, 8),
+    }, placeholders: rows.filter((x) => x.ph).length,
     firstIndex: rows.length ? rows[0].i : null, lastIndex,
     maxGap: Math.round(maxGap), gapAtFromViewportTop: gapAt,
     scrollTop: Math.round(sc.scrollTop), scrollHeight: sc.scrollHeight, clientHeight: sc.clientHeight,
@@ -94,6 +107,11 @@ class Probe:
         if g and g["maxGap"] > GAP_PX:
             page.wait_for_timeout(800)
             g = page.evaluate(PROBE_JS, step)
+            if g and g["maxGap"] > GAP_PX:
+                # 是否长期存在：再等 3 秒（无任何操作）看是否自行收敛
+                page.wait_for_timeout(3000)
+                later = page.evaluate(PROBE_JS, step)
+                g["after3s"] = later and {k: later.get(k) for k in ("maxGap", "mismatch", "scrollTop")}
         self.log.append(g)
         print(f"F19_STEP {json.dumps(g, ensure_ascii=False)}")
         if g is None or g["maxGap"] > GAP_PX:
@@ -113,7 +131,9 @@ def resize(app, w: int, h: int) -> None:
 def test_no_blank_band_across_add_remove_resize_filter_sequences(app, sandbox, cli_path):
     tl = Tl(sandbox, cli_path)
     # 300 项；每 7 项挂 6 个长标签让列表行换行变高（行高不一）
-    paths = [files.write(sandbox.files / "f19m" / f"条目{i:03d}{'-长名' * (i % 3)}.txt", str(i)) for i in range(300)]
+    # 标记词：「十项」= 前 10 项（缩成短列表），「稀有」= 3 项（网格 ≤3 项不虚拟化）
+    paths = [files.write(sandbox.files / "f19m" / f"条目{i:03d}{'-长名' * (i % 3)}{'-十项' if i < 10 else ''}"
+                         f"{'-稀有' if i % 100 == 0 else ''}.txt", str(i)) for i in range(300)]
     app.seed(paths)
     tag_ids = [app.add_tag(f"很长的标签名称{i}") for i in range(6)]
     items = sorted(app.items(), key=lambda x: x["name"])
@@ -132,9 +152,9 @@ def test_no_blank_band_across_add_remove_resize_filter_sequences(app, sandbox, c
         app.page.evaluate(SCROLL_JS, 0.5)
         p.check(f"{mode}: 滚到 50%")
         cur = app.items()
-        tl.run("remove", *[str(it["id"]) for it in sorted(cur, key=lambda x: x["name"])[:40]])
+        tl.run("remove", *[str(it["id"]) for it in sorted(cur, key=lambda x: x["name"])[-40:]])
         wait_until(lambda: len(app.items()) == len(cur) - 40, 10)
-        p.check(f"{mode}: 50% 处外部删除 40 项（按名称前 40）", 1200)
+        p.check(f"{mode}: 50% 处外部删除 40 项（按名称末 40）", 1200)
 
         # 2) 滚到底 → 外部新增 30 项
         app.page.evaluate(SCROLL_JS, 1.0)
@@ -157,17 +177,17 @@ def test_no_blank_band_across_add_remove_resize_filter_sequences(app, sandbox, c
         # 4) 滚动进行中切换筛选（搜索缩短 → 清空）
         app.page.evaluate(SCROLLING_JS, [40, 600])
         app.page.wait_for_timeout(150)
-        app.search("条目00")
-        p.check(f"{mode}: 滚动中搜索缩短")
+        app.search("十项")
+        p.check(f"{mode}: 滚动中搜索缩到 10 项")
         app.page.evaluate(SCROLLING_JS, [40, 600])
         app.page.wait_for_timeout(150)
         app.search("")
         p.check(f"{mode}: 滚动中清空搜索")
 
-        # 5) 滚到底 → 搜索缩到 3 项 → 视口变矮再恢复 → 清空
+        # 5) 滚到底 → 搜索缩到 3 项（网格不虚拟化）→ 视口变矮再恢复 → 清空
         app.page.evaluate(SCROLL_JS, 1.0)
-        app.search("条目01")
-        p.check(f"{mode}: 底部缩成短列表")
+        app.search("稀有")
+        p.check(f"{mode}: 底部缩成 3 项")
         resize(app, W, H - 300)
         p.check(f"{mode}: 短列表变矮")
         resize(app, W, H)
@@ -184,6 +204,9 @@ def test_no_blank_band_across_add_remove_resize_filter_sequences(app, sandbox, c
 
     view(app, "列表视图")
     resize(app, W, H)
-    summary = [{k: b.get(k) for k in ("mode", "maxGap", "gapAtFromViewportTop", "firstIndex", "scrollTop", "scrollHeight", "clientHeight", "listHeight", "rendered")} for b in p.bad]
+    summary = [{k: b.get(k) for k in ("mode", "maxGap", "gapAtFromViewportTop", "firstIndex", "scrollTop", "scrollHeight",
+                                      "clientHeight", "listHeight", "rendered", "mismatch", "after3s", "virt")} for b in p.bad]
+    drift = [{"mode": g["mode"], "mismatch": g["mismatch"]} for g in p.log if g and g.get("mismatch")]
+    print(f"F19_DRIFT {json.dumps(drift, ensure_ascii=False)}")
     print(f"F19_SUMMARY steps={len(p.log)} bad={len(p.bad)} {json.dumps(summary, ensure_ascii=False)}")
     assert not p.bad, f"出现视口空带（复现步骤见 mode）：{json.dumps(summary, ensure_ascii=False)}"

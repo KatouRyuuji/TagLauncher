@@ -7,6 +7,7 @@ import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
 import { SelectionCanvas, consumeSelectionScrollFollow, type Rect } from "./SelectionCanvas";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { registerVirtualDiag } from "../lib/virtualDiag";
 import { gridOverscanRows, setWorkspaceGridLanes, peekPendingItemFocus, focusSelectableItem, clearPendingItemFocus } from "../lib/workspaceChrome";
 import type { ContextSelectionInfo } from "./ItemCard";
 import { useAppStore } from "../stores/appStore";
@@ -308,6 +309,9 @@ export function ItemGrid({
       viewRef.current.ensureRange(rows[0] * n, (rows[rows.length - 1] + 1) * n);
     },
   });
+
+  // F19 现场快照：E2E 读取虚拟器缓存与 DOM 实测是否一致（只在被调用时读）
+  useEffect(() => registerVirtualDiag("gridVirtual", virtualizer, () => scrollRef.current), [virtualizer]);
 
   // 每次渲染把可见行的真实测量数据记录下来，供 getItemRects 使用。
   // 注意：写 ref 属于副作用，必须放在 useLayoutEffect 中（渲染期写入在并发渲染被丢弃时会残留脏数据）。
