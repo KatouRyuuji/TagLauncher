@@ -3,6 +3,7 @@ mod commands;
 mod data_sync;
 /// F18 托盘 / 全局快捷键 / 关闭行为（仅 GUI 使用）
 mod desktop;
+mod explorer_selection;
 mod quick;
 pub mod search;
 /// 资源管理器右键菜单 / 发送到（阶段③）
@@ -25,10 +26,12 @@ use desktop::*;
 // 快速搜索窗命令（阶段②）
 use quick::{quick_hide, quick_locate_in_main, quick_open};
 // 收纳会话与右键菜单（阶段③）
-use collect::{collect_finish, collect_session, get_collect_preference, set_collect_preference};
+use collect::{
+    collect_finish, collect_session, collect_submit, get_collect_preference, set_collect_preference,
+};
 use shell_integration::{get_shell_integration, set_shell_integration};
-// 应用内「复制文件」/「打开方式…」
-use shell_clipboard::{copy_items_as_files, open_with_dialog};
+// 应用内「复制文件」/「打开方式…」与收纳剪贴板
+use shell_clipboard::{clipboard_collect_candidates, copy_items_as_files, open_with_dialog};
 
 use extensions::mod_loader;
 use extensions::mod_registry::ModRegistry;
@@ -471,6 +474,8 @@ pub fn run() {
             set_collect_preference,
             get_shell_integration,
             copy_items_as_files,
+            clipboard_collect_candidates,
+            collect_submit,
             open_with_dialog,
             set_shell_integration,
             set_hotkey,

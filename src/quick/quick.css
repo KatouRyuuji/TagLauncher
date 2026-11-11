@@ -40,3 +40,9 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
 .quick-button-primary { border-color: var(--accent, #c0647d); }
 .quick-row-button { display: flex; width: 100%; align-items: center; gap: 8px; margin-bottom: 4px; text-align: left; }
 .quick-link { height: auto; padding: 0 6px; margin-left: 8px; border: none; background: none; text-decoration: underline; }
+/* 收纳入口：剪贴板提示与拖入遮罩 */
+.quick-clipboard { align-self: flex-start; height: 30px; font-size: 0.9em; border-style: dashed; }
+#root { position: relative; }
+.quick-drop-overlay { position: absolute; inset: 6px; display: flex; align-items: center; justify-content: center;
+  border: 2px dashed var(--accent, #c0647d); border-radius: var(--radius-md, 8px); pointer-events: none;
+  background: color-mix(in srgb, var(--bg-app, #f7f5f2) 88%, transparent); font-weight: 600; font-size: 1.1em; }

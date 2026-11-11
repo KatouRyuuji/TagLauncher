@@ -87,6 +87,9 @@ export function ShellIntegrationSection({ disabled }: { disabled: boolean }) {
           <button type="button" className="action-button ml-2" onClick={() => void clearPref()}>改为每次询问</button>
         </p>
       )}
+      <p data-testid="shell-integration-limit" className="text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]">
+        右键菜单一次最多选 100 项（Windows 限制，超过时菜单里不出现该项）；更多请用「发送到」或拖进快速窗，一次最多收纳 1000 项。
+      </p>
       <p className="text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]">
         便携版删除程序目录前请先关闭此项；也可运行 <code>tag-launcher.exe --shell-integration remove</code> 清理。
       </p>

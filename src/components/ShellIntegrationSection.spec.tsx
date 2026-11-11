@@ -48,6 +48,8 @@ describe("右键菜单设置", () => {
     const toggle = await screen.findByRole("switch");
     await waitFor(() => expect(toggle).not.toBeDisabled());
     expect(toggle).toHaveAttribute("aria-checked", "false");
+    // 多选上限说明（经典动词 Player 模型最多 100 项）
+    expect(screen.getByTestId("shell-integration-limit")).toHaveTextContent("一次最多选 100 项");
     shell.failNext = "拒绝访问";
     await user.click(toggle);
     expect(await screen.findByRole("alert")).toHaveTextContent("拒绝访问");

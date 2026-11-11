@@ -397,6 +397,16 @@ export async function copyItemsAsFiles(ids: number[]): Promise<CopyFilesResult> 
   return invokeCmd("copy_items_as_files", { ids });
 }
 
+/** 快速窗发起的收纳（拖入、剪贴板）：立即并入当前收纳会话并弹出收纳界面 */
+export async function collectSubmit(paths: string[]): Promise<import("./collect").CollectSession> {
+  return invokeCmd("collect_submit", { paths });
+}
+
+/** 剪贴板里可收纳的路径（复制的文件，或一行一个的存在路径） */
+export async function clipboardCollectCandidates(): Promise<string[]> {
+  return invokeCmd("clipboard_collect_candidates");
+}
+
 /** 系统「打开方式…」对话框（仅文件） */
 export async function openWithDialog(id: number): Promise<void> {
   return invokeCmd("open_with_dialog", { id });

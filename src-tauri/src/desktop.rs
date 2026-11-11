@@ -40,16 +40,23 @@ pub enum HotkeyAction {
     ToggleMain,
     /// 全局快速搜索窗（阶段②）。绑定快捷键即开启功能（预创建隐藏窗口），清除即关闭（销毁窗口）。
     OpenQuick,
+    /// 热键 B（阶段③）：收纳前台资源管理器 / 桌面的选中项；没有选中项时收纳剪贴板里的文件。
+    CollectSelection,
 }
 
 impl HotkeyAction {
     /// 本批开放的动作（设置页只显示这些）
-    pub const ALL: [HotkeyAction; 2] = [HotkeyAction::ToggleMain, HotkeyAction::OpenQuick];
+    pub const ALL: [HotkeyAction; 3] = [
+        HotkeyAction::ToggleMain,
+        HotkeyAction::OpenQuick,
+        HotkeyAction::CollectSelection,
+    ];
 
     pub fn id(self) -> &'static str {
         match self {
             HotkeyAction::ToggleMain => "toggle_main",
             HotkeyAction::OpenQuick => "open_quick",
+            HotkeyAction::CollectSelection => "collect_selection",
         }
     }
 
@@ -57,6 +64,7 @@ impl HotkeyAction {
         match self {
             HotkeyAction::ToggleMain => "显示 / 隐藏主窗口",
             HotkeyAction::OpenQuick => "打开快速搜索窗",
+            HotkeyAction::CollectSelection => "收纳资源管理器选中项",
         }
     }
 
@@ -360,6 +368,44 @@ pub fn on_shortcut_pressed(app: &AppHandle, shortcut: &Shortcut) {
     match action {
         HotkeyAction::ToggleMain => toggle_main_window(app),
         HotkeyAction::OpenQuick => crate::quick::toggle(app, t0_ms),
+        HotkeyAction::CollectSelection => collect_selection(app),
+    }
+}
+
+/// 热键 B：先取前台窗口（之后弹窗会改变前台），在 STA 线程里读资源管理器选中项；
+/// 读不到（前台不是资源管理器、没有选中、权限不同）时改收剪贴板里的文件；都没有则提示音。
+pub fn collect_selection(app: &AppHandle) {
+    let foreground = crate::explorer_selection::foreground_window();
+    let app = app.clone();
+    let _ = std::thread::Builder::new()
+        .name("tl-collect-selection".into())
+        .spawn(move || {
+            let mut paths =
+                crate::explorer_selection::selection_of(foreground).unwrap_or_else(|e| {
+                    log::warn!("[desktop] {e}");
+                    Vec::new()
+                });
+            let mut source = "explorer";
+            if paths.is_empty() {
+                paths = crate::shell_clipboard::read_clipboard_candidates();
+                source = "clipboard";
+            }
+            if crate::collect::submit_now(&app, paths).is_none() {
+                log::info!("[desktop] 收纳热键：前台没有资源管理器选中项，剪贴板里也没有文件");
+                beep();
+            } else {
+                log::info!("[desktop] 收纳热键：来源 {source}");
+            }
+        });
+}
+
+fn beep() {
+    #[cfg(windows)]
+    // SAFETY：无指针参数
+    unsafe {
+        windows_sys::Win32::System::Diagnostics::Debug::MessageBeep(
+            windows_sys::Win32::UI::WindowsAndMessaging::MB_ICONWARNING,
+        );
     }
 }
 
@@ -985,9 +1031,35 @@ mod tests {
     fn quick_action_is_listed_after_toggle_main_and_unbound_by_default() {
         assert_eq!(
             HotkeyAction::ALL,
-            [HotkeyAction::ToggleMain, HotkeyAction::OpenQuick]
+            [
+                HotkeyAction::ToggleMain,
+                HotkeyAction::OpenQuick,
+                HotkeyAction::CollectSelection
+            ]
         );
         assert_eq!(HotkeyAction::OpenQuick.label(), "打开快速搜索窗");
+    }
+
+    #[test]
+    fn collect_selection_action_has_its_own_setting_key() {
+        assert_eq!(
+            HotkeyAction::parse("collect_selection").unwrap(),
+            HotkeyAction::CollectSelection
+        );
+        assert_eq!(
+            HotkeyAction::CollectSelection.setting_key(),
+            "hotkey.collect_selection"
+        );
+        assert_eq!(HotkeyAction::CollectSelection.label(), "收纳资源管理器选中项");
+        // 托盘菜单只列显示主窗与快速搜索：绑定收纳热键不增加托盘项
+        let mut settings = settings_with(Some("Ctrl+Alt+KeyK"));
+        settings.hotkeys.push(HotkeyInfo {
+            action: HotkeyAction::CollectSelection,
+            label: HotkeyAction::CollectSelection.label(),
+            accelerator: Some("Ctrl+Alt+KeyC".into()),
+            error: None,
+        });
+        assert_eq!(tray_menu_model(&settings).len(), 3);
     }
 }
 

@@ -39,7 +39,7 @@ where
     Some(it.map(|a| a.as_ref().to_string()).collect())
 }
 
-fn path_key(path: &str) -> String {
+pub(crate) fn path_key(path: &str) -> String {
     path.replace('/', "\\")
         .trim_end_matches('\\')
         .to_lowercase()
@@ -184,6 +184,23 @@ pub fn submit(app: &AppHandle, raw: Vec<String>) {
         });
 }
 
+/// 立即并入并弹出：拖入、剪贴板、热键 B 的来源本身就是一份完整列表，不需要等静默窗口。
+/// 只并入有效路径；一条有效路径都没有时不建会话，返回 None。
+pub fn submit_now(app: &AppHandle, raw: Vec<String>) -> Option<CollectSession> {
+    let state = app.try_state::<CollectState>()?;
+    if !raw.iter().any(|p| normalize_arg(p).is_some()) {
+        return None;
+    }
+    // 并入后递增 arrival：之前右键菜单留下的静默线程看到序号变化就不再弹出，由这里负责
+    state.lock().merge(&raw, crate::quick::now_ms());
+    let snapshot = state.snapshot();
+    let app = app.clone();
+    let _ = std::thread::Builder::new()
+        .name("tl-collect-now".into())
+        .spawn(move || present(&app));
+    snapshot
+}
+
 /// 把当前会话交给快速窗（必要时创建窗口）。在非主线程调用。
 fn present(app: &AppHandle) {
     let Some(session) = app.state::<CollectState>().snapshot() else {
@@ -284,6 +301,12 @@ pub fn collect_finish(app: AppHandle, state: State<CollectState>, id: u64, handl
             }
         });
     }
+}
+
+/// 快速窗发起的收纳（拖入文件、收纳剪贴板）：路径只当数据处理，与右键参数同一套校验。
+#[tauri::command]
+pub fn collect_submit(app: AppHandle, paths: Vec<String>) -> Result<CollectSession, String> {
+    submit_now(&app, paths).ok_or_else(|| "没有可收纳的项目：需要是存在的文件或文件夹".to_string())
 }
 
 #[tauri::command]

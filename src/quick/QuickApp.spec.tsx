@@ -18,6 +18,16 @@ vi.mock("@tauri-apps/api/event", () => ({
   emit: vi.fn(async (name: string, payload: unknown) => { bus.emitted.push({ name, payload }); }),
 }));
 
+const drop = vi.hoisted(() => ({ handler: null as null | ((e: { payload: unknown }) => void) }));
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: vi.fn(async (h: (e: { payload: unknown }) => void) => {
+      drop.handler = h;
+      return () => { drop.handler = null; };
+    }),
+  }),
+}));
+
 const fixtures: ItemWithTags[] = [
   { id: 1, name: "项目文档", path: "D:/项目文档", type: "folder", created_at: "2026-01-01", is_favorite: false, tags: [{ id: 1, name: "工作", color: "#5064d8" }] },
   { id: 2, name: "Visual Studio Code", path: "D:/Code.exe", type: "exe", created_at: "2026-01-01", is_favorite: true, tags: [] },
@@ -37,6 +47,11 @@ vi.mock("../lib/db", () => ({
   getTags: vi.fn(async () => [{ id: 1, name: "工作", color: "#5064d8" }, { id: 2, name: "工具", color: "#999" }]),
   setItemTags: vi.fn(async () => {}),
   collectSession: vi.fn(async () => collect.pending),
+  clipboardCollectCandidates: vi.fn(async () => collect.clipboard),
+  collectSubmit: vi.fn(async (paths: string[]) => {
+    if (collect.submitError) throw new Error(collect.submitError);
+    return { id: 9, paths, invocations: 1, invalid: 0, truncated: false, startedMs: 0 };
+  }),
   collectFinish: vi.fn(async () => {}),
   getCollectPreference: vi.fn(async () => collect.pref),
   setCollectPreference: vi.fn(async (pref: unknown) => { collect.pref = pref; return pref; }),
@@ -50,7 +65,7 @@ vi.mock("../lib/db", () => ({
   })),
 }));
 
-const collect = vi.hoisted(() => ({ pending: null as unknown, pref: null as unknown }));
+const collect = vi.hoisted(() => ({ pending: null as unknown, pref: null as unknown, clipboard: [] as string[], submitError: null as string | null }));
 
 const { QuickApp, QUICK_SHOWN_EVENT } = await import("./QuickApp");
 
@@ -73,6 +88,8 @@ beforeEach(() => {
   localStorage.clear();
   collect.pending = null;
   collect.pref = null;
+  collect.clipboard = [];
+  collect.submitError = null;
 });
 
 describe("QuickApp", () => {
@@ -215,5 +232,51 @@ describe("QuickApp 收纳模式", () => {
     await user.keyboard("{Escape}");
     await waitFor(() => expect(db.collectFinish).toHaveBeenCalledWith(10, 1));
     expect(db.addItems).not.toHaveBeenCalled();
+  });
+});
+
+describe("QuickApp 收纳入口：剪贴板与拖入", () => {
+  it("剪贴板里有文件：提示收纳 N 项，点击或 Ctrl+Shift+V 交给后端并收起提示；唤出时重新读取", async () => {
+    collect.clipboard = ["D:\\a.txt", "D:\\b.txt"];
+    const { user, input } = await setup();
+    const banner = await screen.findByTestId("quick-clipboard");
+    expect(banner).toHaveTextContent("收纳剪贴板中的 2 项");
+    await user.click(banner);
+    await waitFor(() => expect(db.collectSubmit).toHaveBeenCalledWith(["D:\\a.txt", "D:\\b.txt"]));
+    expect(screen.queryByTestId("quick-clipboard")).not.toBeInTheDocument();
+
+    collect.clipboard = ["D:\\c.txt"];
+    fire(QUICK_SHOWN_EVENT, { t0Ms: Date.now() });
+    expect(await screen.findByTestId("quick-clipboard")).toHaveTextContent("收纳剪贴板中的 1 项");
+    input.focus();
+    await user.keyboard("{Control>}{Shift>}v{/Shift}{/Control}");
+    await waitFor(() => expect(db.collectSubmit).toHaveBeenLastCalledWith(["D:\\c.txt"]));
+  });
+
+  it("剪贴板没有文件时不提示，Ctrl+Shift+V 不拦截", async () => {
+    const { user, input } = await setup();
+    await waitFor(() => expect(db.clipboardCollectCandidates).toHaveBeenCalled());
+    expect(screen.queryByTestId("quick-clipboard")).not.toBeInTheDocument();
+    input.focus();
+    await user.keyboard("{Control>}{Shift>}v{/Shift}{/Control}");
+    expect(db.collectSubmit).not.toHaveBeenCalled();
+  });
+
+  it("拖入：进入时显示「松开即收纳 N 项」，松开交给后端；离开收起遮罩；失败显示原因", async () => {
+    await setup();
+    await waitFor(() => expect(drop.handler).not.toBeNull());
+    act(() => drop.handler!({ payload: { type: "enter", paths: ["D:\\x.txt", "D:\\y"], position: { x: 1, y: 1 } } }));
+    expect(screen.getByTestId("quick-drop-overlay")).toHaveTextContent("松开即收纳 2 项");
+    act(() => drop.handler!({ payload: { type: "leave" } }));
+    expect(screen.queryByTestId("quick-drop-overlay")).not.toBeInTheDocument();
+
+    act(() => drop.handler!({ payload: { type: "enter", paths: ["D:\\x.txt"], position: { x: 1, y: 1 } } }));
+    act(() => drop.handler!({ payload: { type: "drop", paths: ["D:\\x.txt"], position: { x: 1, y: 1 } } }));
+    expect(screen.queryByTestId("quick-drop-overlay")).not.toBeInTheDocument();
+    await waitFor(() => expect(db.collectSubmit).toHaveBeenCalledWith(["D:\\x.txt"]));
+
+    collect.submitError = "没有可收纳的项目：需要是存在的文件或文件夹";
+    act(() => drop.handler!({ payload: { type: "drop", paths: ["D:\\gone"], position: { x: 1, y: 1 } } }));
+    expect(await screen.findByTestId("quick-status")).toHaveTextContent("收纳失败：没有可收纳的项目");
   });
 });

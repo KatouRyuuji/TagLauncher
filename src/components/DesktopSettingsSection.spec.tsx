@@ -74,6 +74,15 @@ describe("桌面驻留设置", () => {
     expect(db.setHotkey).not.toHaveBeenCalled();
   });
 
+  it("收纳选中项热键带用法说明，其他动作不带", async () => {
+    desktop.state = fresh();
+    desktop.state.hotkeys.push({ action: "collect_selection", label: "收纳资源管理器选中项", accelerator: null, error: null });
+    render(<DesktopSettingsSection />);
+    expect(await screen.findByTestId("hotkey-hint-collect_selection")).toHaveTextContent("没有选中项时，改为收纳剪贴板");
+    expect(screen.getByTestId("hotkey-value-collect_selection")).toHaveTextContent("未启用");
+    expect(screen.queryByTestId("hotkey-hint-toggle_main")).not.toBeInTheDocument();
+  });
+
   it("录制组合键后按动作注册；退出模式下提示全局功能会失效；清除后回到未启用", async () => {
     render(<DesktopSettingsSection />);
     const record = await screen.findByRole("button", { name: "录制快捷键：显示 / 隐藏主窗口" });
