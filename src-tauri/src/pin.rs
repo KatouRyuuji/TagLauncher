@@ -1280,7 +1280,7 @@ mod tests {
         let conn = db();
         for (i, name) in ["a.txt", "b.txt", "c.txt"].iter().enumerate() {
             conn.execute(
-                "INSERT INTO items (id, name, path, type) VALUES (?1, ?2, ?3, 'file')",
+                "INSERT INTO items (id, name, path, type) VALUES (?1, ?2, ?3, 'text')",
                 rusqlite::params![i as i64 + 1, name, format!("D:\\{name}")],
             )
             .unwrap();
