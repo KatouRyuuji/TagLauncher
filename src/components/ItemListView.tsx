@@ -257,6 +257,9 @@ export function ItemListView({
     // 未测量行按已加载行的真实行高估算（见 useLoadedRowHeight）；测过的行用实测值
     estimateSize: (index) => measured.estimate(getRowKey(index), loadedRowHeight),
     measureElement: measureRow,
+    // ResizeObserver 回调推迟到下一帧处理：同步处理时测量→提交在 RO 回调里挂载新行并开始观察，
+    // 浏览器报「ResizeObserver loop completed with undelivered notifications」（F19-MATRIX 改视口时实测 7–8 次）
+    useAnimationFrameWithResizeObserver: true,
     // 行 key 用对象 id 而非默认行索引：筛选/排序/换柜后行 key 变化触发 React
     // 重建行 DOM 并由 measureElement 同步重测；索引复用会让旧行高残留在
     // itemSizeCache（v3 同步测量命中缓存即不读 DOM），表现为行距错乱。
