@@ -283,6 +283,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | created_at | DATETIME | 创建时间 |
 | folder_path | TEXT | 关联的磁盘文件夹；非空时柜内成员为库内路径位于该文件夹下的全部对象（不读 cabinet_items）。部分唯一索引 `idx_cabinets_folder`（NOCASE）保证同一文件夹只关联一个柜 |
 | folder_truncated | INTEGER | 最近一次同步因单柜 50000 项上限截断 |
+| parent_id | INTEGER | 父柜（v023，F16 嵌套，单父树）；NULL 为顶层。无外键：防环、关联文件夹柜只能是叶子、删除父柜时子柜上移一级由 `cabinet_service` 保证；父柜视图/计数/`tl cabinet items` 默认取本柜 ∪ 全部子孙柜成员（递归 CTE，`UNION` 去重防外部写出的环） |
 
 #### cabinet_items（文件柜-项目关联表）
 | 列名 | 类型 | 说明 |

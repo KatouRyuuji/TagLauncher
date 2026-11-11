@@ -52,7 +52,8 @@ function sameCabinets(a: Cabinet[], b: Cabinet[]): boolean {
     cabinet.created_at === b[index].created_at &&
     cabinet.folder_path === b[index].folder_path &&
     cabinet.folder_truncated === b[index].folder_truncated &&
-    cabinet.folder_state === b[index].folder_state,
+    cabinet.folder_state === b[index].folder_state &&
+    (cabinet.parent_id ?? null) === (b[index].parent_id ?? null),
   );
 }
 
@@ -119,6 +120,8 @@ interface WorkspacePrefs {
   listDensity?: ListDensity;
   tagFilterMode?: TagFilterMode;
   uiFontScale?: UiFontScale;
+  /** 父文件柜视图「仅本柜」（默认 false = 含全部子柜，F16） */
+  cabinetOnlySelf?: boolean;
 }
 
 /** 读取持久化的缩放值：非法值丢弃（回退默认 1），合法值夹取到允许范围 */
@@ -149,6 +152,7 @@ export function loadWorkspacePrefs(): WorkspacePrefs {
       listDensity: isListDensity(parsed.listDensity) ? parsed.listDensity : undefined,
       tagFilterMode: isTagFilterMode(parsed.tagFilterMode) ? parsed.tagFilterMode : undefined,
       uiFontScale: isUiFontScale(parsed.uiFontScale) ? parsed.uiFontScale : undefined,
+      cabinetOnlySelf: typeof parsed.cabinetOnlySelf === "boolean" ? parsed.cabinetOnlySelf : undefined,
     };
   } catch {
     return {};
@@ -224,6 +228,7 @@ interface AppState {
   uiFontScale: UiFontScale;
   /** 标签筛选是否展开后代；默认含后代，与历史行为兼容 */
   tagFilterMode: TagFilterMode;
+  cabinetOnlySelf: boolean;
   sortMode: SortMode;
   typeFilter: TypeFilter;
   /** 隐藏失效对象（持久化）：只影响主区列表，失效计数与复核入口不受影响 */
@@ -285,6 +290,7 @@ interface AppState {
   setListDensity: (density: ListDensity) => void;
   setUiFontScale: (scale: UiFontScale) => void;
   setTagFilterMode: (mode: TagFilterMode) => void;
+  setCabinetOnlySelf: (onlySelf: boolean) => void;
   setSortMode: (mode: SortMode) => void;
   setTypeFilter: (filter: TypeFilter) => void;
   setHideMissing: (hide: boolean) => void;
@@ -331,6 +337,7 @@ export const useAppStore = create<AppState>((set, get) => {
       listDensity: state.listDensity,
       tagFilterMode: state.tagFilterMode,
       uiFontScale: state.uiFontScale,
+      cabinetOnlySelf: state.cabinetOnlySelf,
     });
   };
 
@@ -356,6 +363,7 @@ export const useAppStore = create<AppState>((set, get) => {
   listDensity: initialPrefs.listDensity ?? "comfortable",
   uiFontScale: initialPrefs.uiFontScale ?? DEFAULT_UI_FONT_SCALE,
   tagFilterMode: initialPrefs.tagFilterMode ?? "descendants",
+  cabinetOnlySelf: initialPrefs.cabinetOnlySelf ?? false,
   sortMode: initialPrefs.sortMode ?? "smart",
   typeFilter: initialPrefs.typeFilter ?? "all",
   hideMissing: initialPrefs.hideMissing ?? false,
@@ -486,6 +494,11 @@ export const useAppStore = create<AppState>((set, get) => {
   setTagFilterMode: (mode) => {
     if (get().tagFilterMode === mode) return;
     set({ tagFilterMode: mode });
+    persistNow();
+  },
+  setCabinetOnlySelf: (onlySelf) => {
+    if (get().cabinetOnlySelf === onlySelf) return;
+    set({ cabinetOnlySelf: onlySelf });
     persistNow();
   },
   setSortMode: (mode) => {

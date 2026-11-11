@@ -987,15 +987,22 @@ pub fn read_reconcile_snapshot(conn: &Connection) -> Result<Vec<ReconcileRow>, S
     read_reconcile_scope(conn, None)
 }
 
-/// 文件柜切换仅核对当前柜的对象。
+/// 文件柜切换仅核对当前柜的对象（含全部子孙柜成员，与父柜默认视图一致）。
 pub fn read_cabinet_reconcile_snapshot(conn: &Connection, cabinet_id: i64) -> Result<Vec<ReconcileRow>, String> {
     read_reconcile_scope(conn, Some(cabinet_id))
 }
 
 fn read_reconcile_scope(conn: &Connection, cabinet_id: Option<i64>) -> Result<Vec<ReconcileRow>, String> {
-    let filter = if cabinet_id.is_some() { " WHERE id IN (SELECT item_id FROM cabinet_items WHERE cabinet_id=?1)" } else { "" };
+    let (with, filter) = if cabinet_id.is_some() {
+        (
+            "WITH RECURSIVE sub(id) AS (SELECT ?1 UNION SELECT c.id FROM cabinets c JOIN sub ON c.parent_id = sub.id) ",
+            " WHERE id IN (SELECT item_id FROM cabinet_items WHERE cabinet_id IN (SELECT id FROM sub))",
+        )
+    } else {
+        ("", "")
+    };
     let mut stmt = conn
-        .prepare(&format!("SELECT id, path, volume_serial, file_id, is_missing, sig_size, fs_created_at, fs_modified_at FROM items{filter}"))
+        .prepare(&format!("{with}SELECT id, path, volume_serial, file_id, is_missing, sig_size, fs_created_at, fs_modified_at FROM items{filter}"))
         .map_err(|e| e.to_string())?;
     let mapped = stmt
         .query_map(rusqlite::params_from_iter(cabinet_id), |r| {

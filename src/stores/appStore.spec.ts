@@ -320,4 +320,14 @@ describe("appStore", () => {
     expect(useAppStore.getState().workspaceFiltersOpen).toBe(true);
     expect(storedOpen.workspaceFiltersOpen).toBe(true);
   });
+
+  it("setCabinets 只改 parent_id 也会更新（柜嵌套后侧栏树要立即刷新）", () => {
+    const base = { id: 2, name: "项目", color: "#22c55e", created_at: "2026-11-11", folder_path: null };
+    useAppStore.getState().setCabinets([{ ...base, parent_id: null }]);
+    const before = useAppStore.getState().cabinets;
+    useAppStore.getState().setCabinets([{ ...base, parent_id: null }]);
+    expect(useAppStore.getState().cabinets).toBe(before);
+    useAppStore.getState().setCabinets([{ ...base, parent_id: 1 }]);
+    expect(useAppStore.getState().cabinets[0].parent_id).toBe(1);
+  });
 });

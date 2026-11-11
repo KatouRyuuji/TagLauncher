@@ -11,7 +11,8 @@ export type InternalDragHoverTarget =
   | { kind: "reorder-remove"; itemId: number }
   // 侧栏排序：落在该行的上半区插到其前，下半区（after）插到其后
   | { kind: "sidebar-tag"; tagId: number; after: boolean }
-  | { kind: "sidebar-cabinet"; cabinetId: number; after: boolean }
+  // 文件柜（F16）：into = 落在行中部，成为它的子柜；否则按上/下半区排到它前/后（并与它同级）
+  | { kind: "sidebar-cabinet"; cabinetId: number; after: boolean; into?: boolean }
   // 侧栏「编辑层级」（F14）：落到某标签上 = 成为它的子标签（move=按住 Alt 换边）；blocked 为不可放的原因
   | { kind: "tag-parent"; tagId: number; move: boolean; blocked: string | null }
   | { kind: "tag-root"; blocked: string | null }
@@ -68,7 +69,7 @@ function sameHoverTarget(a: InternalDragHoverTarget, b: InternalDragHoverTarget)
     case "sidebar-tag":
       return b.kind === "sidebar-tag" && a.tagId === b.tagId && a.after === b.after;
     case "sidebar-cabinet":
-      return b.kind === "sidebar-cabinet" && a.cabinetId === b.cabinetId && a.after === b.after;
+      return b.kind === "sidebar-cabinet" && a.cabinetId === b.cabinetId && a.after === b.after && !!a.into === !!b.into;
     case "tag-parent":
       return b.kind === "tag-parent" && a.tagId === b.tagId && a.move === b.move && a.blocked === b.blocked;
     case "tag-root":

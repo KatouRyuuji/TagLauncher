@@ -76,6 +76,9 @@ export function useItems() {
   const tagRelations = useAppStore((state) => state.tagRelations);
   const tagList = useAppStore((state) => state.tags);
   const tagFilterMode = useAppStore((state) => state.tagFilterMode);
+  const cabinetOnlySelf = useAppStore((state) => state.cabinetOnlySelf);
+  // 父柜视图成员 = 本柜 ∪ 子孙柜：柜的父子关系变化（拖入/移出子柜、删柜上移）时须重查
+  const cabinetTreeKey = useAppStore((state) => state.cabinets.map((c) => `${c.id}:${c.parent_id ?? ""}`).join(","));
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const [store] = useState(() => new ItemStore((ids, kind) => db.getItemsPage(ids, kind === "warm"), { warm: true }));
@@ -155,6 +158,7 @@ export function useItems() {
     return {
       scope,
       cabinetId: scope === "cabinet" ? selectedCabinetId : null,
+      cabinetOnlySelf: scope === "cabinet" && cabinetOnlySelf,
       selectedGroups: selectedTagIds.map(group),
       excludedGroups: excludedTagIds.map(group),
       typeFilter,
@@ -168,8 +172,8 @@ export function useItems() {
       query: hasSearchQuery ? deferredSearchQuery : "",
       mode: searchMode,
     };
-    // linkedFolder：关联/解除后柜成员整体变化，需重查
-  }, [scope, selectedCabinetId, selectedTagIds, excludedTagIds, tagFilterMode, descendantsMap, typeFilter, hideMissing, sortMode, showNestedContents, libraryBrowseRoot, libraryBrowseDir, linkedFolder, cabinetDir, cabinetFlat, hasSearchQuery, deferredSearchQuery, searchMode]);
+    // linkedFolder：关联/解除后柜成员整体变化，需重查；cabinetTreeKey：子柜增减改变父柜并集
+  }, [scope, selectedCabinetId, cabinetOnlySelf, cabinetTreeKey, selectedTagIds, excludedTagIds, tagFilterMode, descendantsMap, typeFilter, hideMissing, sortMode, showNestedContents, libraryBrowseRoot, libraryBrowseDir, linkedFolder, cabinetDir, cabinetFlat, hasSearchQuery, deferredSearchQuery, searchMode]);
   const viewArgsRef = useRef(viewArgs);
   useEffect(() => {
     viewArgsRef.current = viewArgs;

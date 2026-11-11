@@ -16,7 +16,13 @@ interface TagEditorProps {
   label?: string;
   /** 文件柜的关联文件夹（null 为未关联）；传入时显示「关联文件夹」字段 */
   folderPath?: string | null;
-  onSave: (name: string, color: string, folderPath: string | null) => Promise<void>;
+  /** 文件柜的父柜（null 为顶层）；传入时显示「上级文件柜」字段（F16） */
+  parentId?: number | null;
+  /** 可选父柜（已排除自身、子孙与关联文件夹柜），label 为「父 / 子」路径 */
+  parentOptions?: Array<{ id: number; label: string }>;
+  /** 本柜已有子柜：关联文件夹的柜只能是最底层，此时不提供关联 */
+  hasChildren?: boolean;
+  onSave: (name: string, color: string, folderPath: string | null, parentId?: number | null) => Promise<void>;
   onDelete?: () => void | Promise<void>;
   /** 仅编辑已有标签时传入：转到关系编辑器并对准本标签添加子标签 */
   onAddChild?: () => void;
@@ -27,13 +33,14 @@ function sameHex(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-export function TagEditor({ tag, label = "标签", folderPath, onSave, onDelete, onAddChild, onClose }: TagEditorProps) {
+export function TagEditor({ tag, label = "标签", folderPath, parentId, parentOptions = [], hasChildren = false, onSave, onDelete, onAddChild, onClose }: TagEditorProps) {
   const [presetColors] = useState(getThemeTagPresetColors);
   const [name, setName] = useState(tag?.name || "");
   const [color, setColor] = useState(() =>
     snapToPalette(tag?.color || presetColors[5] || presetColors[0], presetColors),
   );
   const [folder, setFolder] = useState<string | null>(folderPath ?? null);
+  const [parent, setParent] = useState<number | null>(parentId ?? null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const deleteRef = useRef<HTMLButtonElement>(null);
@@ -42,7 +49,7 @@ export function TagEditor({ tag, label = "标签", folderPath, onSave, onDelete,
   // 与 DataSettingsSection 的内联确认同模式，避免再叠一层模态焦点陷阱。
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const description = label === "文件柜"
-    ? "文件柜是分组，一个对象可以进多个柜；也可以关联一个磁盘文件夹，柜内容随文件夹同步"
+    ? "文件柜是分组，一个对象可以进多个柜；柜可以放进另一个柜（父柜默认显示全部子柜内容）；也可以关联一个磁盘文件夹，柜内容随文件夹同步"
     : "名称与颜色用于识别分类。";
 
   useEscapeKey(onClose, !saving && !deleting);
@@ -53,7 +60,7 @@ export function TagEditor({ tag, label = "标签", folderPath, onSave, onDelete,
     if (!name.trim() || saving || deleting) return;
     setSaving(true);
     try {
-      await onSave(name.trim(), color, folder);
+      await onSave(name.trim(), color, folder, parentId === undefined ? undefined : parent);
     } catch (err) {
       // 保存失败（如重名 UNIQUE 冲突）：明示原因、保留输入与弹窗，便于修正重试；
       // 同时吞掉 rejection，避免 form onSubmit 的 promise 成为未处理拒绝。
@@ -112,9 +119,29 @@ export function TagEditor({ tag, label = "标签", folderPath, onSave, onDelete,
           </label>
 
           <TagColorField colors={presetColors} value={color} onChange={setColor} />
-          {folderPath !== undefined && (
-            <LinkedFolderField initial={folderPath} editing={tag !== null} value={folder} onChange={setFolder} />
+          {parentId !== undefined && (
+            <label className="mt-4 block">
+              <span className="text-[length:calc(13px*var(--ui-font-scale,1))] font-medium text-[var(--text-primary)]">上级文件柜</span>
+              <select
+                data-testid="cabinet-parent-select"
+                value={parent ?? ""}
+                onChange={(event) => setParent(event.target.value === "" ? null : Number(event.target.value))}
+                className="input-frame mt-2 w-full rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none"
+              >
+                <option value="">（顶层）</option>
+                {parentOptions.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
           )}
+          {folderPath !== undefined && (hasChildren && folderPath === null ? (
+            <p data-testid="cabinet-folder-blocked" className="mt-4 text-[length:calc(12px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">
+              此文件柜包含子柜；关联文件夹的文件柜只能在最底层，移走子柜后才能关联文件夹。
+            </p>
+          ) : (
+            <LinkedFolderField initial={folderPath} editing={tag !== null} value={folder} onChange={setFolder} />
+          ))}
           <div className="mt-4 flex items-center gap-3 text-[length:calc(12px*var(--ui-font-scale,1))] text-[var(--text-muted)]">
             <span>标签预览</span>
             <span className="tag-pill px-2 py-1" style={{ "--tag-color": color } as CSSProperties}>{name.trim() || `${label}名称`}</span>

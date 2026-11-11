@@ -225,7 +225,7 @@ fn cabinet_root_includes_folders_and_follows_master() {
             .unwrap();
     assert_eq!(added.created_count, 3, "pack、deep、b.txt");
     let conn = t.db.get_conn();
-    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id).unwrap().len(), 4);
+    assert_eq!(cabinet_service::get_cabinet_items(&conn, cab.id, true).unwrap().len(), 4);
 }
 
 /// 不再追踪：监视目录下移出库的对象记入忽略名单，补扫与通知都跳过；文件夹连同其下对象出库；

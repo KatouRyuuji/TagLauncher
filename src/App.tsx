@@ -103,7 +103,7 @@ function App() {
     linkedMissingIds,
   } = useItems();
   const { tags, addTag, updateTag, removeTag, reorderTags, refresh: refreshTags } = useTags();
-  const { addCabinet, updateCabinet, removeCabinet, setCabinetFolder, reorderCabinets, refresh: refreshCabinets } = useCabinets();
+  const { addCabinet, updateCabinet, removeCabinet, setCabinetFolder, setCabinetParent, reorderCabinets, refresh: refreshCabinets } = useCabinets();
   const { addRelation: addTagRelation, removeRelation: removeTagRelation, moveParent: moveTagParent } = useTagRelations();
   const viewMode = useAppStore((state) => state.viewMode);
   const tagGraphOpen = useAppStore((state) => state.tagGraphOpen);
@@ -548,6 +548,7 @@ function App() {
         onReorderTags={reorderTags}
         onReorderCabinets={reorderCabinets}
         onSetCabinetFolder={setCabinetFolder}
+        onSetCabinetParent={setCabinetParent}
         onAddTagToItem={addTagToItem}
         onAddTagRelation={addTagRelation}
         onRemoveTagRelation={removeTagRelation}
