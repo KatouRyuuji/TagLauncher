@@ -133,7 +133,7 @@ jobs:
         shell: pwsh
         run: |
           node scripts/prepare-cli-bin.mjs --placeholder
-          npx tauri build --debug --bundles nsis
+          npx tauri build --debug --bundles nsis --features gui-subsystem
           cargo build --manifest-path src-tauri/Cargo.toml --bin tl
           $nsis = Get-ChildItem src-tauri/target/debug/bundle/nsis/*-setup.exe | Select-Object -First 1
           "TL_E2E_NSIS=$($nsis.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
@@ -206,4 +206,82 @@ jobs:
             .tmp-test/e2e/desktop-run/junit.xml
             .tmp-test/e2e/desktop-run/report.html
             .tmp-test/e2e/desktop-run/artifacts/
+          if-no-files-found: warn
+
+  # 发布配置（release profile、windows 子系统、与发行包同一构建命令）下复测右键收纳与安装包：
+  # 真实用户遇到的延迟以这里为准（desktop 作业是 debug + gui-subsystem）。
+  desktop-release:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          python -m pip install -r e2e/requirements-e2e.txt
+
+      - name: Build release app + NSIS installer + CLI（同 release.yml）
+        shell: pwsh
+        run: |
+          node scripts/prepare-cli-bin.mjs
+          npx tauri build --bundles nsis
+          $nsis = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          "TL_E2E_NSIS=$($nsis.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "TL_E2E_EXE=$((Get-Item src-tauri/target/release/tag-launcher.exe).FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Get-Item src-tauri/target/release/tag-launcher.exe, $nsis | Format-Table Name, Length
+          # PE 子系统：2 = GUI，3 = 控制台
+          $b = [IO.File]::ReadAllBytes((Get-Item src-tauri/target/release/tag-launcher.exe).FullName)
+          $pe = [BitConverter]::ToInt32($b, 0x3C)
+          "PE subsystem = $([BitConverter]::ToUInt16($b, $pe + 0x5C))"
+
+      - name: Run release shell + installer E2E
+        timeout-minutes: 30
+        env:
+          CI: '1'
+          TL_E2E_RUN_DIR: ${{ github.workspace }}/.tmp-test/e2e/desktop-release-run
+          TL_E2E_WEBVIEW2_HKLM_POLICY: '1'
+          TL_E2E_ALLOW_REGISTRY: '1'
+          TL_E2E_ALLOW_PHYSICAL: '1'
+          TL_E2E_ALLOW_WINDOW: '1'
+          TL_E2E_ALLOW_VISIBLE: '1'
+          TL_E2E_DESKTOP: '1'
+          TL_E2E_BUILD: release
+          PYTHONIOENCODING: utf-8
+        run: python -m pytest -c e2e/pytest.ini e2e/tests/desktop/test_desktop_shell.py e2e/tests/desktop/test_desktop_nsis.py --allow-physical-input --window-countdown 0 -s --junitxml=.tmp-test/e2e/desktop-release-run/junit.xml
+
+      - name: Release summary
+        if: always()
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python e2e/tools/ci_summary.py .tmp-test/e2e/desktop-release-run
+
+      - name: Upload release report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-desktop-release
+          path: |
+            .tmp-test/e2e/desktop-release-run/results.json
+            .tmp-test/e2e/desktop-release-run/results.jsonl
+            .tmp-test/e2e/desktop-release-run/junit.xml
+            .tmp-test/e2e/desktop-release-run/report.html
+            .tmp-test/e2e/desktop-release-run/artifacts/
           if-no-files-found: warn
