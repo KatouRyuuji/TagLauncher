@@ -35,6 +35,8 @@ const ANIM_STEPS: u32 = 6;
 const ANIM_STEP: Duration = Duration::from_millis(14);
 /// 拖动结束判定：最后一次 Moved 之后静默这么久
 const DRAG_SETTLE: Duration = Duration::from_millis(350);
+/// 光标离开展开的抽屉多久收回（与前端 PIN_LEAVE_COLLAPSE_MS 一致）
+const LEAVE_COLLAPSE: Duration = Duration::from_millis(400);
 
 const ENABLED_KEY: &str = "pin.enabled";
 const SOURCE_KEY: &str = "pin.source";
@@ -357,6 +359,7 @@ static RUNTIME: Mutex<Runtime> = Mutex::new(Runtime {
 /// 动画 / 拖动结束计时的代数：新的操作让旧的作废
 static ANIM_GEN: AtomicU64 = AtomicU64::new(0);
 static MOVE_GEN: AtomicU64 = AtomicU64::new(0);
+static LEAVE_GEN: AtomicU64 = AtomicU64::new(0);
 
 fn rt() -> std::sync::MutexGuard<'static, Runtime> {
     RUNTIME.lock().unwrap_or_else(|e| e.into_inner())
@@ -734,6 +737,7 @@ pub fn expand(app: &AppHandle) -> Result<bool, String> {
     show_no_activate(&window);
     crate::pin_strip::hide(app);
     animate(app, &window, start, pw);
+    watch_leave(app);
     Ok(true)
 }
 
@@ -788,6 +792,51 @@ fn animate(app: &AppHandle, window: &WebviewWindow, from: u32, to: u32) {
     }
 }
 
+fn left_button_down() -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+        // SAFETY：只读查询
+        unsafe { (GetAsyncKeyState(VK_LBUTTON as i32) as u16 & 0x8000) != 0 }
+    }
+    #[cfg(not(windows))]
+    false
+}
+
+/// 展开期间每 100ms 看一次光标：离开窗口满 [`LEAVE_COLLAPSE`] 就收回。
+/// 不只靠前端 mouseleave——碰边滑出时面板出现在光标下，光标若直接跳走 WebView 收不到 enter/leave。
+fn watch_leave(app: &AppHandle) {
+    let gen = LEAVE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut outside_since: Option<Instant> = None;
+        loop {
+            std::thread::sleep(Duration::from_millis(100));
+            if LEAVE_GEN.load(Ordering::SeqCst) != gen {
+                return;
+            }
+            let (expanded, dragging) = {
+                let r = rt();
+                (r.surface == Surface::Pin && r.drawer == DrawerState::Expanded, r.dragging)
+            };
+            if !expanded {
+                return;
+            }
+            let Some(window) = app.get_webview_window(crate::quick::QUICK_LABEL) else {
+                return;
+            };
+            if dragging || left_button_down() || cursor_inside(&window) {
+                outside_since = None;
+                continue;
+            }
+            if outside_since.get_or_insert_with(Instant::now).elapsed() >= LEAVE_COLLAPSE {
+                let _ = collapse(&app, true);
+                return;
+            }
+        }
+    });
+}
+
 fn cursor_inside(window: &WebviewWindow) -> bool {
     #[cfg(windows)]
     {
@@ -837,10 +886,35 @@ pub fn on_moved(app: &AppHandle) {
         if r.ignore_moves_until.is_some_and(|t| Instant::now() < t) {
             return;
         }
-        // 抽屉的拖动在系统拖动循环结束（EVENT_SYSTEM_MOVESIZEEND）时吸附，见 movesize_proc
-        if r.settings.mode == PinMode::Drawer {
+        if r.settings.mode == PinMode::Drawer && r.drawer != DrawerState::Expanded {
             return;
         }
+    }
+    if settings().mode == PinMode::Drawer {
+        // 抽屉：拖动循环结束（EVENT_SYSTEM_MOVESIZEEND，见 movesize_proc）时吸附；这里是兜底——
+        // 收到用户拖动产生的 Moved 就标记拖动中，左键松开且位置稳定后吸附（与钩子重复吸附是幂等的）
+        rt().dragging = true;
+        let gen = MOVE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+        let app = app.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_millis(120));
+            if MOVE_GEN.load(Ordering::SeqCst) != gen {
+                return;
+            }
+            if left_button_down() {
+                continue;
+            }
+            let expanded = {
+                let mut r = rt();
+                r.dragging = false;
+                r.surface == Surface::Pin && r.drawer == DrawerState::Expanded
+            };
+            if expanded {
+                settle_after_move(&app);
+            }
+            return;
+        });
+        return;
     }
     let gen = MOVE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let app = app.clone();
