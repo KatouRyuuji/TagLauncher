@@ -45,6 +45,10 @@ crossterm = "0.28"
 # 与主依赖同版本，Cargo 统一为同一实例（不重复编译 sqlite）；仅暴露给测试，不入库产物。
 rusqlite = { version = "0.31", features = ["bundled"] }
 
+[features]
+# debug 构建也用 Windows GUI 子系统（见 main.rs；E2E desktop 作业用）
+gui-subsystem = []
+
 [target.'cfg(windows)'.dependencies]
 # 资源管理器右键菜单（HKCU 动词）与「发送到」快捷方式（阶段③）
 winreg = "0.56"

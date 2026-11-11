@@ -126,10 +126,11 @@ def collect_page(app, timeout: float = 30):
 
     def find():
         pages = quick_pages(app)
-        if not pages and any("quick.html" in (t.get("url") or "") for t in _cdp_targets(app)):
+        # 主连接挂上的页面不一定是当前这个快速窗（销毁重建后旧连接可能停在旧 target）：另开连接一并查
+        if any("quick.html" in (t.get("url") or "") for t in _cdp_targets(app)):
             if not extra:
                 extra.append(app.pw.chromium.connect_over_cdp(f"http://127.0.0.1:{app.port}"))
-            pages = [p for ctx in extra[0].contexts for p in ctx.pages if "quick.html" in (p.url or "") and not p.is_closed()]
+            pages = pages + [p for ctx in extra[0].contexts for p in ctx.pages if "quick.html" in (p.url or "") and not p.is_closed()]
         for p in pages:
             try:
                 if p.evaluate("() => !!document.querySelector('[data-testid=quick-collect]')"):

@@ -73,7 +73,7 @@ def test_tray_click_and_menu(app, sandbox):
     menu = wait_until(lambda: (oswin.popup_menus(app.proc.pid) or [None])[0], 8, "右键托盘没有弹出菜单")
     items = oswin.menu_items(menu)
     print(f"TRAY_MENU {json.dumps(items, ensure_ascii=False)}")
-    assert [i["text"] for i in items] == ["显示 TagLauncher（Ctrl + Alt + Shift + F11）", "", "退出"], items
+    assert [i["text"] for i in items] == ["显示 TagLauncher（Ctrl+Alt+Shift+F11）", "", "退出"], items
     win32.click(*oswin.center(items[-1]["rect"]))
     wait_until(lambda: app.proc.poll() is not None, 15, "托盘菜单「退出」应真正退出进程")
 
