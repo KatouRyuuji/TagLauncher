@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } from "react";
+import { autoRelocateFailureNotice } from "../lib/relocateScan";
+import { onExternalDataChanged } from "../lib/dataSync";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { buildSearchIndex, expandForTagFilter, filterItemsByTags, filterSearchIndex, searchWithIndex } from "../lib/search";
@@ -267,25 +269,32 @@ export function useItems() {
 
   // 跨盘符兜底找回：对失效对象按内容签名扫描候选盘，命中则刷新并提示。
   // 用 relocatingRef 防止并发/重复扫描；成功找回 0 个时保持安静。
-  const relocateMissing = useCallback((): Promise<number> => {
-    if (relocatingRef.current) return relocatingRef.current;
+  const relocateMissing = useCallback((roots?: string[]): Promise<number> => {
+    const scoped = roots !== undefined && roots.length > 0;
+    // 全盘找回去重（自动触发与手动点击共用一次扫描）；限定文件夹的找回是用户明确指定的
+    // 小范围扫描，不能被在途的全盘扫描吞掉（否则要等全盘扫完、且不是用户要的范围），独立执行。
+    if (!scoped && relocatingRef.current) return relocatingRef.current;
     const task = (async () => {
-      const recovered = await db.relocateMissing();
+      const recovered = await db.relocateMissing(scoped ? roots : undefined);
       if (recovered > 0) {
         await loadAll();
-        showToast(`已跨盘找回 ${recovered} 个对象`, "success");
+        showToast(scoped ? `已在选定文件夹中找回 ${recovered} 个对象` : `已跨盘找回 ${recovered} 个对象`, "success");
       }
       return recovered;
-    })().finally(() => { relocatingRef.current = null; });
-    relocatingRef.current = task;
-    return task;
+    })();
+    if (scoped) return task;
+    const tracked = task.finally(() => { relocatingRef.current = null; });
+    relocatingRef.current = tracked;
+    return tracked;
   }, [loadAll]);
 
   useEffect(() => {
     relocateMissingRef.current = () => {
       void relocateMissing().catch((error: unknown) => {
-        console.error("跨盘找回失败:", error);
-        showToast(`跨盘找回失败：${error instanceof Error ? error.message : String(error)}`, "error");
+        // 停止（用户主动）→ 安静说明；超过 5 分钟上限 → 警告并引导限定文件夹；其余才算故障
+        const notice = autoRelocateFailureNotice(error);
+        if (notice.tone === "error") console.error("跨盘找回失败:", error);
+        showToast(notice.message, notice.tone);
       });
     };
   }, [relocateMissing]);
@@ -342,6 +351,9 @@ export function useItems() {
       unlisten?.();
     };
   }, [loadAll]);
+
+  // 外部进程（tl CLI 等）写库：后端 data_version 检测到后广播，纯读 loadAll 同步
+  useEffect(() => onExternalDataChanged(() => { void loadAll(); }), [loadAll]);
 
   // 对账解耦：后台对账（启动首跑/60s 节流/手动刷新）有实际写入时，
   // 走纯读 loadAll 同步失效标记与重定位结果（此时已不含对账成本）

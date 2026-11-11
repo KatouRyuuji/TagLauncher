@@ -1302,14 +1302,121 @@ const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 /// 每个失效对象最多保留的候选匹配数：达到 2 即可判定"歧义"，无需再找第 3 个。
 const MAX_SIGNATURE_CANDIDATES: usize = 2;
 
-/// 扫描候选盘的可读目录，完整遍历后返回唯一签名命中；超过预算时明确报错。
-pub fn scan_for_signatures(rows: &[MissingSignatureRow]) -> Result<Vec<(i64, String)>, String> {
-    scan_signature_roots(rows, &file_identity::candidate_roots(), SCAN_MAX_ENTRIES)
+/// 扫描候选范围的可读目录，完整遍历后返回唯一签名命中；超过预算时明确报错。
+/// `roots` 为 None 时扫描本机全部盘符（原行为）；给定时只在这些文件夹内找回，
+/// 唯一性也只在该范围内核验（范围内恰好一个同签名文件才回写，规则不变）。
+/// `roots` 由 [`resolve_scan_roots`] 得出；`ctl` 提供取消、时间上限与进度回调。
+pub fn scan_for_signatures(
+    rows: &[MissingSignatureRow],
+    roots: &[String],
+    ctl: &ScanControl<'_>,
+) -> Result<Vec<(i64, String)>, String> {
+    scan_signature_roots_ctl(rows, roots, SCAN_MAX_ENTRIES, ctl)
+}
+
+/// 找回扫描的时间上限：超过即停止并报「未完成唯一性核验」（不回写），引导用户限定文件夹。
+pub const SCAN_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(300);
+/// 用户停止扫描时的结果说明（也是命令错误文本，前端据此区分）。
+pub const SCAN_CANCELLED_MSG: &str = "已停止扫描：未完成唯一性核验，没有回写任何对象。";
+/// 超时说明前缀（前端据此显示引导）。
+pub const SCAN_TIMED_OUT_PREFIX: &str = "扫描超过时间上限";
+/// 每扫描这么多条目检查一次取消/超时（检查本身是一个原子读 + 一次 Instant::now）。
+const SCAN_CHECK_EVERY: usize = 512;
+/// 每扫描这么多条目回调一次进度（回调方自行按时间节流）。
+const SCAN_PROGRESS_EVERY: usize = 5_000;
+
+/// 扫描控制：取消标志、截止时间、进度回调（已扫描条目数、当前扫描根）。
+pub struct ScanControl<'a> {
+    pub cancel: &'a std::sync::atomic::AtomicBool,
+    pub deadline: Option<std::time::Instant>,
+    pub progress: &'a dyn Fn(u64, &str),
+}
+
+fn scan_timed_out_message(limit: std::time::Duration, scanned: u64) -> String {
+    format!(
+        "{SCAN_TIMED_OUT_PREFIX}（{} 分钟，已扫描 {} 项）：未完成唯一性核验，没有回写任何对象。如果知道文件大概在哪里，请用「在选定文件夹中找回…」只扫描相关文件夹。",
+        limit.as_secs() / 60,
+        scanned
+    )
+}
+
+impl ScanControl<'_> {
+    /// 取消优先于超时；两者都不回写。
+    fn check(&self, scanned: u64) -> Result<(), String> {
+        if self.cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(SCAN_CANCELLED_MSG.to_string());
+        }
+        if let Some(deadline) = self.deadline {
+            if std::time::Instant::now() >= deadline {
+                return Err(scan_timed_out_message(SCAN_TIME_LIMIT, scanned));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// 找回扫描范围：None → 全部盘符；Some → 校验并去重用户选定的文件夹。
+pub fn resolve_scan_roots(roots: Option<&[String]>) -> Result<Vec<String>, String> {
+    match roots {
+        None => Ok(file_identity::candidate_roots()),
+        Some(list) => normalize_scan_roots(list),
+    }
+}
+
+/// 用户选定的找回范围：必须是存在的绝对路径文件夹；嵌套或重复的文件夹只保留最外层，
+/// 否则同一文件会被枚举两次而误判为「多个候选」。
+fn normalize_scan_roots(list: &[String]) -> Result<Vec<String>, String> {
+    if list.is_empty() {
+        return Err("请至少选择一个文件夹".to_string());
+    }
+    let mut picked: Vec<(String, String)> = Vec::new(); // (原路径, 比较键)
+    for raw in list {
+        let trimmed = raw.trim();
+        let path = std::path::Path::new(trimmed);
+        if trimmed.is_empty() || !path.is_absolute() {
+            return Err(format!("找回范围必须是绝对路径：{raw}"));
+        }
+        if !path.is_dir() {
+            return Err(format!("找回范围不是可访问的文件夹：{raw}"));
+        }
+        let key = scan_root_key(trimmed);
+        picked.push((trimmed.to_string(), key));
+    }
+    picked.sort_by(|a, b| a.1.len().cmp(&b.1.len()).then_with(|| a.1.cmp(&b.1)));
+    let mut kept: Vec<(String, String)> = Vec::new();
+    for (path, key) in picked {
+        if kept.iter().any(|(_, k)| key == *k || key.starts_with(k.as_str())) {
+            continue;
+        }
+        kept.push((path, key));
+    }
+    Ok(kept.into_iter().map(|(p, _)| p).collect())
+}
+
+/// 路径比较键：统一分隔符、大小写，并以分隔符结尾（避免 D:\a 误包含 D:\ab）。
+fn scan_root_key(path: &str) -> String {
+    let mut key = path.replace('/', "\\").to_lowercase();
+    if !key.ends_with('\\') {
+        key.push('\\');
+    }
+    key
 }
 
 type SignatureGroups = std::collections::HashMap<u64, std::collections::HashMap<(u64, u64), Vec<usize>>>;
 
-fn scan_signature_roots(rows: &[MissingSignatureRow], roots: &[String], mut budget: usize) -> Result<Vec<(i64, String)>, String> {
+#[cfg(test)]
+fn scan_signature_roots(rows: &[MissingSignatureRow], roots: &[String], budget: usize) -> Result<Vec<(i64, String)>, String> {
+    let never = std::sync::atomic::AtomicBool::new(false);
+    let ctl = ScanControl { cancel: &never, deadline: None, progress: &|_, _| {} };
+    scan_signature_roots_ctl(rows, roots, budget, &ctl)
+}
+
+fn scan_signature_roots_ctl(
+    rows: &[MissingSignatureRow],
+    roots: &[String],
+    mut budget: usize,
+    ctl: &ScanControl<'_>,
+) -> Result<Vec<(i64, String)>, String> {
     use std::collections::HashMap;
     if rows.is_empty() {
         return Ok(Vec::new());
@@ -1324,7 +1431,8 @@ fn scan_signature_roots(rows: &[MissingSignatureRow], roots: &[String], mut budg
         if by_size.is_empty() {
             break;
         }
-        scan_dir_tree(root, &mut by_size, &mut candidates, &mut budget)?;
+        (ctl.progress)((SCAN_MAX_ENTRIES.saturating_sub(budget)) as u64, root);
+        scan_dir_tree(root, &mut by_size, &mut candidates, &mut budget, ctl)?;
     }
 
     Ok(candidates
@@ -1350,8 +1458,11 @@ fn scan_dir_tree(
     by_size: &mut SignatureGroups,
     candidates: &mut [Vec<String>],
     budget: &mut usize,
+    ctl: &ScanControl<'_>,
 ) -> Result<(), String> {
     use std::os::windows::fs::MetadataExt;
+    let start_budget = *budget;
+    let mut seen: usize = 0;
     let mut stack: Vec<std::path::PathBuf> = vec![std::path::PathBuf::from(root)];
 
     let root_path = std::path::PathBuf::from(root);
@@ -1374,6 +1485,13 @@ fn scan_dir_tree(
                 return Err("扫描达到条目上限，本次未完成唯一性核验。请缩小文件范围后重新导入失效对象。".to_string());
             }
             *budget -= 1;
+            seen += 1;
+            if seen % SCAN_CHECK_EVERY == 0 {
+                ctl.check((start_budget - *budget) as u64)?;
+            }
+            if seen % SCAN_PROGRESS_EVERY == 0 {
+                (ctl.progress)((SCAN_MAX_ENTRIES.saturating_sub(*budget)) as u64, root);
+            }
 
             let meta = match entry.metadata() {
                 Ok(m) => m,
@@ -1657,6 +1775,121 @@ mod tests {
         assert_eq!(found.len(), 1, "应按内容签名找回唯一文件");
         assert!(found[0].1.to_lowercase().ends_with("moved.bin"));
 
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    static NEVER_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    fn idle_ctl() -> ScanControl<'static> {
+        ScanControl { cancel: &NEVER_CANCEL, deadline: None, progress: &|_, _| {} }
+    }
+
+    /// 造一个有足够条目的目录树（超过检查间隔），让取消/超时/进度在扫描中途生效。
+    fn many_entries_tree(tag: &str) -> (std::path::PathBuf, Vec<MissingSignatureRow>) {
+        let base = std::env::temp_dir().join(format!("tl_{tag}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        for d in 0..12 {
+            let dir = base.join(format!("d{d}"));
+            std::fs::create_dir_all(&dir).unwrap();
+            for f in 0..1000 {
+                std::fs::write(dir.join(format!("f{f}.txt")), b"").unwrap();
+            }
+        }
+        let target = base.join("d11").join("target.bin");
+        std::fs::write(&target, b"cancel-timeout-progress-signature").unwrap();
+        let sig = file_identity::compute_signature(&target.to_string_lossy()).unwrap();
+        let rows = vec![MissingSignatureRow { id: 9, path: "D:/old.bin".into(), size: sig.size, head: sig.head_hash, tail: sig.tail_hash }];
+        (base, rows)
+    }
+
+    #[test]
+    fn cancelled_scan_stops_without_result() {
+        let (base, rows) = many_entries_tree("scan_cancel");
+        let cancel = std::sync::atomic::AtomicBool::new(true);
+        let ctl = ScanControl { cancel: &cancel, deadline: None, progress: &|_, _| {} };
+        let err = scan_for_signatures(&rows, &[base.to_string_lossy().into_owned()], &ctl).unwrap_err();
+        assert_eq!(err, SCAN_CANCELLED_MSG, "取消 → 明确说明未完成核验，不返回任何候选");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn scan_past_deadline_reports_unverified_and_guides_to_folders() {
+        let (base, rows) = many_entries_tree("scan_deadline");
+        let ctl = ScanControl { cancel: &NEVER_CANCEL, deadline: Some(std::time::Instant::now()), progress: &|_, _| {} };
+        let err = scan_for_signatures(&rows, &[base.to_string_lossy().into_owned()], &ctl).unwrap_err();
+        assert!(err.starts_with(SCAN_TIMED_OUT_PREFIX), "{err}");
+        assert!(err.contains("未完成唯一性核验") && err.contains("在选定文件夹中找回"), "{err}");
+        // 没到截止时间则正常完成并找回唯一候选
+        let ctl = ScanControl { cancel: &NEVER_CANCEL, deadline: Some(std::time::Instant::now() + std::time::Duration::from_secs(600)), progress: &|_, _| {} };
+        assert_eq!(scan_for_signatures(&rows, &[base.to_string_lossy().into_owned()], &ctl).unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn scan_reports_progress_with_current_root() {
+        let (base, rows) = many_entries_tree("scan_progress");
+        let root = base.to_string_lossy().into_owned();
+        let seen = std::sync::Mutex::new(Vec::<(u64, String)>::new());
+        let progress = |n: u64, r: &str| seen.lock().unwrap().push((n, r.to_string()));
+        let ctl = ScanControl { cancel: &NEVER_CANCEL, deadline: None, progress: &progress };
+        scan_for_signatures(&rows, &[root.clone()], &ctl).unwrap();
+        let seen = seen.into_inner().unwrap();
+        assert!(seen.len() >= 2, "开始扫描根时与每 {SCAN_PROGRESS_EVERY} 项各回调一次：{}", seen.len());
+        assert!(seen.iter().all(|(_, r)| *r == root));
+        assert!(seen.windows(2).all(|w| w[0].0 <= w[1].0), "已扫描数单调不减");
+        assert!(seen.last().unwrap().0 >= SCAN_PROGRESS_EVERY as u64);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn full_scan_without_roots_covers_every_logical_drive() {
+        // 不传范围 = 原全盘行为：扫描根就是本机全部盘符，且包含临时目录所在盘
+        let roots = resolve_scan_roots(None).unwrap();
+        assert_eq!(roots, file_identity::candidate_roots());
+        assert!(!roots.is_empty(), "全盘找回至少应有一个盘符");
+        let temp = std::env::temp_dir().to_string_lossy().to_lowercase();
+        assert!(roots.iter().any(|r| temp.starts_with(&r.to_lowercase())), "临时目录所在盘应在全盘范围内：{roots:?}");
+    }
+
+    #[test]
+    fn chosen_roots_are_validated_and_nested_ones_collapsed() {
+        let base = std::env::temp_dir().join(format!("tl_roots_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("inner")).unwrap();
+        std::fs::create_dir_all(base.join("innerX")).unwrap();
+        let outer = base.to_string_lossy().into_owned();
+        let inner = base.join("inner").to_string_lossy().into_owned();
+        let sibling = base.join("innerX").to_string_lossy().into_owned();
+        let roots = resolve_scan_roots(Some(&[inner.clone(), outer.to_uppercase(), outer.clone()][..])).unwrap();
+        assert_eq!(roots.len(), 1, "嵌套/重复只保留最外层：{roots:?}");
+        assert_eq!(roots[0].to_lowercase(), outer.to_lowercase());
+        let roots = resolve_scan_roots(Some(&[inner.clone(), sibling.clone()][..])).unwrap();
+        assert_eq!(roots.len(), 2, "inner 不是 innerX 的父目录");
+        assert!(resolve_scan_roots(Some(&[][..])).is_err());
+        assert!(resolve_scan_roots(Some(&["relative\\dir".to_string()][..])).is_err());
+        assert!(resolve_scan_roots(Some(&[base.join("nope").to_string_lossy().into_owned()][..])).is_err());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn chosen_root_limits_scan_and_uniqueness_scope() {
+        // 范围外的同内容副本不参与：范围内唯一即回写；包含两份的范围仍判歧义
+        let base = std::env::temp_dir().join(format!("tl_scope_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let data: Vec<u8> = (0..40_000u32).map(|i| (i % 89) as u8).collect();
+        let inside = base.join("pick").join("sub").join("moved.bin");
+        let outside = base.join("other").join("copy.bin");
+        std::fs::create_dir_all(inside.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(outside.parent().unwrap()).unwrap();
+        std::fs::write(&inside, &data).unwrap();
+        std::fs::write(&outside, &data).unwrap();
+        let sig = file_identity::compute_signature(&inside.to_string_lossy()).unwrap();
+        let rows = vec![MissingSignatureRow { id: 5, path: "D:/old/moved.bin".to_string(), size: sig.size, head: sig.head_hash, tail: sig.tail_hash }];
+        let pick = base.join("pick").to_string_lossy().into_owned();
+        let found = scan_for_signatures(&rows, &resolve_scan_roots(Some(&[pick][..])).unwrap(), &idle_ctl()).unwrap();
+        assert_eq!(found.len(), 1, "选定文件夹内唯一");
+        assert!(found[0].1.to_lowercase().ends_with("moved.bin"));
+        let whole = base.to_string_lossy().into_owned();
+        assert!(scan_for_signatures(&rows, &resolve_scan_roots(Some(&[whole][..])).unwrap(), &idle_ctl()).unwrap().is_empty(), "范围内两份 → 歧义不回写");
         let _ = std::fs::remove_dir_all(&base);
     }
 

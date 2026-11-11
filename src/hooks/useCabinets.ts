@@ -5,6 +5,7 @@
 // 文件柜数据存储在 Zustand Store 中，供 Sidebar 和右键菜单使用。
 // ============================================================================
 
+import { onExternalDataChanged } from "../lib/dataSync";
 import { useEffect, useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
@@ -60,6 +61,9 @@ export function useCabinets() {
       stops.forEach((stop) => stop());
     };
   }, [loadCabinets]);
+
+  // 外部进程写库（tl 建柜/入柜等）
+  useEffect(() => onExternalDataChanged(() => { void loadCabinets(); }), [loadCabinets]);
 
   /** 新建文件柜 */
   const addCabinet = useCallback(async (name: string, color: string) => {

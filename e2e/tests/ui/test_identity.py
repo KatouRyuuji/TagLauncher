@@ -84,13 +84,16 @@ def test_relocate_all_missing(app, sandbox):
     app.page.get_by_role("button", name="1 个失效项目，打开待处理").wait_for(timeout=8000)
     app.page.get_by_role("button", name="1 个失效项目，打开待处理").click()
     dlg = app.dialog("失效项目")
-    dlg.get_by_role("button", name="尝试找回全部失效项").click()
-    # 先等 relocate_missing 返回（全盘签名扫描，可能较慢），再查库；轮询 get_items 会挤掉 IPC 记录
-    app.wait_ipc("relocate_missing", timeout=10)
-    # 全机签名扫描（C:+D: 合计数百万条目）在本机约 40–90 s；GitHub windows runner 实测
-    # 286 s（a245b25）、>300 s（f1c4766），给到 600 s。耗时本身记为产品性能观察，不在此断言。
-    wait_until(lambda: app.calls("relocate_missing")[-1].get("done"), 600, lambda: app.calls("relocate_missing"))
-    call = app.calls("relocate_missing")[-1]
+    # 限定在沙箱内找回（「在选定文件夹中找回…」，原生文件夹对话框以 IPC 桩返回沙箱根）。
+    # 全盘路径（不传范围）由 Rust 单测 full_scan_without_roots_covers_every_logical_drive 覆盖（runner 全盘冷扫描实测 2271 s）。
+    app.stub("plugin:dialog|open", [str(sandbox.files)])
+    dlg.get_by_role("button", name="在选定文件夹中找回…").click()
+    # 失效出现后应用会自动发起一次全盘找回（args 无 roots，可能仍在扫描）；这里只看带范围的那次调用
+    scoped = lambda: [c for c in app.calls("relocate_missing") if (c.get("args") or {}).get("roots")]
+    wait_until(lambda: scoped(), 10, lambda: app.calls("relocate_missing"))
+    wait_until(lambda: scoped()[-1].get("done"), 60, lambda: app.calls("relocate_missing"))
+    call = scoped()[-1]
+    assert [r.lower() for r in call["args"]["roots"]] == [str(sandbox.files).lower()], call
     (sandbox.artifacts / "relocate-call.json").parent.mkdir(parents=True, exist_ok=True)
     (sandbox.artifacts / "relocate-call.json").write_text(repr(call), encoding="utf-8")
     err = str(call.get("error") or "")

@@ -1,4 +1,5 @@
 mod commands;
+mod data_sync;
 /// F18 托盘 / 全局快捷键 / 关闭行为（仅 GUI 使用）
 mod desktop;
 // 集成测试（tests/ 目录把本 crate 当外部 rlib 使用）与 CLI 二进制（src/bin/tl.rs）
@@ -189,6 +190,12 @@ pub fn run() {
         )
         // F18：关闭行为为「最小化到托盘」时拦截关闭、只隐藏主窗口；默认（退出）不拦截，保持旧行为
         .on_window_event(|window, event| {
+            // 主窗获焦：立即检测一次外部写入（tl 在后台改了库，切回来就能看到）
+            if let tauri::WindowEvent::Focused(true) = event {
+                if window.label() == "main" {
+                    data_sync::poke();
+                }
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main"
                     && window
@@ -367,6 +374,7 @@ pub fn run() {
             }
 
             app.manage(database);
+            data_sync::start(app.handle());
             app.manage(registry);
             desktop::init(app.handle(), desktop::parse_launch_args(std::env::args().skip(1)));
             app.manage(services::watch_runtime::FolderWatchHub::new());
@@ -406,6 +414,7 @@ pub fn run() {
             // 桌面驻留（F18）
             get_desktop_settings,
             get_launch_mode,
+            wake_data_sync,
             set_hotkey,
             set_close_action,
             set_hotkey_ignore_fullscreen,
@@ -460,6 +469,7 @@ pub fn run() {
             clear_recent_items,
             // 跨盘符兜底找回
             relocate_missing,
+            cancel_relocate,
             // 文件柜
             get_cabinets,
             add_cabinet,

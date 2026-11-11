@@ -583,8 +583,13 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       }
       return report;
     }
+    case "cancel_relocate":
+      return 0;
     case "relocate_missing":
-      // 演示集中没有可找回的盘符，模拟「未找到」
+      // 演示集中没有可找回的盘符/文件夹，模拟「未找到」；范围参数与桌面端同形（可省略）
+      if (args.roots !== undefined && (!Array.isArray(args.roots) || args.roots.length === 0)) {
+        throw new Error("请至少选择一个文件夹");
+      }
       return 0;
     case "open_in_explorer":
     case "open_in_explorer_by_id":
@@ -840,6 +845,8 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return structuredClone(state.desktop);
     case "get_launch_mode":
       return "show";
+    case "wake_data_sync":
+      return null;
     case "set_hotkey": {
       const action = str(args.action);
       const entry = state.desktop.hotkeys.find((h) => h.action === action);

@@ -1,5 +1,5 @@
 import { createContext, useContext, useLayoutEffect, type ReactNode } from "react";
-import { getLaunchMode } from "../lib/db";
+import { getLaunchMode, wakeDataSync } from "../lib/db";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { restoreStateCurrent, StateFlags } from "@tauri-apps/plugin-window-state";
 import type {
@@ -61,7 +61,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
             // 上次最大化时，恢复会直接以最大化显示窗口；否则只是显示
             return restoreStateCurrent(StateFlags.MAXIMIZED)
               .catch(() => {})
-              .then(() => getCurrentWindow().show());
+              .then(() => getCurrentWindow().show())
+              // 显示即检测外部写入（启动期主窗隐藏时检测间隔较长；无焦点显示不触发获焦检测）
+              .then(() => wakeDataSync())
+              .catch(() => {});
           })
           .catch(() => {});
       });

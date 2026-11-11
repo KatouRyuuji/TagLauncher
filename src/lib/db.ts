@@ -400,8 +400,14 @@ export async function renameItems(renames: RenameRequest[], dryRun: boolean): Pr
 // ---- 跨盘符兜底找回 ----
 
 /** 对失效对象按内容签名做跨盘找回，返回成功找回数量（扫描在后端锁外进行） */
-export async function relocateMissing(): Promise<number> {
-  return invokeCmd("relocate_missing");
+/** 失效对象按内容签名找回；`roots` 省略 = 全部盘符，给定 = 只在这些文件夹内找回并核验唯一性。 */
+/** 停止所有在途的找回扫描（不回写）；返回被停止的扫描数 */
+export async function cancelRelocate(): Promise<number> {
+  return invokeCmd("cancel_relocate");
+}
+
+export async function relocateMissing(roots?: string[]): Promise<number> {
+  return invokeCmd("relocate_missing", roots ? { roots } : undefined);
 }
 
 // ---- Mod 网络 API ----
@@ -523,6 +529,11 @@ export async function setCurrentTheme(themeId: string): Promise<void> {
 /** 桌面驻留（F18）：「动作 → 快捷键」表、关闭行为、全屏忽略，只能经专用命令修改 */
 export async function getDesktopSettings(): Promise<DesktopSettings> {
   return invokeCmd("get_desktop_settings");
+}
+
+/** 主窗刚显示：通知后端立即检测外部写入（无焦点显示不触发获焦检测） */
+export async function wakeDataSync(): Promise<void> {
+  return invokeCmd("wake_data_sync");
 }
 
 /** 首个实例的启动方式：background 时主题就绪后不显示主窗 */

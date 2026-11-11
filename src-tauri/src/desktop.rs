@@ -383,6 +383,8 @@ pub fn show_main_window(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+    // 唤出即检测外部写入：隐藏期间检测间隔较长，唤出时不等下一轮
+    crate::data_sync::poke();
 }
 
 /// 单实例回调：第二次启动转发来的参数（含 exe 本身）按参数路由处理。
@@ -578,6 +580,13 @@ pub fn init(app: &AppHandle, mode: LaunchMode) {
 #[tauri::command]
 pub fn get_desktop_settings(app: AppHandle) -> DesktopSettings {
     app.state::<DesktopState>().snapshot(&app)
+}
+
+/// 窗口刚被前端显示（启动时主题就绪后的 show）：立即检测一次外部写入。
+/// 没有焦点的显示不会触发 Focused 事件，隐藏期的检测间隔又较长，冷路径靠这里补上。
+#[tauri::command]
+pub fn wake_data_sync() {
+    crate::data_sync::poke();
 }
 
 /// 首个实例的启动方式：前端据此决定主题就绪后是否显示主窗（后台启动不显示）。

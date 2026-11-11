@@ -704,6 +704,39 @@
 "coverage": "F18"
 },
 {
+"id": "E-DS-01",
+"module": "数据同步",
+"scenario": "tl add 后主窗自动出现",
+"steps": "主窗打开→沙箱 tl add 5 次（不手动刷新）",
+"expect": "每次新对象自动出现，tl 返回到 DOM 出现 ≤300ms（记录中位数/最大值）",
+"layer": "UI",
+"automation": "CDP + tl.exe + MutationObserver",
+"priority": "P0",
+"coverage": "全局极速阶段①"
+},
+{
+"id": "E-DS-02",
+"module": "数据同步",
+"scenario": "tl 打标签/移除后主窗同步",
+"steps": "tl tag add / tag set / remove",
+"expect": "卡片标签、侧栏标签出现；移除后卡片消失",
+"layer": "UI",
+"automation": "CDP + tl.exe",
+"priority": "P1",
+"coverage": "全局极速阶段①"
+},
+{
+"id": "E-DS-03",
+"module": "数据同步",
+"scenario": "空闲 CPU",
+"steps": "启动稳定后静置 10 秒",
+"expect": "主进程 CPU < 1%（单核），检测线程不空转",
+"layer": "UI",
+"automation": "Win32 GetProcessTimes",
+"priority": "P1",
+"coverage": "全局极速阶段①"
+},
+{
 "id": "E-LCH-01",
 "module": "启动对象",
 "scenario": "双击启动 .bat",
@@ -827,11 +860,11 @@
 {
 "id": "E-ID-04",
 "module": "文件身份",
-"scenario": "失效复核：尝试找回全部",
-"steps": "移走后再移回/改名→失效项目对话框“尝试找回全部失效项”",
-"expect": "唯一候选被回写，失效清零",
+"scenario": "失效复核：在选定文件夹中找回",
+"steps": "移走后改名→失效项目对话框“在选定文件夹中找回…”选沙箱根（全盘路径由 Rust 单测覆盖；runner 全盘冷扫描实测 2271s）",
+"expect": "只扫描选定文件夹（IPC 参数 roots=沙箱根），唯一候选被回写，失效清零",
 "layer": "UI",
-"automation": "CDP",
+"automation": "CDP；IPC 桩 plugin:dialog|open",
 "priority": "P0",
 "coverage": "ID-06 identity.rs"
 },
@@ -894,8 +927,8 @@
 "id": "E-ID-10",
 "module": "文件身份",
 "scenario": "歧义候选",
-"steps": "同名同大小两个副本",
-"expect": "不自动回写，进入复核",
+"steps": "同名同大小两个副本→relocate_missing(roots=沙箱根)",
+"expect": "范围内两份候选判歧义，不自动回写",
 "layer": "UI",
 "automation": "夹具",
 "priority": "P2",
@@ -911,6 +944,17 @@
 "automation": "IPC 桩 dialog",
 "priority": "P2",
 "coverage": "无"
+},
+{
+"id": "E-ID-12",
+"module": "文件身份",
+"scenario": "全盘找回进度与停止",
+"steps": "制造失效→自动全盘找回→失效对话框看进度→停止扫描",
+"expect": "显示已扫描项数/当前盘/用时与 5 分钟上限；停止后不回写，说明未完成唯一性核验（超时路径由 Rust 单测覆盖）",
+"layer": "UI",
+"automation": "CDP",
+"priority": "P1",
+"coverage": "item_commands.rs cancel_relocate"
 },
 {
 "id": "E-WAT-01",
