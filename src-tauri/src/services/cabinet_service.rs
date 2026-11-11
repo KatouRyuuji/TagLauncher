@@ -355,21 +355,26 @@ pub fn get_cabinet_items(
     if include_descendants && has_children(conn, cabinet_id)? {
         let (ids, _) = cabinet_member_ids(conn, cabinet_id, true)?;
         let mut items = crate::services::item_service::get_items_by_ids(conn, &ids)?;
-        // 与单柜查询同一 ORDER：收藏优先、最近使用、名称
-        items.sort_by(|a, b| {
-            b.item.is_favorite
-                .cmp(&a.item.is_favorite)
-                .then_with(|| match (&a.item.last_used_at, &b.item.last_used_at) {
-                    (Some(x), Some(y)) => y.cmp(x),
-                    (Some(_), None) => std::cmp::Ordering::Less,
-                    (None, Some(_)) => std::cmp::Ordering::Greater,
-                    (None, None) => std::cmp::Ordering::Equal,
-                })
-                .then_with(|| a.item.name.cmp(&b.item.name))
-        });
+        sort_like_cabinet(&mut items);
         return Ok(items);
     }
     own_cabinet_items(conn, cabinet_id)
+}
+
+/// 与单柜查询同一 ORDER：收藏优先、最近使用（新在前，未用过在后）、名称
+pub fn sort_like_cabinet(items: &mut [ItemWithTags]) {
+    items.sort_by(|a, b| {
+        b.item
+            .is_favorite
+            .cmp(&a.item.is_favorite)
+            .then_with(|| match (&a.item.last_used_at, &b.item.last_used_at) {
+                (Some(x), Some(y)) => y.cmp(x),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            })
+            .then_with(|| a.item.name.cmp(&b.item.name))
+    });
 }
 
 fn own_cabinet_items(conn: &Connection, cabinet_id: i64) -> Result<Vec<ItemWithTags>, String> {

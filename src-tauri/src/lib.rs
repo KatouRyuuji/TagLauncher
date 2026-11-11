@@ -6,6 +6,8 @@ mod data_sync;
 mod desktop;
 mod explorer_selection;
 mod quick;
+/// 钉住视图 / 边缘抽屉（复用快速窗 WebView）
+mod pin;
 pub mod search;
 /// 资源管理器右键菜单 / 发送到（阶段③）
 mod shell_clipboard;
@@ -28,6 +30,7 @@ pub use db::Database;
 use desktop::*;
 // 快速搜索窗命令（阶段②）
 use quick::{quick_hide, quick_locate_in_main, quick_open};
+use pin::{get_pin_settings, pin_collapse, pin_diag, pin_expand, pin_items, pin_state, set_pin_settings};
 // 收纳会话与右键菜单（阶段③）
 use collect::{
     collect_finish, collect_session, collect_submit, get_collect_preference, set_collect_preference,
@@ -239,7 +242,10 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == quick::QUICK_LABEL {
                     api.prevent_close();
-                    let _ = window.hide();
+                    // 钉住视图表面上 Alt+F4 不关（在设置 / 托盘里关闭钉住视图）
+                    if pin::surface() == pin::Surface::Search {
+                        quick::hide(window.app_handle());
+                    }
                     return;
                 }
             }
@@ -497,6 +503,13 @@ pub fn run() {
             set_close_action,
             set_hotkey_ignore_fullscreen,
             set_quick_options,
+            get_pin_settings,
+            set_pin_settings,
+            pin_state,
+            pin_diag,
+            pin_items,
+            pin_expand,
+            pin_collapse,
             // 项目 CRUD
             add_item,
             add_items,

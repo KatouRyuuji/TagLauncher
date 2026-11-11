@@ -90,11 +90,15 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 主窗或快速搜索窗有一个在显示，就按可见间隔检测
+/// 主窗或快速搜索窗（含浮动钉住视图、展开的抽屉）有一个在显示，就按可见间隔检测
 fn any_window_visible(app: &AppHandle) -> bool {
     ["main", crate::quick::QUICK_LABEL].iter().any(|label| {
-        app.get_webview_window(label)
-            .is_some_and(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
+        app.get_webview_window(label).is_some_and(|w| {
+            w.is_visible().unwrap_or(false)
+                && !w.is_minimized().unwrap_or(false)
+                // 收起的抽屉把手常驻可见，但不因此提高检测频率
+                && (*label != crate::quick::QUICK_LABEL || crate::pin::counts_as_visible())
+        })
     })
 }
 

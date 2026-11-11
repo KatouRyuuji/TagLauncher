@@ -284,13 +284,13 @@ pub fn collect_finish(app: AppHandle, state: State<CollectState>, id: u64, handl
         return;
     }
     crate::quick::hide(&app);
-    if !crate::desktop::quick_enabled(&app) {
+    if !crate::desktop::quick_window_needed(&app) {
         let app = app.clone();
         std::thread::spawn(move || {
             // 等本次 invoke 回包送达后再销毁
             std::thread::sleep(Duration::from_millis(300));
             if app.state::<CollectState>().snapshot().is_none()
-                && !crate::desktop::quick_enabled(&app)
+                && !crate::desktop::quick_window_needed(&app)
             {
                 // 与关闭快速搜索同一路径：在主线程销毁
                 let handle = app.clone();
