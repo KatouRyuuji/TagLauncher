@@ -48,3 +48,20 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
 .quick-drop-overlay { position: absolute; inset: 6px; display: flex; align-items: center; justify-content: center;
   border: 2px dashed var(--accent, #c0647d); border-radius: var(--radius-md, 8px); pointer-events: none;
   background: color-mix(in srgb, var(--bg-app, #f7f5f2) 88%, transparent); font-weight: 600; font-size: 1.1em; }
+/* 钉住视图 / 边缘抽屉（同一窗口的 pin 表面；html[data-surface] 由 QuickApp 维护） */
+html[data-surface="pin"] .quick-shell, html[data-surface="pin"] .quick-drop-overlay { display: none; }
+html:not([data-surface="pin"]) .pin-shell { display: none; }
+:root { --pin-drawer-width: 320px; }
+.pin-shell { height: 100%; color: var(--text-primary, #222); font-size: calc(13px * var(--ui-font-scale, 1)); }
+.pin-panel { display: flex; flex-direction: column; gap: 6px; padding: 10px; box-sizing: border-box; min-width: 0; }
+/* 抽屉滑出时窗口宽度逐步变大：面板固定宽度并贴住远离屏幕边的一侧，视觉上从边缘滑入 */
+.pin-panel[data-mode="drawer"] { position: absolute; top: 0; bottom: 0; }
+.pin-panel[data-mode="drawer"][data-edge="right"] { left: 0; border-left: 1px solid var(--border-subtle, #ddd); }
+.pin-panel[data-mode="drawer"][data-edge="left"] { right: 0; border-right: 1px solid var(--border-subtle, #ddd); }
+.pin-header { display: flex; align-items: center; gap: 8px; min-height: 28px; cursor: move; user-select: none; }
+.pin-title { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pin-count { color: var(--text-muted, #777); font-size: 0.85em; }
+.pin-row { grid-template-columns: 1.6em minmax(0, 1fr); padding: 4px 8px; }
+.pin-row .quick-icon { grid-row: auto; }
+.pin-handle { width: 100%; background: var(--accent, #c0647d); opacity: 0.55; cursor: pointer; }
+.pin-handle:hover { opacity: 0.9; }

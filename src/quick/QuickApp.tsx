@@ -23,6 +23,8 @@ import { recordQuickLoad, recordQuickMemory, recordQuickQuery, recordQuickSummon
 import { QUICK_COLLECT_EVENT, type CollectSession } from "../lib/collect";
 import { QuickCollect } from "./QuickCollect";
 import { ItemTypeIcon, ItemVisualIcon } from "../components/ItemVisualIcon";
+import type { PinViewState } from "../lib/desktopShortcut";
+import { PinView } from "./PinView";
 
 export const QUICK_SHOWN_EVENT = "quick-shown";
 /** 只给前 N 条取缩略图/程序图标（§3.3 数据投影），其余行只画类型图标，不发 IPC */
@@ -123,11 +125,46 @@ function useQuickDrop(): { dragging: number | null; dropError: string | null } {
   return { dragging, dropError };
 }
 
+/** 后端 pin-surface 事件：quick 窗口当前是搜索表面还是钉住视图表面 */
+export const PIN_SURFACE_EVENT = "pin-surface";
+
+/** 切换表面：同步写 html[data-surface]（CSS 据此显示 / 隐藏两套界面，不卸载组件，切回搜索可立即聚焦） */
+export function setSurface(surface: "search" | "pin"): void {
+  document.documentElement.dataset.surface = surface;
+}
+
+/** 钉住视图状态：挂载时先拉一次（窗口创建时可能错过事件），之后跟 pin-surface 事件 */
+function usePinView(): PinViewState | null {
+  const [view, setView] = useState<PinViewState | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    const apply = (v: PinViewState) => {
+      setSurface(v.surface);
+      setView(v);
+    };
+    void listen<PinViewState>(PIN_SURFACE_EVENT, (event) => apply(event.payload))
+      .then((fn) => {
+        if (disposed) fn();
+        else stop = fn;
+      })
+      .catch(() => {});
+    void db.pinState().then((v) => { if (!disposed) apply(v); }).catch(() => {});
+    return () => {
+      disposed = true;
+      stop?.();
+    };
+  }, []);
+  return view;
+}
+
 export function QuickApp() {
   const [collect, closeCollect] = useCollectSession();
   const { dragging, dropError } = useQuickDrop();
+  const pin = usePinView();
   return (
     <>
+      {pin && pin.settings.enabled && pin.settings.source && <PinView view={pin} />}
       {collect ? <QuickCollectShell session={collect} onClose={closeCollect} /> : <QuickSearch dropError={dropError} />}
       {dragging !== null && (
         <div className="quick-drop-overlay" data-testid="quick-drop-overlay">
@@ -228,6 +265,8 @@ function QuickSearch({ dropError }: { dropError: string | null }) {
     let disposed = false;
     let stop: (() => void) | undefined;
     void listen<{ t0Ms?: number; keepInput?: boolean }>(QUICK_SHOWN_EVENT, (event) => {
+      // 唤出快速搜索：先切到搜索表面（钉住视图共用本窗口），否则输入框在 display:none 里聚焦不了
+      setSurface("search");
       setPicker(null);
       setStatus(null);
       setPrefs(readPrefs());

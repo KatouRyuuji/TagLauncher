@@ -21,7 +21,7 @@ import { browseTargetForItem } from "../lib/nestedVisibility";
 import type { SortMode, TypeFilter } from "../lib/itemQuery";
 import { planUntrack, watchRootPaths } from "../lib/untrack";
 import { applySortOrder, compareSortOrder } from "../lib/sidebarOrder";
-import { cabinetDescendants } from "../lib/cabinetTree";
+import { cabinetDescendants, cabinetPathLabel } from "../lib/cabinetTree";
 import {
   DEMO_AUDIO_META,
   DEMO_CABINET_ITEMS,
@@ -113,6 +113,7 @@ function seedState(): DemoState {
       launchMode: "show",
       trayActive: false,
       quick: { hideOnBlur: true, keepInput: true, monitor: "cursor" },
+      pin: { enabled: false, source: null, mode: "float", edge: "right", topmost: true },
     },
     settings: new Map([
       // 演示主用主题：樱花粉（功能巡演与截图全覆盖）
@@ -992,6 +993,47 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return { supported: false, reason: "演示模式不支持", enabled: false, registered: false, registeredVersion: null, privilege: "standard", bundledVersion: "0.0.0.0" };
     case "set_win11_menu":
       throw new Error("演示模式不支持 Win11 右键菜单");
+    // 钉住视图：演示模式只保存设置（没有第二个窗口）
+    case "get_pin_settings":
+      return structuredClone(state.desktop.pin);
+    case "set_pin_settings": {
+      const next = args.settings as DesktopSettings["pin"];
+      if (next.source) {
+        if (next.source.kind === "tag") requireTag(next.source.id);
+        else requireCabinet(next.source.id);
+      } else if (next.enabled) {
+        throw new Error("请先选择钉住视图要显示的标签或文件柜");
+      }
+      state.desktop.pin = structuredClone(next);
+      return structuredClone(next);
+    }
+    case "pin_state":
+      return { surface: "search", settings: structuredClone(state.desktop.pin), drawer: "collapsed" };
+    case "pin_diag":
+      return { view: { surface: "search", settings: structuredClone(state.desktop.pin), drawer: "collapsed" }, hookInstalled: false, countsAsVisible: true };
+    case "pin_items": {
+      const source = state.desktop.pin.source;
+      if (!source) return { source: null, title: null, total: 0, items: [] };
+      let members: Set<number>;
+      let title: string;
+      if (source.kind === "cabinet") {
+        const cabinet = state.cabinets.find((c) => c.id === source.id);
+        if (!cabinet) return { source, title: null, total: 0, items: [] };
+        members = cabinetMembers(source.id);
+        title = cabinetPathLabel(state.cabinets, source.id);
+      } else {
+        const tag = state.tags.find((t) => t.id === source.id);
+        if (!tag) return { source, title: null, total: 0, items: [] };
+        const tagIds = descendantsOf(source.id);
+        members = new Set(state.items.filter((item) => item.tagIds.some((id) => tagIds.has(id))).map((item) => item.id));
+        title = tag.name;
+      }
+      const items = sortItems(state.items.filter((item) => members.has(item.id))).map(withTags);
+      return { source, title, total: items.length, items: items.slice(0, 500) };
+    }
+    case "pin_expand":
+    case "pin_collapse":
+      return false;
     // 快速搜索窗：演示模式没有第二个窗口
     case "quick_open":
     case "quick_hide":

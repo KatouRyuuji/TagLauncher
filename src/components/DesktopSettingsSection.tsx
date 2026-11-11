@@ -14,6 +14,7 @@ import {
 } from "../lib/desktopShortcut";
 import { showToast } from "../lib/toast";
 import { SettingsToggle } from "./SettingsField";
+import { PinSettingsSection } from "./PinSettingsSection";
 import { ShellIntegrationSection } from "./ShellIntegrationSection";
 import { Win11MenuSection } from "./Win11MenuSection";
 
@@ -257,6 +258,8 @@ export function DesktopSettingsSection() {
           </div>
         </div>
       )}
+
+      {settings && <PinSettingsSection settings={settings} busy={busy} setBusy={setBusy} onChange={setSettings} />}
 
       <div className="mt-5">
         <span className="instrument-label mb-2 block">关闭窗口时</span>

@@ -27,7 +27,7 @@ async function invokeCmd<T>(cmd: string, args?: Record<string, unknown>): Promis
   }
 }
 import type { ModInfo, ModLoadError } from "../types/mod";
-import type { CloseAction, DesktopSettings, HotkeyAction, LaunchMode, QuickOptions } from "./desktopShortcut";
+import type { CloseAction, DesktopSettings, HotkeyAction, LaunchMode, PinSettings, PinSource, PinViewState, QuickOptions } from "./desktopShortcut";
 import type { SearchMode } from "../stores/appStore";
 import type { SortMode, TypeFilter } from "./itemQuery";
 import type {
@@ -784,6 +784,47 @@ export async function setHotkeyIgnoreFullscreen(enabled: boolean): Promise<Deskt
 /** 快速窗选项（失焦隐藏 / 保留输入 / 唤出显示器），立即生效 */
 export async function setQuickOptions(options: QuickOptions): Promise<DesktopSettings> {
   return invokeCmd("set_quick_options", { options });
+}
+
+/** 钉住视图设置（默认关）；保存后立即按新设置显示 / 隐藏 */
+export async function getPinSettings(): Promise<PinSettings> {
+  return invokeCmd("get_pin_settings");
+}
+
+export async function setPinSettings(settings: PinSettings): Promise<PinSettings> {
+  return invokeCmd("set_pin_settings", { settings });
+}
+
+/** quick 窗口当前表面（search / pin）与抽屉状态 */
+export async function pinState(): Promise<PinViewState> {
+  return invokeCmd("pin_state");
+}
+
+/** 诊断（E2E）：表面 + 前台事件钩子是否已装 + data_sync 是否计为可见 */
+export async function pinDiag(): Promise<{ view: PinViewState; hookInstalled: boolean; countsAsVisible: boolean }> {
+  return invokeCmd("pin_diag");
+}
+
+export interface PinItems {
+  source: PinSource | null;
+  /** 来源名（柜为「父 / 子」路径）；来源已删除时为 null */
+  title: string | null;
+  total: number;
+  items: ItemWithTags[];
+}
+
+/** 钉住视图内容：柜含子柜、标签含子标签，最多 500 条 */
+export async function pinItems(): Promise<PinItems> {
+  return invokeCmd("pin_items");
+}
+
+/** 抽屉把手收到鼠标：滑出（前台全屏时返回 false 不弹） */
+export async function pinExpand(): Promise<boolean> {
+  return invokeCmd("pin_expand");
+}
+
+export async function pinCollapse(): Promise<boolean> {
+  return invokeCmd("pin_collapse");
 }
 
 export async function getSetting(key: string): Promise<string | null> {
