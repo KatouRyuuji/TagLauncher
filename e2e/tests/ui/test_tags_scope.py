@@ -25,6 +25,8 @@ def test_tag_filter_searches_current_subtree_then_offers_global(app, sandbox):
     ids = app.tag_ids()
     for p, c in EDGES:
         app.invoke("add_tag_relation", {"parentId": ids[p], "childId": ids[c]})
+    # 对象挂在「游戏」下：侧栏选中「游戏」后它仍在列表里，后面才能对它打开「管理标签」
+    app.invoke("set_many_item_tags", {"changes": [[app.item("范围.txt")["id"], [ids["游戏"]]]]})
     app.reload_page()
     app.page.locator(f'[data-tag-row-id="{ids["游戏"]}"]').first.click()
     box = app.page.get_by_label("过滤标签")
