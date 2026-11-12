@@ -7,7 +7,7 @@
 //       Alt+Enter 在主窗定位 · Ctrl+T 打标签 · Esc 先清空再收起。
 // ============================================================================
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import * as db from "../lib/db";
@@ -15,6 +15,7 @@ import { latestOnly, SKIPPED } from "../lib/latestOnly";
 import { announceWindowWrite, onAnyDataChanged } from "../lib/dataSync";
 import { formatPathCopy } from "../lib/itemQuery";
 import { itemDisplayName } from "../lib/itemDisplay";
+import { getTypeLabel } from "../lib/itemUtils";
 import { loadWorkspacePrefs, PREFS_KEY, type SearchMode } from "../stores/appStore";
 import { applyThemeSnapshot, parseThemeSnapshot, THEME_SNAPSHOT_KEY } from "../lib/themeSnapshot";
 import type { ItemWithTags, Tag } from "../types";
@@ -166,6 +167,29 @@ function usePinView(): PinViewState | null {
     };
   }, []);
   return view;
+}
+
+
+function HighlightName({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const lower = text.toLowerCase();
+  const ql = q.toLowerCase();
+  const parts: React.ReactNode[] = [];
+  let i = 0;
+  let k = 0;
+  while (i < text.length) {
+    const j = lower.indexOf(ql, i);
+    if (j < 0) {
+      parts.push(text.slice(i));
+      break;
+    }
+    if (j > i) parts.push(text.slice(i, j));
+    parts.push(<mark className="quick-mark" key={k}>{text.slice(j, j + ql.length)}</mark>);
+    k += 1;
+    i = j + ql.length;
+  }
+  return <>{parts}</>;
 }
 
 export function QuickApp() {
@@ -447,23 +471,29 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
 
   return (
     <div className="quick-shell" data-testid="quick-root">
-      <input
-        ref={inputRef}
-        data-testid="quick-input"
-        className="quick-input"
-        aria-label="快速搜索"
-        placeholder={res ? `搜索 ${res.indexed} 个对象…` : "正在加载…"}
-        value={query}
-        spellCheck={false}
-        autoComplete="off"
-        onChange={(event) => {
-          pendingQueryStart.current = { q: event.target.value, start: event.timeStamp };
-          setQuery(event.target.value);
-          setSelected(0);
-          setStatus(null);
-        }}
-        onKeyDown={onKeyDown}
-      />
+      <div className="quick-search">
+        <svg className="quick-search-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M10.5 10.5L14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+        <input
+          ref={inputRef}
+          data-testid="quick-input"
+          className="quick-input"
+          aria-label="快速搜索"
+          placeholder={res ? `搜索 ${res.indexed} 个对象…` : "正在加载…"}
+          value={query}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(event) => {
+            pendingQueryStart.current = { q: event.target.value, start: event.timeStamp };
+            setQuery(event.target.value);
+            setSelected(0);
+            setStatus(null);
+          }}
+          onKeyDown={onKeyDown}
+        />
+      </div>
       {clipboardPaths.length > 0 && !picker && (
         <button type="button" className="quick-button quick-clipboard" data-testid="quick-clipboard" data-count={clipboardPaths.length} onMouseDown={(e) => e.preventDefault()} onClick={collectClipboard}>
           收纳剪贴板中的 {clipboardPaths.length} 项（Ctrl+Shift+V）
@@ -503,34 +533,43 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
       ) : (
         <ul role="listbox" aria-label="搜索结果" className="quick-list" data-testid="quick-results">
           {res && results.length === 0 && <li className="quick-empty">没有匹配的对象</li>}
-          {results.map((item, i) => (
-            <li
-              key={item.id}
-              role="option"
-              aria-selected={item === current}
-              data-testid="quick-result"
-              data-item-id={item.id}
-              className={`quick-row${item.is_missing ? " quick-missing" : ""}`}
-              onMouseEnter={() => setSelected(i)}
-              onMouseDown={(e) => e.preventDefault()}
-              onDoubleClick={() => void run("打开", async () => {
-                await db.launchItem(item.id);
-                announceWindowWrite({ source: "quick", itemIds: [item.id], tagsChanged: false });
-                hide();
-              })}
-            >
-              <span className="quick-icon" data-testid="quick-result-icon" data-visual={i < QUICK_ICON_LIMIT ? "visual" : "type"}>
-                {i < QUICK_ICON_LIMIT
-                  ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
-                  : <ItemTypeIcon item={item} emojiClass="" />}
-              </span>
-              <span className="quick-name" title={itemDisplayName(item)}>{itemDisplayName(item)}</span>
-              {item.tags.length > 0 && (
-                <span className="quick-tags" title={item.tags.map((t) => t.name).join(" · ")}>{item.tags.slice(0, 3).map((t) => t.name).join(" · ")}</span>
-              )}
-              <span className="quick-path" title={item.path}>{truncatePathMiddle(item.path)}</span>
-            </li>
-          ))}
+          {results.map((item, i) => {
+            const label = getTypeLabel(item.type);
+            const prev = i > 0 ? getTypeLabel(results[i - 1].type) : null;
+            const showGroup = label !== prev;
+            return (
+              <Fragment key={item.id}>
+                {showGroup && <li className="quick-group" role="presentation">{label}</li>}
+                <li
+                  role="option"
+                  aria-selected={item === current}
+                  data-testid="quick-result"
+                  data-item-id={item.id}
+                  className={`quick-row${item.is_missing ? " quick-missing" : ""}`}
+                  onMouseEnter={() => setSelected(i)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onDoubleClick={() => void run("打开", async () => {
+                    await db.launchItem(item.id);
+                    announceWindowWrite({ source: "quick", itemIds: [item.id], tagsChanged: false });
+                    hide();
+                  })}
+                >
+                  <span className="quick-icon" data-testid="quick-result-icon" data-visual={i < QUICK_ICON_LIMIT ? "visual" : "type"}>
+                    {i < QUICK_ICON_LIMIT
+                      ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
+                      : <ItemTypeIcon item={item} emojiClass="" />}
+                  </span>
+                  <span className="quick-name" title={itemDisplayName(item)}>
+                    <HighlightName text={itemDisplayName(item)} query={query} />
+                  </span>
+                  {item.tags.length > 0 && (
+                    <span className="quick-tags" title={item.tags.map((t) => t.name).join(" · ")}>{item.tags.slice(0, 3).map((t) => t.name).join(" · ")}</span>
+                  )}
+                  <span className="quick-path" title={item.path}>{truncatePathMiddle(item.path)}</span>
+                </li>
+              </Fragment>
+            );
+          })}
         </ul>
       )}
       <div className="quick-footer">

@@ -2,7 +2,7 @@
 
 > 适用版本：v1.10.0-beta
 > 相关文档：[PROJECT_MANUAL.md](./PROJECT_MANUAL.md)（架构总览）· [MOD_GUIDE.md](./MOD_GUIDE.md)（Mod 开发）
-> 可参照的完整示例：仓库根目录 `ExampleTheme/SkyCloudTheme/theme.json`（132 个变量键与内置主题完全一致）
+> 可参照的完整示例：仓库根目录 `ExampleTheme/SkyCloudTheme/theme.json`（139 个变量键与内置主题完全一致）
 
 ## 1. 主题模型
 
@@ -47,9 +47,9 @@
 - 变量名为空或带 `--` 前缀；
 - `id` 命中保留清单，或与其它自定义主题重复。
 
-**导入时告警（不阻断）**：缺失推荐变量——推荐集合即下方 §5 的完整 132 键（实现：`REQUIRED_VARIABLES`）。
+**导入时告警（不阻断）**：缺失推荐变量——推荐集合即下方 §5 的完整 139 键（实现：`REQUIRED_VARIABLES`）。
 
-## 5. 变量契约（132 键）
+## 5. 变量契约（139 键）
 
 与内置主题保持键集一致是质量基线（`src/lib/themeVariables.test.ts` 会把示例主题与此集合做自动比对）：
 
@@ -73,6 +73,9 @@
 
 **特效与装饰**
 `card-backdrop-filter` `sidebar-backdrop-filter` `welcome-accent-gradient` `media-caption-gradient` `status-warning-bg` `status-success-bg` `scrollbar-thumb` `scrollbar-thumb-hover`
+
+**毛玻璃（快速窗与钉住浮动窗共用，亚克力 + backdrop-filter，不是 Mica）**
+`glass-bg` `glass-bg-strong` `glass-blur` `glass-border` `glass-highlight` `glass-shadow` `glass-accent-bar`
 
 **标签体系**
 `tag-preset-colors`（官方十个色位，逗号分隔；**顺序即色位契约**。编辑器展示这 10 色，手选立刻吸附到最近位并写入 `taglauncher.color_slots`。切换官方配色家族时，已有标签/文件柜的 `color` 按色位写入新板对应 hex；自定义 / Mod 主题不批量改库内颜色）`tag-color-alpha` `tag-selected-alpha` `tag-muted-alpha` `tag-selected-border-alpha`

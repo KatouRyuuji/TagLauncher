@@ -28,10 +28,15 @@ def handle_hwnd(app) -> int:
                       "没有找到原生把手窗口")
 
 
+# 有意设计变更：探头休息宽度 68 逻辑像素（不再是 8px 细条）。取整允许 ±4。
+# 悬停时卡片会加宽到 168，collapsed() 只在鼠标已离开（park）后断言休息宽度。
+PEEK_REST_WIDTH = 68
+
+
 def collapsed(app, strip: int, quick: int) -> bool:
-    # 设计：把手 8 逻辑像素（取整允许 ±2）
     s = scale(strip)
-    return win32.is_visible(strip) and 6 <= width(strip) <= round(8 * s) + 2 and not win32.is_visible(quick)
+    rest = round(PEEK_REST_WIDTH * s)
+    return win32.is_visible(strip) and rest - 4 <= width(strip) <= rest + 4 and not win32.is_visible(quick)
 
 
 def expanded(app, quick: int) -> bool:
@@ -87,7 +92,7 @@ def hit_edge(h: int) -> tuple[int, int]:
 
 @pytest.mark.case("D-PIN-01")
 def test_drawer_slides_out_on_edge_hover_and_collapses_on_leave(app, sandbox):
-    """把手贴在工作区右边缘；鼠标碰边停留 → 滑出到面板宽；划过（不停留）不弹；离开面板 → 收回。"""
+    """探头贴在工作区右边缘；鼠标碰边停留 → 滑出到面板宽；划过（不停留）不弹；离开面板 → 收回。"""
     h, q = setup_drawer(app, sandbox)
     work = win32.monitor_info(h)["work"]
     l, t, r, b = win32.rect(h)

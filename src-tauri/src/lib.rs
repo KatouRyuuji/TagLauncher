@@ -31,7 +31,7 @@ pub use db::Database;
 use desktop::*;
 // 快速搜索窗命令（阶段②）
 use pin::{
-    get_pin_settings, pin_collapse, pin_diag, pin_expand, pin_handle_color, pin_items, pin_state,
+    get_pin_settings, pin_collapse, pin_diag, pin_expand, pin_handle_chrome, pin_handle_color, pin_items, pin_state,
     set_pin_settings,
 };
 use quick::{quick_hide, quick_locate_in_main, quick_open};
@@ -515,6 +515,7 @@ pub fn run() {
             pin_expand,
             pin_collapse,
             pin_handle_color,
+            pin_handle_chrome,
             // 项目 CRUD
             add_item,
             add_items,

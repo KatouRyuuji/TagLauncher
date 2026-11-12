@@ -833,6 +833,10 @@ export async function pinHandleColor(color: string): Promise<void> {
   return invokeCmd("pin_handle_color", { color });
 }
 
+export async function pinHandleChrome(bg: string, fg: string, muted: string, dark: boolean): Promise<void> {
+  return invokeCmd("pin_handle_chrome", { bg, fg, muted, dark });
+}
+
 export async function getSetting(key: string): Promise<string | null> {
   return invokeCmd("get_setting", { key });
 }

@@ -1,24 +1,53 @@
 /* 快速搜索窗：无边框小窗。颜色、字体、圆角、间距、动效全部取主题变量（主窗快照，无快照时套默认主题），
    不写死色值——tests：quickStyleTokens.spec.ts 扫描本文件只许用 THEME_VARIABLE_KEYS 里的变量。
-   不引入主窗 Tailwind 样式与打包字体。 */
+   不引入主窗 Tailwind 样式与打包字体。
+   毛玻璃：透明窗体 + 可选系统亚克力 + backdrop-filter（--glass-* 令牌）；不是 Mica。 */
 *, *::before, *::after { box-sizing: border-box; }
 body.quick-body { font-family: var(--font-family-body, var(--font-family)); letter-spacing: var(--letter-spacing); }
-html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; background: var(--bg-elevated); }
+html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; background: transparent; }
+@keyframes quick-pop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
 .quick-shell { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: var(--spacing-md); gap: var(--spacing-sm);
-  color: var(--text-primary); font-size: calc(var(--font-size-base) * var(--ui-font-scale, 1)); }
+  color: var(--text-primary); font-size: calc(var(--font-size-base) * var(--ui-font-scale, 1));
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--border-width, 1px) solid var(--glass-border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  animation: quick-pop var(--transition-normal) both;
+  transform-origin: 50% 18%;
+  overflow: hidden; }
+.quick-search { position: relative; flex-shrink: 0; }
+.quick-search-icon { position: absolute; left: var(--spacing-md); top: 50%; transform: translateY(-50%);
+  width: 1em; height: 1em; color: var(--text-muted); pointer-events: none; }
+.quick-search .quick-input { padding-left: calc(var(--spacing-md) + 1.6em); }
 .quick-input { width: 100%; box-sizing: border-box; height: 3.2em; padding: 0 var(--spacing-md); font-size: 1.15em;
-  border-radius: var(--radius-md); border: var(--border-width, 1px) solid var(--border-default);
-  background: var(--bg-input); color: inherit; outline: none;
+  border-radius: var(--radius-lg); border: var(--border-width, 1px) solid var(--border-subtle);
+  background: var(--glass-bg-strong); color: inherit; outline: none;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast); }
 .quick-input::placeholder { color: var(--text-placeholder); }
 .quick-input:focus { border-color: var(--accent-primary); box-shadow: var(--shadow-focus); }
 .quick-input-small { height: 2.45em; font-size: 1em; }
 .quick-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+.quick-group { padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs);
+  color: var(--text-muted); font-size: calc(var(--font-size-xs) * var(--ui-font-scale, 1));
+  font-weight: var(--font-weight-semibold); letter-spacing: 0.04em; }
+.quick-mark { background: color-mix(in srgb, var(--accent-primary) 28%, transparent); color: inherit;
+  font-weight: var(--font-weight-semibold); border-radius: calc(var(--radius-sm) / 2); padding: 0 0.08em;
+  box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .quick-row { display: grid; grid-template-columns: 1.6em minmax(0, 1fr) auto; column-gap: var(--spacing-sm); align-items: center; padding: calc(var(--spacing-xs) * 1.5) var(--spacing-sm);
-  border-radius: var(--radius-sm); cursor: default; transition: background-color var(--transition-fast); }
+  border-radius: var(--radius-sm); cursor: default; position: relative;
+  transition: background-color var(--transition-fast); }
 .quick-row:hover { background: var(--bg-hover); }
 .quick-row[aria-selected="true"] { background: var(--row-selected-bg); color: var(--row-selected-fg); box-shadow: var(--row-selected-shadow); }
 .quick-row[aria-selected="true"] .quick-tags, .quick-row[aria-selected="true"] .quick-path { color: var(--row-selected-sub-fg); }
+.quick-row[aria-selected="true"]::before {
+  content: ""; position: absolute; left: 0; top: 18%; bottom: 18%;
+  width: var(--glass-accent-bar); border-radius: var(--radius-full);
+  background: var(--accent-primary); }
 .quick-icon { grid-row: span 2; display: flex; align-items: center; justify-content: center; font-size: 1.3em; }
 .quick-icon-img { width: 1.25em; height: 1.25em; object-fit: contain; border-radius: calc(var(--radius-sm) / 2); }
 .quick-name { font-weight: var(--font-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -34,7 +63,7 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
   margin-top: var(--spacing-xs);
   padding: var(--spacing-xs) var(--spacing-sm) 0;
   border-top: var(--border-width, 1px) solid var(--border-subtle);
-  background: var(--bg-elevated);
+  background: transparent;
   color: var(--text-faint);
   font-size: calc(var(--font-size-xs) * var(--ui-font-scale, 1));
   min-height: calc(var(--spacing-lg) + var(--spacing-xs));
@@ -46,7 +75,7 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
   padding: 0 calc(var(--spacing-xs) * 0.75);
   border: var(--border-width, 1px) solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  background: var(--bg-input);
+  background: var(--glass-bg-strong);
   color: var(--text-secondary);
   font-family: var(--font-family-mono);
   font-size: 0.95em;
@@ -58,18 +87,32 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
 .quick-picker .quick-row { grid-template-columns: 1.2em 0.8em 1fr; align-items: center; }
 .quick-check { color: var(--accent-primary); }
 .quick-tag-dot { width: 0.7em; height: 0.7em; border-radius: 50%; }
-/* 收纳模式（右键菜单 / 发送到） */
+/* 收纳模式（右键菜单 / 发送到）：先选动作 */
 .quick-collect-title { font-weight: var(--font-weight-semibold); display: flex; gap: var(--spacing-sm); align-items: baseline; }
 .quick-collect-note { color: var(--text-muted); font-size: 0.85em; font-weight: var(--font-weight-normal); }
-.quick-collect-paths { flex: 1; }
+.quick-collect-paths { flex: 0 0 auto; max-height: 6.5em; }
 /* 待收纳列表没有图标列：文件名占整行、路径在下一行（沿用结果行网格会把名字挤进 1.6em 的图标列） */
 .quick-collect-paths .quick-row { grid-template-columns: minmax(0, 1fr); }
 .quick-collect-paths .quick-path { grid-column: 1; }
 .quick-collect-modes { display: flex; flex-wrap: wrap; gap: var(--spacing-xs) var(--spacing-md); font-size: 0.9em; }
-.quick-collect-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
+.quick-collect-actions { display: flex; flex-direction: column; gap: var(--spacing-sm); flex: 1; min-height: 0; }
+.collect-card { display: flex; flex-direction: column; align-items: flex-start; gap: var(--spacing-xs);
+  width: 100%; min-height: 4.4em; padding: var(--spacing-md) var(--spacing-lg); text-align: left;
+  border-radius: var(--radius-lg); border: var(--border-width, 1px) solid var(--border-subtle);
+  background: var(--glass-bg-strong); color: inherit; font: inherit; cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast); }
+.collect-card:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-medium); }
+.collect-card:focus-visible { outline: none; box-shadow: var(--shadow-focus); border-color: var(--accent-primary); }
+.collect-card:disabled { opacity: 0.5; cursor: default; }
+.collect-card-rec { border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 14%, var(--glass-bg-strong));
+  box-shadow: var(--shadow-sm); }
+.collect-card-kicker { font-size: 0.75em; font-weight: var(--font-weight-semibold); color: var(--accent-primary); letter-spacing: 0.08em; }
+.collect-card-title { font-weight: var(--font-weight-semibold); font-size: 1.05em; }
+.collect-card-desc { font-size: 0.85em; color: var(--text-muted); }
 .quick-collect-remember { font-size: 0.85em; color: var(--text-muted); display: flex; gap: calc(var(--spacing-xs) * 1.5); align-items: center; }
 .quick-button { min-height: 2.45em; padding: 0 var(--spacing-md); border-radius: var(--radius-md); border: var(--border-width, 1px) solid var(--border-default);
-  background: var(--bg-input); color: inherit; font: inherit; cursor: pointer; transition: background-color var(--transition-fast), border-color var(--transition-fast); }
+  background: var(--glass-bg-strong); color: inherit; font: inherit; cursor: pointer; transition: background-color var(--transition-fast), border-color var(--transition-fast); }
 .quick-button:hover:not(:disabled) { background: var(--bg-input-hover); }
 .quick-button:focus-visible, .pin-filter:focus-visible { outline: none; box-shadow: var(--shadow-focus); border-color: var(--accent-primary); }
 .quick-button:disabled { opacity: 0.5; cursor: default; }
@@ -82,19 +125,41 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
 #root { position: relative; }
 .quick-drop-overlay { position: absolute; inset: calc(var(--spacing-xs) * 1.5); display: flex; align-items: center; justify-content: center;
   border: calc(var(--border-width, 1px) * 2) dashed var(--accent-primary); border-radius: var(--radius-md); pointer-events: none;
-  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent); font-weight: var(--font-weight-semibold); font-size: 1.1em; }
+  background: color-mix(in srgb, var(--glass-bg) 88%, transparent); font-weight: var(--font-weight-semibold); font-size: 1.1em;
+  backdrop-filter: var(--glass-blur); }
 /* 钉住视图 / 边缘抽屉（同一窗口的 pin 表面；html[data-surface] 由 QuickApp 维护） */
 html[data-surface="pin"] .quick-shell, html[data-surface="pin"] .quick-drop-overlay { display: none; }
 html:not([data-surface="pin"]) .pin-shell { display: none; }
 :root { --pin-drawer-width: 320px; }
-.pin-shell { height: 100%; color: var(--text-primary); font-size: calc(var(--font-size-sm) * var(--ui-font-scale, 1)); }
+.pin-shell { height: 100%; color: var(--text-primary); font-size: calc(var(--font-size-sm) * var(--ui-font-scale, 1));
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--border-width, 1px) solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  overflow: hidden; }
 .pin-panel { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) * 1.5); padding: var(--spacing-sm); height: 100%; box-sizing: border-box; min-width: 0; }
+.pin-shell.pin-panel[data-mode="float"] { border-radius: var(--radius-2xl); animation: quick-pop var(--transition-normal) both; }
 /* 抽屉滑出时窗口宽度逐步变大：面板固定宽度并贴住远离屏幕边的一侧，视觉上从边缘滑入 */
-.pin-panel[data-mode="drawer"] { position: absolute; top: 0; bottom: 0; }
-.pin-panel[data-mode="drawer"][data-edge="right"] { left: 0; border-left: var(--border-width, 1px) solid var(--border-default); }
-.pin-panel[data-mode="drawer"][data-edge="left"] { right: 0; border-right: var(--border-width, 1px) solid var(--border-default); }
+.pin-panel[data-mode="drawer"] { position: absolute; top: 0; bottom: 0; animation: none; box-shadow: var(--glass-highlight); }
+.pin-panel[data-mode="drawer"][data-edge="right"] { left: 0; border-left: var(--border-width, 1px) solid var(--glass-border);
+  border-radius: var(--radius-xl) 0 0 var(--radius-xl); border-right: none; }
+.pin-panel[data-mode="drawer"][data-edge="left"] { right: 0; border-right: var(--border-width, 1px) solid var(--glass-border);
+  border-radius: 0 var(--radius-xl) var(--radius-xl) 0; border-left: none; }
+.pin-stripe { flex-shrink: 0; height: calc(var(--spacing-xs) + 1px); background: var(--accent-primary); border-radius: var(--radius-full); }
 .pin-header { display: flex; align-items: center; gap: var(--spacing-sm); min-height: 2.2em; cursor: move; user-select: none; }
 .pin-title { flex: 1; min-width: 0; font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pin-count { color: var(--text-muted); font-size: 0.85em; }
 .pin-row { grid-template-columns: 1.6em minmax(0, 1fr); padding: var(--spacing-xs) var(--spacing-sm); }
 .pin-row .quick-icon { grid-row: auto; }
+.pin-preview { flex-shrink: 0; display: grid; grid-template-columns: 1.8em minmax(0, 1fr) auto; column-gap: var(--spacing-sm);
+  align-items: center; padding: var(--spacing-sm) var(--spacing-md);
+  border: var(--border-width, 1px) solid var(--border-subtle); border-radius: var(--radius-md);
+  background: var(--glass-bg-strong); min-height: 3.8em; }
+.pin-preview-meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pin-preview-name { font-weight: var(--font-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pin-preview-path { font-size: 0.8em; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-family-mono); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

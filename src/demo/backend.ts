@@ -1035,6 +1035,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "pin_collapse":
       return false;
     case "pin_handle_color":
+    case "pin_handle_chrome":
       return null;
     // 快速搜索窗：演示模式没有第二个窗口
     case "quick_open":

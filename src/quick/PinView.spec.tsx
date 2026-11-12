@@ -22,6 +22,7 @@ vi.mock("../lib/db", () => ({
   pinExpand: vi.fn(async () => true),
   pinCollapse: vi.fn(async () => true),
   pinHandleColor: vi.fn(async () => {}),
+  pinHandleChrome: vi.fn(async () => {}),
   launchItem: vi.fn(async () => {}),
   openInExplorerById: vi.fn(async () => {}),
   getItemVisual: vi.fn(async () => ({ path: "", icon_path: null })),

@@ -154,7 +154,7 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     if let Some(w) = quick_window(app) {
         return Ok(w);
     }
-    let window = WebviewWindowBuilder::new(app, QUICK_LABEL, WebviewUrl::App("quick.html".into()))
+    let mut builder = WebviewWindowBuilder::new(app, QUICK_LABEL, WebviewUrl::App("quick.html".into()))
         .title("TagLauncher 快速搜索")
         .inner_size(QUICK_WIDTH, QUICK_HEIGHT)
         .decorations(false)
@@ -164,6 +164,20 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .shadow(true)
         .visible(false)
         .focused(false)
+        .transparent(true)
+        .background_color(tauri::Color(0, 0, 0, 0));
+    // Windows 亚克力（不是 Mica）。API 或系统不支持时忽略，前端仍有 backdrop-filter。
+    #[cfg(windows)]
+    {
+        use tauri::window::{Effect, EffectState, EffectsBuilder};
+        builder = builder.effects(
+            EffectsBuilder::new()
+                .effect(Effect::Acrylic)
+                .state(EffectState::Active)
+                .build(),
+        );
+    }
+    let window = builder
         .build()
         .map_err(|e| format!("创建快速搜索窗失败：{e}"))?;
     // 失焦自动隐藏（Esc / 打开对象 / 点到别处都应收起）

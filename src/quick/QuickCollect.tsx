@@ -275,9 +275,19 @@ export function QuickCollect({ session, onClose }: { session: CollectSession; on
             </div>
           )}
           <div className="quick-collect-actions">
-            <button type="button" className="quick-button" data-testid="collect-action-tag" disabled={busy} onClick={() => { setIndex(0); setStep("tag"); }}>打标签…（T）</button>
-            <button type="button" className="quick-button" data-testid="collect-action-cabinet" disabled={busy} onClick={() => { setIndex(0); setStep("cabinet"); }}>放入文件柜…（C）</button>
-            <button type="button" className="quick-button" data-testid="collect-action-import" disabled={busy} onClick={runImport}>仅导入（I）</button>
+            <button type="button" className="collect-card collect-card-rec" data-testid="collect-action-tag" disabled={busy} onClick={() => { setIndex(0); setStep("tag"); }}>
+              <span className="collect-card-kicker">推荐</span>
+              <span className="collect-card-title">打标签…（T）</span>
+              <span className="collect-card-desc">给文件打上标签后收入对象库</span>
+            </button>
+            <button type="button" className="collect-card" data-testid="collect-action-cabinet" disabled={busy} onClick={() => { setIndex(0); setStep("cabinet"); }}>
+              <span className="collect-card-title">放入文件柜…（C）</span>
+              <span className="collect-card-desc">放到已有的普通文件柜里</span>
+            </button>
+            <button type="button" className="collect-card" data-testid="collect-action-import" disabled={busy} onClick={runImport}>
+              <span className="collect-card-title">仅导入（I）</span>
+              <span className="collect-card-desc">先入库，稍后再整理</span>
+            </button>
           </div>
           <label className="quick-collect-remember">
             <input type="checkbox" data-testid="collect-remember" checked={remember} disabled={busy} onChange={(e) => setRemember(e.target.checked)} />

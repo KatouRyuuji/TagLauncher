@@ -2,8 +2,9 @@
 //!
 //! - 复用快速窗 WebView：钉住视图是 `quick` 窗口的另一个表面（surface）。唤出快速搜索时切到
 //!   search；搜索收起时若钉住视图开启则还原为 pin，否则照旧隐藏。开启钉住视图不新增 WebView2。
-//! - 边缘抽屉：收起 = 窗口缩成贴边的细条（把手，置顶）。WebView 自己收到鼠标进入后调用
-//!   `pin_expand`，不轮询鼠标、不装输入钩子；离开 / 失焦后 `pin_collapse`。
+//! - 边缘抽屉：收起 = 隐藏 quick WebView，显示贴边的原生「探头」卡片（休息 68×148 逻辑像素，
+//!   悬停加宽到 168，顶与展开抽屉对齐）。系统 TrackMouseEvent(TME_HOVER, 120ms) 判定停留后
+//!   才 `pin_expand`（划过不弹）；离开 / 失焦后 `pin_collapse`。
 //! - 前台全屏：抽屉模式下用 `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`（前台切换事件，
 //!   非输入钩子）在前台变化时判断；前台全屏且与抽屉同一显示器 → 隐藏把手。展开前再判一次。
 //! - 位置记忆：抽屉 = 显示器名 + 边 + 上下比例（拖动展开的抽屉，松手 = 本进程 EVENT_SYSTEM_MOVESIZEEND
@@ -21,20 +22,21 @@ use crate::Database;
 pub const PIN_SURFACE_EVENT: &str = "pin-surface";
 /// 面板最多列出的对象数（其余提示去主窗查看）
 pub const PIN_ITEMS_LIMIT: usize = 500;
-/// 抽屉面板逻辑宽度、把手逻辑宽度
+/// 抽屉面板逻辑宽度、探头休息宽度 / 高度（物理像素 = 此值 × DPI 缩放）。
+/// 有意设计变更：由 8px 细条改为 68×148 的探头卡片（悬停加宽 168 由 pin_strip 内部处理）。
 pub const DRAWER_WIDTH: f64 = 320.0;
-pub const HANDLE_WIDTH: f64 = 8.0;
-/// 把手中间握柄的逻辑高度（物理像素 = 此值 × DPI 缩放）。
-pub const HANDLE_PILL_LENGTH: f64 = 56.0;
+pub const HANDLE_WIDTH: f64 = 68.0;
+pub const HANDLE_HEIGHT: f64 = 148.0;
+pub const HANDLE_HOVER_WIDTH: f64 = 168.0;
 /// 抽屉面板高度：工作区的 70%，不超过 640 逻辑像素
 const DRAWER_HEIGHT_FRACTION: f64 = 0.7;
 const DRAWER_MAX_HEIGHT: f64 = 640.0;
 /// 浮动窗默认逻辑尺寸
 const FLOAT_DEFAULT: (f64, f64) = (340.0, 480.0);
 const FLOAT_MIN: (f64, f64) = (240.0, 200.0);
-/// 滑出 / 收回动画：步数与每步间隔
+/// 滑出 / 收回动画：6 步 × 40ms ≈ 240ms，与前端 --transition-normal 对齐
 const ANIM_STEPS: u32 = 6;
-const ANIM_STEP: Duration = Duration::from_millis(14);
+const ANIM_STEP: Duration = Duration::from_millis(40);
 /// 拖动结束判定：最后一次 Moved 之后静默这么久
 const DRAG_SETTLE: Duration = Duration::from_millis(350);
 /// 光标离开展开的抽屉多久收回（与前端 PIN_LEAVE_COLLAPSE_MS 一致）
@@ -246,7 +248,26 @@ pub fn drawer_size(work: Rect, scale: f64) -> (u32, u32) {
 }
 
 pub fn handle_width(scale: f64) -> u32 {
-    ((HANDLE_WIDTH * scale).round() as u32).max(3)
+    ((HANDLE_WIDTH * scale).round() as u32).max(24)
+}
+
+/// 探头休息高度（物理像素）
+pub fn handle_height(scale: f64) -> u32 {
+    ((HANDLE_HEIGHT * scale).round() as u32).max(64)
+}
+
+/// 探头悬停宽度（物理像素）；由 pin_strip 在鼠标进入时使用，不影响 drawer_geometry。
+pub fn handle_hover_width(scale: f64) -> u32 {
+    ((HANDLE_HOVER_WIDTH * scale).round() as u32).max(handle_width(scale))
+}
+
+/// 探头休息矩形：宽度 / 高度用探头尺寸，但 Y 按展开抽屉的高度计算，保证顶与抽屉对齐（D-PIN-03）。
+pub fn peek_rect(work: Rect, edge: PinEdge, offset: f64, scale: f64) -> Rect {
+    let (_, ph) = drawer_size(work, scale);
+    let hw = handle_width(scale);
+    let hh = handle_height(scale).min(ph);
+    let full = drawer_rect(work, edge, offset, hw, ph);
+    (full.0, full.1, hw, hh)
 }
 
 /// 动画第 `step`（1..=steps）步的宽度（ease-out）
@@ -600,8 +621,12 @@ fn drawer_geometry(app: &AppHandle, expanded: bool) -> Option<(Rect, u32, u32)> 
         let r = rt();
         (r.settings.edge, r.place.drawer_offset)
     };
-    let width = if expanded { pw } else { hw };
-    Some((drawer_rect(work, edge, offset, width, ph), pw, hw))
+    if expanded {
+        Some((drawer_rect(work, edge, offset, pw, ph), pw, hw))
+    } else {
+        // Y 按展开抽屉高度计算，探头顶与抽屉顶对齐
+        Some((peek_rect(work, edge, offset, scale), pw, hw))
+    }
 }
 
 /// 展开动画的起始宽度：从面板宽的 1/4 起滑（不让 WebView 经过极窄宽度）
@@ -612,7 +637,56 @@ fn anim_start(pw: u32, hw: u32) -> u32 {
 /// 收起：quick 窗口隐藏，原生把手贴边显示（见 pin_strip）
 fn show_handle(app: &AppHandle) {
     if let Some((rect, _, _)) = drawer_geometry(app, false) {
-        crate::pin_strip::show(app, rect);
+        let edge = rt().settings.edge;
+        refresh_peek(app);
+        crate::pin_strip::show(app, rect, edge);
+    }
+}
+
+/// 从当前钉住来源取标题、数量、前三项名称和来源色，交给原生探头绘制。
+fn refresh_peek(app: &AppHandle) {
+    let source = settings().source;
+    let (title, count, names, stripe) = if let Some(db) = app.try_state::<Database>() {
+        let conn = db.get_conn();
+        match load_items(&conn, source) {
+            Ok(items) => {
+                let title = items
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| "来源已删除".to_string());
+                let names: Vec<String> = items
+                    .items
+                    .iter()
+                    .take(3)
+                    .map(|i| i.item.name.clone())
+                    .collect();
+                let stripe = source_color(&conn, source).and_then(|c| crate::pin_strip::parse_css_color(&c));
+                (title, items.total, names, stripe)
+            }
+            Err(_) => ("钉住视图".to_string(), 0, Vec::new(), None),
+        }
+    } else {
+        ("钉住视图".to_string(), 0, Vec::new(), None)
+    };
+    crate::pin_strip::set_peek(
+        app,
+        crate::pin_strip::PeekContent {
+            title,
+            count,
+            names,
+            stripe,
+        },
+    );
+}
+
+fn source_color(conn: &rusqlite::Connection, source: Option<PinSource>) -> Option<String> {
+    match source? {
+        PinSource::Cabinet(id) => conn
+            .query_row("SELECT color FROM cabinets WHERE id = ?1", [id], |r| r.get(0))
+            .ok(),
+        PinSource::Tag(id) => conn
+            .query_row("SELECT color FROM tags WHERE id = ?1", [id], |r| r.get(0))
+            .ok(),
     }
 }
 
@@ -1504,6 +1578,12 @@ pub fn pin_handle_color(app: AppHandle, color: String) {
     crate::pin_strip::set_color(&app, &color);
 }
 
+/// 前端告知探头卡片底 / 正文 / 次要文字与是否深色（亚克力着色与文字）
+#[tauri::command]
+pub fn pin_handle_chrome(app: AppHandle, bg: String, fg: String, muted: String, dark: bool) {
+    crate::pin_strip::set_chrome(&app, &bg, &fg, &muted, dark);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1577,9 +1657,22 @@ mod tests {
         assert_eq!((w1, h1), (320, 640));
         let (w2, h2) = drawer_size((0, 0, 2880, 1560), 1.5);
         assert_eq!((w2, h2), (480, 960));
-        assert_eq!(handle_width(1.0), 8);
-        assert_eq!(handle_width(1.5), 12);
-        assert_eq!(handle_width(0.5), 4, "缩小显示时仍看得见、点得到");
+        assert_eq!(handle_width(1.0), 68);
+        assert_eq!(handle_width(1.5), 102);
+        assert_eq!(handle_width(0.5), 34, "缩小显示时仍看得见、点得到");
+        assert_eq!(handle_height(1.0), 148);
+        assert_eq!(handle_height(1.5), 222);
+        assert_eq!(handle_hover_width(1.0), 168);
+        // 探头顶与同 offset 的展开抽屉顶对齐（D-PIN-03）
+        let work = (0, 0, 1920, 1040);
+        let expanded = drawer_rect(work, PinEdge::Right, 0.5, 320, 640);
+        let peek = peek_rect(work, PinEdge::Right, 0.5, 1.0);
+        assert_eq!(peek.1, expanded.1, "探头顶应等于抽屉顶");
+        assert_eq!(peek, (1852, 200, 68, 148));
+        assert_eq!(peek.0 + peek.2 as i32, 1920, "右缘贴边");
+        let peek_l = peek_rect(work, PinEdge::Left, 0.0, 1.0);
+        assert_eq!(peek_l.0, 0);
+        assert_eq!(peek_l.1, drawer_rect(work, PinEdge::Left, 0.0, 320, 640).1);
     }
 
     #[test]
