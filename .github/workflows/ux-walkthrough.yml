@@ -1,14 +1,21 @@
-# 临时工作流：在 Windows runner 上录制 1.10.0-beta UX 走查视频。
-# 仅存在于 cursor/ux-walkthrough-8f3b，不合入 main。
+# 临时工作流：在 Windows runner 上录制 PR #66（cursor/ui-polish-8f3b）UI 打磨走查。
+# 仅存在于 cursor/ux-walkthrough-8f3b，不合入 main、不进 polish PR。
+# 驱动的是该 PR 的 Release 工作流产物（workflow_dispatch 只出 artifact，不发版），不是已发布的 1.10.0-beta。
 name: UX Walkthrough
 
 on:
   push:
     branches: [cursor/ux-walkthrough-8f3b]
   workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: '已成功的 Release 工作流 run id（默认取 cursor/ui-polish-8f3b 上最近一次成功）'
+        required: false
+        default: ''
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   record:
@@ -24,38 +31,46 @@ jobs:
       - name: Install Python deps
         run: python -m pip install -r e2e/requirements-e2e.txt
 
-      - name: Download 1.10.0-beta portable and ffmpeg
+      - name: Download PR portable (Release artifact) and ffmpeg
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          UX_RELEASE_RUN_ID: ${{ github.event.inputs.release_run_id }}
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force dist, tools | Out-Null
-          gh release download 1.10.0-beta -R KatouRyuuji/TagLauncher -p 'TagLauncher_1.10.0-beta_x64-portable.zip' -D dist
-          Expand-Archive -LiteralPath dist/TagLauncher_1.10.0-beta_x64-portable.zip -DestinationPath dist/portable -Force
+          $runId = $env:UX_RELEASE_RUN_ID
+          if (-not $runId) {
+            $runId = gh run list --workflow Release --branch cursor/ui-polish-8f3b --status success --limit 1 --json databaseId --jq '.[0].databaseId'
+          }
+          if (-not $runId) { throw '没有找到 cursor/ui-polish-8f3b 上成功的 Release 运行' }
+          "UX_RELEASE_RUN_ID=$runId" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "下载 Release 产物 run=$runId"
+          gh run view $runId --json headSha,headBranch,displayTitle,conclusion,url
+          gh run download $runId -R KatouRyuuji/TagLauncher -n taglauncher-portable-x86_64-pc-windows-msvc -D dist
+          $zip = Get-ChildItem -Recurse dist -Filter *-portable.zip | Select-Object -First 1
+          if (-not $zip) { Get-ChildItem -Recurse dist | Format-Table FullName, Length; throw 'artifact 里没有 *-portable.zip' }
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath dist/portable -Force
           $exe = Get-ChildItem -Recurse dist/portable -Filter tag-launcher.exe | Select-Object -First 1
           if (-not $exe) { throw 'portable zip 里没有 tag-launcher.exe' }
           "TL_E2E_EXE=$($exe.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-          "EXE: $($exe.FullName)  $($exe.Length) bytes"
-          Get-FileHash $exe.FullName -Algorithm SHA256
+          "EXE: $($exe.FullName)  $($exe.Length) bytes  sha256=$((Get-FileHash $exe.FullName -Algorithm SHA256).Hash)  from run $runId"
 
-          # ffmpeg：优先 winget/choco，失败则下官方 essentials zip
           $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
           if (-not $ffmpeg) {
             try { choco install ffmpeg -y --no-progress } catch { Write-Host "choco: $_" }
             $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
           }
           if (-not $ffmpeg) {
-            $zip = 'tools/ffmpeg.zip'
-            Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zip -UseBasicParsing
-            Expand-Archive -LiteralPath $zip -DestinationPath tools/ffmpeg -Force
+            $zipff = 'tools/ffmpeg.zip'
+            Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zipff -UseBasicParsing
+            Expand-Archive -LiteralPath $zipff -DestinationPath tools/ffmpeg -Force
             $ff = Get-ChildItem -Recurse tools/ffmpeg -Filter ffmpeg.exe | Select-Object -First 1
             "PATH=$($ff.DirectoryName);$env:PATH" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
             $env:PATH = "$($ff.DirectoryName);$env:PATH"
           }
           ffmpeg -version | Select-Object -First 3
 
-          # 中文字体：有雅黑就用；再备一份 Noto Sans SC（子集可变字体）
           $fontDir = 'tools/fonts'
           New-Item -ItemType Directory -Force $fontDir | Out-Null
           try {
@@ -63,14 +78,14 @@ jobs:
           } catch { Write-Host "Noto download: $_" }
           Get-ChildItem C:\Windows\Fonts\msyh*,C:\Windows\Fonts\simhei*,C:\Windows\Fonts\simsun*,$fontDir | Format-Table Name, Length
 
-      - name: Prepare desktop (1920x1080, close Server Manager)
+      - name: Prepare desktop (1920x1080, hide consoles, try 150% DPI)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
           Stop-Process -Name ServerManager,SecurityHealthSystray -ErrorAction SilentlyContinue
           Add-Type -TypeDefinition @"
-          using System; using System.Runtime.InteropServices;
-          public static class Disp {
+          using System; using System.Runtime.InteropServices; using System.Text;
+          public static class Native {
             [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
             public struct DEVMODE {
               [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
@@ -81,21 +96,80 @@ jobs:
               public short dmLogPixels; public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
               public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
             }
+            public delegate bool EnumProc(IntPtr h, IntPtr l);
             [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplaySettings(string d, int m, ref DEVMODE dm);
             [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettings(ref DEVMODE dm, int f);
-            public static int Set(int w, int h) {
+            [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr l);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+            [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
+            [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool r);
+            [DllImport("user32.dll")] public static extern IntPtr GetConsoleWindow();
+            [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr h);
+            [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr h, IntPtr dc);
+            [DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int i);
+            [DllImport("user32.dll")] public static extern bool SystemParametersInfo(uint a, uint b, IntPtr c, uint d);
+            public static int SetRes(int w, int h, int logPixels) {
               var dm = new DEVMODE(); dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
               if (!EnumDisplaySettings(null, -1, ref dm)) return -100;
-              dm.dmPelsWidth = w; dm.dmPelsHeight = h; dm.dmFields = 0x80000 | 0x100000;
+              dm.dmPelsWidth = w; dm.dmPelsHeight = h;
+              dm.dmFields = 0x80000 | 0x100000;
+              if (logPixels > 0) { dm.dmLogPixels = (short)logPixels; dm.dmFields |= 0x20000; }
               return ChangeDisplaySettings(ref dm, 1);
+            }
+            public static int LogPixels() {
+              var dc = GetDC(IntPtr.Zero);
+              int dpi = GetDeviceCaps(dc, 88);
+              ReleaseDC(IntPtr.Zero, dc);
+              return dpi;
+            }
+            public static int HideConsoles() {
+              int n = 0;
+              EnumProc cb = (h, l) => {
+                if (!IsWindowVisible(h)) return true;
+                var cls = new StringBuilder(256);
+                GetClassName(h, cls, 256);
+                var title = new StringBuilder(512);
+                GetWindowText(h, title, 512);
+                string c = cls.ToString();
+                string t = title.ToString();
+                bool hide = c == "ConsoleWindowClass" || c == "CASCADIA_HOSTING_WINDOW_CLASS"
+                  || t.IndexOf("runner", StringComparison.OrdinalIgnoreCase) >= 0
+                  || t.IndexOf("orchestration", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (hide && t.IndexOf("TagLauncher", StringComparison.OrdinalIgnoreCase) < 0) {
+                  if (!ShowWindow(h, 0)) MoveWindow(h, 4000, 0, 200, 200, true);
+                  n++;
+                  Console.WriteLine("hid " + c + " | " + t);
+                }
+                return true;
+              };
+              EnumWindows(cb, IntPtr.Zero);
+              var self = GetConsoleWindow();
+              if (self != IntPtr.Zero) { ShowWindow(self, 0); n++; }
+              return n;
             }
           }
           "@
-          "ChangeDisplaySettings(1920x1080) = $([Disp]::Set(1920, 1080))  (0 = 成功)"
-          Start-Sleep -Seconds 2
+          "DPI before: $([Native]::LogPixels())"
+          "ChangeDisplaySettings(1920x1080 @100%) = $([Native]::SetRes(1920, 1080, 0))  (0 = 成功)"
+          Start-Sleep -Seconds 1
+          # 尽量设 150%：DM_LOGPIXELS + SPI + 注册表（未登出的 runner 上通常不会真改，记录返回值）
+          try {
+            New-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name LogPixels -Value 144 -PropertyType DWord -Force | Out-Null
+            New-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name Win8DpiScaling -Value 1 -PropertyType DWord -Force | Out-Null
+            "reg LogPixels=144 written"
+          } catch { "reg: $_" }
+          "SPI_SETLOGICALDPIOVERRIDE = $([Native]::SystemParametersInfo(0x009F, 0, [IntPtr]::Zero, 3))"
+          "ChangeDisplaySettings(1920x1080 @144) = $([Native]::SetRes(1920, 1080, 144))"
+          Start-Sleep -Seconds 1
+          $dpi = [Native]::LogPixels()
+          "DPI after: $dpi"
+          "UX_SYSTEM_DPI=$dpi" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           Get-CimInstance Win32_VideoController | ForEach-Object { "Display: $($_.Name) $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)" }
           Add-Type -AssemblyName System.Windows.Forms
-          "Screen: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
+          "Screen: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)  DpiX=$([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width)"
+          "Hidden consoles: $([Native]::HideConsoles())"
 
       - name: Record UX walkthrough
         timeout-minutes: 35
@@ -108,14 +182,15 @@ jobs:
           TL_E2E_ALLOW_VISIBLE: '1'
           PYTHONIOENCODING: utf-8
           PYTHONPATH: ${{ github.workspace }}/e2e
-          UX_OUT: ${{ github.workspace }}/ux-review-1.10.0
+          UX_OUT: ${{ github.workspace }}/ux-review-ui-polish
+          UX_HEAD_SHA: ${{ github.sha }}
         run: python e2e/tools/ux_walkthrough.py
 
       - name: Upload walkthrough
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ux-review-1.10.0
-          path: ux-review-1.10.0/
+          name: ux-review-ui-polish
+          path: ux-review-ui-polish/
           if-no-files-found: error
           retention-days: 14

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""1.10.0-beta UX 走查：在 Windows 交互桌面驱动官方 release 便携版并 gdigrab 录屏。
+"""PR #66 UI 打磨走查：在 Windows 交互桌面驱动 PR 的 Release 便携产物并 gdigrab 录屏。
 
-仅用于临时分支 cursor/ux-walkthrough-8f3b，不合入 main。
+仅用于临时分支 cursor/ux-walkthrough-8f3b，不合入 main、不进 polish PR。
+补上次缺口：SendInput 逐字输入、真实资源管理器右键、隐藏黑色日志窗、尽量真实 150% DPI。
+产物目录 ux-review-ui-polish（after.mp4 / chapters.txt / screenshots / contact-sheet）。
 """
 from __future__ import annotations
 
@@ -27,7 +29,7 @@ from playwright.sync_api import sync_playwright
 from win import win32
 
 # --------------------------------------------------------------------------- 常量
-OUT = Path(os.environ.get("UX_OUT", Path("/workspace/ux-review-1.10.0") if os.name != "nt" else "ux-review-1.10.0"))
+OUT = Path(os.environ.get("UX_OUT", Path("/workspace/ux-review-ui-polish") if os.name != "nt" else "ux-review-ui-polish"))
 HOTKEY_QUICK = "Ctrl+Alt+Shift+Q"
 THEME_LIGHT = "7f47aab2-74bb-4c77-b99b-550f0acf3c9c"
 THEME_DARK = "8cebf811-9b9d-4c49-ac9f-1d1fa685ce93"
@@ -37,10 +39,10 @@ WIN_POS = 160, 50
 CHAPTERS_META = [
     (1, "主窗总览", "视图切换、排序与筛选"),
     (2, "标签", "子标签、Ctrl+T 打标、拖动改层级、当前层搜索"),
-    (3, "文件柜", "嵌套、拖入子柜、含子柜与仅本柜"),
+    (3, "文件柜", "嵌套、拖入子柜、仅本柜空状态"),
     (4, "导入文件夹", "添加文件夹与导入方式"),
     (5, "快速搜索窗", "全局热键唤出与搜索"),
-    (6, "收纳", "资源管理器右键与收纳页"),
+    (6, "收纳", "资源管理器真实右键菜单与收纳页"),
     (7, "钉住视图", "浮动窗与边缘抽屉"),
     (8, "设置", "桌面驻留、主题与其它区块"),
     (9, "主题、字号与 DPI", "浅色与深色、特大字号、150% 缩放"),
@@ -104,8 +106,14 @@ class Recorder:
             "-pix_fmt", "yuv420p", "-an", str(self.raw),
         ]
         log("ffmpeg " + " ".join(cmd))
-        self.proc = subprocess.Popen(
-            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        kw = dict(stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if os.name == "nt":
+            kw["creationflags"] = 0x08000000  # CREATE_NO_WINDOW，避免再冒出黑色控制台
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = 0
+            kw["startupinfo"] = si
+        self.proc = subprocess.Popen(cmd, **kw)
         time.sleep(1.5)
         if self.proc.poll() is not None:
             err = (self.proc.stderr.read() if self.proc.stderr else b"").decode("utf-8", "replace")
@@ -248,27 +256,282 @@ def send_keys(*vks: int) -> None:
         win32.key(v, up=True)
 
 
-def type_text(s: str) -> None:
-    # 经剪贴板粘贴，避免 IME 问题（中文）
+KEYEVENTF_UNICODE = 0x0004
+
+def _prefer_en_layout() -> None:
+    """尽量切到英文键盘，避免 IME 把逐字 Unicode 吞掉。"""
     try:
-        import ctypes.wintypes
-        from ctypes import wintypes
-        CF_UNICODETEXT = 13
         user32 = ctypes.WinDLL("user32")
-        kernel32 = ctypes.WinDLL("kernel32")
-        user32.OpenClipboard(None)
-        user32.EmptyClipboard()
-        data = s.encode("utf-16-le") + b"\x00\x00"
-        h = kernel32.GlobalAlloc(0x0002, len(data))
-        p = kernel32.GlobalLock(h)
-        ctypes.memmove(p, data, len(data))
-        kernel32.GlobalUnlock(h)
-        user32.SetClipboardData(CF_UNICODETEXT, h)
-        user32.CloseClipboard()
-        send_keys(VK_CONTROL, 0x56)  # Ctrl+V
-        pause(0.3)
+        h = user32.LoadKeyboardLayoutW(ctypes.c_wchar_p("00000409"), 1)
+        if h:
+            user32.ActivateKeyboardLayout(h, 0)
     except Exception as e:
-        log(f"paste failed: {e}")
+        log(f"keyboard layout: {e}")
+
+
+def type_text(s: str, interval: float = 0.09) -> None:
+    """逐字 SendInput Unicode，不用剪贴板。"""
+    _prefer_en_layout()
+    for ch in s:
+        if ch == "\n":
+            send_keys(VK_RETURN)
+            time.sleep(interval)
+            continue
+        units = ch.encode("utf-16-le")
+        for i in range(0, len(units), 2):
+            code = int.from_bytes(units[i:i + 2], "little")
+            for flags in (KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | win32.KEYEVENTF_KEYUP):
+                inp = win32.INPUT(type=win32.INPUT_KEYBOARD)
+                inp.u.ki = win32.KEYBDINPUT(0, code, flags, 0, 0)
+                win32._send(inp)
+        time.sleep(interval)
+    pause(0.25)
+
+
+def hide_log_windows() -> int:
+    """把黑色控制台（Actions runner / conhost 日志）藏起来，绝不 WM_CLOSE。"""
+    user32 = ctypes.WinDLL("user32")
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    GetClass = user32.GetClassNameW
+    IsWindowVisible = user32.IsWindowVisible
+    ShowWindow = user32.ShowWindow
+    MoveWindow = user32.MoveWindow
+    GetWindowTextW = user32.GetWindowTextW
+    SW_HIDE = 0
+    hidden = []
+
+    def cb(hwnd, _lp):
+        if not IsWindowVisible(hwnd):
+            return True
+        buf = ctypes.create_unicode_buffer(256)
+        GetClass(hwnd, buf, 256)
+        cls = buf.value
+        title = ctypes.create_unicode_buffer(512)
+        GetWindowTextW(hwnd, title, 512)
+        name = title.value
+        low = name.lower()
+        is_console = cls in (
+            "ConsoleWindowClass", "CASCADIA_HOSTING_WINDOW_CLASS",
+            "ConsoleWindowClassImpl", "VirtualConsoleClass",
+        )
+        is_runner = (
+            "runner" in low or "orchestration" in low or "github" in low
+            or low.startswith("c:\\") or "powershell" in low or "cmd.exe" in low
+            or "python" in low
+        )
+        if is_console or (is_runner and cls not in ("CabinetWClass", "ExploreWClass", "Chrome_WidgetWin_1")):
+            # 不关 TagLauncher 主窗（类名是自己的）
+            if "taglauncher" in low and cls != "ConsoleWindowClass":
+                return True
+            ok = ShowWindow(hwnd, SW_HIDE)
+            if not ok:
+                MoveWindow(hwnd, 4000, 0, 200, 200, True)
+            hidden.append((cls, name[:80], int(hwnd)))
+        return True
+
+    user32.EnumWindows(EnumWindowsProc(cb), 0)
+    try:
+        hwnd = user32.GetConsoleWindow()
+        if hwnd:
+            ShowWindow(hwnd, SW_HIDE)
+            hidden.append(("self-console", "", int(hwnd)))
+    except Exception:
+        pass
+    if hidden:
+        log(f"hid log windows: {hidden}")
+    return len(hidden)
+
+
+def measure_dpi() -> dict:
+    """读系统 / 监视器 DPI，用来诚实地披露 150% 是否真的生效。"""
+    info = {"logpixels": None, "monitor_dpi": None, "screen": None}
+    try:
+        user32 = ctypes.WinDLL("user32")
+        gdi32 = ctypes.WinDLL("gdi32")
+        dc = user32.GetDC(0)
+        info["logpixels"] = gdi32.GetDeviceCaps(dc, 88)
+        user32.ReleaseDC(0, dc)
+    except Exception as e:
+        info["logpixels_err"] = str(e)
+    try:
+        user32 = ctypes.WinDLL("user32")
+        shcore = ctypes.WinDLL("Shcore")
+        mon = user32.MonitorFromWindow(user32.GetDesktopWindow(), 1)
+        dx = ctypes.c_uint()
+        dy = ctypes.c_uint()
+        shcore.GetDpiForMonitor(mon, 0, ctypes.byref(dx), ctypes.byref(dy))
+        info["monitor_dpi"] = (dx.value, dy.value)
+    except Exception as e:
+        info["monitor_err"] = str(e)
+    try:
+        user32 = ctypes.WinDLL("user32")
+        info["screen"] = (user32.GetSystemMetrics(0), user32.GetSystemMetrics(1))
+    except Exception:
+        pass
+    log(f"dpi: {info}")
+    return info
+
+
+def try_system_dpi_150() -> dict:
+    """尽量把系统 DPI 设成 150%（144）。失败不抛，把实测结果记入披露。"""
+    result = {"attempted": True, "methods": []}
+    if os.name != "nt":
+        result["attempted"] = False
+        return result
+    try:
+        import winreg
+        for path, name, val in (
+            (r"Control Panel\Desktop", "LogPixels", 144),
+            (r"Control Panel\Desktop", "Win8DpiScaling", 1),
+            (r"Control Panel\Desktop\WindowMetrics", "AppliedDPI", 144),
+        ):
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path, 0, winreg.KEY_SET_VALUE) as k:
+                    winreg.SetValueEx(k, name, 0, winreg.REG_DWORD, val)
+                result["methods"].append(f"reg {path}\\{name}={val} ok")
+            except Exception as e:
+                result["methods"].append(f"reg {name}: {e}")
+    except Exception as e:
+        result["methods"].append(f"reg: {e}")
+    try:
+        user32 = ctypes.WinDLL("user32")
+        r = user32.SystemParametersInfoW(0x009F, 0, None, 3)
+        result["methods"].append(f"SPI_SETLOGICALDPIOVERRIDE={r}")
+    except Exception as e:
+        result["methods"].append(f"SPI: {e}")
+    result["after"] = measure_dpi()
+    return result
+
+
+def enum_popup_menus() -> list[int]:
+    """所有可见 #32768 弹出菜单（含资源管理器的，不限本进程）。"""
+    user32 = ctypes.WinDLL("user32")
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    found: list[int] = []
+
+    def cb(hwnd, _):
+        if user32.IsWindowVisible(hwnd):
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, buf, 256)
+            if buf.value == "#32768":
+                found.append(int(hwnd))
+        return True
+
+    user32.EnumWindows(EnumWindowsProc(cb), 0)
+    return found
+
+
+def explorer_windows(title_sub: str | None = None) -> list[int]:
+    user32 = ctypes.WinDLL("user32")
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    found: list[int] = []
+
+    def cb(hwnd, _):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        buf = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, buf, 256)
+        if buf.value in ("CabinetWClass", "ExploreWClass"):
+            title = ctypes.create_unicode_buffer(512)
+            user32.GetWindowTextW(hwnd, title, 512)
+            if title_sub is None or title_sub in title.value:
+                found.append(int(hwnd))
+        return True
+
+    user32.EnumWindows(EnumWindowsProc(cb), 0)
+    return found
+
+
+def uia_clickable_point(hwnd: int, name: str, timeout: float = 25.0) -> tuple[int, int] | None:
+    """用 UI Automation 等到资源管理器里出现指定文件名，返回可点击屏幕坐标。"""
+    ps_lines = [
+        "param($Hwnd, $Name, $Timeout)",
+        "Add-Type -AssemblyName UIAutomationClient",
+        "$deadline = (Get-Date).AddSeconds([double]$Timeout)",
+        "$scope = [System.Windows.Automation.TreeScope]::Descendants",
+        "$prop = [System.Windows.Automation.AutomationElement]::NameProperty",
+        "while ((Get-Date) -lt $deadline) {",
+        "  try {",
+        "    $root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$Hwnd)",
+        "    if ($root) {",
+        "      $cond = New-Object System.Windows.Automation.PropertyCondition($prop, $Name)",
+        "      $el = $root.FindFirst($scope, $cond)",
+        "      if ($el) {",
+        "        $pt = $el.GetClickablePoint()",
+        "        Write-Output ('{0},{1}' -f $pt.X, $pt.Y)",
+        "        exit 0",
+        "      }",
+        "    }",
+        "  } catch {}",
+        "  Start-Sleep -Milliseconds 400",
+        "}",
+        "exit 1",
+    ]
+    tmp = Path(os.environ.get("TEMP", ".")) / "ux-uia-find.ps1"
+    try:
+        tmp.write_text("\n".join(ps_lines) + "\n", encoding="utf-8")
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", str(tmp), "-Hwnd", str(hwnd), "-Name", name, "-Timeout", str(int(timeout))],
+            capture_output=True, text=True, timeout=timeout + 8,
+        )
+        out = (r.stdout or "").strip().splitlines()
+        log(f"uia find {name!r} hwnd={hwnd} rc={r.returncode} out={out!r} err={(r.stderr or '')[:300]!r}")
+        if r.returncode == 0 and out:
+            x, y = out[-1].split(",")
+            return int(float(x)), int(float(y))
+    except Exception as e:
+        log(f"uia: {e}")
+    return None
+
+
+def close_explorer_folders(title_subs: list[str]) -> int:
+    """只关匹配的文件夹窗口，绝不杀 explorer.exe。"""
+    user32 = ctypes.WinDLL("user32")
+    WM_CLOSE = 0x0010
+    n = 0
+    for hwnd in explorer_windows():
+        title = ctypes.create_unicode_buffer(512)
+        user32.GetWindowTextW(hwnd, title, 512)
+        if any(s.lower() in title.value.lower() for s in title_subs):
+            user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+            n += 1
+    log(f"closed explorer folder windows: {n}")
+    return n
+
+
+def place_window(hwnd: int, x: int, y: int, w: int, h: int) -> None:
+    user32 = ctypes.WinDLL("user32")
+    SWP_NOZORDER, SWP_SHOWWINDOW = 0x0004, 0x0040
+    user32.SetWindowPos(hwnd, 0, x, y, w, h, SWP_NOZORDER | SWP_SHOWWINDOW)
+
+
+def click_shell_menu_item(substr: str, timeout: float = 4.0) -> bool:
+    """在系统弹出菜单里点包含 substr 的项（不限进程）。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for hwnd in enum_popup_menus():
+            try:
+                from tests.desktop import oswin
+                items = oswin.menu_items(hwnd)
+            except Exception as e:
+                log(f"menu_items: {e}")
+                items = []
+            log(f"popup {hwnd} items={[i.get('text') for i in items]}")
+            for it in items:
+                text = (it.get("text") or "").replace("&", "")
+                if substr in text:
+                    r = it.get("rect") or (0, 0, 0, 0)
+                    if r[2] - r[0] <= 0:
+                        continue
+                    cx, cy = (r[0] + r[2]) // 2, (r[1] + r[3]) // 2
+                    move_slow(cx, cy, 0.35)
+                    win32.click(cx, cy)
+                    pause(0.4)
+                    return True
+        time.sleep(0.15)
+    return False
+
 
 
 # --------------------------------------------------------------------------- 截图 / 后期
@@ -378,6 +641,24 @@ def stitch(raw: Path, marks: list, font: str, dest: Path, tmp: Path) -> None:
             slim.replace(dest)
             log(f"re-encoded to {dest.stat().st_size/1e6:.1f}MB")
     write_chapters_txt(marks, duration, dest.parent / "chapters.txt")
+    # 确认 moov：上次 runner 上 ffmpeg 竞态写出无 moov 的文件，只能回盒子上重封
+    try:
+        probe2 = subprocess.check_output(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(dest)],
+            text=True, stderr=subprocess.STDOUT).strip()
+        dur2 = float(probe2 or 0)
+        log(f"stitched probe duration={dur2:.2f}s size={dest.stat().st_size}")
+        if dur2 < 1:
+            raise RuntimeError(f"stitched mp4 duration {dur2}")
+    except Exception as e:
+        log(f"stitched moov check failed, remux raw: {e}")
+        remux = dest.with_name(dest.stem + "-remux.mp4")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(raw), "-c:v", "libx264", "-preset", "medium",
+             "-crf", "22", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", str(remux)],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        remux.replace(dest)
+        log(f"remuxed {dest} {dest.stat().st_size/1e6:.1f}MB")
 
 
 def contact_sheet(shots: Path, dest: Path, font: str | None) -> None:
@@ -387,11 +668,11 @@ def contact_sheet(shots: Path, dest: Path, font: str | None) -> None:
         return
     # 挑有代表性的，最多 16 张
     prefer = [
-        "01-main-overview", "01-main-grid", "01-main-list",
-        "02-tags", "03-cabinets", "03-cabinet-nest",
-        "04-import", "05-quick", "06-collect",
-        "07-pin-float", "07-pin-drawer", "08-settings",
-        "09-main-dark", "09-main-xlarge", "09-quick-dark", "09-pin-dark",
+        "01-main-list-light-f1", "01-main-search-light-f1", "01-main-filter-document",
+        "02-tags-drag-toast", "03-cabinets-only-self", "03-cabinets-empty-cta",
+        "04-import-contextual-dialog", "05-quick-search", "06-explorer-context-menu",
+        "06-collect-page-light-f1", "07-pin-handle", "07-pin-drawer-expanded",
+        "08-settings-theme", "09-main-xlarge", "09-main-light-f1.25-d1.5", "09-quick-dark",
     ]
     chosen = []
     for key in prefer:
@@ -540,6 +821,9 @@ class Walk:
         self.done: list[str] = []
         self.failed: list[str] = []
         self.shown: list[str] = []
+        self.collect_via = "none"
+        self.collect_reason = ""
+        self.dpi_info: dict = {}
 
     def refresh_hwnd(self) -> int:
         self.hwnd = win32.main_window(self.app.proc.pid, timeout=15, visible=True)
@@ -563,6 +847,7 @@ class Walk:
         return p
 
     def chapter(self, n: int) -> None:
+        hide_log_windows()
         meta = CHAPTERS_META[n - 1]
         self.rec.mark(n, meta[1], meta[2])
         pause(0.6)
@@ -621,6 +906,15 @@ class Walk:
                 self.click(filt.first)
                 pause(1.5)
                 self.shot("01-main-filter-open-light-f1")
+                doc = pg.get_by_role("button", name="文档", exact=True)
+                if not doc.count():
+                    doc = pg.get_by_text("文档", exact=True)
+                if doc.count():
+                    self.click(doc.first, hold=0.6)
+                    pause(1.2)
+                    self.shot("01-main-filter-document-light-f1")
+                    self.click(doc.first, hold=0.4)
+                    pause(0.5)
                 send_keys(VK_ESCAPE)
                 pause(0.6)
         except Exception as e:
@@ -688,6 +982,13 @@ class Walk:
                     drag_el(self.hwnd, src, dst, sec=1.3)
                     pause(1.4)
                     self.shot("02-tags-drag-hierarchy-light-f1")
+                    try:
+                        toast = pg.get_by_text("放到", exact=False)
+                        if toast.count():
+                            pause(0.4)
+                            self.shot("02-tags-drag-toast-light-f1")
+                    except Exception as e:
+                        log(f"toast shot: {e}")
             self.click(toggle, hold=0.8)
         # 当前层搜索
         try:
@@ -720,8 +1021,15 @@ class Walk:
                 self.click(tog)
                 pause(1.5)
                 self.shot("03-cabinets-only-self-light-f1")
-                self.click(tog)
-                pause(1.0)
+                # 新空状态主按钮「含子柜」：一键回到含子柜视图
+                cta = pg.get_by_role("button", name="含子柜", exact=True)
+                if cta.count():
+                    self.click(cta.first, hold=0.8)
+                    pause(1.4)
+                    self.shot("03-cabinets-empty-cta-light-f1")
+                else:
+                    self.click(tog)
+                    pause(1.0)
         # 现场拖「素材库」进「工作台」
         src = pg.locator("[data-drop-item-cabinet-id]").filter(has=pg.get_by_text("素材库", exact=True)).first
         dst = pg.locator("[data-drop-item-cabinet-id]").filter(has=pg.get_by_text("工作台", exact=True)).first
@@ -809,7 +1117,8 @@ class Walk:
             qp = quick_page(self.app, timeout=12)
             inp = qp.get_by_test_id("quick-input")
             inp.click()
-            inp.fill("报告")
+            pause(0.25)
+            type_text("报告")
             pause(1.5)
             self.shot("05-quick-search-light-f1")
             # 也用 page 截图（更高清）
@@ -826,16 +1135,15 @@ class Walk:
 
     def ch6(self):
         self.chapter(6)
+        self.collect_via = "none"
+        self.collect_reason = ""
         pg = self.app.page
-        # 设置里打开资源管理器收纳
         try:
             dlg = self.app.open_settings("桌面驻留")
             pause(1.2)
             self.shot("06-settings-shell-light-f1")
-            # 寻找「资源管理器」开关
             sw = dlg.get_by_text("资源管理器", exact=False).first
             if sw.count():
-                # 用 IPC 打开，保证状态正确，同时让用户看到这一页
                 self.app.invoke("set_shell_integration", {"enabled": True})
                 pause(1.0)
                 self.shot("06-settings-shell-on-light-f1")
@@ -847,61 +1155,92 @@ class Walk:
                 self.app.invoke("set_shell_integration", {"enabled": True})
             except Exception:
                 pass
-        # 用 --collect 动词等价调用，再尽量打开资源管理器给一眼
+        hide_log_windows()
         sample = files.write(self.sb.files / "待收纳" / "合同扫描件-客户确认版.pdf", b"%PDF-1.4")
-        files.write(self.sb.files / "待收纳" / "封面设计-终稿.png", files.png_bytes(24, 24))
+        cover = files.write(self.sb.files / "待收纳" / "封面设计-终稿.png", files.png_bytes(24, 24))
+        used_menu = False
         try:
-            subprocess.Popen(["explorer.exe", str(sample.parent)])
-            pause(1.8)
-            self.shot("06-explorer-folder-light-f1")
+            close_explorer_folders(["待收纳"])
+            pause(0.3)
+            # /select 同时打开并选中文件，比只开文件夹更易等 UIA
+            subprocess.Popen(["explorer.exe", f"/select,{sample}"])
+            hwnd_ex = None
+            for _ in range(50):
+                wins = explorer_windows("待收纳") or explorer_windows()
+                if wins:
+                    hwnd_ex = wins[0]
+                    break
+                time.sleep(0.4)
+            if hwnd_ex:
+                place_window(hwnd_ex, 420, 80, 1280, 860)
+                win32.set_foreground(hwnd_ex)
+                pause(0.5)
+                send_keys(0x74)  # F5，催一下「Working on it…」
+                pause(1.0)
+                pt = uia_clickable_point(hwnd_ex, sample.name, timeout=28)
+                if not pt:
+                    pt = uia_clickable_point(hwnd_ex, "封面设计-终稿.png", timeout=8)
+                if pt:
+                    # 再 F5 后稍等，确保图标出来再截
+                    pause(0.6)
+                    self.shot("06-explorer-folder-light-f1")
+                    from tests.desktop import oswin
+                    move_slow(pt[0], pt[1], 0.5)
+                    pause(0.25)
+                    oswin.right_click(pt[0], pt[1])
+                    pause(0.9)
+                    self.shot("06-explorer-context-menu-light-f1")
+                    if click_shell_menu_item("用 TagLauncher 收纳", timeout=3.5):
+                        used_menu = True
+                        self.collect_via = "right-click"
+                    else:
+                        send_keys(VK_ESCAPE)
+                        pause(0.3)
+                        win32.set_foreground(hwnd_ex)
+                        move_slow(pt[0], pt[1], 0.2)
+                        win32.click(pt[0], pt[1])
+                        pause(0.25)
+                        send_keys(VK_SHIFT, 0x79)  # Shift+F10 经典菜单
+                        pause(0.9)
+                        self.shot("06-explorer-classic-menu-light-f1")
+                        if click_shell_menu_item("用 TagLauncher 收纳", timeout=3.5):
+                            used_menu = True
+                            self.collect_via = "shift-f10"
+                        else:
+                            self.collect_reason = "右键与 Shift+F10 菜单里都没找到「用 TagLauncher 收纳」"
+                else:
+                    self.shot("06-explorer-folder-light-f1")
+                    self.collect_reason = "UIA 等到超时，资源管理器里没有出现文件名（可能仍是 Working on it）"
+            else:
+                self.collect_reason = "未能出现「待收纳」文件夹窗口"
+                self.shot("06-explorer-folder-light-f1")
         except Exception as e:
-            log(f"explorer: {e}")
-        # 启动收纳会话（与右键动词同一条路径）
+            log(f"explorer right-click: {e}\n{traceback.format_exc()}")
+            self.collect_reason = str(e)
+
+        if not used_menu:
+            log(f"fallback collect_submit: {self.collect_reason}")
+            self.collect_via = "collect_submit:" + (self.collect_reason or "unknown")
+            try:
+                self.app.invoke("collect_submit", {"paths": [str(sample), str(cover)]})
+            except Exception as e:
+                log(f"collect_submit: {e}")
+
         try:
-            self.app.invoke("collect_submit", {"paths": [str(sample), str(sample.parent / "封面设计-终稿.png")]})
-            pause(1.8)
             from tests.ui.test_collect import collect_page
-            cq = collect_page(self.app)
+            cq = collect_page(self.app, timeout=12)
             pause(1.0)
             self.shot("06-collect-page-light-f1")
             page_shot(cq, self.shots / "06-collect-page-light-f1-page.png")
-            # 看一眼动作按钮，不真正导入以免打乱库（点 Esc）
             pause(1.5)
             send_keys(VK_ESCAPE)
             pause(0.8)
         except Exception as e:
-            log(f"collect: {e}")
-        # 只关打开的文件夹窗口，绝不杀掉 explorer.exe（会拆掉桌面，gdigrab 也会跟着坏）
-        try:
-            import ctypes
-            from ctypes import wintypes
-            user32 = ctypes.WinDLL("user32")
-            EnumWindows = user32.EnumWindows
-            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-            GetClass = user32.GetClassNameW
-            GetTitle = user32.GetWindowTextW
-            IsWindowVisible = user32.IsWindowVisible
-            PostMessage = user32.PostMessageW
-            WM_CLOSE = 0x0010
-            found = []
+            log(f"collect page: {e}")
 
-            def cb(hwnd, _lp):
-                if not IsWindowVisible(hwnd):
-                    return True
-                buf = ctypes.create_unicode_buffer(256)
-                GetClass(hwnd, buf, 256)
-                if buf.value in ("CabinetWClass", "ExploreWClass"):
-                    title = ctypes.create_unicode_buffer(512)
-                    GetTitle(hwnd, title, 512)
-                    if "待收纳" in title.value or "explorer" in title.value.lower():
-                        found.append(hwnd)
-                        PostMessage(hwnd, WM_CLOSE, 0, 0)
-                return True
-            EnumWindows(EnumWindowsProc(cb), 0)
-            log(f"closed explorer folder windows: {len(found)}")
-            pause(0.8)
-        except Exception as e:
-            log(f"close explorer window: {e}")
+        close_explorer_folders(["待收纳"])
+        pause(0.8)
+        hide_log_windows()
 
     def ch7(self):
         self.chapter(7)
@@ -1081,7 +1420,9 @@ class Walk:
             pause(1.5)
             from tests.ui.test_quick import quick_page
             qp = quick_page(self.app, timeout=10)
-            qp.get_by_test_id("quick-input").fill("设计")
+            qp.get_by_test_id("quick-input").click()
+            pause(0.2)
+            type_text("设计")
             pause(1.2)
             self.shot("09-quick-dark-f1.25")
             page_shot(qp, self.shots / "09-quick-dark-f1.25-page.png")
@@ -1120,10 +1461,17 @@ def main() -> int:
     log(f"out={OUT} exe={default_exe()}")
     font = find_font()
     log(f"font={font}")
+    hide_log_windows()
+    dpi_try = try_system_dpi_150()
+    dpi = measure_dpi()
+    log(f"dpi try={dpi_try}")
     (OUT / "meta.json").write_text(json.dumps({
-        "version": "1.10.0-beta", "exe": str(default_exe()), "font": font,
+        "version": "pr66-ui-polish", "exe": str(default_exe()), "font": font,
         "visible": os.environ.get("TL_E2E_VISIBLE"),
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+        "dpi": dpi, "dpi_try": dpi_try,
+        "head": os.environ.get("UX_HEAD_SHA") or os.environ.get("GITHUB_SHA"),
+        "release_run": os.environ.get("UX_RELEASE_RUN_ID"),
+    }, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
     if not default_exe().exists():
         log("找不到 exe")
@@ -1161,6 +1509,7 @@ def main() -> int:
         app = AppSession(pw, sb, dismiss_welcome=True)
         try:
             app.start(timeout=90)
+            hide_log_windows()
             app.close_welcome(4000)
             pause(1.0)
             log("seeding")
@@ -1175,8 +1524,11 @@ def main() -> int:
             pause(1.0)
             walked = Walk(app, sb, rec, shots)
             walked.place()
+            walked.dpi_info = dpi
+            hide_log_windows()
             rec.start()
             pause(0.8)
+            hide_log_windows()
             for fn, name in (
                 (walked.ch1, "ch1"), (walked.ch2, "ch2"), (walked.ch3, "ch3"),
                 (walked.ch4, "ch4"), (walked.ch5, "ch5"), (walked.ch6, "ch6"),
@@ -1207,14 +1559,14 @@ def main() -> int:
     # 后期
     try:
         if rec.marks and rec.raw.exists():
-            stitch(rec.raw, rec.marks, font or "", OUT / "walkthrough.mp4", OUT / "tmp-edit")
+            stitch(rec.raw, rec.marks, font or "", OUT / "after.mp4", OUT / "tmp-edit")
         elif rec.raw.exists():
-            shutil.copy(rec.raw, OUT / "walkthrough.mp4")
+            shutil.copy(rec.raw, OUT / "after.mp4")
             log("copied raw (no chapter marks)")
     except Exception:
         log("stitch failed\n" + traceback.format_exc())
         if rec.raw.exists():
-            shutil.copy(rec.raw, OUT / "walkthrough.mp4")
+            shutil.copy(rec.raw, OUT / "after.mp4")
             rc = rc or 1
     try:
         contact_sheet(shots, OUT / "contact-sheet.png", font)
@@ -1230,21 +1582,50 @@ def main() -> int:
         ],
         "backend": rec.backend,
         "raw_exists": rec.raw.exists(),
-        "mp4_exists": (OUT / "walkthrough.mp4").exists(),
-        "mp4_bytes": (OUT / "walkthrough.mp4").stat().st_size if (OUT / "walkthrough.mp4").exists() else 0,
+        "mp4_exists": (OUT / "after.mp4").exists(),
+        "mp4_bytes": (OUT / "after.mp4").stat().st_size if (OUT / "after.mp4").exists() else 0,
     }
+    via = (walked.collect_via if walked else "none")
+    reason = (walked.collect_reason if walked else "")
+    if via in ("right-click", "shift-f10"):
+        collect_d = (
+            "第 6 章通过资源管理器" +
+            ("真实右键菜单" if via == "right-click" else "选中文件后 Shift+F10 经典菜单") +
+            "点「用 TagLauncher 收纳…」唤出收纳页。"
+        )
+    else:
+        collect_d = (
+            "第 6 章未能点到真实右键菜单项，退回 collect_submit（与右键动词同一条 IPC）。"
+            + (f"原因：{reason}" if reason else "")
+        )
+    lp = (dpi or {}).get("logpixels")
+    mon = (dpi or {}).get("monitor_dpi")
+    real_150 = (lp == 144) or (isinstance(mon, (list, tuple)) and mon and mon[0] == 144)
+    if real_150:
+        dpi_d = f"第 9 章系统 DPI 实测已是 144（150%）。logpixels={lp} monitor={mon}。另用 CDP 拍了 WebView 内 125%/150% 对照。"
+    else:
+        dpi_d = (
+            "第 9 章尝试了注册表 LogPixels=144、Win8DpiScaling、AppliedDPI，以及 SPI_SETLOGICALDPIOVERRIDE；"
+            f"实测系统 DPI 仍为 logpixels={lp} monitor={mon}（未达 144）。"
+            "125%/150% 画面用 CDP Emulation.setDeviceMetricsOverride，只影响 WebView 内容，"
+            "原生窗口边框与系统光标仍是 runner 的实际 DPI。各方法返回值见 meta.json 的 dpi_try。"
+        )
     summary["disclosures"] = [
         "系统文件选择框由 e2e stub（plugin:dialog|open）跳过，第 4 章展示的是应用内「添加文件夹」导入方式对话框。",
-        "第 6 章若资源管理器右键菜单不稳定，则打开文件夹窗口后经 collect_submit 唤出收纳页（与右键动词同一条 IPC）。",
-        "第 9 章 125%/150% DPI 通过 CDP Emulation.setDeviceMetricsOverride，只影响 WebView 内容，原生窗口边框与系统光标仍是 runner 的 100% DPI。",
+        collect_d,
+        dpi_d,
+        "黑色日志窗（Actions runner / conhost）用 SW_HIDE 藏起，没有对 runner 进程发 WM_CLOSE。",
+        "主窗与快速窗搜索用 SendInput 逐字 Unicode，不用剪贴板。",
         "录屏后端：" + rec.backend + ("。截图合成时没有系统光标动画。" if rec.backend != "gdigrab" else "（ffmpeg gdigrab，含系统光标）。"),
     ]
+    summary["collect_via"] = via
+    summary["dpi"] = dpi
     (OUT / "DISCLOSURES.md").write_text("\n".join("- " + d for d in summary["disclosures"]) + "\n", encoding="utf-8")
     (OUT / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     log(json.dumps(summary, ensure_ascii=False, indent=2))
     log_fp.close()
     # 有视频就算可交付；章节失败记入 summary 不阻断上传
-    return 0 if (OUT / "walkthrough.mp4").exists() or rec.raw.exists() else (rc or 1)
+    return 0 if (OUT / "after.mp4").exists() or rec.raw.exists() else (rc or 1)
 
 
 if __name__ == "__main__":
