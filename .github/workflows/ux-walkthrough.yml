@@ -1,0 +1,121 @@
+# 临时工作流：在 Windows runner 上录制 1.10.0-beta UX 走查视频。
+# 仅存在于 cursor/ux-walkthrough-8f3b，不合入 main。
+name: UX Walkthrough
+
+on:
+  push:
+    branches: [cursor/ux-walkthrough-8f3b]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    runs-on: windows-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps
+        run: python -m pip install -r e2e/requirements-e2e.txt
+
+      - name: Download 1.10.0-beta portable and ffmpeg
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force dist, tools | Out-Null
+          gh release download 1.10.0-beta -R KatouRyuuji/TagLauncher -p 'TagLauncher_1.10.0-beta_x64-portable.zip' -D dist
+          Expand-Archive -LiteralPath dist/TagLauncher_1.10.0-beta_x64-portable.zip -DestinationPath dist/portable -Force
+          $exe = Get-ChildItem -Recurse dist/portable -Filter tag-launcher.exe | Select-Object -First 1
+          if (-not $exe) { throw 'portable zip 里没有 tag-launcher.exe' }
+          "TL_E2E_EXE=$($exe.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "EXE: $($exe.FullName)  $($exe.Length) bytes"
+          Get-FileHash $exe.FullName -Algorithm SHA256
+
+          # ffmpeg：优先 winget/choco，失败则下官方 essentials zip
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          if (-not $ffmpeg) {
+            try { choco install ffmpeg -y --no-progress } catch { Write-Host "choco: $_" }
+            $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          }
+          if (-not $ffmpeg) {
+            $zip = 'tools/ffmpeg.zip'
+            Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zip -UseBasicParsing
+            Expand-Archive -LiteralPath $zip -DestinationPath tools/ffmpeg -Force
+            $ff = Get-ChildItem -Recurse tools/ffmpeg -Filter ffmpeg.exe | Select-Object -First 1
+            "PATH=$($ff.DirectoryName);$env:PATH" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+            $env:PATH = "$($ff.DirectoryName);$env:PATH"
+          }
+          ffmpeg -version | Select-Object -First 3
+
+          # 中文字体：有雅黑就用；再备一份 Noto Sans SC（子集可变字体）
+          $fontDir = 'tools/fonts'
+          New-Item -ItemType Directory -Force $fontDir | Out-Null
+          try {
+            Invoke-WebRequest -Uri 'https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf' -OutFile "$fontDir/NotoSansSC-VF.ttf" -UseBasicParsing
+          } catch { Write-Host "Noto download: $_" }
+          Get-ChildItem C:\Windows\Fonts\msyh*,C:\Windows\Fonts\simhei*,C:\Windows\Fonts\simsun*,$fontDir | Format-Table Name, Length
+
+      - name: Prepare desktop (1920x1080, close Server Manager)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Stop-Process -Name ServerManager,SecurityHealthSystray -ErrorAction SilentlyContinue
+          Add-Type -TypeDefinition @"
+          using System; using System.Runtime.InteropServices;
+          public static class Disp {
+            [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+            public struct DEVMODE {
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+              public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra; public int dmFields;
+              public int dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+              public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+              public short dmLogPixels; public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+              public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+            }
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplaySettings(string d, int m, ref DEVMODE dm);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettings(ref DEVMODE dm, int f);
+            public static int Set(int w, int h) {
+              var dm = new DEVMODE(); dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+              if (!EnumDisplaySettings(null, -1, ref dm)) return -100;
+              dm.dmPelsWidth = w; dm.dmPelsHeight = h; dm.dmFields = 0x80000 | 0x100000;
+              return ChangeDisplaySettings(ref dm, 1);
+            }
+          }
+          "@
+          "ChangeDisplaySettings(1920x1080) = $([Disp]::Set(1920, 1080))  (0 = 成功)"
+          Start-Sleep -Seconds 2
+          Get-CimInstance Win32_VideoController | ForEach-Object { "Display: $($_.Name) $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)" }
+          Add-Type -AssemblyName System.Windows.Forms
+          "Screen: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
+
+      - name: Record UX walkthrough
+        timeout-minutes: 35
+        env:
+          CI: '1'
+          TL_E2E_VISIBLE: '1'
+          TL_E2E_WEBVIEW2_HKLM_POLICY: '1'
+          TL_E2E_ALLOW_REGISTRY: '1'
+          TL_E2E_ALLOW_PHYSICAL: '1'
+          TL_E2E_ALLOW_VISIBLE: '1'
+          PYTHONIOENCODING: utf-8
+          PYTHONPATH: ${{ github.workspace }}/e2e
+          UX_OUT: ${{ github.workspace }}/ux-review-1.10.0
+        run: python e2e/tools/ux_walkthrough.py
+
+      - name: Upload walkthrough
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-review-1.10.0
+          path: ux-review-1.10.0/
+          if-no-files-found: error
+          retention-days: 14
