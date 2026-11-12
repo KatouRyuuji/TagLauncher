@@ -164,7 +164,7 @@ export function ItemTagsEditor({ item, tags, onSave, onAddNewTag, onRecycleNewTa
         <span aria-hidden="true" className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border ${selected ? "border-[var(--accent-primary)] bg-[var(--accent-primary)] text-[var(--text-invert)]" : "border-[var(--border-strong)]"}`}>
           {selected && <Check size={11} strokeWidth={2.5} />}
         </span>
-        <span className="tag-pill min-w-0 truncate px-2 py-0.5" style={{ "--tag-color": tag.color } as CSSProperties}>{tag.name}</span>
+        <span className="tag-pill min-w-0 truncate px-2 py-0.5" style={{ "--tag-color": tag.color } as CSSProperties} title={tag.name}>{tag.name}</span>
       </button>
     );
   };

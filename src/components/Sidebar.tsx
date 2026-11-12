@@ -657,7 +657,7 @@ export function Sidebar({
                         style={activeTagStyle}
                         onPointerDown={(event) => handleTagPointerDown(event, tag, parentId)}
                         onClick={(event) => handleTagClick(event, tag.id)}
-                        title={activeDragKind ? undefined : hasChildren ? "单击筛选并包含下级标签；Alt+单击排除" : "单击筛选；Alt+单击排除"}
+                        title={activeDragKind ? undefined : `${tag.name}。${hasChildren ? "单击筛选并包含下级标签；Alt+单击排除" : "单击筛选；Alt+单击排除"}`}
                         onKeyDown={(event) => {
                           if (event.key === "F2" || event.key === "Delete") {
                             event.preventDefault();
@@ -791,7 +791,7 @@ export function Sidebar({
                         style={{ backgroundColor: cabinet.color }}
                         aria-hidden="true"
                       />
-                      <span className="min-w-0 flex-1 truncate text-[length:calc(13px*var(--ui-font-scale,1))] font-medium">{cabinet.name}</span>
+                      <span className="min-w-0 flex-1 truncate text-[length:calc(13px*var(--ui-font-scale,1))] font-medium" title={cabinet.name}>{cabinet.name}</span>
                       {cabinet.folder_path && <LinkedFolderMark cabinet={cabinet} />}
                       {cabinetInsert?.cabinetId === cabinet.id && !cabinetInsert.into && <InsertLine after={cabinetInsert.after} />}
                       <NavCount value={itemCountByCabinet.get(cabinet.id) ?? 0} />
