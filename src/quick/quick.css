@@ -17,10 +17,16 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
   box-shadow: var(--glass-highlight), var(--glass-shadow);
   animation: quick-pop var(--transition-normal) both;
   overflow: hidden; }
-/* 毛玻璃画在静态 ::before：列表重绘不再连带重算 backdrop-filter，查询 p95 更稳。 */
+/* ::before 只铺半透明底，不含 backdrop-filter：整窗滤镜会在列表重绘时拖慢查询 p95。
+   有系统亚克力（html[data-acrylic]）时由 DWM 负责整窗雾面；否则仅顶栏窄带 CSS 模糊回退。 */
 .quick-shell::before, .pin-shell::before {
   content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; border-radius: inherit;
   background: var(--glass-bg);
+}
+html:not([data-quick-hidden]):not([data-acrylic]) .quick-shell::after,
+html:not([data-quick-hidden]):not([data-acrylic]) .pin-shell::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5.6em;
+  z-index: 0; pointer-events: none; border-radius: inherit;
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
 }
@@ -170,11 +176,9 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
-/* 窗口隐藏：停掉 backdrop-filter，避免透明 WebView 在 HWND 隐藏后仍合成桌面。 */
+/* 窗口隐藏：停动画；窄带滤镜选择器已排除 data-quick-hidden。 */
 html[data-quick-hidden] .quick-shell,
 html[data-quick-hidden] .pin-shell { animation: none; }
-html[data-quick-hidden] .quick-shell::before,
-html[data-quick-hidden] .pin-shell::before,
 html[data-quick-hidden] .quick-drop-overlay {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;

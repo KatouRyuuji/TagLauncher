@@ -188,8 +188,8 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         }
         _ => {}
     });
-    // 以 hidden 创建：立刻关掉毛玻璃绘制（页面默认也带 data-quick-hidden）。
-    clear_glass_effect(&window);
+    // 页面默认带 data-quick-hidden。此处不调用 clear_glass_effect：它的 with_webview
+    // 与紧接着的首次 show/apply 竞态，可能把刚 SetIsVisible(true) 又打回 false。
     Ok(window)
 }
 
@@ -199,18 +199,28 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
 /// GPU 合成桌面背景，空闲 CPU 超 1% 预算。不用 TrySuspend（恢复有延迟，和极速唤出冲突）。
 /// API / 系统不支持时忽略。
 pub(crate) fn apply_glass_effect(window: &WebviewWindow) {
+    let mut acrylic = false;
     #[cfg(windows)]
     {
         use tauri::window::{Effect, EffectState, EffectsBuilder};
-        let _ = window.set_effects(
-            EffectsBuilder::new()
-                .effect(Effect::Acrylic)
-                .state(EffectState::Active)
-                .build(),
-        );
+        acrylic = window
+            .set_effects(
+                EffectsBuilder::new()
+                    .effect(Effect::Acrylic)
+                    .state(EffectState::Active)
+                    .build(),
+            )
+            .is_ok();
         set_controller_visible(window, true);
     }
-    let _ = window.eval("document.documentElement.removeAttribute('data-quick-hidden')");
+    // 亚克力成功则打 data-acrylic，前端不再叠整窗 backdrop-filter（避免双模糊拖慢查询）。
+    // 失败则只揭开 data-quick-hidden，由 CSS 顶栏窄带滤镜回退。
+    let js = if acrylic {
+        "document.documentElement.setAttribute('data-acrylic','');document.documentElement.removeAttribute('data-quick-hidden');"
+    } else {
+        "document.documentElement.removeAttribute('data-acrylic');document.documentElement.removeAttribute('data-quick-hidden');"
+    };
+    let _ = window.eval(js);
 }
 
 pub(crate) fn clear_glass_effect(window: &WebviewWindow) {
@@ -219,7 +229,28 @@ pub(crate) fn clear_glass_effect(window: &WebviewWindow) {
         let _ = window.set_effects(None);
         set_controller_visible(window, false);
     }
-    let _ = window.eval("document.documentElement.setAttribute('data-quick-hidden','')");
+    let _ = window.eval(
+        "document.documentElement.removeAttribute('data-acrylic');document.documentElement.setAttribute('data-quick-hidden','');",
+    );
+}
+
+/// 唤出先让输入框可聚焦并记下 summon 指标，再开毛玻璃（约一帧多），避免模糊计入唤出 p95。
+const GLASS_AFTER_SHOW: Duration = Duration::from_millis(50);
+
+fn schedule_glass(window: &WebviewWindow) {
+    let gen = VISIBILITY_GEN.load(Ordering::SeqCst);
+    let window = window.clone();
+    let _ = std::thread::Builder::new()
+        .name("tl-quick-glass".into())
+        .spawn(move || {
+            std::thread::sleep(GLASS_AFTER_SHOW);
+            if VISIBILITY_GEN.load(Ordering::SeqCst) != gen {
+                return;
+            }
+            if window.is_visible().unwrap_or(false) {
+                apply_glass_effect(&window);
+            }
+        });
 }
 
 /// WebView2 的 HWND 隐藏后，controller 不一定跟着停绘（透明窗尤其如此）。
@@ -332,6 +363,8 @@ pub fn show(app: &AppHandle, t0_ms: u64, activate: bool) -> Result<(), String> {
             keep_input: options().keep_input,
         },
     );
+    // 先完成唤出（输入可聚焦），再开亚克力 / 毛玻璃，避免计入 summon p95。
+    schedule_glass(&window);
     Ok(())
 }
 
@@ -345,7 +378,8 @@ fn native_show(window: &tauri::WebviewWindow, activate: bool) {
                 ShowWindow(h.0 as _, if activate { SW_SHOW } else { SW_SHOWNOACTIVATE });
             }
         }
-        apply_glass_effect(window);
+        // 立刻恢复绘制（隐藏时 SetIsVisible(false)）；毛玻璃由 schedule_glass 延后开启。
+        set_controller_visible(window, true);
     }
     #[cfg(not(windows))]
     let _ = (window, activate);
