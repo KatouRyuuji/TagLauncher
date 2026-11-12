@@ -262,9 +262,9 @@ static QUERY_GLASS_GEN: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn suspend_glass_for_query(app: &AppHandle) {
     let Some(window) = quick_window(app) else { return };
-    if !window.is_visible().unwrap_or(false) {
-        return;
-    }
+    // 不因 is_visible() 早退：tao 可见标志在原生 ShowWindow 后可能仍是「隐藏」，
+    // 早退则 50ms 的 schedule_glass 会把亚克力留在查询路径上。ec3b486 正式
+    // desktop-release 5k p50 仍是 21.6（对照「玻璃开着」21.7，关玻璃是 18.6）。
     QUERY_GLASS_GEN.fetch_add(1, Ordering::SeqCst);
     // 作废唤出后延后开玻璃的任务，避免 50ms 到点又把亚克力叠回这次查询。
     VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
