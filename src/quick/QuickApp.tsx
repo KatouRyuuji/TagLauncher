@@ -31,8 +31,7 @@ import { truncatePathMiddle } from "../lib/itemUtils";
 export const QUICK_SHOWN_EVENT = "quick-shown";
 /** 只给前 N 条取缩略图/程序图标（§3.3 数据投影），其余行只画类型图标，不发 IPC */
 export const QUICK_ICON_LIMIT = 20;
-/** 首帧只画刚满一屏的行（12×3.4em 已盖住 440 窗的列表区），其余放到测量 RAF 之后再挂。
- *  短前缀命中要画 50 行时，较慢 debug runner 上 5k p95 仍 33.9；只减首帧 DOM 即可，用户看到的仍是满屏。 */
+/** 首帧只画刚满一屏的行（12×3.4em 已盖住 440 窗的列表区），下一帧再补屏外行。 */
 export const FIRST_FRAME_ROWS = 12;
 /** 后端切换 WebView2 内存目标后发来（只做记录，供 E2E 断言） */
 export const QUICK_MEMORY_EVENT = "quick-memory-level";
@@ -261,8 +260,8 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
   const tagInputRef = useRef<HTMLInputElement>(null);
   const [prefs, setPrefs] = useState(readPrefs);
   const [res, setRes] = useState<{ query: string; total: number; indexed: number; items: ItemWithTags[] } | null>(null);
-  // 缩略图、首屏以外的行都放到测量用的那一帧之后再挂（useEffect）：
-  // 首帧只画满屏的类型图标行，不发 20 路 IPC、不建 50 行纤维。
+  // 分帧绘制：首帧只画满可见区的类型图标行（不发缩略图 IPC、不建屏外行），
+  // 下一帧（产品自己的 RAF）再补其余行和缩略图。
   const [iconsReady, setIconsReady] = useState(false);
   const [rowsReady, setRowsReady] = useState(false);
   const [query, setQuery] = useState("");
@@ -310,25 +309,25 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
   }, [armed, collectReady, query, prefs.searchMode, prefs.hideMissing, dataTick]);
   // 新词的结果到达前沿用上一次结果，避免列表闪空
   const results = res?.items ?? [];
-  // 测量帧只画满屏行。其余行与缩略图必须在 *记录 RAF 之后* 再挂：
-  // 若用 useEffect 在 RAF 前冲刷第二次提交，测量帧会画上 50 行+20 图标
-  //（f394436 的 e2e(3) 5k p95 反升到 37.2）。
   const painted = rowsReady ? results : results.slice(0, FIRST_FRAME_ROWS);
   const current = results[Math.min(selected, results.length - 1)] ?? null;
 
-  // 「输入到出结果」：输入事件时刻 → 结果提交后的下一帧
+  // 「输入到出结果」：输入事件时刻 → 结果提交后的下一帧。
+  useLayoutEffect(() => {
+    const pending = pendingQueryStart.current;
+    if (!pending || !res || pending.q !== res.query) return;
+    pendingQueryStart.current = null;
+    const { query: q, total, indexed } = res;
+    requestAnimationFrame(() => recordQuickQuery(q, total, performance.now() - pending.start, indexed));
+  }, [res]);
+  // 产品自己的分帧：首帧画满可见区，下一帧再补屏外行和缩略图。
   useLayoutEffect(() => {
     if (!res) return;
-    const pending = pendingQueryStart.current;
-    const shouldRecord = !!(pending && pending.q === res.query);
-    if (shouldRecord) pendingQueryStart.current = null;
-    const start = pending?.start ?? 0;
-    const { query: q, total, indexed } = res;
-    requestAnimationFrame(() => {
-      if (shouldRecord) recordQuickQuery(q, total, performance.now() - start, indexed);
+    const id = requestAnimationFrame(() => {
       setRowsReady(true);
       setIconsReady(true);
     });
+    return () => cancelAnimationFrame(id);
   }, [res]);
 
   // 唤出：聚焦并全选上次的输入（直接打字即替换）；选项「保留上次输入」关闭时清空
