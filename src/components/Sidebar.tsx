@@ -657,7 +657,7 @@ export function Sidebar({
                         style={activeTagStyle}
                         onPointerDown={(event) => handleTagPointerDown(event, tag, parentId)}
                         onClick={(event) => handleTagClick(event, tag.id)}
-                        title={hasChildren ? "单击筛选并包含下级标签；Alt+单击排除" : "单击筛选；Alt+单击排除"}
+                        title={activeDragKind ? undefined : hasChildren ? "单击筛选并包含下级标签；Alt+单击排除" : "单击筛选；Alt+单击排除"}
                         onKeyDown={(event) => {
                           if (event.key === "F2" || event.key === "Delete") {
                             event.preventDefault();
@@ -832,7 +832,7 @@ export function Sidebar({
 
       <SidebarThemeSwitcher />
 
-      {(!sidebarHintDismissed || activeDragKind === "item") && (
+      {((!sidebarHintDismissed && !activeDragKind) || activeDragKind === "item") && (
         <div
           data-region="sidebar-hint"
           className="flex h-8 shrink-0 items-center gap-2 px-3 text-[length:calc(12px*var(--ui-font-scale,1))] leading-4 text-[var(--text-muted)]"

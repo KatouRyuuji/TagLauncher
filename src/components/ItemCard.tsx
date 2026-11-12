@@ -256,7 +256,7 @@ function ItemCardComponent({
               </div>
             </div>
             <h3
-              className="mt-2 line-clamp-2 w-full text-center text-[length:calc(13px*var(--ui-font-scale,1))] font-medium leading-4 text-[var(--text-primary)]"
+              className="mt-2 line-clamp-2 min-h-[calc(2*1.25*13px*var(--ui-font-scale,1))] w-full text-center text-[length:calc(13px*var(--ui-font-scale,1))] font-medium leading-[1.25] text-[var(--text-primary)]"
               title={itemNameTitle(item)}
             >
               <SearchHighlightText text={itemDisplayName(item)} query={searchQuery} />

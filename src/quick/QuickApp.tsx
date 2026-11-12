@@ -25,6 +25,7 @@ import { QuickCollect } from "./QuickCollect";
 import { ItemTypeIcon, ItemVisualIcon } from "../components/ItemVisualIcon";
 import type { PinViewState } from "../lib/desktopShortcut";
 import { PinView } from "./PinView";
+import { truncatePathMiddle } from "../lib/itemUtils";
 
 export const QUICK_SHOWN_EVENT = "quick-shown";
 /** 只给前 N 条取缩略图/程序图标（§3.3 数据投影），其余行只画类型图标，不发 IPC */
@@ -523,11 +524,11 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
                   ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
                   : <ItemTypeIcon item={item} emojiClass="" />}
               </span>
-              <span className="quick-name">{itemDisplayName(item)}</span>
+              <span className="quick-name" title={itemDisplayName(item)}>{itemDisplayName(item)}</span>
               {item.tags.length > 0 && (
-                <span className="quick-tags">{item.tags.slice(0, 3).map((t) => t.name).join(" · ")}</span>
+                <span className="quick-tags" title={item.tags.map((t) => t.name).join(" · ")}>{item.tags.slice(0, 3).map((t) => t.name).join(" · ")}</span>
               )}
-              <span className="quick-path">{item.path}</span>
+              <span className="quick-path" title={item.path}>{truncatePathMiddle(item.path)}</span>
             </li>
           ))}
         </ul>
@@ -538,7 +539,14 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
             {status ? status.text : `收纳失败：${dropError}`}
           </span>
         ) : (
-          <span>Enter 打开 · Ctrl+Enter 位置 · Ctrl+Shift+C 复制路径 · Alt+Enter 主窗定位 · Ctrl+T 标签 · Esc 收起</span>
+          <span className="quick-shortcuts" title="Enter 打开 · Ctrl+Enter 位置 · Ctrl+Shift+C 复制路径 · Alt+Enter 主窗定位 · Ctrl+T 标签 · Esc 收起">
+            <span className="quick-kbd"><kbd>Enter</kbd>打开</span>
+            <span className="quick-kbd"><kbd>Ctrl+Enter</kbd>位置</span>
+            <span className="quick-kbd"><kbd>Ctrl+Shift+C</kbd>复制</span>
+            <span className="quick-kbd"><kbd>Alt+Enter</kbd>主窗</span>
+            <span className="quick-kbd"><kbd>Ctrl+T</kbd>标签</span>
+            <span className="quick-kbd"><kbd>Esc</kbd>收起</span>
+          </span>
         )}
       </div>
     </div>

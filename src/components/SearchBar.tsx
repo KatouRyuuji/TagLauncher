@@ -148,11 +148,11 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
 
   return (
     <header data-region="searchbar" className="shrink-0">
-      {/* ≤1100px（含 800×600 最小窗口）收紧间距、隐藏次要文字/图标，并让排序标签先截断，保证搜索框可用宽度（BUG-04） */}
-      <div className="toolbar-strip flex h-14 items-center gap-3 px-4 max-[1100px]:gap-2 max-[1100px]:px-3">
+      {/* 以工具栏自身宽度为准（@container），1280 以下收紧：特大字号在约 1100 窗口下搜索框仍可输入 */}
+      <div className="toolbar-strip @container flex h-14 items-center gap-3 px-4 @max-[1280px]:gap-2 @max-[1280px]:px-3">
         <div
           role="search"
-          className="input-frame mr-auto flex h-9 min-w-0 flex-1 max-[1100px]:min-w-[176px] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 xl:max-w-[520px]"
+          className="input-frame mr-auto flex h-9 min-w-[12rem] flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 xl:max-w-[520px]"
         >
           <label htmlFor={WORKSPACE_SEARCH_ID} className="sr-only">
             搜索项目
@@ -249,7 +249,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
             <button
               type="button"
               onClick={() => setCommandPaletteOpen(true)}
-              className="kbd inline-flex h-6 shrink-0 items-center max-[1100px]:hidden hover:border-[var(--border-default)] hover:text-[var(--text-secondary)]"
+              className="kbd inline-flex h-6 shrink-0 items-center @max-[1280px]:hidden hover:border-[var(--border-default)] hover:text-[var(--text-secondary)]"
               title="命令面板（Ctrl+K）"
               aria-label="打开命令面板（Ctrl+K）"
             >
@@ -301,7 +301,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
           className="flex h-8 min-w-0 shrink items-center gap-1.5 rounded-[var(--radius-md)] px-2 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-secondary)] [&>div]:min-w-0"
           title={SORT_OPTIONS.find((option) => option.value === sortMode)?.hint}
         >
-          <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)] max-[1100px]:hidden" strokeWidth={1.8} aria-hidden="true" />
+          <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-[var(--text-faint)] @max-[1280px]:hidden" strokeWidth={1.8} aria-hidden="true" />
           <SelectMenu
             value={sortMode}
             onChange={(next) => setSortMode(next as SortMode)}
@@ -322,15 +322,15 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               setMoreMenuOpen(false);
               setAddMenuOpen((value) => !value);
             }}
-            className="action-button h-9 min-h-9 gap-1.5 px-3 text-[length:calc(13px*var(--ui-font-scale,1))] max-[1100px]:w-9 max-[1100px]:px-0"
+            className="action-button h-9 min-h-9 gap-1.5 px-3 text-[length:calc(13px*var(--ui-font-scale,1))] @max-[1280px]:w-9 @max-[1280px]:px-0"
             title="添加文件或文件夹"
             aria-label="添加文件或文件夹"
             aria-haspopup="menu"
             aria-expanded={addMenuOpen}
           >
             <Plus className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden="true" />
-            <span className="max-[1100px]:hidden">添加</span>
-            <ChevronDown className={`h-3 w-3 shrink-0 transition-transform max-[1100px]:hidden ${addMenuOpen ? "rotate-180" : ""}`} strokeWidth={1.8} aria-hidden="true" />
+            <span className="@max-[1280px]:hidden">添加</span>
+            <ChevronDown className={`h-3 w-3 shrink-0 transition-transform @max-[1280px]:hidden ${addMenuOpen ? "rotate-180" : ""}`} strokeWidth={1.8} aria-hidden="true" />
           </button>
           {addMenuOpen && (
             <div
@@ -405,7 +405,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               aria-pressed={showFilterRow}
             >
               <Filter className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-              <span className="max-[1100px]:hidden">筛选</span>
+              <span className="@max-[1280px]:hidden">筛选</span>
               {/* 激活筛选计数外显：行收起时也能看出有筛选在作用 */}
               {activeFilterCount > 0 && (
                 <span
@@ -429,7 +429,7 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
               aria-label="设置"
             >
               <Settings className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-              <span className="max-[1100px]:hidden">设置</span>
+              <span className="@max-[1280px]:hidden">设置</span>
             </button>
           )}
           <div className="relative" ref={moreMenuAnchorRef}>
