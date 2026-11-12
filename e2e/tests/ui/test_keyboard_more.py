@@ -157,5 +157,10 @@ def test_reload_keeps_state(app, sandbox):
     wait_until(lambda: any(i["name"] == "刷新后新增.txt" for i in app.items()), 10)
     time.sleep(1.5)
     assert sum(i["name"] == "刷新后新增.txt" for i in app.items()) == 1
+    assert app.item("刷新后新增.txt")["hide_from_all"]
+    # 夹内新文件入库但不铺满「全部」（与 E-WAT-01 同一有意行为变更）
+    app.wait_count(4)
+    assert "刷新后新增.txt" not in app.visible_names()
+    app.page.get_by_role("button", name="显示目录内文件").click()
     app.wait_names(sorted([n for n, _ in before] + ["刷新后新增.txt"]))
     assert app.js_errors() == []
