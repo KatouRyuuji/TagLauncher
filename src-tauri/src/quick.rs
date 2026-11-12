@@ -165,7 +165,7 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .visible(false)
         .focused(false)
         .transparent(true)
-        .background_color(tauri::Color(0, 0, 0, 0));
+        .background_color(tauri::window::Color(0, 0, 0, 0));
     // Windows 亚克力（不是 Mica）。API 或系统不支持时忽略，前端仍有 backdrop-filter。
     #[cfg(windows)]
     {
