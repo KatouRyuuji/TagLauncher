@@ -216,9 +216,9 @@ pub(crate) fn apply_glass_effect(window: &WebviewWindow) {
     // 亚克力成功则打 data-acrylic，前端不再叠整窗 backdrop-filter（避免双模糊拖慢查询）。
     // 失败则只揭开 data-quick-hidden，由 CSS 顶栏窄带滤镜回退。
     let js = if acrylic {
-        "document.documentElement.setAttribute('data-acrylic','');document.documentElement.removeAttribute('data-quick-hidden');"
+        "document.documentElement.setAttribute('data-acrylic','');document.documentElement.removeAttribute('data-quick-hidden');document.documentElement.removeAttribute('data-querying');"
     } else {
-        "document.documentElement.removeAttribute('data-acrylic');document.documentElement.removeAttribute('data-quick-hidden');"
+        "document.documentElement.removeAttribute('data-acrylic');document.documentElement.removeAttribute('data-quick-hidden');document.documentElement.removeAttribute('data-querying');"
     };
     let _ = window.eval(js);
 }
@@ -230,7 +230,7 @@ pub(crate) fn clear_glass_effect(window: &WebviewWindow) {
         set_controller_visible(window, false);
     }
     let _ = window.eval(
-        "document.documentElement.removeAttribute('data-acrylic');document.documentElement.setAttribute('data-quick-hidden','');",
+        "document.documentElement.removeAttribute('data-acrylic');document.documentElement.removeAttribute('data-querying');document.documentElement.setAttribute('data-quick-hidden','');",
     );
 }
 
@@ -252,6 +252,61 @@ fn schedule_glass(window: &WebviewWindow) {
                 apply_glass_effect(&window);
             }
         });
+}
+
+/// 查询期间暂停整窗亚克力。同 runner 对照（43211890354）：PR66 5k p95 29.6（余量 0.4ms），
+/// 19bc707 开毛玻璃 32.9，关掉 28.8。代价是亚克力/滤镜，不是搜索本身。controller 保持可见；
+/// 查询空闲后再恢复镜面。打 `data-querying` 同时关掉 CSS 顶栏滤镜回退。
+const RESUME_GLASS_AFTER_QUERY: Duration = Duration::from_millis(180);
+static QUERY_GLASS_GEN: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn suspend_glass_for_query(app: &AppHandle) {
+    let Some(window) = quick_window(app) else { return };
+    if !window.is_visible().unwrap_or(false) {
+        return;
+    }
+    QUERY_GLASS_GEN.fetch_add(1, Ordering::SeqCst);
+    // 作废唤出后延后开玻璃的任务，避免 50ms 到点又把亚克力叠回这次查询。
+    VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
+    #[cfg(windows)]
+    {
+        let _ = window.set_effects(None);
+    }
+    let _ = window.eval(
+        "document.documentElement.removeAttribute('data-acrylic');document.documentElement.setAttribute('data-querying','');",
+    );
+}
+
+pub(crate) fn schedule_resume_glass_after_query(app: &AppHandle) {
+    let Some(window) = quick_window(app) else { return };
+    if !window.is_visible().unwrap_or(false) {
+        return;
+    }
+    let qgen = QUERY_GLASS_GEN.load(Ordering::SeqCst);
+    let vis = VISIBILITY_GEN.load(Ordering::SeqCst);
+    let window = window.clone();
+    let _ = std::thread::Builder::new()
+        .name("tl-query-glass".into())
+        .spawn(move || {
+            std::thread::sleep(RESUME_GLASS_AFTER_QUERY);
+            if QUERY_GLASS_GEN.load(Ordering::SeqCst) != qgen {
+                return;
+            }
+            if VISIBILITY_GEN.load(Ordering::SeqCst) != vis {
+                return; // 已隐藏、销毁或又一次查询
+            }
+            if window.is_visible().unwrap_or(false) {
+                apply_glass_effect(&window);
+            }
+        });
+}
+
+/// `quick_search` 结束（含失败）时安排恢复镜面。
+pub(crate) struct ResumeGlassAfterQuery<'a>(pub &'a AppHandle);
+impl Drop for ResumeGlassAfterQuery<'_> {
+    fn drop(&mut self) {
+        schedule_resume_glass_after_query(self.0);
+    }
 }
 
 /// WebView2 的 HWND 隐藏后，controller 不一定跟着停绘（透明窗尤其如此）。

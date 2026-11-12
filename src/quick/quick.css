@@ -23,8 +23,8 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
   content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; border-radius: inherit;
   background: var(--glass-bg);
 }
-html:not([data-quick-hidden]):not([data-acrylic]) .quick-shell::after,
-html:not([data-quick-hidden]):not([data-acrylic]) .pin-shell::after {
+html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .quick-shell::after,
+html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .pin-shell::after {
   content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5.6em;
   z-index: 0; pointer-events: none; border-radius: inherit;
   backdrop-filter: var(--glass-blur);

@@ -64,6 +64,9 @@ pub fn quick_search(
     hide_missing: Option<bool>,
     limit: Option<usize>,
 ) -> Result<QuickSearchResult, String> {
+    // 查询前暂停整窗毛玻璃，空闲后恢复（含搜索失败路径）。见 quick::suspend_glass_for_query。
+    crate::quick::suspend_glass_for_query(&app);
+    let _resume = crate::quick::ResumeGlassAfterQuery(&app);
     let params = SearchParams {
         query,
         mode: mode.unwrap_or_default(),
