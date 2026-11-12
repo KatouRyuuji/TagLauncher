@@ -51,7 +51,9 @@ html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .pin-shel
   font-weight: var(--font-weight-semibold); border-radius: calc(var(--radius-sm) / 2); padding: 0 0.08em; }
 .quick-row { display: grid; grid-template-columns: 1.6em minmax(0, 1fr) auto; column-gap: var(--spacing-sm); align-items: center; padding: calc(var(--spacing-xs) * 1.5) var(--spacing-sm);
   border-radius: var(--radius-sm); cursor: default; position: relative;
-  transition: background-color var(--transition-fast); }
+  transition: background-color var(--transition-fast);
+  /* 视口外的行跳过绘制：5k 短前缀要画 50 行，较慢 runner 上 p95 33–34。测量在提交后下一帧，这能直接减那一帧的绘制。 */
+  content-visibility: auto; contain-intrinsic-size: auto 3.4em; }
 .quick-row:hover { background: var(--bg-hover); }
 .quick-row[aria-selected="true"] { background: var(--row-selected-bg); color: var(--row-selected-fg); box-shadow: var(--row-selected-shadow); }
 .quick-row[aria-selected="true"] .quick-tags, .quick-row[aria-selected="true"] .quick-path { color: var(--row-selected-sub-fg); }
@@ -158,10 +160,10 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
 .pin-panel[data-mode="drawer"][data-edge="left"] { right: 0; border-right: var(--border-width, 1px) solid var(--glass-border);
   border-radius: 0 var(--radius-xl) var(--radius-xl) 0; border-left: none; }
 .pin-chrome { flex-shrink: 0; cursor: move; user-select: none; margin: 0 calc(-1 * var(--spacing-sm)) 0;
-  /* 亚克力透明窗里 WebView 对低 alpha 像素不命中 data-tauri-drag-region。
-     97528da / ec3b486 上 D-PIN 拖动偶发 dragEvents 全 0（从未进入 MOVESIZESTART），随后轮询收回。
-     探头在展开时已 hide，不挡标题；拖动区必须不透明才能稳定命中测试点 t+16。 */
-  background: var(--bg-surface); min-height: 32px; }
+  /* WebView 对 alpha=0 的像素不命中 data-tauri-drag-region（D-PIN 曾 dragEvents 全 0）。
+     命中只需非零 alpha：用 --glass-bg-strong（浅 78% / 深 70%，≥0.6）保留「清单预览+镜面」，
+     不铺不透明 --bg-surface（会挡住亚克力）。min-height 保证 t+16 落在这层半透明底上。 */
+  background: var(--glass-bg-strong); min-height: 32px; }
 .pin-stripe { height: calc(var(--spacing-xs) + 1px); background: var(--accent-primary); }
 .pin-header { display: flex; align-items: center; gap: var(--spacing-sm); min-height: 2.2em; cursor: move; user-select: none;
   padding: var(--spacing-xs) var(--spacing-sm) 0; }

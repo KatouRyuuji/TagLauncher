@@ -185,23 +185,17 @@ function usePinView(): PinViewState | null {
 const HighlightName = memo(function HighlightName({ text, query }: { text: string; query: string }) {
   const q = query.trim();
   if (!q) return <>{text}</>;
-  const lower = text.toLowerCase();
-  const ql = q.toLowerCase();
-  const parts: React.ReactNode[] = [];
-  let i = 0;
-  let k = 0;
-  while (i < text.length) {
-    const j = lower.indexOf(ql, i);
-    if (j < 0) {
-      parts.push(text.slice(i));
-      break;
-    }
-    if (j > i) parts.push(text.slice(i, j));
-    parts.push(<mark className="quick-mark" key={k}>{text.slice(j, j + ql.length)}</mark>);
-    k += 1;
-    i = j + ql.length;
-  }
-  return <>{parts}</>;
+  const j = text.toLowerCase().indexOf(q.toLowerCase());
+  if (j < 0) return <>{text}</>;
+  // 只标每行首次出现：短前缀（「s」「v」）在英文名里会命中很多次，50 行拆出大量 <mark>
+  // 会计入「输入到出结果」绘制（377def8 正式/debug 5k p95 仍 33.6 / 33.9）。首次高亮足够辨认。
+  return (
+    <>
+      {j > 0 ? text.slice(0, j) : null}
+      <mark className="quick-mark">{text.slice(j, j + q.length)}</mark>
+      {text.slice(j + q.length)}
+    </>
+  );
 });
 
 export function QuickApp() {
@@ -264,6 +258,8 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
   const tagInputRef = useRef<HTMLInputElement>(null);
   const [prefs, setPrefs] = useState(readPrefs);
   const [res, setRes] = useState<{ query: string; total: number; indexed: number; items: ItemWithTags[] } | null>(null);
+  // 缩略图放到结果提交、测量用的那一帧之后再挂（useEffect），首帧只画类型图标，不发 20 路 IPC。
+  const [iconsReady, setIconsReady] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const [status, setStatus] = useState<{ text: string; tone: "info" | "error" } | null>(null);
@@ -298,6 +294,7 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
       .then((r) => {
         if (r === SKIPPED || seq !== searchSeq.current) return;
         setRes({ query, total: r.total, indexed: r.indexed, items: r.items });
+        setIconsReady(false);
         // 「加载」= 空查询结果就绪（含后端首次建索引），E2E 据此等待预热完成
         if (!query.trim()) recordQuickLoad(r.indexed, performance.now() - started);
       })
@@ -316,6 +313,9 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
     pendingQueryStart.current = null;
     const { query: q, total, indexed } = res;
     requestAnimationFrame(() => recordQuickQuery(q, total, performance.now() - pending.start, indexed));
+  }, [res]);
+  useEffect(() => {
+    if (res) setIconsReady(true);
   }, [res]);
 
   // 唤出：聚焦并全选上次的输入（直接打字即替换）；选项「保留上次输入」关闭时清空
@@ -569,7 +569,7 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
                   })}
                 >
                   <span className="quick-icon" data-testid="quick-result-icon" data-visual={i < QUICK_ICON_LIMIT ? "visual" : "type"}>
-                    {i < QUICK_ICON_LIMIT
+                    {i < QUICK_ICON_LIMIT && iconsReady
                       ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
                       : <ItemTypeIcon item={item} emojiClass="" />}
                   </span>
