@@ -203,6 +203,7 @@ export function QuickCollect({ session, onClose }: { session: CollectSession; on
           {session.invalid > 0 && `${session.invalid} 个路径不存在或无效，已忽略。`}
         </div>
       )}
+      <div className="quick-collect-body">
       {count === 0 ? (
         <div className="quick-empty">没有可收纳的有效路径。</div>
       ) : step === "tag" ? (
@@ -295,6 +296,7 @@ export function QuickCollect({ session, onClose }: { session: CollectSession; on
           </label>
         </>
       )}
+      </div>
       <div className="quick-footer">
         {error ? (
           <span role="alert" className="quick-error" data-testid="collect-error">{error}</span>

@@ -11,14 +11,20 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
 }
 .quick-shell { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: var(--spacing-md); gap: var(--spacing-sm);
   color: var(--text-primary); font-size: calc(var(--font-size-base) * var(--ui-font-scale, 1));
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
+  position: relative; isolation: isolate; background: transparent;
   border: var(--border-width, 1px) solid var(--glass-border);
   border-radius: var(--radius-2xl);
   box-shadow: var(--glass-highlight), var(--glass-shadow);
   animation: quick-pop var(--transition-normal) both;
   overflow: hidden; }
+/* 毛玻璃画在静态 ::before：列表重绘不再连带重算 backdrop-filter，查询 p95 更稳。 */
+.quick-shell::before, .pin-shell::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; border-radius: inherit;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+.quick-shell > *, .pin-shell > * { position: relative; z-index: 1; }
 .quick-search { position: relative; flex-shrink: 0; }
 .quick-search-icon { position: absolute; left: var(--spacing-md); top: 50%; transform: translateY(-50%);
   width: 1em; height: 1em; color: var(--text-muted); pointer-events: none; }
@@ -81,20 +87,22 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
   font-weight: var(--font-weight-medium);
 }
 .quick-error { color: var(--color-danger-ink); }
-.quick-picker { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) * 1.5); flex: 1; min-height: 0; }
+.quick-picker { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) * 1.5); flex: 1; min-height: 8em; }
 .quick-picker-title { color: var(--text-muted); font-size: 0.9em; }
 .quick-picker .quick-row { grid-template-columns: 1.2em 0.8em 1fr; align-items: center; }
 .quick-check { color: var(--accent-primary); }
 .quick-tag-dot { width: 0.7em; height: 0.7em; border-radius: 50%; }
 /* 收纳模式（右键菜单 / 发送到）：先选动作 */
-.quick-collect-title { font-weight: var(--font-weight-semibold); display: flex; gap: var(--spacing-sm); align-items: baseline; }
+.quick-collect-title { font-weight: var(--font-weight-semibold); display: flex; gap: var(--spacing-sm); align-items: baseline; flex-shrink: 0; }
+/* 中间可滚动：shell overflow:hidden 时不把页脚 / 标签选项裁到窗口外（Playwright 视为不可见）。 */
+.quick-collect-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--spacing-sm); }
 .quick-collect-note { color: var(--text-muted); font-size: 0.85em; font-weight: var(--font-weight-normal); }
 .quick-collect-paths { flex: 0 0 auto; max-height: 6.5em; }
 /* 待收纳列表没有图标列：文件名占整行、路径在下一行（沿用结果行网格会把名字挤进 1.6em 的图标列） */
 .quick-collect-paths .quick-row { grid-template-columns: minmax(0, 1fr); }
 .quick-collect-paths .quick-path { grid-column: 1; }
 .quick-collect-modes { display: flex; flex-wrap: wrap; gap: var(--spacing-xs) var(--spacing-md); font-size: 0.9em; }
-.quick-collect-actions { display: flex; flex-direction: column; gap: var(--spacing-sm); flex: 1; min-height: 0; }
+.quick-collect-actions { display: flex; flex-direction: column; gap: var(--spacing-sm); flex: 0 0 auto; }
 .collect-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
   width: 100%; min-height: 0; padding: var(--spacing-sm) var(--spacing-md); text-align: left;
   border-radius: var(--radius-lg); border: var(--border-width, 1px) solid var(--border-subtle);
@@ -131,9 +139,7 @@ html[data-surface="pin"] .quick-shell, html[data-surface="pin"] .quick-drop-over
 html:not([data-surface="pin"]) .pin-shell { display: none; }
 :root { --pin-drawer-width: 320px; }
 .pin-shell { height: 100%; color: var(--text-primary); font-size: calc(var(--font-size-sm) * var(--ui-font-scale, 1));
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
+  position: relative; isolation: isolate; background: transparent;
   border: var(--border-width, 1px) solid var(--glass-border);
   box-shadow: var(--glass-highlight), var(--glass-shadow);
   overflow: hidden; }

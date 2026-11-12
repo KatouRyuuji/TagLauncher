@@ -146,7 +146,7 @@ const GLASS_TOKENS: Record<ShapeScheme, Record<string, string>> = {
   light: {
     "glass-bg": "color-mix(in srgb, var(--bg-surface) 72%, transparent)",
     "glass-bg-strong": "color-mix(in srgb, var(--bg-surface) 78%, transparent)",
-    "glass-blur": "blur(40px) saturate(1.7)",
+    "glass-blur": "blur(24px) saturate(1.5)",
     "glass-border": "color-mix(in srgb, var(--text-invert) 48%, var(--border-subtle))",
     "glass-highlight": "inset 0 1px 0 color-mix(in srgb, var(--text-invert) 78%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--text-invert) 28%, transparent)",
     "glass-shadow": "0 1px 2px rgb(20 28 44 / 0.05), 0 10px 28px rgb(20 28 44 / 0.12), 0 28px 64px rgb(20 28 44 / 0.10)",
@@ -155,7 +155,7 @@ const GLASS_TOKENS: Record<ShapeScheme, Record<string, string>> = {
   dark: {
     "glass-bg": "color-mix(in srgb, var(--bg-surface) 66%, transparent)",
     "glass-bg-strong": "color-mix(in srgb, var(--bg-surface) 70%, transparent)",
-    "glass-blur": "blur(44px) saturate(1.85)",
+    "glass-blur": "blur(28px) saturate(1.55)",
     "glass-border": "color-mix(in srgb, var(--text-primary) 22%, transparent)",
     "glass-highlight": "inset 0 1px 0 color-mix(in srgb, var(--text-primary) 32%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 10%, transparent)",
     "glass-shadow": "0 1px 2px rgb(0 0 0 / 0.28), 0 16px 40px rgb(0 0 0 / 0.42), 0 40px 80px rgb(0 0 0 / 0.28)",

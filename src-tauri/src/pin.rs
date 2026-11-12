@@ -537,6 +537,7 @@ fn set_bounds(window: &WebviewWindow, r: Rect) {
 /// 不经 tauri hide：钉住表面的显示是原生的，tao 的可见标志与真实状态不一致，tauri hide/show 按标志差异
 /// 决定做不做，会变成空操作；混用还会让 WebView 尺寸停在动画中间值。搜索表面的 show 见 quick::show（会补原生 SW_SHOW）。
 fn hide_window(window: &WebviewWindow) {
+    crate::quick::clear_glass_effect(window);
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
@@ -563,10 +564,12 @@ fn show_no_activate(window: &WebviewWindow) {
             unsafe {
                 ShowWindow(h.0 as _, SW_SHOWNOACTIVATE);
             }
+            crate::quick::apply_glass_effect(window);
             return;
         }
     }
     let _ = window.show();
+    crate::quick::apply_glass_effect(window);
 }
 
 fn place_float(app: &AppHandle, window: &WebviewWindow) {

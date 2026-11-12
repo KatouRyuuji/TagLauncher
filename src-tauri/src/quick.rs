@@ -166,17 +166,8 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .focused(false)
         .transparent(true)
         .background_color(tauri::window::Color(0, 0, 0, 0));
-    // Windows 亚克力（不是 Mica）。API 或系统不支持时忽略，前端仍有 backdrop-filter。
-    #[cfg(windows)]
-    {
-        use tauri::window::{Effect, EffectState, EffectsBuilder};
-        builder = builder.effects(
-            EffectsBuilder::new()
-                .effect(Effect::Acrylic)
-                .state(EffectState::Active)
-                .build(),
-        );
-    }
+    // 不在创建时挂亚克力：窗口默认 visible(false)，EffectState::Active 会让 DWM 在隐藏态持续合成，
+    // 空闲 CPU 超 1% 预算。显示时再 apply_glass_effect，隐藏/销毁时清除。
     let window = builder
         .build()
         .map_err(|e| format!("创建快速搜索窗失败：{e}"))?;
@@ -200,9 +191,41 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     Ok(window)
 }
 
+/// 窗口真正显示时才开系统亚克力（不是 Mica）。创建或隐藏时不要保持 Active，否则 DWM 空转。
+/// API / 系统不支持时忽略，前端仍有 backdrop-filter。
+pub(crate) fn apply_glass_effect(window: &WebviewWindow) {
+    #[cfg(windows)]
+    {
+        use tauri::window::{Effect, EffectState, EffectsBuilder};
+        let _ = window.set_effects(
+            EffectsBuilder::new()
+                .effect(Effect::Acrylic)
+                .state(EffectState::Active)
+                .build(),
+        );
+    }
+    #[cfg(not(windows))]
+    let _ = window;
+}
+
+pub(crate) fn clear_glass_effect(window: &WebviewWindow) {
+    #[cfg(windows)]
+    {
+        let _ = window.set_effects(None);
+    }
+    #[cfg(not(windows))]
+    let _ = window;
+}
+
 pub fn destroy_window(app: &AppHandle) {
     if let Some(w) = quick_window(app) {
-        let _ = w.destroy();
+        clear_glass_effect(&w);
+        let _ = w.hide();
+        native_hide(&w);
+        if let Err(e) = w.destroy() {
+            log::warn!("[quick] 销毁快速窗失败：{e}，改用 close");
+            let _ = w.close();
+        }
     }
 }
 
@@ -301,6 +324,7 @@ fn native_show(window: &tauri::WebviewWindow, activate: bool) {
                 ShowWindow(h.0 as _, if activate { SW_SHOW } else { SW_SHOWNOACTIVATE });
             }
         }
+        apply_glass_effect(window);
     }
     #[cfg(not(windows))]
     let _ = (window, activate);
@@ -308,6 +332,7 @@ fn native_show(window: &tauri::WebviewWindow, activate: bool) {
 
 /// 同 [`native_show`]：tao 标志可能停在「隐藏」（钉住表面原生显示过），tauri hide 会跳过
 fn native_hide(window: &tauri::WebviewWindow) {
+    clear_glass_effect(window);
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
