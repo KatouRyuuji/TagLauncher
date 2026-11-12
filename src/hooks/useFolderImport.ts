@@ -8,6 +8,7 @@ import { showToast } from "../lib/toast";
 import {
   LINKED_CABINET_IMPORT_NOTICE,
   planNestedImport,
+  importPlacementBanner,
   snapshotImportPlacement,
   toAddItemsContext,
   type ImportPlacement,
@@ -23,6 +24,8 @@ export interface FolderImportDialogProps {
   folderNames: string[];
   fileCount: number;
   defaultMode: FolderImportMode;
+  /** 当前柜 / 标签落点说明，无落点时为 null */
+  contextBanner: string | null;
   onConfirm: (mode: FolderImportMode, remember: boolean) => Promise<void>;
   onCancel: () => void;
 }
@@ -56,6 +59,20 @@ function currentPlacement(): ImportPlacement {
   });
 }
 
+function bannerFor(placement: ImportPlacement): string | null {
+  const state = useAppStore.getState();
+  const cabinet =
+    state.cabinets.find((entry) => entry.id === state.selectedCabinetId) ?? null;
+  const tagNames = placement.tagIds
+    .map((id) => state.tags.find((tag) => tag.id === id)?.name)
+    .filter((name): name is string => Boolean(name));
+  return importPlacementBanner({
+    placement,
+    cabinetName: cabinet?.name ?? null,
+    tagNames,
+  });
+}
+
 function noticeLinkedCabinet(placement: ImportPlacement): void {
   if (placement.linkedCabinetBlocked) {
     showToast(LINKED_CABINET_IMPORT_NOTICE, "info");
@@ -67,6 +84,7 @@ export function useFolderImport(addItems: (paths: string[], context?: db.AddItem
   const [folderNames, setFolderNames] = useState<string[]>([]);
   const [fileCount, setFileCount] = useState(0);
   const [defaultMode, setDefaultMode] = useState<FolderImportMode>("folder");
+  const [contextBanner, setContextBanner] = useState<string | null>(null);
   const placementRef = useRef<ImportPlacement | null>(null);
   const classifiedFilesRef = useRef<string[]>([]);
 
@@ -89,6 +107,7 @@ export function useFolderImport(addItems: (paths: string[], context?: db.AddItem
       setFileCount(classified.files.length);
       classifiedFilesRef.current = classified.files;
       setDefaultMode(readLastMode());
+      setContextBanner(bannerFor(placement));
       setPendingPaths(normalized);
     } catch (error) {
       showToast(`导入失败：${error instanceof Error ? error.message : String(error)}`, "error");
@@ -97,6 +116,7 @@ export function useFolderImport(addItems: (paths: string[], context?: db.AddItem
 
   const handleCancel = useCallback(() => {
     setPendingPaths(null);
+    setContextBanner(null);
     placementRef.current = null;
     classifiedFilesRef.current = [];
   }, []);
@@ -107,6 +127,7 @@ export function useFolderImport(addItems: (paths: string[], context?: db.AddItem
     const placement = placementRef.current ?? currentPlacement();
     const droppedFiles = classifiedFilesRef.current;
     setPendingPaths(null);
+    setContextBanner(null);
     placementRef.current = null;
     classifiedFilesRef.current = [];
     if (!paths || paths.length === 0) return;
@@ -153,6 +174,7 @@ export function useFolderImport(addItems: (paths: string[], context?: db.AddItem
       folderNames,
       fileCount,
       defaultMode,
+      contextBanner,
       onConfirm: handleConfirm,
       onCancel: handleCancel,
     } satisfies FolderImportDialogProps,

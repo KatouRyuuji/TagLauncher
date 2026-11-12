@@ -10,10 +10,12 @@
 //   recent    — 还没有打开过项目。
 // ============================================================================
 
-export type EmptyStateVariant = "library" | "search" | "filter" | "cabinet" | "favorites" | "recent";
+export type EmptyStateVariant = "library" | "search" | "filter" | "cabinet" | "cabinetOnlySelf" | "favorites" | "recent";
 
 export interface EmptyStateScope {
   cabinet?: boolean;
+  /** 当前文件柜开了「仅本柜」，子柜项目被藏起 */
+  cabinetOnlySelf?: boolean;
   favorites?: boolean;
   recent?: boolean;
 }
@@ -28,6 +30,7 @@ export function resolveEmptyStateVariant(
   if (searchQuery.trim() !== "") return "search";
   if (scope.favorites) return "favorites";
   if (scope.recent) return "recent";
+  if (scope.cabinet && scope.cabinetOnlySelf) return "cabinetOnlySelf";
   if (scope.cabinet) return "cabinet";
   return "filter";
 }
@@ -41,6 +44,10 @@ export interface EmptyStateCopy {
   showClearSearch: boolean;
   /** 是否显示「清空所有筛选」按钮（筛选/搜索/柜/收藏/最近无命中时） */
   showClearFilters: boolean;
+  /** 「仅本柜」空态主操作：切回含子柜 */
+  showSwitchToWithChildren?: boolean;
+  /** 「仅本柜」空态次操作：退出当前文件柜 */
+  showExitCabinet?: boolean;
 }
 
 const MAX_QUERY_DISPLAY = 24;
@@ -91,6 +98,15 @@ export function emptyStateCopy(
         description: "试试换个关键词、切换搜索范围（全部 / 名称 / 标签），或清空搜索。也可以用表达式组合标签：如「开发&&自动化」同时满足、「游戏!!卡牌」排除。",
         showClearSearch: true,
         showClearFilters: true,
+      };
+    case "cabinetOnlySelf":
+      return {
+        title: "本柜没有直接收纳的项目",
+        description: "子柜里的项目被暂时藏起来了。切回「含子柜」即可看到它们，或把项目拖进本柜。",
+        showClearSearch: false,
+        showClearFilters: false,
+        showSwitchToWithChildren: true,
+        showExitCabinet: true,
       };
     case "cabinet":
       if (context?.linkedCabinet) {
