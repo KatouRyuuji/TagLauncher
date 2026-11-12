@@ -188,11 +188,16 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         }
         _ => {}
     });
+    // 以 hidden 创建：立刻关掉毛玻璃绘制（页面默认也带 data-quick-hidden）。
+    clear_glass_effect(&window);
     Ok(window)
 }
 
-/// 窗口真正显示时才开系统亚克力（不是 Mica）。创建或隐藏时不要保持 Active，否则 DWM 空转。
-/// API / 系统不支持时忽略，前端仍有 backdrop-filter。
+/// 窗口真正显示时才开系统亚克力（不是 Mica）并允许 CSS 毛玻璃。
+/// 创建或隐藏时关闭效果、把 WebView2 controller IsVisible 设为 false，并给页面打
+/// `data-quick-hidden`（关掉 backdrop-filter）：透明窗 + 毛玻璃在 HWND 已隐藏时仍会让
+/// GPU 合成桌面背景，空闲 CPU 超 1% 预算。不用 TrySuspend（恢复有延迟，和极速唤出冲突）。
+/// API / 系统不支持时忽略。
 pub(crate) fn apply_glass_effect(window: &WebviewWindow) {
     #[cfg(windows)]
     {
@@ -203,18 +208,34 @@ pub(crate) fn apply_glass_effect(window: &WebviewWindow) {
                 .state(EffectState::Active)
                 .build(),
         );
+        set_controller_visible(window, true);
     }
-    #[cfg(not(windows))]
-    let _ = window;
+    let _ = window.eval("document.documentElement.removeAttribute('data-quick-hidden')");
 }
 
 pub(crate) fn clear_glass_effect(window: &WebviewWindow) {
     #[cfg(windows)]
     {
         let _ = window.set_effects(None);
+        set_controller_visible(window, false);
+    }
+    let _ = window.eval("document.documentElement.setAttribute('data-quick-hidden','')");
+}
+
+/// WebView2 的 HWND 隐藏后，controller 不一定跟着停绘（透明窗尤其如此）。
+fn set_controller_visible(window: &WebviewWindow, visible: bool) {
+    #[cfg(windows)]
+    {
+        let _ = window.with_webview(move |webview| {
+            // SAFETY：with_webview 回调在 WebView 所在线程，controller 在回调期间有效
+            let result = unsafe { webview.controller().SetIsVisible(visible.into()) };
+            if let Err(e) = result {
+                log::warn!("[quick] SetIsVisible({visible}) 失败：{e}");
+            }
+        });
     }
     #[cfg(not(windows))]
-    let _ = window;
+    let _ = (window, visible);
 }
 
 pub fn destroy_window(app: &AppHandle) {

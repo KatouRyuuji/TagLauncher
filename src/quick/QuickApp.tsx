@@ -311,6 +311,7 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
     void listen<{ t0Ms?: number; keepInput?: boolean }>(QUICK_SHOWN_EVENT, (event) => {
       // 唤出快速搜索：先切到搜索表面（钉住视图共用本窗口），否则输入框在 display:none 里聚焦不了
       setSurface("search");
+      document.documentElement.removeAttribute("data-quick-hidden");
       setShown(true);
       setPicker(null);
       setStatus(null);

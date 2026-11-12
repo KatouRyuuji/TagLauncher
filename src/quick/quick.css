@@ -170,3 +170,12 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+/* 窗口隐藏：停掉 backdrop-filter，避免透明 WebView 在 HWND 隐藏后仍合成桌面。 */
+html[data-quick-hidden] .quick-shell,
+html[data-quick-hidden] .pin-shell { animation: none; }
+html[data-quick-hidden] .quick-shell::before,
+html[data-quick-hidden] .pin-shell::before,
+html[data-quick-hidden] .quick-drop-overlay {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
