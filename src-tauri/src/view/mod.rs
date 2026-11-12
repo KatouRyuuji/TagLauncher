@@ -293,3 +293,36 @@ pub fn run_view(
         browse_dir,
     }
 }
+
+#[cfg(test)]
+mod hide_from_all_tests {
+    use super::*;
+
+    fn entry(id: i64, hide: bool) -> ViewEntry {
+        ViewEntry {
+            id,
+            name_rank: id as u32,
+            hide_from_all: hide,
+            created_at: "2026-01-01".into(),
+            ..ViewEntry::default()
+        }
+    }
+
+    fn ids(entries: &[ViewEntry], show: bool) -> Vec<i64> {
+        let mut params = ViewParams::default();
+        params.show_nested_contents = show;
+        params.sort_mode = "name".into();
+        match run_view(entries, &params, None).plan {
+            ViewPlan::Browse(ids) => ids,
+            other => panic!("expected browse, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn all_view_toggle_hides_and_reveals_nested_items() {
+        let entries = [entry(1, false), entry(2, true), entry(3, false)];
+        assert_eq!(ids(&entries, false), vec![1, 3], "关上只列出未打标的项");
+        assert_eq!(ids(&entries, true), vec![1, 2, 3], "打开后夹内文件重新出现");
+        assert_eq!(ids(&entries, false), vec![1, 3], "再关上不丢数据、只藏列表");
+    }
+}
