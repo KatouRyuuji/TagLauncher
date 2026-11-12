@@ -45,6 +45,10 @@ def test_search_matches_gui(tl, sandbox, app_factory):
     cli = {q: sorted(i["id"] for i in tl.json("search", q)) for q in queries}
     only_bat = tl.json("search", "脚本", "--type", "bat")
     assert [i["type"] for i in only_bat] == ["bat"]
+    docs = tl.json("search", "报告", "--type", "document")
+    assert [i["name"] for i in docs] == ["报告.pdf"] and [i["type"] for i in docs] == ["document"]
+    assert tl.json("search", "报告", "--type", "exe") == []
+    assert any(i["name"] == "工具.exe" for i in tl.json("search", "工具", "--type", "exe"))
     app = app_factory()
     for q in queries:
         gui = sorted(i["id"] for i in app.invoke("search_items", {"query": q, "tagIds": []}))

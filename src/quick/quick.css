@@ -13,7 +13,7 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
 .quick-input::placeholder { color: var(--text-placeholder); }
 .quick-input:focus { border-color: var(--accent-primary); box-shadow: var(--shadow-focus); }
 .quick-input-small { height: 2.45em; font-size: 1em; }
-.quick-list { flex: 1; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+.quick-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
 .quick-row { display: grid; grid-template-columns: 1.6em minmax(0, 1fr) auto; column-gap: var(--spacing-sm); align-items: center; padding: calc(var(--spacing-xs) * 1.5) var(--spacing-sm);
   border-radius: var(--radius-sm); cursor: default; transition: background-color var(--transition-fast); }
 .quick-row:hover { background: var(--bg-hover); }
@@ -27,7 +27,31 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quick-missing .quick-name { text-decoration: line-through; opacity: 0.7; }
 .quick-empty { padding: var(--spacing-lg) var(--spacing-sm); color: var(--text-muted); }
-.quick-footer { color: var(--text-faint); font-size: 0.8em; min-height: 1.4em; }
+.quick-footer {
+  flex-shrink: 0;
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm) 0;
+  border-top: var(--border-width, 1px) solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-faint);
+  font-size: calc(var(--font-size-xs) * var(--ui-font-scale, 1));
+  min-height: calc(var(--spacing-lg) + var(--spacing-xs));
+}
+.quick-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-xs) var(--spacing-sm); }
+.quick-kbd { display: inline-flex; align-items: center; gap: calc(var(--spacing-xs) * 1.25); white-space: nowrap; }
+.quick-kbd kbd {
+  display: inline-block;
+  padding: 0 calc(var(--spacing-xs) * 0.75);
+  border: var(--border-width, 1px) solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-family: var(--font-family-mono);
+  font-size: 0.95em;
+  font-weight: var(--font-weight-medium);
+}
 .quick-error { color: var(--color-danger-ink); }
 .quick-picker { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) * 1.5); flex: 1; min-height: 0; }
 .quick-picker-title { color: var(--text-muted); font-size: 0.9em; }

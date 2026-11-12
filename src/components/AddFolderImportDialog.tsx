@@ -36,6 +36,7 @@ export function AddFolderImportDialog({
   folderNames,
   fileCount,
   defaultMode,
+  contextBanner,
   onConfirm,
   onCancel,
 }: {
@@ -43,6 +44,7 @@ export function AddFolderImportDialog({
   folderNames: string[];
   fileCount: number;
   defaultMode: FolderImportMode;
+  contextBanner?: string | null;
   onConfirm: (mode: FolderImportMode, remember: boolean) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -84,6 +86,14 @@ export function AddFolderImportDialog({
           aria-label="添加文件夹"
         >
           <h2 className="text-base font-semibold text-[var(--text-primary)]">添加文件夹</h2>
+          {contextBanner && (
+            <p
+              role="status"
+              className="mt-3 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--accent-primary)_22%,var(--border-subtle))] bg-[var(--accent-primary-bg)] px-3 py-2 text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-secondary)]"
+            >
+              {contextBanner}
+            </p>
+          )}
           <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
             选中了 {folderNames.length} 个文件夹
             {fileCount > 0 ? `，另外还有 ${fileCount} 个文件` : ""}。

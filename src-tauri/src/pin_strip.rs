@@ -15,7 +15,7 @@ use tauri::AppHandle;
 /// 停留多久算「碰边停住」（与前端 PIN_HOVER_EXPAND_MS 一致）
 pub const HOVER: Duration = Duration::from_millis(120);
 const TITLE: &str = "TagLauncher 钉住把手";
-const ALPHA: u8 = 170;
+const ALPHA: u8 = 230; // 约 90%，细条在浅色壁纸上也能被看见
 
 struct Strip {
     hwnd: isize,
@@ -146,8 +146,8 @@ mod win {
     use super::*;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{
-        BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, GetSysColor,
-        InvalidateRect, COLOR_HIGHLIGHT, PAINTSTRUCT,
+        BeginPaint, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect, GetSysColor,
+        InvalidateRect, RoundRect, SelectObject, COLOR_HIGHLIGHT, PAINTSTRUCT, PS_NULL,
     };
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -166,6 +166,15 @@ mod win {
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// 把 COLORREF 按 amount（0..=1）压暗，用于把手轨道。
+    fn dim_colorref(color: u32, amount: f32) -> u32 {
+        let scale = |c: u32| ((c as f32) * amount).round() as u32;
+        let r = scale(color & 0xff);
+        let g = scale((color >> 8) & 0xff);
+        let b = scale((color >> 16) & 0xff);
+        r | (g << 8) | (b << 16)
     }
 
     /// 主线程：注册类并建窗口（初始隐藏）。失败返回 0。
@@ -268,11 +277,35 @@ mod win {
                 let mut ps: PAINTSTRUCT = std::mem::zeroed();
                 let dc = BeginPaint(hwnd, &mut ps);
                 let color = lock().color.unwrap_or_else(|| GetSysColor(COLOR_HIGHLIGHT));
-                let brush = CreateSolidBrush(color);
                 let mut rc: RECT = std::mem::zeroed();
                 GetClientRect(hwnd, &mut rc);
-                FillRect(dc, &rc, brush);
+                // 整条边缘用较暗的强调色作轨道；中间画一段圆角握柄，提高可发现性。
+                let track = dim_colorref(color, 0.45);
+                let track_brush = CreateSolidBrush(track);
+                FillRect(dc, &rc, track_brush);
+                DeleteObject(track_brush as _);
+                let w = (rc.right - rc.left).max(1);
+                // 窗口宽度 = 8 逻辑像素 × 缩放，握柄高度按同样缩放 ≈ 56 逻辑像素
+                let pill_h = ((56 * w) / 8).clamp(32, 200);
+                let cy = (rc.top + rc.bottom) / 2;
+                let brush = CreateSolidBrush(color);
+                let pen = CreatePen(PS_NULL, 0, 0);
+                let old_brush = SelectObject(dc, brush as _);
+                let old_pen = SelectObject(dc, pen as _);
+                let radius = w.max(2);
+                RoundRect(
+                    dc,
+                    rc.left,
+                    cy - pill_h / 2,
+                    rc.right,
+                    cy + pill_h / 2,
+                    radius,
+                    radius,
+                );
+                SelectObject(dc, old_brush);
+                SelectObject(dc, old_pen);
                 DeleteObject(brush as _);
+                DeleteObject(pen as _);
                 EndPaint(hwnd, &ps);
                 0
             }
