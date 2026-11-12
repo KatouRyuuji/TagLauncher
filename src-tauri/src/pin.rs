@@ -1458,17 +1458,33 @@ pub fn apply_settings(app: &AppHandle, next: PinSettings) -> Result<PinSettings,
             .get_webview_window(crate::quick::QUICK_LABEL)
             .is_some_and(|w| w.is_visible().unwrap_or(false));
     if was_active && !next.active() {
-        // 关闭钉住且快速搜索未开：销毁 quick 窗口。不要先走 restore→hide_window→
-        // clear_glass（with_webview 异步 SetIsVisible）再 destroy——两者会打架，
-        // 96e47da e2e(3) 上 E-PIN-01 等了 10s 窗口仍在。探头同步关掉，销毁只走同步路径。
+        // 关闭钉住：探头同步关掉。
+        // 快速搜索仍开（共用窗口）：只隐藏，不销毁；f394436 跳过整段 restore 后，
+        // test_pin_shares 窗口仍可见。hide_window 与 destroy 不会同时走。
+        // 快速搜索未开：直接 destroy（不要先 clear_glass / with_webview），在主线程
+        // 销毁并等到完成再返回，避免命令已返回、窗口还在（E-PIN-01）。
         ANIM_GEN.fetch_add(1, Ordering::SeqCst);
         rt().surface = Surface::Search;
         set_foreground_hook(app, false);
         crate::pin_strip::hide(app);
-        let handle = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            crate::quick::sync_window(&handle, crate::desktop::quick_window_needed(&handle));
-        });
+        if crate::desktop::quick_window_needed(app) {
+            if let Some(w) = app.get_webview_window(crate::quick::QUICK_LABEL) {
+                hide_window(&w);
+                emit_view(&w);
+            }
+        } else {
+            let handle = app.clone();
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            let _ = app.run_on_main_thread(move || {
+                crate::quick::destroy_window(&handle);
+                let _ = tx.send(());
+            });
+            // 异步命令在工作线程：等主线程销毁完成。若碰巧已在主线程，闭包被排队
+            // 会阻塞——超时后在本线程再销毁一次，避免死锁。
+            if rx.recv_timeout(Duration::from_millis(800)).is_err() {
+                crate::quick::destroy_window(app);
+            }
+        }
     } else if !searching {
         restore(app)?;
     }

@@ -310,23 +310,25 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
   }, [armed, collectReady, query, prefs.searchMode, prefs.hideMissing, dataTick]);
   // 新词的结果到达前沿用上一次结果，避免列表闪空
   const results = res?.items ?? [];
-  // 测量帧（setRes 后的 RAF）只画满屏行；其余行与缩略图同一轮 useEffect 再挂。
+  // 测量帧只画满屏行。其余行与缩略图必须在 *记录 RAF 之后* 再挂：
+  // 若用 useEffect 在 RAF 前冲刷第二次提交，测量帧会画上 50 行+20 图标
+  //（f394436 的 e2e(3) 5k p95 反升到 37.2）。
   const painted = rowsReady ? results : results.slice(0, FIRST_FRAME_ROWS);
   const current = results[Math.min(selected, results.length - 1)] ?? null;
 
   // 「输入到出结果」：输入事件时刻 → 结果提交后的下一帧
   useLayoutEffect(() => {
+    if (!res) return;
     const pending = pendingQueryStart.current;
-    if (!pending || !res || pending.q !== res.query) return;
-    pendingQueryStart.current = null;
+    const shouldRecord = !!(pending && pending.q === res.query);
+    if (shouldRecord) pendingQueryStart.current = null;
+    const start = pending?.start ?? 0;
     const { query: q, total, indexed } = res;
-    requestAnimationFrame(() => recordQuickQuery(q, total, performance.now() - pending.start, indexed));
-  }, [res]);
-  useEffect(() => {
-    if (res) {
+    requestAnimationFrame(() => {
+      if (shouldRecord) recordQuickQuery(q, total, performance.now() - start, indexed);
       setRowsReady(true);
       setIconsReady(true);
-    }
+    });
   }, [res]);
 
   // 唤出：聚焦并全选上次的输入（直接打字即替换）；选项「保留上次输入」关闭时清空
