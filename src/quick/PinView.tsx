@@ -137,12 +137,14 @@ export function PinView({ view }: { view: PinViewState }) {
       data-edge={settings.edge}
       style={isDrawer ? { width: "var(--pin-drawer-width)" } : undefined}
     >
+      <div className="pin-chrome" data-tauri-drag-region data-testid="pin-header">
       <div className="pin-stripe" aria-hidden="true" />
-      <div className="pin-header" data-tauri-drag-region data-testid="pin-header">
+      <div className="pin-header" data-tauri-drag-region>
         <span className="pin-title" data-tauri-drag-region data-testid="pin-title" title={missing ? "来源已删除" : (data?.title ?? undefined)}>
           {missing ? "来源已删除" : data?.title ?? "正在加载…"}
         </span>
         {data && !missing && <span className="pin-count" data-tauri-drag-region data-testid="pin-count">{data.total}</span>}
+      </div>
       </div>
       {missing ? (
         <p className="quick-empty" role="alert" data-testid="pin-missing">

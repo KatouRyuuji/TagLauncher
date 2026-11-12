@@ -144,7 +144,7 @@ const SHADOW_TOKENS: Record<ShapeLang, Record<ShapeScheme, Record<string, string
 /** 毛玻璃材质：快速窗与钉住浮动窗 / 抽屉共用。亚克力 + backdrop-filter，不是 Mica。 */
 const GLASS_TOKENS: Record<ShapeScheme, Record<string, string>> = {
   light: {
-    "glass-bg": "color-mix(in srgb, var(--bg-surface) 58%, transparent)",
+    "glass-bg": "color-mix(in srgb, var(--bg-surface) 72%, transparent)",
     "glass-bg-strong": "color-mix(in srgb, var(--bg-surface) 78%, transparent)",
     "glass-blur": "blur(40px) saturate(1.7)",
     "glass-border": "color-mix(in srgb, var(--text-invert) 48%, var(--border-subtle))",
@@ -153,7 +153,7 @@ const GLASS_TOKENS: Record<ShapeScheme, Record<string, string>> = {
     "glass-accent-bar": "3px",
   },
   dark: {
-    "glass-bg": "color-mix(in srgb, var(--bg-surface) 48%, transparent)",
+    "glass-bg": "color-mix(in srgb, var(--bg-surface) 66%, transparent)",
     "glass-bg-strong": "color-mix(in srgb, var(--bg-surface) 70%, transparent)",
     "glass-blur": "blur(44px) saturate(1.85)",
     "glass-border": "color-mix(in srgb, var(--text-primary) 22%, transparent)",

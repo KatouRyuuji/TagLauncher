@@ -6,8 +6,8 @@
 body.quick-body { font-family: var(--font-family-body, var(--font-family)); letter-spacing: var(--letter-spacing); }
 html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; background: transparent; }
 @keyframes quick-pop {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .quick-shell { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: var(--spacing-md); gap: var(--spacing-sm);
   color: var(--text-primary); font-size: calc(var(--font-size-base) * var(--ui-font-scale, 1));
@@ -18,7 +18,6 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
   border-radius: var(--radius-2xl);
   box-shadow: var(--glass-highlight), var(--glass-shadow);
   animation: quick-pop var(--transition-normal) both;
-  transform-origin: 50% 18%;
   overflow: hidden; }
 .quick-search { position: relative; flex-shrink: 0; }
 .quick-search-icon { position: absolute; left: var(--spacing-md); top: 50%; transform: translateY(-50%);
@@ -96,8 +95,8 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
 .quick-collect-paths .quick-path { grid-column: 1; }
 .quick-collect-modes { display: flex; flex-wrap: wrap; gap: var(--spacing-xs) var(--spacing-md); font-size: 0.9em; }
 .quick-collect-actions { display: flex; flex-direction: column; gap: var(--spacing-sm); flex: 1; min-height: 0; }
-.collect-card { display: flex; flex-direction: column; align-items: flex-start; gap: var(--spacing-xs);
-  width: 100%; min-height: 4.4em; padding: var(--spacing-md) var(--spacing-lg); text-align: left;
+.collect-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; min-height: 0; padding: var(--spacing-sm) var(--spacing-md); text-align: left;
   border-radius: var(--radius-lg); border: var(--border-width, 1px) solid var(--border-subtle);
   background: var(--glass-bg-strong); color: inherit; font: inherit; cursor: pointer;
   transition: background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast); }
@@ -138,7 +137,7 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
   border: var(--border-width, 1px) solid var(--glass-border);
   box-shadow: var(--glass-highlight), var(--glass-shadow);
   overflow: hidden; }
-.pin-panel { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) * 1.5); padding: var(--spacing-sm); height: 100%; box-sizing: border-box; min-width: 0; }
+.pin-panel { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) * 1.5); padding: var(--spacing-sm); padding-top: 0; height: 100%; box-sizing: border-box; min-width: 0; }
 .pin-shell.pin-panel[data-mode="float"] { border-radius: var(--radius-2xl); animation: quick-pop var(--transition-normal) both; }
 /* 抽屉滑出时窗口宽度逐步变大：面板固定宽度并贴住远离屏幕边的一侧，视觉上从边缘滑入 */
 .pin-panel[data-mode="drawer"] { position: absolute; top: 0; bottom: 0; animation: none; box-shadow: var(--glass-highlight); }
@@ -146,8 +145,10 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
   border-radius: var(--radius-xl) 0 0 var(--radius-xl); border-right: none; }
 .pin-panel[data-mode="drawer"][data-edge="left"] { right: 0; border-right: var(--border-width, 1px) solid var(--glass-border);
   border-radius: 0 var(--radius-xl) var(--radius-xl) 0; border-left: none; }
-.pin-stripe { flex-shrink: 0; height: calc(var(--spacing-xs) + 1px); background: var(--accent-primary); border-radius: var(--radius-full); }
-.pin-header { display: flex; align-items: center; gap: var(--spacing-sm); min-height: 2.2em; cursor: move; user-select: none; }
+.pin-chrome { flex-shrink: 0; cursor: move; user-select: none; margin: 0 calc(-1 * var(--spacing-sm)) 0; }
+.pin-stripe { height: calc(var(--spacing-xs) + 1px); background: var(--accent-primary); }
+.pin-header { display: flex; align-items: center; gap: var(--spacing-sm); min-height: 2.2em; cursor: move; user-select: none;
+  padding: var(--spacing-xs) var(--spacing-sm) 0; }
 .pin-title { flex: 1; min-width: 0; font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pin-count { color: var(--text-muted); font-size: 0.85em; }
 .pin-row { grid-template-columns: 1.6em minmax(0, 1fr); padding: var(--spacing-xs) var(--spacing-sm); }
