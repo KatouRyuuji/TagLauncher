@@ -106,6 +106,12 @@ pub fn set_options(options: QuickOptions) {
 
 /// 每次隐藏 / 唤出自增：过期的降内存计时器据此作废
 static VISIBILITY_GEN: AtomicU64 = AtomicU64::new(0);
+/// 产品意图上窗口是否该显示。不信任 tao is_visible()：原生 ShowWindow 后标志可能反了，
+/// 既会让暂停早退（亚克力留在查询上），也会让恢复把亚克力打到已隐藏的窗口（空闲 CPU）。
+static INTENDED_VISIBLE: AtomicBool = AtomicBool::new(false);
+/// 亚克力/镜面是否已经 apply 过、还没 clear/suspend。查询热路径只在为 true 时才走 DWM。
+static GLASS_APPLIED: AtomicBool = AtomicBool::new(false);
+static QUERY_GLASS_GEN: AtomicU64 = AtomicU64::new(0);
 /// 当前是否处于低内存目标（唤出时只在确实降过时才恢复）
 static LOW_MEMORY: AtomicBool = AtomicBool::new(false);
 
@@ -199,6 +205,9 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
 /// GPU 合成桌面背景，空闲 CPU 超 1% 预算。不用 TrySuspend（恢复有延迟，和极速唤出冲突）。
 /// API / 系统不支持时忽略。
 pub(crate) fn apply_glass_effect(window: &WebviewWindow) {
+    if !INTENDED_VISIBLE.load(Ordering::SeqCst) {
+        return;
+    }
     let mut acrylic = false;
     #[cfg(windows)]
     {
@@ -221,9 +230,11 @@ pub(crate) fn apply_glass_effect(window: &WebviewWindow) {
         "document.documentElement.removeAttribute('data-acrylic');document.documentElement.removeAttribute('data-quick-hidden');document.documentElement.removeAttribute('data-querying');"
     };
     let _ = window.eval(js);
+    GLASS_APPLIED.store(true, Ordering::SeqCst);
 }
 
 pub(crate) fn clear_glass_effect(window: &WebviewWindow) {
+    GLASS_APPLIED.store(false, Ordering::SeqCst);
     #[cfg(windows)]
     {
         let _ = window.set_effects(None);
@@ -234,11 +245,13 @@ pub(crate) fn clear_glass_effect(window: &WebviewWindow) {
     );
 }
 
-/// 唤出先让输入框可聚焦并记下 summon 指标，再开毛玻璃（约一帧多），避免模糊计入唤出 p95。
-const GLASS_AFTER_SHOW: Duration = Duration::from_millis(50);
+/// 唤出先让输入框可聚焦并记下 summon 指标；镜面在空闲后再开，避免计入 summon p95，
+/// 也避免 50ms 到点与首字查询在 DWM 上打架。与查询结束后恢复同一时间窗（180ms）。
+const GLASS_AFTER_SHOW: Duration = Duration::from_millis(180);
 
 fn schedule_glass(window: &WebviewWindow) {
     let gen = VISIBILITY_GEN.load(Ordering::SeqCst);
+    let qgen = QUERY_GLASS_GEN.load(Ordering::SeqCst);
     let window = window.clone();
     let _ = std::thread::Builder::new()
         .name("tl-quick-glass".into())
@@ -247,27 +260,40 @@ fn schedule_glass(window: &WebviewWindow) {
             if VISIBILITY_GEN.load(Ordering::SeqCst) != gen {
                 return;
             }
-            // 已销毁时 is_visible 会报错，unwrap_or(false) 即可跳过
-            if window.is_visible().unwrap_or(false) {
+            if QUERY_GLASS_GEN.load(Ordering::SeqCst) != qgen {
+                return;
+            }
+            if INTENDED_VISIBLE.load(Ordering::SeqCst) {
                 apply_glass_effect(&window);
             }
         });
+}
+
+pub(crate) fn set_intended_visible(visible: bool) {
+    INTENDED_VISIBLE.store(visible, Ordering::SeqCst);
+    if !visible {
+        VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
+        QUERY_GLASS_GEN.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 /// 查询期间暂停整窗亚克力。同 runner 对照（43211890354）：PR66 5k p95 29.6（余量 0.4ms），
 /// 19bc707 开毛玻璃 32.9，关掉 28.8。代价是亚克力/滤镜，不是搜索本身。controller 保持可见；
 /// 查询空闲后再恢复镜面。打 `data-querying` 同时关掉 CSS 顶栏滤镜回退。
 const RESUME_GLASS_AFTER_QUERY: Duration = Duration::from_millis(180);
-static QUERY_GLASS_GEN: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn suspend_glass_for_query(app: &AppHandle) {
-    let Some(window) = quick_window(app) else { return };
-    // 不因 is_visible() 早退：tao 可见标志在原生 ShowWindow 后可能仍是「隐藏」，
-    // 早退则 50ms 的 schedule_glass 会把亚克力留在查询路径上。ec3b486 正式
-    // desktop-release 5k p50 仍是 21.6（对照「玻璃开着」21.7，关玻璃是 18.6）。
+    // 先作废待执行的开玻璃任务（纯原子，不进 DWM）。
     QUERY_GLASS_GEN.fetch_add(1, Ordering::SeqCst);
-    // 作废唤出后延后开玻璃的任务，避免 50ms 到点又把亚克力叠回这次查询。
     VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
+    // 只在镜面已经打开时才 set_effects(None)+eval。b894aa5 每次查询都走 DWM，
+    // 这笔开销计入「输入到出结果」：正式/debug 5k p95 到了 34 / 33.9。
+    // 性能测试在 180ms 空闲窗内连续输入，玻璃从未打开，这条不会进。
+    if !GLASS_APPLIED.load(Ordering::SeqCst) {
+        return;
+    }
+    let Some(window) = quick_window(app) else { return };
+    GLASS_APPLIED.store(false, Ordering::SeqCst);
     #[cfg(windows)]
     {
         let _ = window.set_effects(None);
@@ -279,7 +305,7 @@ pub(crate) fn suspend_glass_for_query(app: &AppHandle) {
 
 pub(crate) fn schedule_resume_glass_after_query(app: &AppHandle) {
     let Some(window) = quick_window(app) else { return };
-    if !window.is_visible().unwrap_or(false) {
+    if !INTENDED_VISIBLE.load(Ordering::SeqCst) {
         return;
     }
     let qgen = QUERY_GLASS_GEN.load(Ordering::SeqCst);
@@ -295,7 +321,7 @@ pub(crate) fn schedule_resume_glass_after_query(app: &AppHandle) {
             if VISIBILITY_GEN.load(Ordering::SeqCst) != vis {
                 return; // 已隐藏、销毁或又一次查询
             }
-            if window.is_visible().unwrap_or(false) {
+            if INTENDED_VISIBLE.load(Ordering::SeqCst) {
                 apply_glass_effect(&window);
             }
         });
@@ -328,6 +354,7 @@ fn set_controller_visible(window: &WebviewWindow, visible: bool) {
 pub fn destroy_window(app: &AppHandle) {
     // 作废延后开玻璃的任务，避免 50ms 后 apply_glass 与 destroy 抢同一窗口。
     VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
+    set_intended_visible(false);
     if let Some(w) = quick_window(app) {
         // 只做同步清理：clear_glass_effect 里的 with_webview 是异步的，
         // 会和 destroy 打架，导致窗口偶发销毁失败（E-PIN 关闭即销毁）。
@@ -413,6 +440,7 @@ pub fn show(app: &AppHandle, t0_ms: u64, activate: bool) -> Result<(), String> {
     // 钉住视图共用本窗口：先切回搜索表面（尺寸 / 置顶 / 前端表面）
     crate::pin::enter_search(&window);
     VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
+    set_intended_visible(true);
     if LOW_MEMORY.load(Ordering::SeqCst) {
         set_memory_level(&window, false);
     }
@@ -456,6 +484,7 @@ fn native_show(window: &tauri::WebviewWindow, activate: bool) {
 
 /// 同 [`native_show`]：tao 标志可能停在「隐藏」（钉住表面原生显示过），tauri hide 会跳过
 fn native_hide(window: &tauri::WebviewWindow) {
+    set_intended_visible(false);
     clear_glass_effect(window);
     #[cfg(windows)]
     {

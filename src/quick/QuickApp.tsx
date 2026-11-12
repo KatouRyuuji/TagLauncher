@@ -76,13 +76,25 @@ interface TagPickerState {
 }
 
 /** 收纳会话：窗口刚创建时可能错过事件，挂载时先拉一次；之后按 quick-collect 事件更新 */
-function useCollectSession(): [CollectSession | null, (id: number) => void] {
+function useCollectSession(): [CollectSession | null, (id: number) => void, boolean] {
   const [session, setSession] = useState<CollectSession | null>(null);
+  // 首次 collectSession 返回前不要发出搜索：19bc707 把搜索提前到 useLayoutEffect（绘制前）后，
+  // 会在收纳窗首帧（此时 session 仍是 null、仍挂着 QuickSearch）抢先发 quick_search，与收纳页渲染 / 导入完成竞态，
+  // 表现为 collect-result 已写入但 Playwright 看不见（E47CAF0 用 useEffect 时收纳全绿，19bc707 起回归）。
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | undefined;
-    void db.collectSession().then((s) => { if (!disposed && s) setSession(s); }).catch(() => {});
-    void listen<CollectSession>(QUICK_COLLECT_EVENT, (event) => setSession(event.payload))
+    void db.collectSession().then((s) => {
+      if (!disposed) {
+        if (s) setSession(s);
+        setReady(true);
+      }
+    }).catch(() => { if (!disposed) setReady(true); });
+    void listen<CollectSession>(QUICK_COLLECT_EVENT, (event) => {
+      setSession(event.payload);
+      setReady(true);
+    })
       .then((fn) => {
         if (disposed) fn();
         else stop = fn;
@@ -94,7 +106,7 @@ function useCollectSession(): [CollectSession | null, (id: number) => void] {
     };
   }, []);
   // 只清掉已结束的那个会话：collect_finish 有剩余路径时会先推来新会话，不能被随后的关闭覆盖
-  return [session, useCallback((id: number) => setSession((s) => (s && s.id === id ? null : s)), [])];
+  return [session, useCallback((id: number) => setSession((s) => (s && s.id === id ? null : s)), []), ready];
 }
 
 /**
@@ -193,7 +205,7 @@ const HighlightName = memo(function HighlightName({ text, query }: { text: strin
 });
 
 export function QuickApp() {
-  const [collect, closeCollect] = useCollectSession();
+  const [collect, closeCollect, collectReady] = useCollectSession();
   const { dragging, dropError } = useQuickDrop();
   const pin = usePinView();
   // 搜索预热（空查询 → 后端建索引 + 渲染结果行）推迟到搜索表面第一次出现：
@@ -205,7 +217,7 @@ export function QuickApp() {
   return (
     <>
       {pin && pin.settings.enabled && pin.settings.source && <PinView view={pin} />}
-      {collect ? <QuickCollectShell session={collect} onClose={closeCollect} /> : <QuickSearch dropError={dropError} armed={searchArmed} />}
+      {collect ? <QuickCollectShell session={collect} onClose={closeCollect} /> : <QuickSearch dropError={dropError} armed={searchArmed} collectReady={collectReady} />}
       {dragging !== null && (
         <div className="quick-drop-overlay" data-testid="quick-drop-overlay">
           {dragging > 0 ? `松开即收纳 ${dragging} 项` : "松开即收纳"}
@@ -245,7 +257,7 @@ function useClipboardCandidates(): [string[], () => void] {
   return [paths, useCallback(() => setPaths([]), [])];
 }
 
-function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | null; armed: boolean }) {
+function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError: string | null; armed: boolean; collectReady: boolean }) {
   useThemeFollower();
   const [clipboardPaths, clearClipboardPaths] = useClipboardCandidates();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -279,7 +291,7 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
   // 在绘制前发出搜索（useLayoutEffect），避免等 useEffect 到绘制后再发 IPC 多等一帧，
   // 把「输入到出结果」从 31–35ms 压回 30ms 预算内。调用本身是异步的，不阻塞绘制。
   useLayoutEffect(() => {
-    if (!armed) return;
+    if (!armed || !collectReady) return;
     const seq = ++searchSeq.current;
     const started = performance.now();
     runQuickSearch({ query, mode: prefs.searchMode, hideMissing: prefs.hideMissing, limit: QUICK_RESULT_LIMIT })
@@ -292,7 +304,7 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
       .catch((e: unknown) => {
         if (seq === searchSeq.current) setStatus({ text: `搜索失败：${errorText(e)}`, tone: "error" });
       });
-  }, [armed, query, prefs.searchMode, prefs.hideMissing, dataTick]);
+  }, [armed, collectReady, query, prefs.searchMode, prefs.hideMissing, dataTick]);
   // 新词的结果到达前沿用上一次结果，避免列表闪空
   const results = res?.items ?? [];
   const current = results[Math.min(selected, results.length - 1)] ?? null;

@@ -223,6 +223,19 @@ describe("QuickApp", () => {
 describe("QuickApp 收纳模式", () => {
   const session = (over: Record<string, unknown> = {}) => ({ id: 7, paths: ["D:/a.txt", "D:/b.txt"], invocations: 2, invalid: 0, truncated: false, startedMs: 0, ...over });
 
+  it("首次 collectSession 返回前不发出搜索；取到收纳会话后仍不搜索", async () => {
+    let resolveSession: (s: ReturnType<typeof session> | null) => void = () => {};
+    vi.mocked(db.collectSession).mockReturnValueOnce(new Promise((resolve) => { resolveSession = resolve; }));
+    render(<QuickApp />);
+    await waitFor(() => expect(db.collectSession).toHaveBeenCalled());
+    expect(db.quickSearch).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("collect-summary")).toBeNull();
+    await act(async () => { resolveSession(session()); });
+    await screen.findByTestId("collect-summary");
+    expect(db.quickSearch).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("quick-input")).toBeNull();
+  });
+
   it("挂载时取到会话就显示收纳界面；打标签多选后一次写入并记住选择", async () => {
     collect.pending = session();
     const user = userEvent.setup();
