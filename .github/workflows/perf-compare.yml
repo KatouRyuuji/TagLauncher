@@ -1,0 +1,176 @@
+# 对照实验：同一 Windows job 里顺序测量
+#   1) PR66 head 4d27d45（基线）
+#   2) PR #67 head 19bc707（当前，含 useLayoutEffect 搜索）
+#   3) 19bc707 临时关闭毛玻璃（无亚克力、保留 data-quick-hidden，无 CSS 滤镜）
+# 只测 5k 查询/唤出与钉住常驻内存；钉住空闲 120s 缩短为 1s（内存在空闲前已记录）。
+# 仅存在于 cursor/perf-compare-8f3b，不推 PR #67 分支，不合入 main。
+name: Perf compare
+
+on:
+  push:
+    branches: [cursor/perf-compare-8f3b]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-compare
+  cancel-in-progress: true
+
+env:
+  BASELINE_SHA: 4d27d45752c2694674ad20fdaa5c395d690f3333
+  REDESIGN_SHA: 19bc707a003dbaaf30f5301b2eb6d7ab0cf694d1
+
+jobs:
+  compare:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: cursor/perf-compare-8f3b
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: perf-compare-release
+
+      - name: Install Python deps
+        run: python -m pip install -r e2e/requirements-e2e.txt
+
+      - name: Stash experiment tools (checkout of older SHAs would drop them)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/perf-compare-tools" | Out-Null
+          Copy-Item e2e/tools/perf_compare_patch.py, e2e/tools/perf_compare_summarize.py "$env:RUNNER_TEMP/perf-compare-tools/" -Force
+          Get-ChildItem "$env:RUNNER_TEMP/perf-compare-tools" | Format-Table Name, Length
+
+      - name: Measure 4d27d45, 19bc707, 19bc707 no-glass
+        timeout-minutes: 80
+        shell: pwsh
+        env:
+          CI: '1'
+          TL_E2E_WEBVIEW2_HKLM_POLICY: '1'
+          TL_E2E_ALLOW_REGISTRY: '1'
+          TL_E2E_ALLOW_PHYSICAL: '1'
+          TL_E2E_ALLOW_WINDOW: '1'
+          TL_E2E_ALLOW_VISIBLE: '1'
+          TL_E2E_DESKTOP: '1'
+          TL_E2E_BUILD: release
+          PYTHONIOENCODING: utf-8
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $tools = "$env:RUNNER_TEMP/perf-compare-tools"
+          $outRoot = Join-Path $env:GITHUB_WORKSPACE '.tmp-test/e2e/perf-compare'
+          New-Item -ItemType Directory -Force $outRoot | Out-Null
+
+          function Invoke-Measure {
+            param(
+              [Parameter(Mandatory)] [string] $Name,
+              [Parameter(Mandatory)] [string] $Sha,
+              [bool] $NoGlass = $false
+            )
+            Write-Host "======== MEASURE $Name @ $Sha noGlass=$NoGlass ========"
+            Write-Host "runner=$env:RUNNER_NAME computer=$env:COMPUTERNAME $(Get-Date -Format o)"
+
+            git checkout --force $Sha
+            git reset --hard $Sha
+            git clean -fd -e node_modules -e src-tauri/target -e .tmp-test -e dist
+            git log -1 --oneline
+            $actual = (git rev-parse HEAD).Trim()
+            if ($actual -ne $Sha) { throw "HEAD $actual does not match requested $Sha" }
+
+            python "$tools/perf_compare_patch.py" --idle
+            if ($NoGlass) { python "$tools/perf_compare_patch.py" --glass-off }
+
+            npm ci
+            node scripts/prepare-win11-menu.mjs
+            node scripts/prepare-cli-bin.mjs
+            if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+            if (Test-Path src-tauri/target/release/tag-launcher.exe) {
+              Remove-Item -Force src-tauri/target/release/tag-launcher.exe
+            }
+            npx tauri build --no-bundle
+            $exe = Get-Item src-tauri/target/release/tag-launcher.exe
+            $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash
+            Write-Host "EXE $($exe.FullName) $($exe.Length) sha256=$hash"
+
+            $runDir = Join-Path $outRoot $Name
+            if (Test-Path $runDir) { Remove-Item -Recurse -Force $runDir }
+            New-Item -ItemType Directory -Force $runDir | Out-Null
+
+            $env:TL_E2E_EXE = $exe.FullName
+            $env:TL_E2E_RUN_DIR = $runDir
+
+            # Assertions may fail (that is data). Still collect JSON.
+            $PSNativeCommandUseErrorActionPreference = $false
+            $ErrorActionPreference = 'Continue'
+            python -m pytest -c e2e/pytest.ini `
+              e2e/tests/ui/test_quick.py::test_quick_window_performance[5k] `
+              e2e/tests/ui/test_pin.py::test_pin_resident_memory_and_idle_cpu `
+              --allow-physical-input --window-countdown 0 -s `
+              --junitxml="$runDir/junit.xml" `
+              *>&1 | Tee-Object -FilePath "$runDir/pytest.log"
+            $code = $LASTEXITCODE
+            $ErrorActionPreference = 'Stop'
+            $PSNativeCommandUseErrorActionPreference = $true
+            Write-Host "pytest exit $code for $Name"
+
+            $artSrc = Join-Path $runDir 'artifacts'
+            if (-not (Test-Path (Join-Path $artSrc 'quick-perf-5000.json'))) {
+              Write-Warning "missing quick-perf-5000.json under $artSrc"
+              Get-ChildItem -Recurse $runDir | Format-Table FullName, Length
+            }
+            $rustc = (rustc -V | Out-String).Trim()
+            $meta = [ordered]@{
+              name        = $Name
+              sha_requested = $Sha
+              sha_actual  = $actual
+              no_glass    = $NoGlass
+              pytest_exit = $code
+              exe         = $exe.FullName
+              exe_bytes   = $exe.Length
+              exe_sha256  = $hash
+              runner      = $env:RUNNER_NAME
+              computer    = $env:COMPUTERNAME
+              rustc       = $rustc
+            }
+            ($meta | ConvertTo-Json -Depth 5) | Set-Content -Encoding utf8 (Join-Path $runDir 'meta.json')
+          }
+
+          Invoke-Measure -Name 'pr66-4d27d45' -Sha $env:BASELINE_SHA
+          Invoke-Measure -Name 'redesign-19bc707' -Sha $env:REDESIGN_SHA
+          Invoke-Measure -Name 'redesign-noglazz-19bc707' -Sha $env:REDESIGN_SHA -NoGlass $true
+
+          Write-Host '======== ALL MEASUREMENTS DONE ========'
+
+      - name: Summarize
+        if: always()
+        shell: pwsh
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python "$env:RUNNER_TEMP/perf-compare-tools/perf_compare_summarize.py" .tmp-test/e2e/perf-compare
+
+      - name: Upload comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-compare
+          path: |
+            .tmp-test/e2e/perf-compare/
+          if-no-files-found: warn
