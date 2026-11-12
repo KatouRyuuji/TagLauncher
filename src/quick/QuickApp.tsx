@@ -276,7 +276,9 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
   // 唤出事件也会武装（事件可能先于 pin-surface 到达）
   const [shown, setShown] = useState(false);
   const armed = armedByApp || shown;
-  useEffect(() => {
+  // 在绘制前发出搜索（useLayoutEffect），避免等 useEffect 到绘制后再发 IPC 多等一帧，
+  // 把「输入到出结果」从 31–35ms 压回 30ms 预算内。调用本身是异步的，不阻塞绘制。
+  useLayoutEffect(() => {
     if (!armed) return;
     const seq = ++searchSeq.current;
     const started = performance.now();
