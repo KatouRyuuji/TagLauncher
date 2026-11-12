@@ -31,6 +31,10 @@ export default defineConfig(({ mode }) => ({
   server: {
     port: 3456,
     strictPort: true,
+    fs: {
+      // worktree 的 node_modules 是指向主工作树的符号链接，需放行真实路径才能加载字体
+      allow: [r("."), r(".."), "/workspace/TagLauncher", "/tmp/ui-var"],
+    },
     watch: {
       ignored: ["**/src-tauri/**", "**/.tmp-test/**", "**/.workflow/**"],
     },
