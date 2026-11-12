@@ -557,7 +557,7 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
           </ul>
         </div>
       ) : (
-        <ul role="listbox" aria-label="搜索结果" className="quick-list" data-testid="quick-results">
+        <ul role="listbox" aria-label="搜索结果" className="quick-list" data-testid="quick-results" data-query={res?.query ?? ""}>
           {res && results.length === 0 && <li className="quick-empty">没有匹配的对象</li>}
           {painted.map((item, i) => {
             const label = getTypeLabel(item.type);

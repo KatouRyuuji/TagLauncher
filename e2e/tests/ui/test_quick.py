@@ -460,7 +460,14 @@ def test_quick_results_show_icons_for_first_twenty(app, sandbox):
     summon(app, qp)
     inp = qp.get_by_test_id("quick-input")
     inp.fill("图标")
-    wait_until(lambda: qp.get_by_test_id("quick-result").count() == 30, 10, lambda: qp.get_by_test_id("quick-result").count())
+    # 分帧绘制：首帧 12 行，下一帧补齐。空查询已是 30 条，要用结果列表上的
+    # data-query 确认是本词提交后的满列表，避免旧 30 条或首帧 12 条抢先过关。
+    wait_until(lambda: qp.evaluate(
+        "() => document.querySelector('[data-testid=quick-results]')?.dataset.query === '图标' "
+        "&& document.querySelectorAll('[data-testid=quick-result]').length === 30"),
+        10, lambda: qp.evaluate(
+            "() => ({q: document.querySelector('[data-testid=quick-results]')?.dataset.query, "
+            "n: document.querySelectorAll('[data-testid=quick-result]').length})"))
     kinds = qp.eval_on_selector_all("[data-testid=quick-result-icon]", "els => els.map(e => e.dataset.visual)")
     assert kinds[:20] == ["visual"] * 20 and kinds[20:] == ["type"] * 10, kinds
     inp.fill("图标测试")
