@@ -147,9 +147,9 @@ export function SearchBar({ onAddItems, onRefresh, onOpenAbout, onOpenSettings, 
   };
 
   return (
-    <header data-region="searchbar" className="shrink-0">
-      {/* 以工具栏自身宽度为准（@container），1280 以下收紧：特大字号在约 1100 窗口下搜索框仍可输入 */}
-      <div className="toolbar-strip @container flex h-14 items-center gap-3 px-4 @max-[1280px]:gap-2 @max-[1280px]:px-3">
+    <header data-region="searchbar" className="@container shrink-0">
+      {/* 容器是 header，查询工具栏可用宽度；1280 以下收紧：特大字号在约 1100 窗口下搜索框仍可输入 */}
+      <div className="toolbar-strip flex h-14 items-center gap-3 px-4 @max-[1280px]:gap-2 @max-[1280px]:px-3">
         <div
           role="search"
           className="input-frame mr-auto flex h-9 min-w-[12rem] flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 xl:max-w-[520px]"
