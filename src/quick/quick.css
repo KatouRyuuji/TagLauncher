@@ -47,8 +47,9 @@ html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .pin-shel
 .quick-group { padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs);
   color: var(--text-muted); font-size: calc(var(--font-size-xs) * var(--ui-font-scale, 1));
   font-weight: var(--font-weight-semibold); letter-spacing: 0.04em; }
-.quick-mark { background: color-mix(in srgb, var(--accent-primary) 28%, transparent); color: inherit;
-  font-weight: var(--font-weight-semibold); border-radius: calc(var(--radius-sm) / 2); padding: 0 0.08em; }
+/* 只标每行首次：把衬底从 28% 提到 42%，单处标记仍清楚。 */
+.quick-mark { background: color-mix(in srgb, var(--accent-primary) 42%, transparent); color: inherit;
+  font-weight: var(--font-weight-semibold); border-radius: calc(var(--radius-sm) / 2); padding: 0 0.12em; }
 .quick-row { display: grid; grid-template-columns: 1.6em minmax(0, 1fr) auto; column-gap: var(--spacing-sm); align-items: center; padding: calc(var(--spacing-xs) * 1.5) var(--spacing-sm);
   border-radius: var(--radius-sm); cursor: default; position: relative;
   transition: background-color var(--transition-fast);

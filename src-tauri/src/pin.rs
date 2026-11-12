@@ -1457,15 +1457,20 @@ pub fn apply_settings(app: &AppHandle, next: PinSettings) -> Result<PinSettings,
         && app
             .get_webview_window(crate::quick::QUICK_LABEL)
             .is_some_and(|w| w.is_visible().unwrap_or(false));
-    if !searching {
-        restore(app)?;
-    }
     if was_active && !next.active() {
-        // 快速搜索也没开：销毁 quick 窗口（与关闭快速搜索同一路径，在主线程销毁）
+        // 关闭钉住且快速搜索未开：销毁 quick 窗口。不要先走 restore→hide_window→
+        // clear_glass（with_webview 异步 SetIsVisible）再 destroy——两者会打架，
+        // 96e47da e2e(3) 上 E-PIN-01 等了 10s 窗口仍在。探头同步关掉，销毁只走同步路径。
+        ANIM_GEN.fetch_add(1, Ordering::SeqCst);
+        rt().surface = Surface::Search;
+        set_foreground_hook(app, false);
+        crate::pin_strip::hide(app);
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || {
             crate::quick::sync_window(&handle, crate::desktop::quick_window_needed(&handle));
         });
+    } else if !searching {
+        restore(app)?;
     }
     crate::desktop::refresh_tray(app);
     Ok(next)

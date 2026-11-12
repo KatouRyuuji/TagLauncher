@@ -356,11 +356,10 @@ pub fn destroy_window(app: &AppHandle) {
     VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
     set_intended_visible(false);
     if let Some(w) = quick_window(app) {
-        // 只做同步清理：clear_glass_effect 里的 with_webview 是异步的，
-        // 会和 destroy 打架，导致窗口偶发销毁失败（E-PIN 关闭即销毁）。
+        // 只做同步清理：set_effects / clear_glass 的 with_webview 都可能与 destroy
+        // 抢同一窗口（E-PIN-01：关闭钉住且未开搜索时应销毁；96e47da e2e(3) 再现）。
         #[cfg(windows)]
         {
-            let _ = w.set_effects(None);
             if let Ok(h) = w.hwnd() {
                 use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
                 // SAFETY：hwnd 来自本进程窗口

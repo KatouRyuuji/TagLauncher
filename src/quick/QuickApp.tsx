@@ -31,6 +31,9 @@ import { truncatePathMiddle } from "../lib/itemUtils";
 export const QUICK_SHOWN_EVENT = "quick-shown";
 /** 只给前 N 条取缩略图/程序图标（§3.3 数据投影），其余行只画类型图标，不发 IPC */
 export const QUICK_ICON_LIMIT = 20;
+/** 首帧只画刚满一屏的行（12×3.4em 已盖住 440 窗的列表区），其余放到测量 RAF 之后再挂。
+ *  短前缀命中要画 50 行时，较慢 debug runner 上 5k p95 仍 33.9；只减首帧 DOM 即可，用户看到的仍是满屏。 */
+export const FIRST_FRAME_ROWS = 12;
 /** 后端切换 WebView2 内存目标后发来（只做记录，供 E2E 断言） */
 export const QUICK_MEMORY_EVENT = "quick-memory-level";
 
@@ -258,8 +261,10 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
   const tagInputRef = useRef<HTMLInputElement>(null);
   const [prefs, setPrefs] = useState(readPrefs);
   const [res, setRes] = useState<{ query: string; total: number; indexed: number; items: ItemWithTags[] } | null>(null);
-  // 缩略图放到结果提交、测量用的那一帧之后再挂（useEffect），首帧只画类型图标，不发 20 路 IPC。
+  // 缩略图、首屏以外的行都放到测量用的那一帧之后再挂（useEffect）：
+  // 首帧只画满屏的类型图标行，不发 20 路 IPC、不建 50 行纤维。
   const [iconsReady, setIconsReady] = useState(false);
+  const [rowsReady, setRowsReady] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const [status, setStatus] = useState<{ text: string; tone: "info" | "error" } | null>(null);
@@ -295,6 +300,7 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
         if (r === SKIPPED || seq !== searchSeq.current) return;
         setRes({ query, total: r.total, indexed: r.indexed, items: r.items });
         setIconsReady(false);
+        setRowsReady(false);
         // 「加载」= 空查询结果就绪（含后端首次建索引），E2E 据此等待预热完成
         if (!query.trim()) recordQuickLoad(r.indexed, performance.now() - started);
       })
@@ -304,6 +310,8 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
   }, [armed, collectReady, query, prefs.searchMode, prefs.hideMissing, dataTick]);
   // 新词的结果到达前沿用上一次结果，避免列表闪空
   const results = res?.items ?? [];
+  // 测量帧（setRes 后的 RAF）只画满屏行；其余行与缩略图同一轮 useEffect 再挂。
+  const painted = rowsReady ? results : results.slice(0, FIRST_FRAME_ROWS);
   const current = results[Math.min(selected, results.length - 1)] ?? null;
 
   // 「输入到出结果」：输入事件时刻 → 结果提交后的下一帧
@@ -315,7 +323,10 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
     requestAnimationFrame(() => recordQuickQuery(q, total, performance.now() - pending.start, indexed));
   }, [res]);
   useEffect(() => {
-    if (res) setIconsReady(true);
+    if (res) {
+      setRowsReady(true);
+      setIconsReady(true);
+    }
   }, [res]);
 
   // 唤出：聚焦并全选上次的输入（直接打字即替换）；选项「保留上次输入」关闭时清空
@@ -547,9 +558,9 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
       ) : (
         <ul role="listbox" aria-label="搜索结果" className="quick-list" data-testid="quick-results">
           {res && results.length === 0 && <li className="quick-empty">没有匹配的对象</li>}
-          {results.map((item, i) => {
+          {painted.map((item, i) => {
             const label = getTypeLabel(item.type);
-            const prev = i > 0 ? getTypeLabel(results[i - 1].type) : null;
+            const prev = i > 0 ? getTypeLabel(painted[i - 1].type) : null;
             const showGroup = label !== prev;
             return (
               <Fragment key={item.id}>
