@@ -11,7 +11,7 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
 }
 .quick-shell { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: var(--spacing-md); gap: var(--spacing-sm);
   color: var(--text-primary); font-size: calc(var(--font-size-base) * var(--ui-font-scale, 1));
-  position: relative; isolation: isolate; background: transparent;
+  position: relative; background: transparent;
   border: var(--border-width, 1px) solid var(--glass-border);
   border-radius: var(--radius-2xl);
   box-shadow: var(--glass-highlight), var(--glass-shadow);
@@ -42,13 +42,14 @@ html:not([data-quick-hidden]):not([data-acrylic]) .pin-shell::after {
 .quick-input::placeholder { color: var(--text-placeholder); }
 .quick-input:focus { border-color: var(--accent-primary); box-shadow: var(--shadow-focus); }
 .quick-input-small { height: 2.45em; font-size: 1em; }
-.quick-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+.quick-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none;
+  /* 不透明底 + contain：查询重绘只画列表，不与亚克力桌面逐帧混合（5k p95 紧贴 30ms）。 */
+  background: var(--bg-surface); contain: content; border-radius: var(--radius-md); }
 .quick-group { padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs);
   color: var(--text-muted); font-size: calc(var(--font-size-xs) * var(--ui-font-scale, 1));
   font-weight: var(--font-weight-semibold); letter-spacing: 0.04em; }
 .quick-mark { background: color-mix(in srgb, var(--accent-primary) 28%, transparent); color: inherit;
-  font-weight: var(--font-weight-semibold); border-radius: calc(var(--radius-sm) / 2); padding: 0 0.08em;
-  box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  font-weight: var(--font-weight-semibold); border-radius: calc(var(--radius-sm) / 2); padding: 0 0.08em; }
 .quick-row { display: grid; grid-template-columns: 1.6em minmax(0, 1fr) auto; column-gap: var(--spacing-sm); align-items: center; padding: calc(var(--spacing-xs) * 1.5) var(--spacing-sm);
   border-radius: var(--radius-sm); cursor: default; position: relative;
   transition: background-color var(--transition-fast); }
@@ -145,7 +146,7 @@ html[data-surface="pin"] .quick-shell, html[data-surface="pin"] .quick-drop-over
 html:not([data-surface="pin"]) .pin-shell { display: none; }
 :root { --pin-drawer-width: 320px; }
 .pin-shell { height: 100%; color: var(--text-primary); font-size: calc(var(--font-size-sm) * var(--ui-font-scale, 1));
-  position: relative; isolation: isolate; background: transparent;
+  position: relative; background: transparent;
   border: var(--border-width, 1px) solid var(--glass-border);
   box-shadow: var(--glass-highlight), var(--glass-shadow);
   overflow: hidden; }

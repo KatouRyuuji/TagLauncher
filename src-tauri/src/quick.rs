@@ -247,6 +247,7 @@ fn schedule_glass(window: &WebviewWindow) {
             if VISIBILITY_GEN.load(Ordering::SeqCst) != gen {
                 return;
             }
+            // 已销毁时 is_visible 会报错，unwrap_or(false) 即可跳过
             if window.is_visible().unwrap_or(false) {
                 apply_glass_effect(&window);
             }
@@ -270,10 +271,23 @@ fn set_controller_visible(window: &WebviewWindow, visible: bool) {
 }
 
 pub fn destroy_window(app: &AppHandle) {
+    // 作废延后开玻璃的任务，避免 50ms 后 apply_glass 与 destroy 抢同一窗口。
+    VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
     if let Some(w) = quick_window(app) {
-        clear_glass_effect(&w);
+        // 只做同步清理：clear_glass_effect 里的 with_webview 是异步的，
+        // 会和 destroy 打架，导致窗口偶发销毁失败（E-PIN 关闭即销毁）。
+        #[cfg(windows)]
+        {
+            let _ = w.set_effects(None);
+            if let Ok(h) = w.hwnd() {
+                use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+                // SAFETY：hwnd 来自本进程窗口
+                unsafe {
+                    ShowWindow(h.0 as _, SW_HIDE);
+                }
+            }
+        }
         let _ = w.hide();
-        native_hide(&w);
         if let Err(e) = w.destroy() {
             log::warn!("[quick] 销毁快速窗失败：{e}，改用 close");
             let _ = w.close();

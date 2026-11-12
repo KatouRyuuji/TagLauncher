@@ -7,7 +7,7 @@
 //       Alt+Enter 在主窗定位 · Ctrl+T 打标签 · Esc 先清空再收起。
 // ============================================================================
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import * as db from "../lib/db";
@@ -170,7 +170,7 @@ function usePinView(): PinViewState | null {
 }
 
 
-function HighlightName({ text, query }: { text: string; query: string }) {
+const HighlightName = memo(function HighlightName({ text, query }: { text: string; query: string }) {
   const q = query.trim();
   if (!q) return <>{text}</>;
   const lower = text.toLowerCase();
@@ -190,7 +190,7 @@ function HighlightName({ text, query }: { text: string; query: string }) {
     i = j + ql.length;
   }
   return <>{parts}</>;
-}
+});
 
 export function QuickApp() {
   const [collect, closeCollect] = useCollectSession();
