@@ -108,7 +108,8 @@ class Recorder:
         log("ffmpeg " + " ".join(cmd))
         kw = dict(stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if os.name == "nt":
-            kw["creationflags"] = 0x08000000  # CREATE_NO_WINDOW，避免再冒出黑色控制台
+            # 只用 SW_HIDE：CREATE_NO_WINDOW 会让 ffmpeg 收不到 stdin 的 q，
+            # 上次 40s wait 超时后被 kill，raw 无 moov，stitch 的 ffprobe 失败。
             si = subprocess.STARTUPINFO()
             si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             si.wShowWindow = 0
@@ -187,11 +188,42 @@ class Recorder:
                 log(f"recording already ended rc={self.proc.returncode}")
             return
         try:
-            self.proc.stdin.write(b"q")
-            self.proc.stdin.flush()
-            self.proc.wait(timeout=40)
-        except Exception:
-            self.proc.kill()
+            if self.proc.stdin:
+                self.proc.stdin.write(b"q")
+                self.proc.stdin.flush()
+            self.proc.wait(timeout=25)
+        except Exception as e:
+            log(f"ffmpeg q/wait: {e}")
+            try:
+                self.proc.terminate()
+                self.proc.wait(timeout=15)
+            except Exception:
+                self.proc.kill()
+                try:
+                    self.proc.wait(timeout=5)
+                except Exception:
+                    pass
+        # 等 moov 落盘：上次停录瞬间 ffprobe 失败，artifact 里 raw 之后才完整
+        for i in range(12):
+            time.sleep(1)
+            try:
+                dur = subprocess.check_output(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                     "-of", "csv=p=0", str(self.raw)], text=True, stderr=subprocess.STDOUT).strip()
+                if float(dur or 0) > 1:
+                    log(f"raw moov ok after {i+1}s duration={dur} size={self.raw.stat().st_size}")
+                    break
+            except Exception as e:
+                log(f"raw moov wait {i+1}: {e}")
+        else:
+            # 尝试 -c copy 补 moov
+            fixed = self.raw.with_name("raw-faststart.mp4")
+            r = subprocess.run(
+                ["ffmpeg", "-y", "-i", str(self.raw), "-c", "copy", "-movflags", "+faststart", str(fixed)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            if r.returncode == 0 and fixed.exists() and fixed.stat().st_size > 1000:
+                fixed.replace(self.raw)
+                log(f"raw remuxed size={self.raw.stat().st_size}")
         log(f"recording stopped rc={self.proc.returncode} size={self.raw.stat().st_size if self.raw.exists() else 0}")
 
 
@@ -447,6 +479,7 @@ def uia_clickable_point(hwnd: int, name: str, timeout: float = 25.0) -> tuple[in
     ps_lines = [
         "param($Hwnd, $Name, $Timeout)",
         "Add-Type -AssemblyName UIAutomationClient",
+        "Add-Type -AssemblyName UIAutomationTypes",
         "$deadline = (Get-Date).AddSeconds([double]$Timeout)",
         "$scope = [System.Windows.Automation.TreeScope]::Descendants",
         "$prop = [System.Windows.Automation.AutomationElement]::NameProperty",
@@ -1175,42 +1208,46 @@ class Walk:
                 place_window(hwnd_ex, 420, 80, 1280, 860)
                 win32.set_foreground(hwnd_ex)
                 pause(0.5)
-                send_keys(0x74)  # F5，催一下「Working on it…」
-                pause(1.0)
-                pt = uia_clickable_point(hwnd_ex, sample.name, timeout=28)
-                if not pt:
-                    pt = uia_clickable_point(hwnd_ex, "封面设计-终稿.png", timeout=8)
+                send_keys(0x74)  # F5
+                # /select 已选中文件；上次 UIA 缺 UIAutomationTypes 空等 36s，截图时文件其实已经在。
+                # 先等几秒让列表画出来，再 Shift+F10 开经典菜单，UIA 只作辅助定位。
+                appeared = False
+                pt = None
+                for i in range(12):
+                    pause(0.8)
+                    pt = uia_clickable_point(hwnd_ex, sample.name, timeout=2)
+                    if pt:
+                        appeared = True
+                        log(f"explorer item visible after ~{i+1} tries at {pt}")
+                        break
+                self.shot("06-explorer-folder-light-f1")
+                from tests.desktop import oswin
+                win32.set_foreground(hwnd_ex)
+                pause(0.3)
                 if pt:
-                    # 再 F5 后稍等，确保图标出来再截
-                    pause(0.6)
-                    self.shot("06-explorer-folder-light-f1")
-                    from tests.desktop import oswin
-                    move_slow(pt[0], pt[1], 0.5)
-                    pause(0.25)
+                    move_slow(pt[0], pt[1], 0.45)
+                    pause(0.2)
                     oswin.right_click(pt[0], pt[1])
                     pause(0.9)
                     self.shot("06-explorer-context-menu-light-f1")
-                    if click_shell_menu_item("用 TagLauncher 收纳", timeout=3.5):
+                    if click_shell_menu_item("用 TagLauncher 收纳", timeout=3.0):
                         used_menu = True
                         self.collect_via = "right-click"
+                if not used_menu:
+                    send_keys(VK_ESCAPE)
+                    pause(0.25)
+                    win32.set_foreground(hwnd_ex)
+                    pause(0.2)
+                    send_keys(VK_SHIFT, 0x79)  # Shift+F10（文件已被 /select 选中）
+                    pause(0.9)
+                    self.shot("06-explorer-classic-menu-light-f1")
+                    if click_shell_menu_item("用 TagLauncher 收纳", timeout=3.5):
+                        used_menu = True
+                        self.collect_via = "shift-f10"
                     else:
-                        send_keys(VK_ESCAPE)
-                        pause(0.3)
-                        win32.set_foreground(hwnd_ex)
-                        move_slow(pt[0], pt[1], 0.2)
-                        win32.click(pt[0], pt[1])
-                        pause(0.25)
-                        send_keys(VK_SHIFT, 0x79)  # Shift+F10 经典菜单
-                        pause(0.9)
-                        self.shot("06-explorer-classic-menu-light-f1")
-                        if click_shell_menu_item("用 TagLauncher 收纳", timeout=3.5):
-                            used_menu = True
-                            self.collect_via = "shift-f10"
-                        else:
-                            self.collect_reason = "右键与 Shift+F10 菜单里都没找到「用 TagLauncher 收纳」"
-                else:
-                    self.shot("06-explorer-folder-light-f1")
-                    self.collect_reason = "UIA 等到超时，资源管理器里没有出现文件名（可能仍是 Working on it）"
+                        self.collect_reason = "右键与 Shift+F10 菜单里都没找到「用 TagLauncher 收纳」"
+                if not appeared and not used_menu and not self.collect_reason:
+                    self.collect_reason = "资源管理器列表是否画出无法确认（UIA 未点到文件名）"
             else:
                 self.collect_reason = "未能出现「待收纳」文件夹窗口"
                 self.shot("06-explorer-folder-light-f1")
