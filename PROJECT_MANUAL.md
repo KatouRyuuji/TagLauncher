@@ -247,7 +247,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | note | TEXT | 用户备注（纯文本，最多 2000 字，可空） |
 | fs_created_at | INTEGER | 文件系统创建时间（Unix 秒，UTC；导入时写入、对账同步，可空） |
 | fs_modified_at | INTEGER | 文件系统修改时间（Unix 秒，UTC；导入时写入、对账同步，可空） |
-| hide_from_all | INTEGER | 默认不出现在 All 总览（0/1）。递归导入的夹内文件与中间目录为 1；旧行与松散导入默认 0。搜索、打标、柜视图与「显示目录内文件」仍可见。迁移 v021。 |
+| hide_from_all | INTEGER | 默认不出现在 All 总览（0/1）。递归导入、文件夹监视与关联柜同步的夹内文件与中间目录为 1；投放根、旧行与松散导入默认 0。搜索、打标、柜视图与「显示目录内文件」仍可见。列由 v021 引入；v024 回填已在监视根或关联柜路径之下、但仍为 0 的旧行（根对象本身不改）。 |
 | alias | TEXT | 显示别名（可空）。只影响卡片/列表/预览/命令面板的显示名、名称排序与搜索；磁盘文件名仍是 name，F2 重命名、导出、复制路径不受影响。最多 120 字、不含控制字符。迁移 v022。 |
 
 > 对象身份以 `(volume_serial, file_id)` 为准（NTFS 文件ID，跨重命名/同盘移动稳定）；`path` 为可更新的最近已知位置。取不到文件ID的对象回退按 `path` 去重。**跨盘符移动时文件ID失效，由内容签名 `(sig_size, sig_head, sig_tail)` 在候选盘兜底重定位**。详见 `src-tauri/src/services/file_identity.rs` 与迁移 `v005_object_identity` / `v006_object_signature`。
