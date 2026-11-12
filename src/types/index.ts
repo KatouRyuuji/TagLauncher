@@ -4,7 +4,7 @@ import type { ContextSelectionInfo } from "../components/ItemCard";
   id: number;
   name: string;
   path: string;
-  type: "folder" | "image" | "audio" | "video" | "text" | "exe" | "bat" | "ps1";
+  type: "folder" | "image" | "audio" | "video" | "text" | "document" | "exe" | "bat" | "ps1";
   icon_path?: string | null;
   created_at: string;
   last_used_at?: string;

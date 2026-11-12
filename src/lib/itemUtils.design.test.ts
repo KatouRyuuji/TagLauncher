@@ -16,8 +16,9 @@ function item(type: string, name: string): ItemWithTags {
 
 // ── getTypeLabel ────────────────────────────────────────────────────────
 
-test("getTypeLabel：已知类型返回与筛选同口径的七类标签", () => {
+test("getTypeLabel：已知类型返回与筛选同口径的标签", () => {
   assert.equal(getTypeLabel("folder"), "文件夹");
+  assert.equal(getTypeLabel("document"), "文档");
   assert.equal(getTypeLabel("exe"), "程序");
   assert.equal(getTypeLabel("bat"), "脚本");
   assert.equal(getTypeLabel("ps1"), "脚本");
@@ -31,9 +32,10 @@ test("getTypeDetail：细分技术名拼在主标签后；无细节时即主标�
   assert.equal(getTypeDetail("ps1"), "脚本 · PowerShell");
   assert.equal(getTypeDetail("exe"), "程序 · 应用程序");
   assert.equal(getTypeDetail("folder"), "文件夹");
+  assert.equal(getTypeDetail("document"), "文档 · 办公文档");
 });
 
-test("TYPE_DETAILS 键是 TYPE_LABELS 子集，不引入第七类展示口径", () => {
+test("TYPE_DETAILS 键是 TYPE_LABELS 子集，不引入额外展示口径", () => {
   for (const key of Object.keys(TYPE_DETAILS)) {
     assert.ok(key in TYPE_LABELS, `TYPE_DETAILS 多出键 ${key}`);
   }
