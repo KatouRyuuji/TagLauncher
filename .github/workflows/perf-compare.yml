@@ -63,7 +63,6 @@ jobs:
         timeout-minutes: 80
         shell: pwsh
         env:
-          CI: '1'
           TL_E2E_WEBVIEW2_HKLM_POLICY: '1'
           TL_E2E_ALLOW_REGISTRY: '1'
           TL_E2E_ALLOW_PHYSICAL: '1'
@@ -116,6 +115,7 @@ jobs:
 
             $env:TL_E2E_EXE = $exe.FullName
             $env:TL_E2E_RUN_DIR = $runDir
+            $env:CI = 'true'
 
             # Assertions may fail (that is data). Still collect JSON.
             $PSNativeCommandUseErrorActionPreference = $false
@@ -153,11 +153,23 @@ jobs:
             ($meta | ConvertTo-Json -Depth 5) | Set-Content -Encoding utf8 (Join-Path $runDir 'meta.json')
           }
 
-          Invoke-Measure -Name 'pr66-4d27d45' -Sha $env:BASELINE_SHA
-          Invoke-Measure -Name 'redesign-19bc707' -Sha $env:REDESIGN_SHA
-          Invoke-Measure -Name 'redesign-noglazz-19bc707' -Sha $env:REDESIGN_SHA -NoGlass $true
+          $failed = @()
+          foreach ($run in @(
+            @{ Name = 'pr66-4d27d45'; Sha = $env:BASELINE_SHA; NoGlass = $false },
+            @{ Name = 'redesign-19bc707'; Sha = $env:REDESIGN_SHA; NoGlass = $false },
+            @{ Name = 'redesign-noglazz-19bc707'; Sha = $env:REDESIGN_SHA; NoGlass = $true }
+          )) {
+            try {
+              Invoke-Measure -Name $run.Name -Sha $run.Sha -NoGlass $run.NoGlass
+            } catch {
+              Write-Host "::error::Measure $($run.Name) failed: $_"
+              $_ | Format-List * -Force | Out-String | Write-Host
+              $failed += $run.Name
+            }
+          }
 
-          Write-Host '======== ALL MEASUREMENTS DONE ========'
+          Write-Host "======== ALL MEASUREMENTS DONE failed=$($failed -join ',') ========"
+          if ($failed.Count -gt 0) { throw "measurements failed: $($failed -join ', ')" }
 
       - name: Summarize
         if: always()
