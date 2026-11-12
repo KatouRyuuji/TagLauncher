@@ -4126,7 +4126,7 @@ dependencies = [
 
 [[package]]
 name = "tag-launcher"
-version = "1.9.1-beta"
+version = "1.10.0-beta"
 dependencies = [
  "base64 0.22.1",
  "clap",

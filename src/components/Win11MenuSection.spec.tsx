@@ -8,7 +8,7 @@ const menu = vi.hoisted(() => ({
 }));
 
 const base = (over: Record<string, unknown> = {}) => ({
-  supported: true, reason: null, enabled: false, registered: false, registeredVersion: null, privilege: "elevated", bundledVersion: "1.9.1.0", ...over,
+  supported: true, reason: null, enabled: false, registered: false, registeredVersion: null, privilege: "elevated", bundledVersion: "1.10.0.0", ...over,
 });
 
 vi.mock("../lib/toast", () => ({ showToast: vi.fn() }));
@@ -20,7 +20,7 @@ vi.mock("../lib/db", () => ({
       menu.failNext = null;
       throw new Error(message);
     }
-    menu.state = base(enabled ? { enabled: true, registered: true, registeredVersion: "1.9.1.0" } : {});
+    menu.state = base(enabled ? { enabled: true, registered: true, registeredVersion: "1.10.0.0" } : {});
     return structuredClone(menu.state);
   }),
 }));

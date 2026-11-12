@@ -37,7 +37,7 @@ if (process.platform !== 'win32') {
   process.exit(1);
 }
 
-/** 1.9.1-beta → 1.9.1.0（与 win11_menu.rs package_version 同规则） */
+/** 1.10.0-beta → 1.10.0.0（与 win11_menu.rs package_version 同规则） */
 export function packageVersion(v) {
   const parts = v.split(/[-+]/)[0].split('.').map((p) => Math.min(65535, parseInt(p, 10) || 0)).slice(0, 4);
   while (parts.length < 4) parts.push(0);
