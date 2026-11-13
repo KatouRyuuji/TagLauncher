@@ -1609,15 +1609,38 @@ class Walk:
         clear_dpr()
         # 再切回深色特大，拍快速窗和钉住（文件名与实际主题一致）
         apply(THEME_DARK, "dark", 1.25)
+        # 先清收纳会话再开快速窗：开窗后 dismiss 会连按 Esc，把刚唤出的窗关掉，
+        # 随后 click 等可见超时，09-quick-dark 拍不到（95323a8 走查已复现）。
+        dismiss_collect_session(self.app)
         try:
             self.app.invoke("set_hotkey", {"action": "open_quick", "shortcut": HOTKEY_QUICK})
+            self.refresh_hwnd()
+            win32.set_foreground(self.hwnd)
+            pause(0.4)
             send_keys(VK_CONTROL, VK_MENU, VK_SHIFT, 0x51)
-            pause(1.5)
+            pause(1.8)
             from tests.ui.test_quick import quick_page
-            dismiss_collect_session(self.app)
-            qp = quick_page(self.app, timeout=10)
-            qp.get_by_test_id("quick-input").click()
-            pause(0.2)
+            try:
+                qp = quick_page(self.app, timeout=6)
+            except Exception as e:
+                log(f"ch9 hotkey quick_page: {e}, fallback quick_open")
+                try:
+                    self.app.invoke("quick_open", {"activate": True})
+                    pause(1.2)
+                except Exception as e2:
+                    log(f"ch9 quick_open: {e2}")
+                qp = quick_page(self.app, timeout=12)
+            inp = qp.get_by_test_id("quick-input")
+            try:
+                inp.click(timeout=3000)
+            except Exception as e:
+                log(f"ch9 quick click: {e}, fallback focus")
+                try:
+                    inp.click(timeout=2000, force=True)
+                except Exception as e2:
+                    log(f"ch9 force click: {e2}")
+                    qp.evaluate("() => { const el = document.querySelector('[data-testid=quick-input]'); if (el) el.focus(); }")
+            pause(0.25)
             type_text("设计")
             pause(1.2)
             self.shot("09-quick-dark-f1.25")
