@@ -11,7 +11,7 @@
 //!   时吸附到最近显示器的左 / 右边）；浮动窗 = 物理左上角 + 逻辑宽高（移动 / 改尺寸静默后保存）。
 
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
@@ -41,6 +41,14 @@ const ANIM_STEP: Duration = Duration::from_millis(40);
 const DRAG_SETTLE: Duration = Duration::from_millis(350);
 /// 光标离开展开的抽屉多久收回（与前端 PIN_LEAVE_COLLAPSE_MS 一致）
 const LEAVE_COLLAPSE: Duration = Duration::from_millis(400);
+/// 顶栏原生拖动命中高度（逻辑像素）。与 `.pin-chrome` 的 `min-height: 32px` 对齐；
+/// E2E D-PIN-03 / D-PIN-04 点 `t+16`（已在此范围内）。
+pub const PIN_CAPTION_LOGIC: i32 = 32;
+
+/// 客户区 Y 是否落在钉住顶栏拖动区（物理像素，按 DPI 缩放）。
+pub fn caption_hit(client_y: i32, scale: f64) -> bool {
+    client_y >= 0 && client_y < (PIN_CAPTION_LOGIC as f64 * scale).round() as i32
+}
 
 const ENABLED_KEY: &str = "pin.enabled";
 const SOURCE_KEY: &str = "pin.source";
@@ -383,6 +391,8 @@ static RUNTIME: Mutex<Runtime> = Mutex::new(Runtime {
 static ANIM_GEN: AtomicU64 = AtomicU64::new(0);
 static MOVE_GEN: AtomicU64 = AtomicU64::new(0);
 static LEAVE_GEN: AtomicU64 = AtomicU64::new(0);
+/// 钉住表面时顶栏走原生 HTCAPTION（热路径只读此原子，不锁 Runtime）。
+static CAPTION_DRAG: AtomicBool = AtomicBool::new(false);
 /// 诊断计数（pin_diag.dragEvents）：[拖动开始, 拖动结束, 抽屉 Moved, 抽屉吸附, 失焦收回, 轮询收回, 前端离开收回]
 static DRAG_EVENTS: [std::sync::atomic::AtomicU32; 7] = [
     std::sync::atomic::AtomicU32::new(0),
@@ -396,6 +406,18 @@ static DRAG_EVENTS: [std::sync::atomic::AtomicU32; 7] = [
 
 fn count(i: usize) {
     DRAG_EVENTS[i].fetch_add(1, Ordering::Relaxed);
+}
+
+fn set_caption_drag(on: bool) {
+    CAPTION_DRAG.store(on, Ordering::SeqCst);
+}
+
+/// 给 quick 窗口装顶栏原生拖动（幂等）。创建窗口与切到钉住表面时调用。
+pub fn install_caption_drag(window: &WebviewWindow) {
+    #[cfg(windows)]
+    caption::install(window);
+    #[cfg(not(windows))]
+    let _ = window;
 }
 
 fn rt() -> std::sync::MutexGuard<'static, Runtime> {
@@ -700,6 +722,7 @@ pub fn restore(app: &AppHandle) -> Result<(), String> {
     ANIM_GEN.fetch_add(1, Ordering::SeqCst);
     let settings = settings();
     if !settings.active() {
+        set_caption_drag(false);
         rt().surface = Surface::Search;
         set_foreground_hook(app, false);
         crate::pin_strip::hide(app);
@@ -715,6 +738,8 @@ pub fn restore(app: &AppHandle) -> Result<(), String> {
         r.surface = Surface::Pin;
         r.drawer = DrawerState::Collapsed;
     }
+    set_caption_drag(true);
+    install_caption_drag(&window);
     match settings.mode {
         PinMode::Float => {
             set_foreground_hook(app, false);
@@ -760,6 +785,7 @@ pub fn enter_search(window: &WebviewWindow) {
         r.drawer = DrawerState::Collapsed;
         was
     };
+    set_caption_drag(false);
     if was_pin {
         crate::pin_strip::hide(window.app_handle());
         let _ = window.set_resizable(false);
@@ -910,26 +936,30 @@ fn sync_webview_bounds(window: &WebviewWindow) {
             return;
         }
         let (w, hgt) = (rc.right - rc.left, rc.bottom - rc.top);
-        let _ = window.with_webview(move |webview| {
+        // with_webview 把工作投递到 WebView 线程：展开在工作线程上跑，必须等到
+        // SetBounds 真正完成再返回，否则窗口已是 320、页面仍停在动画中间值，
+        // 顶栏中点（D-PIN-03 的 t+16）会点到空白客户区、拖动无法开始。
+        let (tx, rx) = std::sync::mpsc::channel();
+        let posted = window.with_webview(move |webview| {
             let controller = webview.controller();
-            let mut b = windows::Win32::Foundation::RECT::default();
             // SAFETY：with_webview 回调在 WebView 所在线程执行，controller 在回调期间有效
             unsafe {
-                if controller.Bounds(&mut b).is_ok() && (b.right - b.left != w || b.bottom - b.top != hgt) {
-                    log::info!(
-                        "[pin] WebView 边界 {}x{} 与客户区 {w}x{hgt} 不一致，补设",
-                        b.right - b.left,
-                        b.bottom - b.top
-                    );
-                    let _ = controller.SetBounds(windows::Win32::Foundation::RECT {
-                        left: 0,
-                        top: 0,
-                        right: w,
-                        bottom: hgt,
-                    });
-                }
+                // 展开刚把 HWND 显示出来：把可能仍排队的 SetIsVisible(false) 盖掉，
+                // 并通知控制器父窗口已从工作线程 SetWindowPos。
+                let _ = controller.SetIsVisible(true.into());
+                let _ = controller.SetBounds(windows::Win32::Foundation::RECT {
+                    left: 0,
+                    top: 0,
+                    right: w,
+                    bottom: hgt,
+                });
+                let _ = controller.NotifyParentWindowPositionChanged();
             }
+            let _ = tx.send(());
         });
+        if posted.is_ok() && rx.recv_timeout(Duration::from_millis(200)).is_err() {
+            log::info!("[pin] 同步 WebView 边界超时（客户区 {w}x{hgt}）");
+        }
     }
     #[cfg(not(windows))]
     let _ = window;
@@ -1310,6 +1340,105 @@ fn set_foreground_hook(app: &AppHandle, on: bool) {
     }
     #[cfg(not(windows))]
     let _ = (app, on);
+}
+
+// ── 钉住顶栏原生拖动（WM_NCHITTEST → HTCAPTION） ──
+//
+// 展开抽屉后立刻拖顶栏是真实用法。动画用工作线程 SetWindowPos，WebView2 控制器
+// 边界会落后；透明亚克力窗里 Chromium 对半透明像素的 data-tauri-drag-region 命中
+// 也不稳定（失败时 dragEvents[0]=0，随后轮询收回）。顶层窗口先收到 WM_NCHITTEST：
+// 钉住表面且点在顶栏 32 逻辑像素内则返回 HTCAPTION，由系统启动拖动，不依赖 WebView。
+// 搜索表面绝不拦截（输入框在顶部）。
+
+#[cfg(windows)]
+mod caption {
+    use super::*;
+    use std::sync::atomic::AtomicIsize;
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+    use windows_sys::Win32::Graphics::Gdi::{GetDC, GetDeviceCaps, ReleaseDC, LOGPIXELSX};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallWindowProcW, DefWindowProcW, GetClientRect, ScreenToClient, SetWindowLongPtrW,
+        GWLP_WNDPROC, HTCAPTION, WM_NCHITTEST,
+    };
+
+    static PREV_PROC: AtomicIsize = AtomicIsize::new(0);
+    static INSTALLED: AtomicIsize = AtomicIsize::new(0);
+
+    fn dpi_scale(hwnd: HWND) -> f64 {
+        // SAFETY：只读查询本进程窗口的 DC
+        unsafe {
+            let hdc = GetDC(hwnd);
+            if hdc.is_null() {
+                return 1.0;
+            }
+            let dpi = GetDeviceCaps(hdc, LOGPIXELSX);
+            ReleaseDC(hwnd, hdc);
+            if dpi > 0 {
+                dpi as f64 / 96.0
+            } else {
+                1.0
+            }
+        }
+    }
+
+    fn in_caption(hwnd: HWND, lparam: LPARAM) -> bool {
+        if !CAPTION_DRAG.load(Ordering::Relaxed) {
+            return false;
+        }
+        let mut pt = POINT {
+            x: (lparam as i16) as i32,
+            y: ((lparam >> 16) as i16) as i32,
+        };
+        let mut rc = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        // SAFETY：hwnd 是本进程 quick 窗口
+        unsafe {
+            if ScreenToClient(hwnd, &mut pt) == 0 || GetClientRect(hwnd, &mut rc) == 0 {
+                return false;
+            }
+        }
+        pt.x >= rc.left && pt.x < rc.right && caption_hit(pt.y, dpi_scale(hwnd))
+    }
+
+    unsafe extern "system" fn wnd_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if msg == WM_NCHITTEST && in_caption(hwnd, lparam) {
+            return HTCAPTION as LRESULT;
+        }
+        let prev = PREV_PROC.load(Ordering::SeqCst);
+        if prev == 0 {
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        } else {
+            let f: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT =
+                unsafe { std::mem::transmute(prev) };
+            unsafe { CallWindowProcW(Some(f), hwnd, msg, wparam, lparam) }
+        }
+    }
+
+    pub fn install(window: &WebviewWindow) {
+        let Ok(h) = window.hwnd() else {
+            return;
+        };
+        let hwnd = h.0 as isize;
+        let app = window.app_handle().clone();
+        let _ = app.run_on_main_thread(move || {
+            let hwnd = hwnd as HWND;
+            if INSTALLED.load(Ordering::SeqCst) == hwnd as isize {
+                return;
+            }
+            // SAFETY：hwnd 是本进程 quick 窗口；在主线程替换 WndProc 并保存原指针以便转发
+            let prev = unsafe { SetWindowLongPtrW(hwnd, GWLP_WNDPROC, wnd_proc as isize) };
+            if prev == 0 {
+                log::warn!("[pin] 安装顶栏拖动 WndProc 失败");
+                return;
+            }
+            PREV_PROC.store(prev, Ordering::SeqCst);
+            INSTALLED.store(hwnd as isize, Ordering::SeqCst);
+        });
+    }
 }
 
 /// 前台事件钩子是否已装（E2E / 诊断用）
@@ -1726,6 +1855,25 @@ mod tests {
         // 中心落在所有屏外：取最近的一块
         assert_eq!(snap((5000, 200, 320, 640), &mons).unwrap().0, 1);
         assert_eq!(snap((0, 0, 10, 10), &[]), None);
+    }
+
+    #[test]
+    fn caption_hit_covers_title_bar_across_dpi() {
+        // 与 CSS min-height: 32px、测试点 t+16 对齐
+        assert!(caption_hit(0, 1.0));
+        assert!(caption_hit(16, 1.0));
+        assert!(caption_hit(31, 1.0));
+        assert!(!caption_hit(32, 1.0), "32 逻辑像素已到顶栏下沿之外");
+        assert!(!caption_hit(-1, 1.0));
+        // 150% DPI：t+16 CSS = 24 物理像素；顶栏高 48
+        assert!(caption_hit(16, 1.5));
+        assert!(caption_hit(24, 1.5));
+        assert!(caption_hit(47, 1.5));
+        assert!(!caption_hit(48, 1.5));
+        // 200%
+        assert!(caption_hit(32, 2.0));
+        assert!(caption_hit(63, 2.0));
+        assert!(!caption_hit(64, 2.0));
     }
 
     #[test]

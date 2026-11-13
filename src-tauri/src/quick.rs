@@ -194,6 +194,7 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         }
         _ => {}
     });
+    crate::pin::install_caption_drag(&window);
     // 页面默认带 data-quick-hidden。此处不调用 clear_glass_effect：它的 with_webview
     // 与紧接着的首次 show/apply 竞态，可能把刚 SetIsVisible(true) 又打回 false。
     Ok(window)

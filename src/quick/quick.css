@@ -161,9 +161,8 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
 .pin-panel[data-mode="drawer"][data-edge="left"] { right: 0; border-right: var(--border-width, 1px) solid var(--glass-border);
   border-radius: 0 var(--radius-xl) var(--radius-xl) 0; border-left: none; }
 .pin-chrome { flex-shrink: 0; cursor: move; user-select: none; margin: 0 calc(-1 * var(--spacing-sm)) 0;
-  /* WebView 对 alpha=0 的像素不命中 data-tauri-drag-region（D-PIN 曾 dragEvents 全 0）。
-     命中只需非零 alpha：用 --glass-bg-strong（浅 78% / 深 70%，≥0.6）保留「清单预览+镜面」，
-     不铺不透明 --bg-surface（会挡住亚克力）。min-height 保证 t+16 落在这层半透明底上。 */
+  /* 视觉：--glass-bg-strong（浅 78% / 深 70%）保留清单预览+镜面，不铺不透明 --bg-surface。
+     拖动命中：顶栏 32 逻辑像素由后端 WM_NCHITTEST→HTCAPTION 兜底（不依赖 WebView 半透明命中）。 */
   background: var(--glass-bg-strong); min-height: 32px; }
 .pin-stripe { height: calc(var(--spacing-xs) + 1px); background: var(--accent-primary); }
 .pin-header { display: flex; align-items: center; gap: var(--spacing-sm); min-height: 2.2em; cursor: move; user-select: none;
