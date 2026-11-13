@@ -1,0 +1,200 @@
+# 临时工作流：在 Windows runner 上构建并录制 PR #67（cursor/ui-redesign-8f3b @ 055e84e）新 UI 走查。
+# 仅存在于 cursor/ux-walkthrough-redesign-8f3b，不合入 main、不进 PR #67。
+# 本作业自己做正式构建（tauri build --no-bundle），不触发 Release 发版工作流。
+name: UX Walkthrough
+
+on:
+  push:
+    branches: [cursor/ux-walkthrough-redesign-8f3b]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  record:
+    runs-on: windows-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          python -m pip install -r e2e/requirements-e2e.txt
+
+      - name: Build release app + CLI (no installer, no GitHub Release)
+        run: |
+          node scripts/prepare-cli-bin.mjs --placeholder
+          node scripts/prepare-win11-menu.mjs --placeholder
+          npx tauri build --no-bundle
+          cargo build --manifest-path src-tauri/Cargo.toml --release --bin tl
+          New-Item -ItemType Directory -Force dist | Out-Null
+        shell: pwsh
+
+      - name: Locate exe, install ffmpeg and font
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-Item src-tauri/target/release/tag-launcher.exe
+          if (-not $exe) { throw '没有 src-tauri/target/release/tag-launcher.exe' }
+          $tl = Get-Item src-tauri/target/release/tl.exe -ErrorAction SilentlyContinue
+          "TL_E2E_EXE=$($exe.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "EXE: $($exe.FullName)  $($exe.Length) bytes  sha256=$((Get-FileHash $exe.FullName -Algorithm SHA256).Hash)"
+          if ($tl) { "CLI: $($tl.FullName) $($tl.Length)" }
+
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          if (-not $ffmpeg) {
+            try { choco install ffmpeg -y --no-progress } catch { Write-Host "choco: $_" }
+            $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          }
+          if (-not $ffmpeg) {
+            New-Item -ItemType Directory -Force tools | Out-Null
+            $zipff = 'tools/ffmpeg.zip'
+            Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zipff -UseBasicParsing
+            Expand-Archive -LiteralPath $zipff -DestinationPath tools/ffmpeg -Force
+            $ff = Get-ChildItem -Recurse tools/ffmpeg -Filter ffmpeg.exe | Select-Object -First 1
+            "PATH=$($ff.DirectoryName);$env:PATH" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+            $env:PATH = "$($ff.DirectoryName);$env:PATH"
+          }
+          ffmpeg -version | Select-Object -First 3
+
+          $fontDir = 'tools/fonts'
+          New-Item -ItemType Directory -Force $fontDir | Out-Null
+          try {
+            Invoke-WebRequest -Uri 'https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf' -OutFile "$fontDir/NotoSansSC-VF.ttf" -UseBasicParsing
+          } catch { Write-Host "Noto download: $_" }
+          Get-ChildItem C:\Windows\Fonts\msyh*,C:\Windows\Fonts\simhei*,C:\Windows\Fonts\simsun*,$fontDir | Format-Table Name, Length
+
+      - name: Prepare desktop (1920x1080, hide consoles, try 150% DPI)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Stop-Process -Name ServerManager,SecurityHealthSystray -ErrorAction SilentlyContinue
+          Add-Type -TypeDefinition @"
+          using System; using System.Runtime.InteropServices; using System.Text;
+          public static class Native {
+            [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+            public struct DEVMODE {
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+              public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra; public int dmFields;
+              public int dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+              public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+              public short dmLogPixels; public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+              public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+            }
+            public delegate bool EnumProc(IntPtr h, IntPtr l);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplaySettings(string d, int m, ref DEVMODE dm);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettings(ref DEVMODE dm, int f);
+            [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr l);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+            [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
+            [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool r);
+            [DllImport("user32.dll")] public static extern IntPtr GetConsoleWindow();
+            [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr h);
+            [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr h, IntPtr dc);
+            [DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int i);
+            [DllImport("user32.dll")] public static extern bool SystemParametersInfo(uint a, uint b, IntPtr c, uint d);
+            public static int SetRes(int w, int h, int logPixels) {
+              var dm = new DEVMODE(); dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+              if (!EnumDisplaySettings(null, -1, ref dm)) return -100;
+              dm.dmPelsWidth = w; dm.dmPelsHeight = h;
+              dm.dmFields = 0x80000 | 0x100000;
+              if (logPixels > 0) { dm.dmLogPixels = (short)logPixels; dm.dmFields |= 0x20000; }
+              return ChangeDisplaySettings(ref dm, 1);
+            }
+            public static int LogPixels() {
+              var dc = GetDC(IntPtr.Zero);
+              int dpi = GetDeviceCaps(dc, 88);
+              ReleaseDC(IntPtr.Zero, dc);
+              return dpi;
+            }
+            public static int HideConsoles() {
+              int n = 0;
+              EnumProc cb = (h, l) => {
+                if (!IsWindowVisible(h)) return true;
+                var cls = new StringBuilder(256);
+                GetClassName(h, cls, 256);
+                var title = new StringBuilder(512);
+                GetWindowText(h, title, 512);
+                string c = cls.ToString();
+                string t = title.ToString();
+                bool hide = c == "ConsoleWindowClass" || c == "CASCADIA_HOSTING_WINDOW_CLASS"
+                  || t.IndexOf("runner", StringComparison.OrdinalIgnoreCase) >= 0
+                  || t.IndexOf("orchestration", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (hide && t.IndexOf("TagLauncher", StringComparison.OrdinalIgnoreCase) < 0) {
+                  if (!ShowWindow(h, 0)) MoveWindow(h, 4000, 0, 200, 200, true);
+                  n++;
+                  Console.WriteLine("hid " + c + " | " + t);
+                }
+                return true;
+              };
+              EnumWindows(cb, IntPtr.Zero);
+              var self = GetConsoleWindow();
+              if (self != IntPtr.Zero) { ShowWindow(self, 0); n++; }
+              return n;
+            }
+          }
+          "@
+          "DPI before: $([Native]::LogPixels())"
+          "ChangeDisplaySettings(1920x1080 @100%) = $([Native]::SetRes(1920, 1080, 0))  (0 = 成功)"
+          Start-Sleep -Seconds 1
+          # 尽量设 150%：DM_LOGPIXELS + SPI + 注册表（未登出的 runner 上通常不会真改，记录返回值）
+          try {
+            New-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name LogPixels -Value 144 -PropertyType DWord -Force | Out-Null
+            New-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name Win8DpiScaling -Value 1 -PropertyType DWord -Force | Out-Null
+            "reg LogPixels=144 written"
+          } catch { "reg: $_" }
+          "SPI_SETLOGICALDPIOVERRIDE = $([Native]::SystemParametersInfo(0x009F, 0, [IntPtr]::Zero, 3))"
+          "ChangeDisplaySettings(1920x1080 @144) = $([Native]::SetRes(1920, 1080, 144))"
+          Start-Sleep -Seconds 1
+          $dpi = [Native]::LogPixels()
+          "DPI after: $dpi"
+          "UX_SYSTEM_DPI=$dpi" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Get-CimInstance Win32_VideoController | ForEach-Object { "Display: $($_.Name) $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)" }
+          Add-Type -AssemblyName System.Windows.Forms
+          "Screen: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)  DpiX=$([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width)"
+          "Hidden consoles: $([Native]::HideConsoles())"
+
+      - name: Record UX walkthrough
+        timeout-minutes: 35
+        env:
+          CI: '1'
+          TL_E2E_VISIBLE: '1'
+          TL_E2E_WEBVIEW2_HKLM_POLICY: '1'
+          TL_E2E_ALLOW_REGISTRY: '1'
+          TL_E2E_ALLOW_PHYSICAL: '1'
+          TL_E2E_ALLOW_VISIBLE: '1'
+          PYTHONIOENCODING: utf-8
+          PYTHONPATH: ${{ github.workspace }}/e2e
+          UX_OUT: ${{ github.workspace }}/ux-review-redesign
+          UX_HEAD_SHA: ${{ github.sha }}
+        run: python e2e/tools/ux_walkthrough.py
+
+      - name: Upload walkthrough
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-review-redesign
+          path: ux-review-redesign/
+          if-no-files-found: error
+          retention-days: 14
