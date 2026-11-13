@@ -2,7 +2,7 @@
 // quick/QuickApp.tsx — 全局快速搜索窗
 // ============================================================================
 // 预创建、隐藏常驻：不加载全量对象，每次输入向后端 quick_search 取前 50 条
-// （与主窗同一个 Rust 内存索引，见 src-tauri/src/search）；唤出时只做聚焦。
+// （与主窗同一个 Rust 内存索引，结果从索引直接组装，不走 SQLite）；唤出时只做聚焦。
 // 键位：↑↓ 选择 · Enter 打开 · Ctrl+Enter 显示位置 · Ctrl+Shift+C 复制路径 ·
 //       Alt+Enter 在主窗定位 · Ctrl+T 打标签 · Esc 先清空再收起。
 // ============================================================================
@@ -204,6 +204,62 @@ const HighlightName = memo(function HighlightName({ text, query }: { text: strin
   );
 });
 
+/** 单行结果：按对象引用与高亮词 memo。高亮用已提交结果的查询词，输入尚未出结果时不重算。 */
+const QuickResultRow = memo(function QuickResultRow({
+  item,
+  highlightQuery,
+  selected,
+  showGroup,
+  groupLabel,
+  hoverIndex,
+  visual,
+  iconsReady,
+  onHoverIndex,
+  onLaunch,
+}: {
+  item: ItemWithTags;
+  highlightQuery: string;
+  selected: boolean;
+  showGroup: boolean;
+  groupLabel: string;
+  hoverIndex: number;
+  visual: boolean;
+  iconsReady: boolean;
+  onHoverIndex: (index: number) => void;
+  onLaunch: (item: ItemWithTags) => void;
+}) {
+  const name = itemDisplayName(item);
+  const pathShort = truncatePathMiddle(item.path);
+  return (
+    <Fragment>
+      {showGroup && <li className="quick-group" role="presentation">{groupLabel}</li>}
+      <li
+        role="option"
+        aria-selected={selected}
+        data-testid="quick-result"
+        data-item-id={item.id}
+        className={`quick-row${item.is_missing ? " quick-missing" : ""}`}
+        onMouseEnter={() => onHoverIndex(hoverIndex)}
+        onMouseDown={(e) => e.preventDefault()}
+        onDoubleClick={() => onLaunch(item)}
+      >
+        <span className="quick-icon" data-testid="quick-result-icon" data-visual={visual ? "visual" : "type"}>
+          {visual && iconsReady
+            ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
+            : <ItemTypeIcon item={item} emojiClass="" />}
+        </span>
+        <span className="quick-name" title={name}>
+          <HighlightName text={name} query={highlightQuery} />
+        </span>
+        {item.tags.length > 0 && (
+          <span className="quick-tags" title={item.tags.map((t) => t.name).join(" · ")}>{item.tags.slice(0, 3).map((t) => t.name).join(" · ")}</span>
+        )}
+        <span className="quick-path" title={item.path}>{pathShort}</span>
+      </li>
+    </Fragment>
+  );
+});
+
 export function QuickApp() {
   const [collect, closeCollect, collectReady] = useCollectSession();
   const { dragging, dropError } = useQuickDrop();
@@ -263,7 +319,16 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
   const inputRef = useRef<HTMLInputElement>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
   const [prefs, setPrefs] = useState(readPrefs);
-  const [res, setRes] = useState<{ query: string; total: number; indexed: number; items: ItemWithTags[] } | null>(null);
+  const [res, setRes] = useState<{
+    query: string;
+    total: number;
+    indexed: number;
+    items: ItemWithTags[];
+    rustMs?: number;
+    rustSearchMs?: number;
+    rustAssembleMs?: number;
+    invokeMs?: number;
+  } | null>(null);
   // 分帧绘制：首帧只画满可见区的类型图标行（不发缩略图 IPC、不建屏外行），
   // 下一帧（产品自己的 RAF）再补其余行和缩略图。
   const [iconsReady, setIconsReady] = useState(false);
@@ -301,7 +366,16 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
     runQuickSearch({ query, mode: prefs.searchMode, hideMissing: prefs.hideMissing, limit: QUICK_RESULT_LIMIT })
       .then((r) => {
         if (r === SKIPPED || seq !== searchSeq.current) return;
-        setRes({ query, total: r.total, indexed: r.indexed, items: r.items });
+        setRes({
+          query,
+          total: r.total,
+          indexed: r.indexed,
+          items: r.items,
+          rustMs: r.rustMs,
+          rustSearchMs: r.rustSearchMs,
+          rustAssembleMs: r.rustAssembleMs,
+          invokeMs: performance.now() - started,
+        });
         setIconsReady(false);
         setRowsReady(false);
         // 「加载」= 空查询结果就绪（含后端首次建索引），E2E 据此等待预热完成
@@ -321,8 +395,15 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
     const pending = pendingQueryStart.current;
     if (!pending || !res || pending.q !== res.query) return;
     pendingQueryStart.current = null;
-    const { query: q, total, indexed } = res;
-    requestAnimationFrame(() => recordQuickQuery(q, total, performance.now() - pending.start, indexed));
+    const { query: q, total, indexed, rustMs, rustSearchMs, rustAssembleMs, invokeMs } = res;
+    requestAnimationFrame(() =>
+      recordQuickQuery(q, total, performance.now() - pending.start, indexed, {
+        rustMs,
+        rustSearchMs,
+        rustAssembleMs,
+        invokeMs,
+      }),
+    );
   }, [res]);
   // 产品自己的分帧：首帧画满可见区，下一帧再补屏外行和缩略图。
   useLayoutEffect(() => {
@@ -399,6 +480,14 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
       setStatus({ text: `${label}失败：${errorText(e)}`, tone: "error" });
     }
   }, []);
+
+  const onLaunchItem = useCallback((item: ItemWithTags) => {
+    void run("打开", async () => {
+      await db.launchItem(item.id);
+      announceWindowWrite({ source: "quick", itemIds: [item.id], tagsChanged: false });
+      hide();
+    });
+  }, [run, hide]);
 
   const openTagPicker = useCallback(async (item: ItemWithTags) => {
     await run("读取标签", async () => {
@@ -566,38 +655,20 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
           {painted.map((item, i) => {
             const label = getTypeLabel(item.type);
             const prev = i > 0 ? getTypeLabel(painted[i - 1].type) : null;
-            const showGroup = label !== prev;
             return (
-              <Fragment key={item.id}>
-                {showGroup && <li className="quick-group" role="presentation">{label}</li>}
-                <li
-                  role="option"
-                  aria-selected={item === current}
-                  data-testid="quick-result"
-                  data-item-id={item.id}
-                  className={`quick-row${item.is_missing ? " quick-missing" : ""}`}
-                  onMouseEnter={() => setSelected(i)}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onDoubleClick={() => void run("打开", async () => {
-                    await db.launchItem(item.id);
-                    announceWindowWrite({ source: "quick", itemIds: [item.id], tagsChanged: false });
-                    hide();
-                  })}
-                >
-                  <span className="quick-icon" data-testid="quick-result-icon" data-visual={i < QUICK_ICON_LIMIT ? "visual" : "type"}>
-                    {i < QUICK_ICON_LIMIT && iconsReady
-                      ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
-                      : <ItemTypeIcon item={item} emojiClass="" />}
-                  </span>
-                  <span className="quick-name" title={itemDisplayName(item)}>
-                    <HighlightName text={itemDisplayName(item)} query={query} />
-                  </span>
-                  {item.tags.length > 0 && (
-                    <span className="quick-tags" title={item.tags.map((t) => t.name).join(" · ")}>{item.tags.slice(0, 3).map((t) => t.name).join(" · ")}</span>
-                  )}
-                  <span className="quick-path" title={item.path}>{truncatePathMiddle(item.path)}</span>
-                </li>
-              </Fragment>
+              <QuickResultRow
+                key={item.id}
+                item={item}
+                highlightQuery={res?.query ?? ""}
+                selected={item === current}
+                showGroup={label !== prev}
+                groupLabel={label}
+                hoverIndex={i}
+                visual={i < QUICK_ICON_LIMIT}
+                iconsReady={iconsReady}
+                onHoverIndex={setSelected}
+                onLaunch={onLaunchItem}
+              />
             );
           })}
         </ul>

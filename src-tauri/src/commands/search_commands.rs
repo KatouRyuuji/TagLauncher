@@ -33,6 +33,7 @@ pub fn search_items(
 use crate::services::search_index::{IndexStats, SearchIndex, SearchParams};
 use crate::services::synonym_service;
 use serde::Serialize;
+use std::time::Instant;
 
 fn synonyms_loader(app: &AppHandle) -> impl Fn() -> Vec<Vec<String>> + '_ {
     move || {
@@ -51,9 +52,16 @@ pub struct QuickSearchResult {
     /// 索引里的对象总数（输入框占位提示用）
     pub indexed: usize,
     pub items: Vec<ItemWithTags>,
+    /// 后端本命令耗时（毫秒）：开连接 + 搜索 + 从内存组装对象。始终采集，不作行为开关。
+    pub rust_ms: f64,
+    /// `search_locked`（打分与排序）耗时。
+    pub rust_search_ms: f64,
+    /// 从前 `limit` 条命中组装 `ItemWithTags` 的耗时。
+    pub rust_assemble_ms: f64,
 }
 
 /// 快速窗搜索：只返回前 `limit`（默认 50）条对象。空查询 = 默认排序（收藏 → 最近使用 → 名称）的前若干项。
+/// 结果从内存索引组装（与主窗 `get_items_page` 同一份数据），不再每次按键走 SQLite。
 #[tauri::command(async)]
 pub fn quick_search(
     app: AppHandle,
@@ -64,9 +72,10 @@ pub fn quick_search(
     hide_missing: Option<bool>,
     limit: Option<usize>,
 ) -> Result<QuickSearchResult, String> {
-    // 查询前暂停整窗毛玻璃，空闲后恢复（含搜索失败路径）。见 quick::suspend_glass_for_query。
+    // 查询期间不再拆掉系统背景（空操作，调用点保留）。见 quick::suspend_glass_for_query。
     crate::quick::suspend_glass_for_query(&app);
     let _resume = crate::quick::ResumeGlassAfterQuery(&app);
+    let t0 = Instant::now();
     let params = SearchParams {
         query,
         mode: mode.unwrap_or_default(),
@@ -75,18 +84,19 @@ pub fn quick_search(
         hide_missing: hide_missing.unwrap_or(false),
     };
     let ro = db.read_conn()?;
-    let ids = index.search(ro.conn(), &params, &synonyms_loader(&app))?;
-    let top: Vec<i64> = ids.iter().take(limit.unwrap_or(50)).copied().collect();
-    let mut by_id: std::collections::HashMap<i64, ItemWithTags> =
-        item_service::get_items_by_ids(ro.conn(), &top)?
-            .into_iter()
-            .map(|it| (it.item.id, it))
-            .collect();
-    let items = top.iter().filter_map(|id| by_id.remove(id)).collect();
+    let page = index.search_page(
+        ro.conn(),
+        &params,
+        limit.unwrap_or(50),
+        &synonyms_loader(&app),
+    )?;
     Ok(QuickSearchResult {
-        total: ids.len(),
-        indexed: index.stats().entries,
-        items,
+        total: page.total,
+        indexed: page.indexed,
+        items: page.items,
+        rust_ms: t0.elapsed().as_secs_f64() * 1000.0,
+        rust_search_ms: page.search_ms,
+        rust_assemble_ms: page.assemble_ms,
     })
 }
 

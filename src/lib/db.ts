@@ -284,6 +284,10 @@ export interface QuickSearchResult {
   /** 索引中的对象总数 */
   indexed: number;
   items: ItemWithTags[];
+  /** 后端本命令耗时（毫秒，始终采集；演示桩可缺省） */
+  rustMs?: number;
+  rustSearchMs?: number;
+  rustAssembleMs?: number;
 }
 
 /** 快速窗搜索：只取前 limit（默认 50）条；空查询 = 默认排序（收藏 → 最近使用 → 名称）的前若干项 */
