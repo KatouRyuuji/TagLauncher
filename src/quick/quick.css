@@ -1,7 +1,7 @@
 /* 快速搜索窗：无边框小窗。颜色、字体、圆角、间距、动效全部取主题变量（主窗快照，无快照时套默认主题），
    不写死色值——tests：quickStyleTokens.spec.ts 扫描本文件只许用 THEME_VARIABLE_KEYS 里的变量。
    不引入主窗 Tailwind 样式与打包字体。
-   毛玻璃：透明窗体 + 可选系统亚克力 + backdrop-filter（--glass-* 令牌）；不是 Mica。 */
+   毛玻璃：透明窗体 + Win11 系统瞬态背景 + 明亮 tint（--glass-* 令牌）；不是 Mica，也不再叠 CSS backdrop-filter。 */
 *, *::before, *::after { box-sizing: border-box; }
 body.quick-body { font-family: var(--font-family-body, var(--font-family)); letter-spacing: var(--letter-spacing); }
 html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; background: transparent; }
@@ -17,26 +17,19 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
   box-shadow: var(--glass-highlight), var(--glass-shadow);
   animation: quick-pop var(--transition-normal) both;
   overflow: hidden; }
-/* ::before 只铺半透明底与细颗粒，不含 backdrop-filter：整窗滤镜会在列表重绘时拖慢查询 p95。
-   有系统亚克力（html[data-acrylic]）时由 DWM 负责整窗雾面，本层再减透明以免盖实；
-   否则仅顶栏窄带 CSS 模糊回退。颗粒是静态 repeating 渐变，不进滤镜、不影响查询。 */
+/* ::before 铺明亮 tint 与细颗粒。有系统瞬态背景（html[data-acrylic]）时用较透的 --glass-bg，
+   让合成器的亮度与噪点透出来；否则用 --glass-bg-strong 干净实底，不再叠 CSS backdrop-filter。
+   颗粒是静态径向点，不进滤镜、不影响查询。 */
 .quick-shell::before, .pin-shell::before {
   content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; border-radius: inherit;
-  background-color: var(--glass-bg);
+  background-color: var(--glass-bg-strong);
   background-image:
     radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-primary) 3.5%, transparent) 0.7px, transparent 0);
   background-size: 4px 4px;
 }
 html[data-acrylic] .quick-shell::before,
 html[data-acrylic] .pin-shell::before {
-  background-color: color-mix(in srgb, var(--glass-bg) 55%, transparent);
-}
-html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .quick-shell::after,
-html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .pin-shell::after {
-  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5.6em;
-  z-index: 0; pointer-events: none; border-radius: inherit;
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
+  background-color: var(--glass-bg);
 }
 .quick-shell > *, .pin-shell > * { position: relative; z-index: 1; }
 .quick-search { position: relative; flex-shrink: 0; padding-bottom: var(--spacing-sm);
@@ -183,8 +176,7 @@ html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .pin-shel
 #root { position: relative; }
 .quick-drop-overlay { position: absolute; inset: calc(var(--spacing-xs) * 1.5); display: flex; align-items: center; justify-content: center;
   border: calc(var(--border-width, 1px) * 2) dashed var(--accent-primary); border-radius: var(--radius-md); pointer-events: none;
-  background: color-mix(in srgb, var(--glass-bg) 88%, transparent); font-weight: var(--font-weight-semibold); font-size: 1.1em;
-  backdrop-filter: var(--glass-blur); }
+  background: color-mix(in srgb, var(--glass-bg-strong) 88%, transparent); font-weight: var(--font-weight-semibold); font-size: 1.1em; }
 /* 钉住视图 / 边缘抽屉（同一窗口的 pin 表面；html[data-surface] 由 QuickApp 维护） */
 html[data-surface="pin"] .quick-shell, html[data-surface="pin"] .quick-drop-overlay { display: none; }
 html:not([data-surface="pin"]) .pin-shell { display: none; }
@@ -226,10 +218,6 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
-/* 窗口隐藏：停动画；窄带滤镜选择器已排除 data-quick-hidden。 */
+/* 窗口隐藏：停动画。 */
 html[data-quick-hidden] .quick-shell,
 html[data-quick-hidden] .pin-shell { animation: none; }
-html[data-quick-hidden] .quick-drop-overlay {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}

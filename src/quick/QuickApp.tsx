@@ -51,6 +51,8 @@ function useThemeFollower() {
       const snapshot = parseThemeSnapshot(raw);
       if (snapshot) {
         applyThemeSnapshot(snapshot);
+        const dark = document.documentElement.getAttribute("data-scheme") === "dark";
+        void db.setGlassDark(dark).catch(() => {});
         return;
       }
       // 主窗还没写过快照（极少见：首启即被右键菜单拉起）：套默认主题令牌，不让样式落到浏览器默认色
@@ -58,6 +60,8 @@ function useThemeFollower() {
         if (localStorage.getItem(THEME_SNAPSHOT_KEY)) return;
         const vars = Object.fromEntries(Object.entries(DEFAULT_THEME_VARIABLES).map(([k, v]) => [`--${k}`, v]));
         applyThemeSnapshot({ vars, attrs: {} });
+        const dark = document.documentElement.getAttribute("data-scheme") === "dark";
+        void db.setGlassDark(dark).catch(() => {});
       });
     };
     apply(localStorage.getItem(THEME_SNAPSHOT_KEY));

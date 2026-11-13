@@ -61,3 +61,10 @@
 - **原因**：418b968 走查（run 43387161162）里探头仍是近白 68×148 矩形。对比拉伸后能认出「工作」「7 项」和三行文件名，但原图像素亮度 253–255、标准差 0.63——GDI `DrawText` 叠在 `SetWindowCompositionAttribute` 亚克力上几乎不可见。这是合成问题，不是字体或对比函数写错。
 - **改动**（`pin_strip.rs`）：不再调用亚克力；始终 `WS_EX_LAYERED` + 铺实底双缓冲 + ClearType（已知底色）+ 约 90% 整体透明 + 三边描边。休息/悬停尺寸仍是 68×148 / 168，E2E 宽高断言不改。
 - **性能**：探头是独立原生窗口，不在快速窗查询热路径上；5k 35ms 及其它上限均不改。
+
+## 9. Win11 系统瞬态背景替换旧亚克力（t53u 第三轮·镜面）
+
+- **原因**：95323a8 走查里快速窗在白底主窗上读成浑浊灰卡片——这是旧 `SetWindowCompositionAttribute` / Tauri `Effect::Acrylic` 加上偏灰、掺了强调色的 tint 的典型样子，不是好的玻璃。深色钉住同样发闷。
+- **改动**：Windows 11 build ≥ 22621 用 `DwmSetWindowAttribute(DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_TRANSIENTWINDOW)`，跟随 `DWMWA_USE_IMMERSIVE_DARK_MODE`，圆角与阴影交给合成器（`DWMWCP_ROUND`）。不再调用 `Effect::Acrylic`。内容层改为明亮 tint（浅 `#fafafc` 约 62%、深 `#1c1c20` 约 62%）加 1px 内高光；不支持时用约 92% 干净实底，绝不走浑浊灰，也不再叠 CSS `backdrop-filter`。查询期间不再拆掉系统背景（合成器侧比 CSS 模糊便宜）。键数仍为 139，无新变量。
+- **视觉基线**：快速窗、钉住浮动窗 / 抽屉的镜面材质会与 95323a8 不同（更亮、有系统噪点与圆角阴影，不再是灰卡片）。基线不入库，CI 首次运行 `baseline-created`。
+- **性能**：5k 查询 35ms 及其它上限均不改；不放宽、不 skip、不按测量开关。需在正式/debug 构建上重测并报告 p95。

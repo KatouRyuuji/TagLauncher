@@ -837,6 +837,11 @@ export async function pinHandleChrome(bg: string, fg: string, muted: string, dar
   return invokeCmd("pin_handle_chrome", { bg, fg, muted, dark });
 }
 
+/** 告知后端当前主题是否深色：Win11 系统瞬态背景跟随沉浸式深色模式。 */
+export async function setGlassDark(dark: boolean): Promise<void> {
+  return invokeCmd("set_glass_dark", { dark });
+}
+
 export async function getSetting(key: string): Promise<string | null> {
   return invokeCmd("get_setting", { key });
 }

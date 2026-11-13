@@ -74,7 +74,7 @@
 **特效与装饰**
 `card-backdrop-filter` `sidebar-backdrop-filter` `welcome-accent-gradient` `media-caption-gradient` `status-warning-bg` `status-success-bg` `scrollbar-thumb` `scrollbar-thumb-hover`
 
-**毛玻璃（快速窗与钉住浮动窗共用，亚克力 + backdrop-filter，不是 Mica）**
+**毛玻璃（快速窗与钉住浮动窗共用；Win11 系统瞬态背景 + 明亮 tint，不是 Mica；不支持时干净实底）**
 `glass-bg` `glass-bg-strong` `glass-blur` `glass-border` `glass-highlight` `glass-shadow` `glass-accent-bar`
 
 **标签体系**
