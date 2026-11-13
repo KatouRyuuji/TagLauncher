@@ -1355,10 +1355,10 @@ mod caption {
     use super::*;
     use std::sync::atomic::AtomicIsize;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-    use windows_sys::Win32::Graphics::Gdi::{GetDC, GetDeviceCaps, ReleaseDC, LOGPIXELSX};
+    use windows_sys::Win32::Graphics::Gdi::{GetDC, GetDeviceCaps, ReleaseDC, ScreenToClient, LOGPIXELSX};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallWindowProcW, DefWindowProcW, GetClientRect, ScreenToClient, SetWindowLongPtrW,
-        GWLP_WNDPROC, HTCAPTION, WM_NCHITTEST,
+        CallWindowProcW, DefWindowProcW, GetClientRect, SetWindowLongPtrW, GWLP_WNDPROC, HTCAPTION,
+        WM_NCHITTEST,
     };
 
     static PREV_PROC: AtomicIsize = AtomicIsize::new(0);
@@ -1371,7 +1371,7 @@ mod caption {
             if hdc.is_null() {
                 return 1.0;
             }
-            let dpi = GetDeviceCaps(hdc, LOGPIXELSX);
+            let dpi = GetDeviceCaps(hdc, LOGPIXELSX as i32);
             ReleaseDC(hwnd, hdc);
             if dpi > 0 {
                 dpi as f64 / 96.0
