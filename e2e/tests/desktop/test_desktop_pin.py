@@ -30,13 +30,23 @@ def handle_hwnd(app) -> int:
 
 # 有意设计变更：探头休息宽度 68 逻辑像素（不再是 8px 细条）。取整允许 ±4。
 # 悬停时卡片会加宽到 168，collapsed() 只在鼠标已离开（park）后断言休息宽度。
+# HWND 含阴影边距，比卡片大；宽度与上下位置用 pin_diag.handleRect（卡片），不用 GetWindowRect。
 PEEK_REST_WIDTH = 68
+
+
+def handle_card(app) -> list:
+    """卡片物理矩形 [x, y, w, h]，不含阴影边距。"""
+    return app.invoke("pin_diag")["handleRect"]
 
 
 def collapsed(app, strip: int, quick: int) -> bool:
     s = scale(strip)
     rest = round(PEEK_REST_WIDTH * s)
-    return win32.is_visible(strip) and rest - 4 <= width(strip) <= rest + 4 and not win32.is_visible(quick)
+    try:
+        w = int(handle_card(app)[2])
+    except Exception:
+        w = width(strip)
+    return win32.is_visible(strip) and rest - 4 <= w <= rest + 4 and not win32.is_visible(quick)
 
 
 def expanded(app, quick: int) -> bool:
@@ -179,15 +189,18 @@ def test_drawer_drag_switches_edge_and_position_survives_restart(app, sandbox):
     top_before = win32.rect(q)[1]
     park_mouse(h)
     wait_until(lambda: collapsed(app, h, q), 3)
-    assert win32.rect(h)[0] == work[0] and abs(win32.rect(h)[1] - top_before) <= 2, win32.rect(h)
+    card = handle_card(app)
+    # 贴边看 HWND 左缘（贴边一侧无阴影）；上下对齐看卡片顶，不是带阴影的 HWND 顶。
+    assert win32.rect(h)[0] == work[0] and abs(card[1] - top_before) <= 2, (win32.rect(h), card)
 
     app.restart()
     q = quick_hwnd(app)
     h = handle_hwnd(app)
     wait_until(lambda: collapsed(app, h, q) and win32.rect(h)[0] == work[0], 10,
                lambda: f"重启后把手应在左边：rect={win32.rect(h)}")
-    assert abs(win32.rect(h)[1] - top_before) <= 2, f"上下位置应记住：{win32.rect(h)[1]} vs {top_before}"
-    print(f"PIN_REMEMBER offset={offset} rect={win32.rect(h)} monitor={dbh.meta(sandbox.db_path, 'pin.drawer_monitor')}")
+    card = handle_card(app)
+    assert abs(card[1] - top_before) <= 2, f"上下位置应记住：卡片 {card[1]} vs 抽屉 {top_before}"
+    print(f"PIN_REMEMBER offset={offset} rect={win32.rect(h)} card={card} monitor={dbh.meta(sandbox.db_path, 'pin.drawer_monitor')}")
 
 
 @pytest.mark.case("D-PIN-04")

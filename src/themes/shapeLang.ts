@@ -141,25 +141,27 @@ const SHADOW_TOKENS: Record<ShapeLang, Record<ShapeScheme, Record<string, string
   },
 };
 
-/** 毛玻璃材质：快速窗与钉住浮动窗 / 抽屉共用。亚克力 + backdrop-filter，不是 Mica。 */
+/** 毛玻璃材质：快速窗与钉住浮动窗 / 抽屉共用。
+ *  Win11 用系统瞬态背景（DWMSBT_TRANSIENTWINDOW）提供亮度、着色与噪点；本层只铺明亮 tint
+ *  和 1px 内高光，不是旧亚克力、也不是 Mica。不支持时 --glass-bg-strong 作干净实底回退。 */
 const GLASS_TOKENS: Record<ShapeScheme, Record<string, string>> = {
   light: {
-    // 46% 着色 + 少量强调色：亚克力/壁纸能透出来，白底主窗上也能靠冷色调读出材质。
-    // 72% 会把 DWM 雾面盖成实心白（走查 05-quick-search）。
-    "glass-bg": "color-mix(in srgb, color-mix(in srgb, var(--bg-surface) 88%, var(--accent-primary) 12%) 46%, transparent)",
-    "glass-bg-strong": "color-mix(in srgb, color-mix(in srgb, var(--bg-surface) 90%, var(--accent-primary) 10%) 62%, transparent)",
-    "glass-blur": "blur(24px) saturate(1.55)",
-    "glass-border": "color-mix(in srgb, var(--text-primary) 18%, var(--border-medium))",
-    "glass-highlight": "inset 0 1px 0 color-mix(in srgb, var(--text-invert) 70%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--text-invert) 22%, transparent)",
+    // 内容层：明亮近白 62%，不掺强调色（掺了在白底主窗上是浑浊灰）。
+    "glass-bg": "color-mix(in srgb, #fafafc 62%, transparent)",
+    // 输入框 / 不支持系统背景时的干净实底（约 92%），仍是明亮近白，不是灰泥。
+    "glass-bg-strong": "color-mix(in srgb, #fafafc 92%, transparent)",
+    "glass-blur": "none",
+    "glass-border": "color-mix(in srgb, var(--text-primary) 16%, var(--border-medium))",
+    "glass-highlight": "inset 0 1px 0 color-mix(in srgb, var(--text-invert) 78%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--text-invert) 28%, transparent)",
     "glass-shadow": "0 1px 2px rgb(20 28 44 / 0.06), 0 10px 28px rgb(20 28 44 / 0.14), 0 28px 64px rgb(20 28 44 / 0.12)",
     "glass-accent-bar": "3px",
   },
   dark: {
-    "glass-bg": "color-mix(in srgb, color-mix(in srgb, var(--bg-surface) 86%, var(--accent-primary) 14%) 50%, transparent)",
-    "glass-bg-strong": "color-mix(in srgb, color-mix(in srgb, var(--bg-surface) 88%, var(--accent-primary) 12%) 64%, transparent)",
-    "glass-blur": "blur(28px) saturate(1.6)",
-    "glass-border": "color-mix(in srgb, var(--text-primary) 32%, transparent)",
-    "glass-highlight": "inset 0 1px 0 color-mix(in srgb, var(--text-primary) 28%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 12%, transparent)",
+    "glass-bg": "color-mix(in srgb, #1c1c20 62%, transparent)",
+    "glass-bg-strong": "color-mix(in srgb, #1c1c20 92%, transparent)",
+    "glass-blur": "none",
+    "glass-border": "color-mix(in srgb, var(--text-primary) 28%, transparent)",
+    "glass-highlight": "inset 0 1px 0 color-mix(in srgb, var(--text-primary) 36%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 14%, transparent)",
     "glass-shadow": "0 1px 2px rgb(0 0 0 / 0.32), 0 16px 40px rgb(0 0 0 / 0.48), 0 40px 80px rgb(0 0 0 / 0.32)",
     "glass-accent-bar": "3px",
   },

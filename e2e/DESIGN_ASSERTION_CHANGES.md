@@ -61,3 +61,16 @@
 - **原因**：418b968 走查（run 43387161162）里探头仍是近白 68×148 矩形。对比拉伸后能认出「工作」「7 项」和三行文件名，但原图像素亮度 253–255、标准差 0.63——GDI `DrawText` 叠在 `SetWindowCompositionAttribute` 亚克力上几乎不可见。这是合成问题，不是字体或对比函数写错。
 - **改动**（`pin_strip.rs`）：不再调用亚克力；始终 `WS_EX_LAYERED` + 铺实底双缓冲 + ClearType（已知底色）+ 约 90% 整体透明 + 三边描边。休息/悬停尺寸仍是 68×148 / 168，E2E 宽高断言不改。
 - **性能**：探头是独立原生窗口，不在快速窗查询热路径上；5k 35ms 及其它上限均不改。
+
+## 9. Win11 系统瞬态背景替换旧亚克力（t53u 第三轮·镜面）
+
+- **原因**：95323a8 走查里快速窗在白底主窗上读成浑浊灰卡片——这是旧 `SetWindowCompositionAttribute` / Tauri `Effect::Acrylic` 加上偏灰、掺了强调色的 tint 的典型样子，不是好的玻璃。深色钉住同样发闷。
+- **改动**：Windows 11 build ≥ 22621 用 `DwmSetWindowAttribute(DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_TRANSIENTWINDOW)`，跟随 `DWMWA_USE_IMMERSIVE_DARK_MODE`，圆角与阴影交给合成器（`DWMWCP_ROUND`）。不再调用 `Effect::Acrylic`。内容层改为明亮 tint（浅 `#fafafc` 约 62%、深 `#1c1c20` 约 62%）加 1px 内高光；不支持时用约 92% 干净实底，绝不走浑浊灰，也不再叠 CSS `backdrop-filter`。查询期间不再拆掉系统背景（合成器侧比 CSS 模糊便宜）。键数仍为 139，无新变量。
+- **视觉基线**：快速窗、钉住浮动窗 / 抽屉的镜面材质会与 95323a8 不同（更亮、有系统噪点与圆角阴影，不再是灰卡片）。基线不入库，CI 首次运行 `baseline-created`。
+- **性能**：5k 查询 35ms 及其它上限均不改；不放宽、不 skip、不按测量开关。需在正式/debug 构建上重测并报告 p95。
+## 10. 探头改用 UpdateLayeredWindow（t53u 第三轮·把手）
+
+- **原因**：95323a8 探头文字已可读，但 `SetWindowRgn` 圆角呈台阶、顶边描边错位或断裂、`CS_DROPSHADOW` 在 region 上无效、约 90% 整体透明让桌面图标透过来。
+- **改动**（`pin_strip.rs`）：按像素 alpha 的分层窗口，`UpdateLayeredWindow` 上传预乘 BGRA。软件抗锯齿圆角（仅内侧）、边距里的软阴影、1px 描边、DirectWrite 级别的灰度抗锯齿文字（GDI `ANTIALIASED_QUALITY`，不用 ClearType）。卡片本体约 98% 不透明；通透感靠顶部高光。卡片休息/悬停尺寸仍是 68×148 / 168；HWND 在非贴边一侧和上下含 16 逻辑像素阴影边距，贴边一侧边距为 0（仍与工作区齐平）。阴影区 `WM_NCHITTEST` 返回 `HTTRANSPARENT`（点击穿透）。渲染按设备像素（已有的物理矩形 / PerMonitorV2 缩放）。
+- **E2E**：`D-PIN-*` 的休息宽度与上下对齐改看 `pin_diag.handleRect`（卡片），不再用 `GetWindowRect` 的 HWND 宽高——HWND 现在比卡片大，卡片尺寸断言本身不变（E-PIN-04 本就用 handleRect）。
+- **性能**：探头是独立原生窗口，不在快速窗查询热路径上；5k 35ms 及其它上限均不改。

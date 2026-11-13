@@ -72,6 +72,7 @@ vi.mock("../lib/db", () => ({
   getCabinets: vi.fn(async () => [{ id: 10, name: "项目", color: "#123", folder_path: null }, { id: 11, name: "关联", color: "#456", folder_path: "D:/Linked" }]),
   classifyImportPaths: vi.fn(async (paths: string[]) => ({ files: paths.filter((p) => !p.endsWith("Dir")), folders: paths.filter((p) => p.endsWith("Dir")) })),
   expandFolderImport: vi.fn(async () => ({ paths: ["D:\\Dir\\sub\\in.txt"], truncated: false })),
+  setGlassDark: vi.fn(async () => {}),
   addItems: vi.fn(async (paths: string[]) => ({
     items: paths.map((path, i) => ({ id: 100 + i, path })),
     failed: [],

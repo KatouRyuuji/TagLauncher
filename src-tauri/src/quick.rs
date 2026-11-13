@@ -109,9 +109,11 @@ static VISIBILITY_GEN: AtomicU64 = AtomicU64::new(0);
 /// 产品意图上窗口是否该显示。不信任 tao is_visible()：原生 ShowWindow 后标志可能反了，
 /// 既会让暂停早退（亚克力留在查询上），也会让恢复把亚克力打到已隐藏的窗口（空闲 CPU）。
 static INTENDED_VISIBLE: AtomicBool = AtomicBool::new(false);
-/// 亚克力/镜面是否已经 apply 过、还没 clear/suspend。查询热路径只在为 true 时才走 DWM。
+/// 系统瞬态背景是否已经打开。隐藏时清掉；查询期间保持（合成器侧比 CSS 模糊便宜）。
 static GLASS_APPLIED: AtomicBool = AtomicBool::new(false);
 static QUERY_GLASS_GEN: AtomicU64 = AtomicU64::new(0);
+/// 跟随主题的沉浸式深色（DWMWA_USE_IMMERSIVE_DARK_MODE）。由前端 set_glass_dark 告知。
+static GLASS_DARK: AtomicBool = AtomicBool::new(false);
 /// 当前是否处于低内存目标（唤出时只在确实降过时才恢复）
 static LOW_MEMORY: AtomicBool = AtomicBool::new(false);
 
@@ -172,8 +174,8 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .focused(false)
         .transparent(true)
         .background_color(tauri::window::Color(0, 0, 0, 0));
-    // 不在创建时挂亚克力：窗口默认 visible(false)，EffectState::Active 会让 DWM 在隐藏态持续合成，
-    // 空闲 CPU 超 1% 预算。显示时再 apply_glass_effect，隐藏/销毁时清除。
+    // 不在创建时开系统背景：窗口默认 visible(false)，隐藏态持续合成会超空闲 CPU 预算。
+    // 显示后再 apply_glass_effect，隐藏/销毁时清除。
     let window = builder
         .build()
         .map_err(|e| format!("创建快速搜索窗失败：{e}"))?;
@@ -200,32 +202,26 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     Ok(window)
 }
 
-/// 窗口真正显示时才开系统亚克力（不是 Mica）并允许 CSS 毛玻璃。
+/// 窗口真正显示时才开 Win11 系统瞬态背景（DWMSBT_TRANSIENTWINDOW），并允许内容层亮 tint。
 /// 创建或隐藏时关闭效果、把 WebView2 controller IsVisible 设为 false，并给页面打
-/// `data-quick-hidden`（关掉 backdrop-filter）：透明窗 + 毛玻璃在 HWND 已隐藏时仍会让
-/// GPU 合成桌面背景，空闲 CPU 超 1% 预算。不用 TrySuspend（恢复有延迟，和极速唤出冲突）。
-/// API / 系统不支持时忽略。
+/// `data-quick-hidden`。不用旧的 `Effect::Acrylic` / SetWindowCompositionAttribute（叠在白底
+/// 主窗上是浑浊灰卡片）。build < 22621 或 API 失败时不挂系统背景，前端走干净实底。
+/// 隐藏时关闭以免 DWM 在不可见窗口上继续合成（空闲 CPU）。
 pub(crate) fn apply_glass_effect(window: &WebviewWindow) {
     if !INTENDED_VISIBLE.load(Ordering::SeqCst) {
         return;
     }
-    let mut acrylic = false;
+    let mut native = false;
     #[cfg(windows)]
     {
-        use tauri::window::{Effect, EffectState, EffectsBuilder};
-        acrylic = window
-            .set_effects(
-                EffectsBuilder::new()
-                    .effect(Effect::Acrylic)
-                    .state(EffectState::Active)
-                    .build(),
-            )
-            .is_ok();
+        if let Ok(h) = window.hwnd() {
+            native = crate::dwm_backdrop::apply(h.0 as isize, GLASS_DARK.load(Ordering::SeqCst));
+        }
         set_controller_visible(window, true);
     }
-    // 亚克力成功则打 data-acrylic，前端不再叠整窗 backdrop-filter（避免双模糊拖慢查询）。
-    // 失败则只揭开 data-quick-hidden，由 CSS 顶栏窄带滤镜回退。
-    let js = if acrylic {
+    // 系统背景成功则打 data-acrylic，内容层用较透的明亮 tint，让合成器的亮度与噪点透出来。
+    // 失败则揭开 data-quick-hidden，由 CSS 用接近不透明的干净实底回退，不再叠 CSS 模糊。
+    let js = if native {
         "document.documentElement.setAttribute('data-acrylic','');document.documentElement.removeAttribute('data-quick-hidden');document.documentElement.removeAttribute('data-querying');"
     } else {
         "document.documentElement.removeAttribute('data-acrylic');document.documentElement.removeAttribute('data-quick-hidden');document.documentElement.removeAttribute('data-querying');"
@@ -238,7 +234,9 @@ pub(crate) fn clear_glass_effect(window: &WebviewWindow) {
     GLASS_APPLIED.store(false, Ordering::SeqCst);
     #[cfg(windows)]
     {
-        let _ = window.set_effects(None);
+        if let Ok(h) = window.hwnd() {
+            crate::dwm_backdrop::clear(h.0 as isize);
+        }
         set_controller_visible(window, false);
     }
     let _ = window.eval(
@@ -246,22 +244,17 @@ pub(crate) fn clear_glass_effect(window: &WebviewWindow) {
     );
 }
 
-/// 唤出先让输入框可聚焦并记下 summon 指标；镜面在空闲后再开，避免计入 summon p95，
-/// 也避免 50ms 到点与首字查询在 DWM 上打架。与查询结束后恢复同一时间窗（180ms）。
+/// 唤出先让输入框可聚焦并记下 summon 指标；系统背景在空闲后再开（输入优先，与查询恢复同一 180ms）。
 const GLASS_AFTER_SHOW: Duration = Duration::from_millis(180);
 
 fn schedule_glass(window: &WebviewWindow) {
     let gen = VISIBILITY_GEN.load(Ordering::SeqCst);
-    let qgen = QUERY_GLASS_GEN.load(Ordering::SeqCst);
     let window = window.clone();
     let _ = std::thread::Builder::new()
         .name("tl-quick-glass".into())
         .spawn(move || {
             std::thread::sleep(GLASS_AFTER_SHOW);
             if VISIBILITY_GEN.load(Ordering::SeqCst) != gen {
-                return;
-            }
-            if QUERY_GLASS_GEN.load(Ordering::SeqCst) != qgen {
                 return;
             }
             if INTENDED_VISIBLE.load(Ordering::SeqCst) {
@@ -278,62 +271,36 @@ pub(crate) fn set_intended_visible(visible: bool) {
     }
 }
 
-/// 查询期间暂停整窗亚克力。同 runner 对照（43211890354）：PR66 5k p95 29.6（余量 0.4ms），
-/// 19bc707 开毛玻璃 32.9，关掉 28.8。代价是亚克力/滤镜，不是搜索本身。controller 保持可见；
-/// 查询空闲后再恢复镜面。打 `data-querying` 同时关掉 CSS 顶栏滤镜回退。
-const RESUME_GLASS_AFTER_QUERY: Duration = Duration::from_millis(180);
+/// 查询期间不再拆掉系统背景：合成器侧瞬态亚克力比 CSS `backdrop-filter` 便宜，来回开关反而贵。
+/// 保留函数与 `ResumeGlassAfterQuery`，调用点不用改；本体是空操作。
+pub(crate) fn suspend_glass_for_query(_app: &AppHandle) {}
 
-pub(crate) fn suspend_glass_for_query(app: &AppHandle) {
-    // 先作废待执行的开玻璃任务（纯原子，不进 DWM）。
-    QUERY_GLASS_GEN.fetch_add(1, Ordering::SeqCst);
-    VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
-    // 只在镜面已经打开时才 set_effects(None)+eval。b894aa5 每次查询都走 DWM，
-    // 这笔开销计入「输入到出结果」：正式/debug 5k p95 到了 34 / 33.9。
-    // 性能测试在 180ms 空闲窗内连续输入，玻璃从未打开，这条不会进。
-    if !GLASS_APPLIED.load(Ordering::SeqCst) {
-        return;
-    }
-    let Some(window) = quick_window(app) else { return };
-    GLASS_APPLIED.store(false, Ordering::SeqCst);
-    #[cfg(windows)]
-    {
-        let _ = window.set_effects(None);
-    }
-    let _ = window.eval(
-        "document.documentElement.removeAttribute('data-acrylic');document.documentElement.setAttribute('data-querying','');",
-    );
-}
+pub(crate) fn schedule_resume_glass_after_query(_app: &AppHandle) {}
 
-pub(crate) fn schedule_resume_glass_after_query(app: &AppHandle) {
-    let Some(window) = quick_window(app) else { return };
-    if !INTENDED_VISIBLE.load(Ordering::SeqCst) {
-        return;
-    }
-    let qgen = QUERY_GLASS_GEN.load(Ordering::SeqCst);
-    let vis = VISIBILITY_GEN.load(Ordering::SeqCst);
-    let window = window.clone();
-    let _ = std::thread::Builder::new()
-        .name("tl-query-glass".into())
-        .spawn(move || {
-            std::thread::sleep(RESUME_GLASS_AFTER_QUERY);
-            if QUERY_GLASS_GEN.load(Ordering::SeqCst) != qgen {
-                return;
-            }
-            if VISIBILITY_GEN.load(Ordering::SeqCst) != vis {
-                return; // 已隐藏、销毁或又一次查询
-            }
-            if INTENDED_VISIBLE.load(Ordering::SeqCst) {
-                apply_glass_effect(&window);
-            }
-        });
-}
-
-/// `quick_search` 结束（含失败）时安排恢复镜面。
+/// `quick_search` 结束（含失败）时安排恢复镜面（现为不再需要恢复的占位）。
 pub(crate) struct ResumeGlassAfterQuery<'a>(pub &'a AppHandle);
 impl Drop for ResumeGlassAfterQuery<'_> {
     fn drop(&mut self) {
         schedule_resume_glass_after_query(self.0);
     }
+}
+
+/// 前端告知当前主题是否深色，系统背景跟随 `DWMWA_USE_IMMERSIVE_DARK_MODE`。
+#[tauri::command]
+pub fn set_glass_dark(app: AppHandle, dark: bool) {
+    GLASS_DARK.store(dark, Ordering::SeqCst);
+    if !INTENDED_VISIBLE.load(Ordering::SeqCst) || !GLASS_APPLIED.load(Ordering::SeqCst) {
+        return;
+    }
+    let Some(window) = quick_window(&app) else {
+        return;
+    };
+    #[cfg(windows)]
+    if let Ok(h) = window.hwnd() {
+        crate::dwm_backdrop::set_dark(h.0 as isize, dark);
+    }
+    #[cfg(not(windows))]
+    let _ = window;
 }
 
 /// WebView2 的 HWND 隐藏后，controller 不一定跟着停绘（透明窗尤其如此）。
@@ -357,11 +324,12 @@ pub fn destroy_window(app: &AppHandle) {
     VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
     set_intended_visible(false);
     if let Some(w) = quick_window(app) {
-        // 只做同步清理：set_effects / clear_glass 的 with_webview 都可能与 destroy
-        // 抢同一窗口（E-PIN-01：关闭钉住且未开搜索时应销毁；96e47da e2e(3) 再现）。
+        // 只做同步清理：eval / with_webview 都可能与 destroy 抢同一窗口
+        // （E-PIN-01：关闭钉住且未开搜索时应销毁；96e47da e2e(3) 再现）。
         #[cfg(windows)]
         {
             if let Ok(h) = w.hwnd() {
+                crate::dwm_backdrop::clear(h.0 as isize);
                 use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
                 // SAFETY：hwnd 来自本进程窗口
                 unsafe {
@@ -460,7 +428,7 @@ pub fn show(app: &AppHandle, t0_ms: u64, activate: bool) -> Result<(), String> {
             keep_input: options().keep_input,
         },
     );
-    // 先完成唤出（输入可聚焦），再开亚克力 / 毛玻璃，避免计入 summon p95。
+    // 先完成唤出（输入可聚焦），再开系统背景，避免计入 summon p95。
     schedule_glass(&window);
     Ok(())
 }
