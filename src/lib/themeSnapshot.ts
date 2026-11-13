@@ -14,8 +14,15 @@ export interface ThemeSnapshot {
   attrs: Record<string, string>;
 }
 
+/** 主窗 :root 不写、但仍要传给快速窗的变量（毛玻璃令牌）。 */
+let extraSnapshotVars: Record<string, string> = {};
+
+export function setExtraSnapshotVars(vars: Record<string, string>): void {
+  extraSnapshotVars = vars;
+}
+
 export function captureThemeSnapshot(root: HTMLElement = document.documentElement): ThemeSnapshot {
-  const vars: Record<string, string> = {};
+  const vars: Record<string, string> = { ...extraSnapshotVars };
   for (let i = 0; i < root.style.length; i += 1) {
     const name = root.style.item(i);
     if (name.startsWith("--")) vars[name] = root.style.getPropertyValue(name);

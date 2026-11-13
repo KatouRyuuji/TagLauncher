@@ -9,6 +9,9 @@ mod explorer_selection;
 mod pin;
 mod pin_strip;
 mod quick;
+/// Win11 系统瞬态背景（DWMWA_SYSTEMBACKDROP_TYPE）
+#[cfg(windows)]
+mod dwm_backdrop;
 pub mod search;
 /// 资源管理器右键菜单 / 发送到（阶段③）
 mod shell_clipboard;
@@ -31,10 +34,10 @@ pub use db::Database;
 use desktop::*;
 // 快速搜索窗命令（阶段②）
 use pin::{
-    get_pin_settings, pin_collapse, pin_diag, pin_expand, pin_handle_color, pin_items, pin_state,
+    get_pin_settings, pin_collapse, pin_diag, pin_expand, pin_handle_chrome, pin_handle_color, pin_items, pin_state,
     set_pin_settings,
 };
-use quick::{quick_hide, quick_locate_in_main, quick_open};
+use quick::{quick_hide, quick_locate_in_main, quick_open, set_glass_dark};
 // 收纳会话与右键菜单（阶段③）
 use collect::{
     collect_finish, collect_session, collect_submit, get_collect_preference, set_collect_preference,
@@ -489,6 +492,7 @@ pub fn run() {
             // 快速搜索窗（阶段②）
             quick_open,
             quick_hide,
+            set_glass_dark,
             quick_locate_in_main,
             // 收纳与右键菜单（阶段③）
             collect_session,
@@ -515,6 +519,7 @@ pub fn run() {
             pin_expand,
             pin_collapse,
             pin_handle_color,
+            pin_handle_chrome,
             // 项目 CRUD
             add_item,
             add_items,

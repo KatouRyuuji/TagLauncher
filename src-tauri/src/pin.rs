@@ -2,15 +2,16 @@
 //!
 //! - 复用快速窗 WebView：钉住视图是 `quick` 窗口的另一个表面（surface）。唤出快速搜索时切到
 //!   search；搜索收起时若钉住视图开启则还原为 pin，否则照旧隐藏。开启钉住视图不新增 WebView2。
-//! - 边缘抽屉：收起 = 窗口缩成贴边的细条（把手，置顶）。WebView 自己收到鼠标进入后调用
-//!   `pin_expand`，不轮询鼠标、不装输入钩子；离开 / 失焦后 `pin_collapse`。
+//! - 边缘抽屉：收起 = 隐藏 quick WebView，显示贴边的原生「探头」卡片（休息 68×148 逻辑像素，
+//!   悬停加宽到 168，顶与展开抽屉对齐）。系统 TrackMouseEvent(TME_HOVER, 120ms) 判定停留后
+//!   才 `pin_expand`（划过不弹）；离开 / 失焦后 `pin_collapse`。
 //! - 前台全屏：抽屉模式下用 `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`（前台切换事件，
 //!   非输入钩子）在前台变化时判断；前台全屏且与抽屉同一显示器 → 隐藏把手。展开前再判一次。
 //! - 位置记忆：抽屉 = 显示器名 + 边 + 上下比例（拖动展开的抽屉，松手 = 本进程 EVENT_SYSTEM_MOVESIZEEND
 //!   时吸附到最近显示器的左 / 右边）；浮动窗 = 物理左上角 + 逻辑宽高（移动 / 改尺寸静默后保存）。
 
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
@@ -21,24 +22,33 @@ use crate::Database;
 pub const PIN_SURFACE_EVENT: &str = "pin-surface";
 /// 面板最多列出的对象数（其余提示去主窗查看）
 pub const PIN_ITEMS_LIMIT: usize = 500;
-/// 抽屉面板逻辑宽度、把手逻辑宽度
+/// 抽屉面板逻辑宽度、探头休息宽度 / 高度（物理像素 = 此值 × DPI 缩放）。
+/// 有意设计变更：由 8px 细条改为 68×148 的探头卡片（悬停加宽 168 由 pin_strip 内部处理）。
 pub const DRAWER_WIDTH: f64 = 320.0;
-pub const HANDLE_WIDTH: f64 = 8.0;
-/// 把手中间握柄的逻辑高度（物理像素 = 此值 × DPI 缩放）。
-pub const HANDLE_PILL_LENGTH: f64 = 56.0;
+pub const HANDLE_WIDTH: f64 = 68.0;
+pub const HANDLE_HEIGHT: f64 = 148.0;
+pub const HANDLE_HOVER_WIDTH: f64 = 168.0;
 /// 抽屉面板高度：工作区的 70%，不超过 640 逻辑像素
 const DRAWER_HEIGHT_FRACTION: f64 = 0.7;
 const DRAWER_MAX_HEIGHT: f64 = 640.0;
 /// 浮动窗默认逻辑尺寸
 const FLOAT_DEFAULT: (f64, f64) = (340.0, 480.0);
 const FLOAT_MIN: (f64, f64) = (240.0, 200.0);
-/// 滑出 / 收回动画：步数与每步间隔
+/// 滑出 / 收回动画：6 步 × 40ms ≈ 240ms，与前端 --transition-normal 对齐
 const ANIM_STEPS: u32 = 6;
-const ANIM_STEP: Duration = Duration::from_millis(14);
+const ANIM_STEP: Duration = Duration::from_millis(40);
 /// 拖动结束判定：最后一次 Moved 之后静默这么久
 const DRAG_SETTLE: Duration = Duration::from_millis(350);
 /// 光标离开展开的抽屉多久收回（与前端 PIN_LEAVE_COLLAPSE_MS 一致）
 const LEAVE_COLLAPSE: Duration = Duration::from_millis(400);
+/// 顶栏原生拖动命中高度（逻辑像素）。与 `.pin-chrome` 的 `min-height: 32px` 对齐；
+/// E2E D-PIN-03 / D-PIN-04 点 `t+16`（已在此范围内）。
+pub const PIN_CAPTION_LOGIC: i32 = 32;
+
+/// 客户区 Y 是否落在钉住顶栏拖动区（物理像素，按 DPI 缩放）。
+pub fn caption_hit(client_y: i32, scale: f64) -> bool {
+    client_y >= 0 && client_y < (PIN_CAPTION_LOGIC as f64 * scale).round() as i32
+}
 
 const ENABLED_KEY: &str = "pin.enabled";
 const SOURCE_KEY: &str = "pin.source";
@@ -246,7 +256,26 @@ pub fn drawer_size(work: Rect, scale: f64) -> (u32, u32) {
 }
 
 pub fn handle_width(scale: f64) -> u32 {
-    ((HANDLE_WIDTH * scale).round() as u32).max(3)
+    ((HANDLE_WIDTH * scale).round() as u32).max(24)
+}
+
+/// 探头休息高度（物理像素）
+pub fn handle_height(scale: f64) -> u32 {
+    ((HANDLE_HEIGHT * scale).round() as u32).max(64)
+}
+
+/// 探头悬停宽度（物理像素）；由 pin_strip 在鼠标进入时使用，不影响 drawer_geometry。
+pub fn handle_hover_width(scale: f64) -> u32 {
+    ((HANDLE_HOVER_WIDTH * scale).round() as u32).max(handle_width(scale))
+}
+
+/// 探头休息矩形：宽度 / 高度用探头尺寸，但 Y 按展开抽屉的高度计算，保证顶与抽屉对齐（D-PIN-03）。
+pub fn peek_rect(work: Rect, edge: PinEdge, offset: f64, scale: f64) -> Rect {
+    let (_, ph) = drawer_size(work, scale);
+    let hw = handle_width(scale);
+    let hh = handle_height(scale).min(ph);
+    let full = drawer_rect(work, edge, offset, hw, ph);
+    (full.0, full.1, hw, hh)
 }
 
 /// 动画第 `step`（1..=steps）步的宽度（ease-out）
@@ -362,6 +391,8 @@ static RUNTIME: Mutex<Runtime> = Mutex::new(Runtime {
 static ANIM_GEN: AtomicU64 = AtomicU64::new(0);
 static MOVE_GEN: AtomicU64 = AtomicU64::new(0);
 static LEAVE_GEN: AtomicU64 = AtomicU64::new(0);
+/// 钉住表面时顶栏走原生 HTCAPTION（热路径只读此原子，不锁 Runtime）。
+static CAPTION_DRAG: AtomicBool = AtomicBool::new(false);
 /// 诊断计数（pin_diag.dragEvents）：[拖动开始, 拖动结束, 抽屉 Moved, 抽屉吸附, 失焦收回, 轮询收回, 前端离开收回]
 static DRAG_EVENTS: [std::sync::atomic::AtomicU32; 7] = [
     std::sync::atomic::AtomicU32::new(0),
@@ -375,6 +406,18 @@ static DRAG_EVENTS: [std::sync::atomic::AtomicU32; 7] = [
 
 fn count(i: usize) {
     DRAG_EVENTS[i].fetch_add(1, Ordering::Relaxed);
+}
+
+fn set_caption_drag(on: bool) {
+    CAPTION_DRAG.store(on, Ordering::SeqCst);
+}
+
+/// 给 quick 窗口装顶栏原生拖动（幂等）。创建窗口与切到钉住表面时调用。
+pub fn install_caption_drag(window: &WebviewWindow) {
+    #[cfg(windows)]
+    caption::install(window);
+    #[cfg(not(windows))]
+    let _ = window;
 }
 
 fn rt() -> std::sync::MutexGuard<'static, Runtime> {
@@ -516,6 +559,8 @@ fn set_bounds(window: &WebviewWindow, r: Rect) {
 /// 不经 tauri hide：钉住表面的显示是原生的，tao 的可见标志与真实状态不一致，tauri hide/show 按标志差异
 /// 决定做不做，会变成空操作；混用还会让 WebView 尺寸停在动画中间值。搜索表面的 show 见 quick::show（会补原生 SW_SHOW）。
 fn hide_window(window: &WebviewWindow) {
+    crate::quick::set_intended_visible(false);
+    crate::quick::clear_glass_effect(window);
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
@@ -534,6 +579,7 @@ fn hide_window(window: &WebviewWindow) {
 
 /// 显示但不抢前台
 fn show_no_activate(window: &WebviewWindow) {
+    crate::quick::set_intended_visible(true);
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_SHOWNOACTIVATE};
@@ -542,10 +588,12 @@ fn show_no_activate(window: &WebviewWindow) {
             unsafe {
                 ShowWindow(h.0 as _, SW_SHOWNOACTIVATE);
             }
+            crate::quick::apply_glass_effect(window);
             return;
         }
     }
     let _ = window.show();
+    crate::quick::apply_glass_effect(window);
 }
 
 fn place_float(app: &AppHandle, window: &WebviewWindow) {
@@ -600,8 +648,12 @@ fn drawer_geometry(app: &AppHandle, expanded: bool) -> Option<(Rect, u32, u32)> 
         let r = rt();
         (r.settings.edge, r.place.drawer_offset)
     };
-    let width = if expanded { pw } else { hw };
-    Some((drawer_rect(work, edge, offset, width, ph), pw, hw))
+    if expanded {
+        Some((drawer_rect(work, edge, offset, pw, ph), pw, hw))
+    } else {
+        // Y 按展开抽屉高度计算，探头顶与抽屉顶对齐
+        Some((peek_rect(work, edge, offset, scale), pw, hw))
+    }
 }
 
 /// 展开动画的起始宽度：从面板宽的 1/4 起滑（不让 WebView 经过极窄宽度）
@@ -612,7 +664,56 @@ fn anim_start(pw: u32, hw: u32) -> u32 {
 /// 收起：quick 窗口隐藏，原生把手贴边显示（见 pin_strip）
 fn show_handle(app: &AppHandle) {
     if let Some((rect, _, _)) = drawer_geometry(app, false) {
-        crate::pin_strip::show(app, rect);
+        let edge = rt().settings.edge;
+        refresh_peek(app);
+        crate::pin_strip::show(app, rect, edge);
+    }
+}
+
+/// 从当前钉住来源取标题、数量、前三项名称和来源色，交给原生探头绘制。
+fn refresh_peek(app: &AppHandle) {
+    let source = settings().source;
+    let (title, count, names, stripe) = if let Some(db) = app.try_state::<Database>() {
+        let conn = db.get_conn();
+        match load_items(&conn, source) {
+            Ok(items) => {
+                let title = items
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| "来源已删除".to_string());
+                let names: Vec<String> = items
+                    .items
+                    .iter()
+                    .take(3)
+                    .map(|i| i.item.name.clone())
+                    .collect();
+                let stripe = source_color(&conn, source).and_then(|c| crate::pin_strip::parse_css_color(&c));
+                (title, items.total, names, stripe)
+            }
+            Err(_) => ("钉住视图".to_string(), 0, Vec::new(), None),
+        }
+    } else {
+        ("钉住视图".to_string(), 0, Vec::new(), None)
+    };
+    crate::pin_strip::set_peek(
+        app,
+        crate::pin_strip::PeekContent {
+            title,
+            count,
+            names,
+            stripe,
+        },
+    );
+}
+
+fn source_color(conn: &rusqlite::Connection, source: Option<PinSource>) -> Option<String> {
+    match source? {
+        PinSource::Cabinet(id) => conn
+            .query_row("SELECT color FROM cabinets WHERE id = ?1", [id], |r| r.get(0))
+            .ok(),
+        PinSource::Tag(id) => conn
+            .query_row("SELECT color FROM tags WHERE id = ?1", [id], |r| r.get(0))
+            .ok(),
     }
 }
 
@@ -621,6 +722,7 @@ pub fn restore(app: &AppHandle) -> Result<(), String> {
     ANIM_GEN.fetch_add(1, Ordering::SeqCst);
     let settings = settings();
     if !settings.active() {
+        set_caption_drag(false);
         rt().surface = Surface::Search;
         set_foreground_hook(app, false);
         crate::pin_strip::hide(app);
@@ -636,6 +738,8 @@ pub fn restore(app: &AppHandle) -> Result<(), String> {
         r.surface = Surface::Pin;
         r.drawer = DrawerState::Collapsed;
     }
+    set_caption_drag(true);
+    install_caption_drag(&window);
     match settings.mode {
         PinMode::Float => {
             set_foreground_hook(app, false);
@@ -681,6 +785,7 @@ pub fn enter_search(window: &WebviewWindow) {
         r.drawer = DrawerState::Collapsed;
         was
     };
+    set_caption_drag(false);
     if was_pin {
         crate::pin_strip::hide(window.app_handle());
         let _ = window.set_resizable(false);
@@ -831,26 +936,30 @@ fn sync_webview_bounds(window: &WebviewWindow) {
             return;
         }
         let (w, hgt) = (rc.right - rc.left, rc.bottom - rc.top);
-        let _ = window.with_webview(move |webview| {
+        // with_webview 把工作投递到 WebView 线程：展开在工作线程上跑，必须等到
+        // SetBounds 真正完成再返回，否则窗口已是 320、页面仍停在动画中间值，
+        // 顶栏中点（D-PIN-03 的 t+16）会点到空白客户区、拖动无法开始。
+        let (tx, rx) = std::sync::mpsc::channel();
+        let posted = window.with_webview(move |webview| {
             let controller = webview.controller();
-            let mut b = windows::Win32::Foundation::RECT::default();
             // SAFETY：with_webview 回调在 WebView 所在线程执行，controller 在回调期间有效
             unsafe {
-                if controller.Bounds(&mut b).is_ok() && (b.right - b.left != w || b.bottom - b.top != hgt) {
-                    log::info!(
-                        "[pin] WebView 边界 {}x{} 与客户区 {w}x{hgt} 不一致，补设",
-                        b.right - b.left,
-                        b.bottom - b.top
-                    );
-                    let _ = controller.SetBounds(windows::Win32::Foundation::RECT {
-                        left: 0,
-                        top: 0,
-                        right: w,
-                        bottom: hgt,
-                    });
-                }
+                // 展开刚把 HWND 显示出来：把可能仍排队的 SetIsVisible(false) 盖掉，
+                // 并通知控制器父窗口已从工作线程 SetWindowPos。
+                let _ = controller.SetIsVisible(true.into());
+                let _ = controller.SetBounds(windows::Win32::Foundation::RECT {
+                    left: 0,
+                    top: 0,
+                    right: w,
+                    bottom: hgt,
+                });
+                let _ = controller.NotifyParentWindowPositionChanged();
             }
+            let _ = tx.send(());
         });
+        if posted.is_ok() && rx.recv_timeout(Duration::from_millis(200)).is_err() {
+            log::info!("[pin] 同步 WebView 边界超时（客户区 {w}x{hgt}）");
+        }
     }
     #[cfg(not(windows))]
     let _ = window;
@@ -1233,6 +1342,105 @@ fn set_foreground_hook(app: &AppHandle, on: bool) {
     let _ = (app, on);
 }
 
+// ── 钉住顶栏原生拖动（WM_NCHITTEST → HTCAPTION） ──
+//
+// 展开抽屉后立刻拖顶栏是真实用法。动画用工作线程 SetWindowPos，WebView2 控制器
+// 边界会落后；透明亚克力窗里 Chromium 对半透明像素的 data-tauri-drag-region 命中
+// 也不稳定（失败时 dragEvents[0]=0，随后轮询收回）。顶层窗口先收到 WM_NCHITTEST：
+// 钉住表面且点在顶栏 32 逻辑像素内则返回 HTCAPTION，由系统启动拖动，不依赖 WebView。
+// 搜索表面绝不拦截（输入框在顶部）。
+
+#[cfg(windows)]
+mod caption {
+    use super::*;
+    use std::sync::atomic::AtomicIsize;
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+    use windows_sys::Win32::Graphics::Gdi::{GetDC, GetDeviceCaps, ReleaseDC, ScreenToClient, LOGPIXELSX};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallWindowProcW, DefWindowProcW, GetClientRect, SetWindowLongPtrW, GWLP_WNDPROC, HTCAPTION,
+        WM_NCHITTEST,
+    };
+
+    static PREV_PROC: AtomicIsize = AtomicIsize::new(0);
+    static INSTALLED: AtomicIsize = AtomicIsize::new(0);
+
+    fn dpi_scale(hwnd: HWND) -> f64 {
+        // SAFETY：只读查询本进程窗口的 DC
+        unsafe {
+            let hdc = GetDC(hwnd);
+            if hdc.is_null() {
+                return 1.0;
+            }
+            let dpi = GetDeviceCaps(hdc, LOGPIXELSX as i32);
+            ReleaseDC(hwnd, hdc);
+            if dpi > 0 {
+                dpi as f64 / 96.0
+            } else {
+                1.0
+            }
+        }
+    }
+
+    fn in_caption(hwnd: HWND, lparam: LPARAM) -> bool {
+        if !CAPTION_DRAG.load(Ordering::Relaxed) {
+            return false;
+        }
+        let mut pt = POINT {
+            x: (lparam as i16) as i32,
+            y: ((lparam >> 16) as i16) as i32,
+        };
+        let mut rc = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        // SAFETY：hwnd 是本进程 quick 窗口
+        unsafe {
+            if ScreenToClient(hwnd, &mut pt) == 0 || GetClientRect(hwnd, &mut rc) == 0 {
+                return false;
+            }
+        }
+        pt.x >= rc.left && pt.x < rc.right && caption_hit(pt.y, dpi_scale(hwnd))
+    }
+
+    unsafe extern "system" fn wnd_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if msg == WM_NCHITTEST && in_caption(hwnd, lparam) {
+            return HTCAPTION as LRESULT;
+        }
+        let prev = PREV_PROC.load(Ordering::SeqCst);
+        if prev == 0 {
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        } else {
+            let f: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT =
+                unsafe { std::mem::transmute(prev) };
+            unsafe { CallWindowProcW(Some(f), hwnd, msg, wparam, lparam) }
+        }
+    }
+
+    pub fn install(window: &WebviewWindow) {
+        let Ok(h) = window.hwnd() else {
+            return;
+        };
+        let hwnd = h.0 as isize;
+        let app = window.app_handle().clone();
+        let _ = app.run_on_main_thread(move || {
+            let hwnd = hwnd as HWND;
+            if INSTALLED.load(Ordering::SeqCst) == hwnd as isize {
+                return;
+            }
+            // SAFETY：hwnd 是本进程 quick 窗口；在主线程替换 WndProc 并保存原指针以便转发
+            let prev = unsafe { SetWindowLongPtrW(hwnd, GWLP_WNDPROC, wnd_proc as isize) };
+            if prev == 0 {
+                log::warn!("[pin] 安装顶栏拖动 WndProc 失败");
+                return;
+            }
+            PREV_PROC.store(prev, Ordering::SeqCst);
+            INSTALLED.store(hwnd as isize, Ordering::SeqCst);
+        });
+    }
+}
+
 /// 前台事件钩子是否已装（E2E / 诊断用）
 pub fn hook_installed() -> bool {
     #[cfg(windows)]
@@ -1378,15 +1586,36 @@ pub fn apply_settings(app: &AppHandle, next: PinSettings) -> Result<PinSettings,
         && app
             .get_webview_window(crate::quick::QUICK_LABEL)
             .is_some_and(|w| w.is_visible().unwrap_or(false));
-    if !searching {
-        restore(app)?;
-    }
     if was_active && !next.active() {
-        // 快速搜索也没开：销毁 quick 窗口（与关闭快速搜索同一路径，在主线程销毁）
-        let handle = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            crate::quick::sync_window(&handle, crate::desktop::quick_window_needed(&handle));
-        });
+        // 关闭钉住：探头同步关掉。
+        // 快速搜索仍开（共用窗口）：只隐藏，不销毁；f394436 跳过整段 restore 后，
+        // test_pin_shares 窗口仍可见。hide_window 与 destroy 不会同时走。
+        // 快速搜索未开：直接 destroy（不要先 clear_glass / with_webview），在主线程
+        // 销毁并等到完成再返回，避免命令已返回、窗口还在（E-PIN-01）。
+        ANIM_GEN.fetch_add(1, Ordering::SeqCst);
+        rt().surface = Surface::Search;
+        set_foreground_hook(app, false);
+        crate::pin_strip::hide(app);
+        if crate::desktop::quick_window_needed(app) {
+            if let Some(w) = app.get_webview_window(crate::quick::QUICK_LABEL) {
+                hide_window(&w);
+                emit_view(&w);
+            }
+        } else {
+            let handle = app.clone();
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            let _ = app.run_on_main_thread(move || {
+                crate::quick::destroy_window(&handle);
+                let _ = tx.send(());
+            });
+            // 异步命令在工作线程：等主线程销毁完成。若碰巧已在主线程，闭包被排队
+            // 会阻塞——超时后在本线程再销毁一次，避免死锁。
+            if rx.recv_timeout(Duration::from_millis(800)).is_err() {
+                crate::quick::destroy_window(app);
+            }
+        }
+    } else if !searching {
+        restore(app)?;
     }
     crate::desktop::refresh_tray(app);
     Ok(next)
@@ -1504,6 +1733,12 @@ pub fn pin_handle_color(app: AppHandle, color: String) {
     crate::pin_strip::set_color(&app, &color);
 }
 
+/// 前端告知探头卡片底 / 正文 / 次要文字与是否深色（探头绘制）
+#[tauri::command]
+pub fn pin_handle_chrome(app: AppHandle, bg: String, fg: String, muted: String, dark: bool) {
+    crate::pin_strip::set_chrome(&app, &bg, &fg, &muted, dark);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1577,9 +1812,22 @@ mod tests {
         assert_eq!((w1, h1), (320, 640));
         let (w2, h2) = drawer_size((0, 0, 2880, 1560), 1.5);
         assert_eq!((w2, h2), (480, 960));
-        assert_eq!(handle_width(1.0), 8);
-        assert_eq!(handle_width(1.5), 12);
-        assert_eq!(handle_width(0.5), 4, "缩小显示时仍看得见、点得到");
+        assert_eq!(handle_width(1.0), 68);
+        assert_eq!(handle_width(1.5), 102);
+        assert_eq!(handle_width(0.5), 34, "缩小显示时仍看得见、点得到");
+        assert_eq!(handle_height(1.0), 148);
+        assert_eq!(handle_height(1.5), 222);
+        assert_eq!(handle_hover_width(1.0), 168);
+        // 探头顶与同 offset 的展开抽屉顶对齐（D-PIN-03）
+        let work = (0, 0, 1920, 1040);
+        let expanded = drawer_rect(work, PinEdge::Right, 0.5, 320, 640);
+        let peek = peek_rect(work, PinEdge::Right, 0.5, 1.0);
+        assert_eq!(peek.1, expanded.1, "探头顶应等于抽屉顶");
+        assert_eq!(peek, (1852, 200, 68, 148));
+        assert_eq!(peek.0 + peek.2 as i32, 1920, "右缘贴边");
+        let peek_l = peek_rect(work, PinEdge::Left, 0.0, 1.0);
+        assert_eq!(peek_l.0, 0);
+        assert_eq!(peek_l.1, drawer_rect(work, PinEdge::Left, 0.0, 320, 640).1);
     }
 
     #[test]
@@ -1607,6 +1855,25 @@ mod tests {
         // 中心落在所有屏外：取最近的一块
         assert_eq!(snap((5000, 200, 320, 640), &mons).unwrap().0, 1);
         assert_eq!(snap((0, 0, 10, 10), &[]), None);
+    }
+
+    #[test]
+    fn caption_hit_covers_title_bar_across_dpi() {
+        // 与 CSS min-height: 32px、测试点 t+16 对齐
+        assert!(caption_hit(0, 1.0));
+        assert!(caption_hit(16, 1.0));
+        assert!(caption_hit(31, 1.0));
+        assert!(!caption_hit(32, 1.0), "32 逻辑像素已到顶栏下沿之外");
+        assert!(!caption_hit(-1, 1.0));
+        // 150% DPI：t+16 CSS = 24 物理像素；顶栏高 48
+        assert!(caption_hit(16, 1.5));
+        assert!(caption_hit(24, 1.5));
+        assert!(caption_hit(47, 1.5));
+        assert!(!caption_hit(48, 1.5));
+        // 200%
+        assert!(caption_hit(32, 2.0));
+        assert!(caption_hit(63, 2.0));
+        assert!(!caption_hit(64, 2.0));
     }
 
     #[test]

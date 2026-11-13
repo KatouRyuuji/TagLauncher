@@ -153,8 +153,8 @@ def test_pin_shares_window_with_quick_search(app, sandbox):
 @pytest.mark.case("E-PIN-04")
 @pytest.mark.visible_window  # 抽屉按设计贴在屏幕边、展开动画在屏幕内：放到允许可见窗口的 desktop 作业跑（后台分片的隐身守护会判违规）
 def test_drawer_handle_expand_collapse_sizes(app, sandbox):
-    """边缘抽屉：收起时 quick 窗口隐藏、只留原生把手（8 逻辑像素宽，中间有握柄，贴工作区边）；展开到面板宽 320；
-    收起后不计为可见（不提高检测频率）。"""
+    """边缘抽屉：收起时 quick 窗口隐藏、只留原生探头（68 逻辑像素宽 × 148 高，贴工作区边）；展开到面板宽 320；
+    收起后不计为可见（不提高检测频率）。有意设计变更：宽度 8→68。"""
     _, parent, _ = seed(app, sandbox)
     pin_settings(app, enabled=True, source={"kind": "cabinet", "id": parent}, mode="drawer", edge="right")
     qp = quick_page(app, timeout=20)
@@ -164,7 +164,10 @@ def test_drawer_handle_expand_collapse_sizes(app, sandbox):
     assert d["view"]["drawer"] == "collapsed" and d["countsAsVisible"] is False, d
     assert d["hookInstalled"] is True, "抽屉模式应装前台切换事件钩子"
     scale = qp.evaluate("() => devicePixelRatio")
-    assert 6 <= d["handleRect"][2] <= round(8 * scale) + 2, d
+    rest = round(68 * scale)
+    assert rest - 4 <= d["handleRect"][2] <= rest + 4, d
+    peek_h = round(148 * scale)
+    assert peek_h - 4 <= d["handleRect"][3] <= peek_h + 4, d
     qp.get_by_test_id("pin-panel").wait_for(state="attached", timeout=3000)
     assert app.invoke("pin_expand") is True
     wait_until(lambda: is_visible(qp) and qp.evaluate("() => innerWidth") == 320, 3,

@@ -141,9 +141,35 @@ const SHADOW_TOKENS: Record<ShapeLang, Record<ShapeScheme, Record<string, string
   },
 };
 
-/** 指定语言 × 亮暗的完整结构令牌集（共享原语 + 语言分叉 + 发丝边 + 阴影配方）。 */
+/** 毛玻璃材质：快速窗与钉住浮动窗 / 抽屉共用。
+ *  Win11 用系统瞬态背景（DWMSBT_TRANSIENTWINDOW）提供亮度、着色与噪点；本层只铺明亮 tint
+ *  和 1px 内高光，不是旧亚克力、也不是 Mica。不支持时 --glass-bg-strong 作干净实底回退。 */
+const GLASS_TOKENS: Record<ShapeScheme, Record<string, string>> = {
+  light: {
+    // 内容层：明亮近白 62%，不掺强调色（掺了在白底主窗上是浑浊灰）。
+    "glass-bg": "color-mix(in srgb, #fafafc 62%, transparent)",
+    // 输入框 / 不支持系统背景时的干净实底（约 92%），仍是明亮近白，不是灰泥。
+    "glass-bg-strong": "color-mix(in srgb, #fafafc 92%, transparent)",
+    "glass-blur": "none",
+    "glass-border": "color-mix(in srgb, var(--text-primary) 16%, var(--border-medium))",
+    "glass-highlight": "inset 0 1px 0 color-mix(in srgb, var(--text-invert) 78%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--text-invert) 28%, transparent)",
+    "glass-shadow": "0 1px 2px rgb(20 28 44 / 0.06), 0 10px 28px rgb(20 28 44 / 0.14), 0 28px 64px rgb(20 28 44 / 0.12)",
+    "glass-accent-bar": "3px",
+  },
+  dark: {
+    "glass-bg": "color-mix(in srgb, #1c1c20 62%, transparent)",
+    "glass-bg-strong": "color-mix(in srgb, #1c1c20 92%, transparent)",
+    "glass-blur": "none",
+    "glass-border": "color-mix(in srgb, var(--text-primary) 28%, transparent)",
+    "glass-highlight": "inset 0 1px 0 color-mix(in srgb, var(--text-primary) 36%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 14%, transparent)",
+    "glass-shadow": "0 1px 2px rgb(0 0 0 / 0.32), 0 16px 40px rgb(0 0 0 / 0.48), 0 40px 80px rgb(0 0 0 / 0.32)",
+    "glass-accent-bar": "3px",
+  },
+};
+
+/** 指定语言 × 亮暗的完整结构令牌集（共享原语 + 语言分叉 + 发丝边 + 阴影配方 + 毛玻璃）。 */
 export function shapeLangTokens(lang: ShapeLang, scheme: ShapeScheme): Record<string, string> {
-  return { ...SHARED_TOKENS, ...LANG_TOKENS[lang], ...HAIRLINE_TOKENS[lang][scheme], ...SHADOW_TOKENS[lang][scheme] };
+  return { ...SHARED_TOKENS, ...LANG_TOKENS[lang], ...HAIRLINE_TOKENS[lang][scheme], ...SHADOW_TOKENS[lang][scheme], ...GLASS_TOKENS[scheme] };
 }
 
 /** 从主题 css 推断亮暗（内置/示例主题均显式声明 color-scheme）。 */

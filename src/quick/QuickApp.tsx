@@ -2,12 +2,12 @@
 // quick/QuickApp.tsx — 全局快速搜索窗
 // ============================================================================
 // 预创建、隐藏常驻：不加载全量对象，每次输入向后端 quick_search 取前 50 条
-// （与主窗同一个 Rust 内存索引，见 src-tauri/src/search）；唤出时只做聚焦。
+// （与主窗同一个 Rust 内存索引，结果从索引直接组装，不走 SQLite）；唤出时只做聚焦。
 // 键位：↑↓ 选择 · Enter 打开 · Ctrl+Enter 显示位置 · Ctrl+Shift+C 复制路径 ·
 //       Alt+Enter 在主窗定位 · Ctrl+T 打标签 · Esc 先清空再收起。
 // ============================================================================
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import * as db from "../lib/db";
@@ -15,6 +15,7 @@ import { latestOnly, SKIPPED } from "../lib/latestOnly";
 import { announceWindowWrite, onAnyDataChanged } from "../lib/dataSync";
 import { formatPathCopy } from "../lib/itemQuery";
 import { itemDisplayName } from "../lib/itemDisplay";
+import { getTypeLabel } from "../lib/itemUtils";
 import { loadWorkspacePrefs, PREFS_KEY, type SearchMode } from "../stores/appStore";
 import { applyThemeSnapshot, parseThemeSnapshot, THEME_SNAPSHOT_KEY } from "../lib/themeSnapshot";
 import type { ItemWithTags, Tag } from "../types";
@@ -30,6 +31,8 @@ import { truncatePathMiddle } from "../lib/itemUtils";
 export const QUICK_SHOWN_EVENT = "quick-shown";
 /** 只给前 N 条取缩略图/程序图标（§3.3 数据投影），其余行只画类型图标，不发 IPC */
 export const QUICK_ICON_LIMIT = 20;
+/** 首帧只画刚满一屏的行（12×3.4em 已盖住 440 窗的列表区），下一帧再补屏外行。 */
+export const FIRST_FRAME_ROWS = 12;
 /** 后端切换 WebView2 内存目标后发来（只做记录，供 E2E 断言） */
 export const QUICK_MEMORY_EVENT = "quick-memory-level";
 
@@ -48,6 +51,8 @@ function useThemeFollower() {
       const snapshot = parseThemeSnapshot(raw);
       if (snapshot) {
         applyThemeSnapshot(snapshot);
+        const dark = document.documentElement.getAttribute("data-scheme") === "dark";
+        void db.setGlassDark(dark).catch(() => {});
         return;
       }
       // 主窗还没写过快照（极少见：首启即被右键菜单拉起）：套默认主题令牌，不让样式落到浏览器默认色
@@ -55,6 +60,8 @@ function useThemeFollower() {
         if (localStorage.getItem(THEME_SNAPSHOT_KEY)) return;
         const vars = Object.fromEntries(Object.entries(DEFAULT_THEME_VARIABLES).map(([k, v]) => [`--${k}`, v]));
         applyThemeSnapshot({ vars, attrs: {} });
+        const dark = document.documentElement.getAttribute("data-scheme") === "dark";
+        void db.setGlassDark(dark).catch(() => {});
       });
     };
     apply(localStorage.getItem(THEME_SNAPSHOT_KEY));
@@ -75,13 +82,25 @@ interface TagPickerState {
 }
 
 /** 收纳会话：窗口刚创建时可能错过事件，挂载时先拉一次；之后按 quick-collect 事件更新 */
-function useCollectSession(): [CollectSession | null, (id: number) => void] {
+function useCollectSession(): [CollectSession | null, (id: number) => void, boolean] {
   const [session, setSession] = useState<CollectSession | null>(null);
+  // 首次 collectSession 返回前不要发出搜索：19bc707 把搜索提前到 useLayoutEffect（绘制前）后，
+  // 会在收纳窗首帧（此时 session 仍是 null、仍挂着 QuickSearch）抢先发 quick_search，与收纳页渲染 / 导入完成竞态，
+  // 表现为 collect-result 已写入但 Playwright 看不见（E47CAF0 用 useEffect 时收纳全绿，19bc707 起回归）。
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | undefined;
-    void db.collectSession().then((s) => { if (!disposed && s) setSession(s); }).catch(() => {});
-    void listen<CollectSession>(QUICK_COLLECT_EVENT, (event) => setSession(event.payload))
+    void db.collectSession().then((s) => {
+      if (!disposed) {
+        if (s) setSession(s);
+        setReady(true);
+      }
+    }).catch(() => { if (!disposed) setReady(true); });
+    void listen<CollectSession>(QUICK_COLLECT_EVENT, (event) => {
+      setSession(event.payload);
+      setReady(true);
+    })
       .then((fn) => {
         if (disposed) fn();
         else stop = fn;
@@ -93,7 +112,7 @@ function useCollectSession(): [CollectSession | null, (id: number) => void] {
     };
   }, []);
   // 只清掉已结束的那个会话：collect_finish 有剩余路径时会先推来新会话，不能被随后的关闭覆盖
-  return [session, useCallback((id: number) => setSession((s) => (s && s.id === id ? null : s)), [])];
+  return [session, useCallback((id: number) => setSession((s) => (s && s.id === id ? null : s)), []), ready];
 }
 
 /**
@@ -168,8 +187,81 @@ function usePinView(): PinViewState | null {
   return view;
 }
 
+
+const HighlightName = memo(function HighlightName({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const j = text.toLowerCase().indexOf(q.toLowerCase());
+  if (j < 0) return <>{text}</>;
+  // 只标每行首次出现：短前缀（「s」「v」）在英文名里会命中很多次，50 行拆出大量 <mark>
+  // 会计入「输入到出结果」绘制（377def8 正式/debug 5k p95 仍 33.6 / 33.9）。首次高亮足够辨认。
+  return (
+    <>
+      {j > 0 ? text.slice(0, j) : null}
+      <mark className="quick-mark">{text.slice(j, j + q.length)}</mark>
+      {text.slice(j + q.length)}
+    </>
+  );
+});
+
+/** 单行结果：按对象引用与高亮词 memo。高亮用已提交结果的查询词，输入尚未出结果时不重算。 */
+const QuickResultRow = memo(function QuickResultRow({
+  item,
+  highlightQuery,
+  selected,
+  showGroup,
+  groupLabel,
+  hoverIndex,
+  visual,
+  iconsReady,
+  onHoverIndex,
+  onLaunch,
+}: {
+  item: ItemWithTags;
+  highlightQuery: string;
+  selected: boolean;
+  showGroup: boolean;
+  groupLabel: string;
+  hoverIndex: number;
+  visual: boolean;
+  iconsReady: boolean;
+  onHoverIndex: (index: number) => void;
+  onLaunch: (item: ItemWithTags) => void;
+}) {
+  const name = itemDisplayName(item);
+  const pathShort = truncatePathMiddle(item.path);
+  return (
+    <Fragment>
+      {showGroup && <li className="quick-group" role="presentation">{groupLabel}</li>}
+      <li
+        role="option"
+        aria-selected={selected}
+        data-testid="quick-result"
+        data-item-id={item.id}
+        className={`quick-row${item.is_missing ? " quick-missing" : ""}`}
+        onMouseEnter={() => onHoverIndex(hoverIndex)}
+        onMouseDown={(e) => e.preventDefault()}
+        onDoubleClick={() => onLaunch(item)}
+      >
+        <span className="quick-icon" data-testid="quick-result-icon" data-visual={visual ? "visual" : "type"}>
+          {visual && iconsReady
+            ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
+            : <ItemTypeIcon item={item} emojiClass="" />}
+        </span>
+        <span className="quick-name" title={name}>
+          <HighlightName text={name} query={highlightQuery} />
+        </span>
+        {item.tags.length > 0 && (
+          <span className="quick-tags" title={item.tags.map((t) => t.name).join(" · ")}>{item.tags.slice(0, 3).map((t) => t.name).join(" · ")}</span>
+        )}
+        <span className="quick-path" title={item.path}>{pathShort}</span>
+      </li>
+    </Fragment>
+  );
+});
+
 export function QuickApp() {
-  const [collect, closeCollect] = useCollectSession();
+  const [collect, closeCollect, collectReady] = useCollectSession();
   const { dragging, dropError } = useQuickDrop();
   const pin = usePinView();
   // 搜索预热（空查询 → 后端建索引 + 渲染结果行）推迟到搜索表面第一次出现：
@@ -181,7 +273,7 @@ export function QuickApp() {
   return (
     <>
       {pin && pin.settings.enabled && pin.settings.source && <PinView view={pin} />}
-      {collect ? <QuickCollectShell session={collect} onClose={closeCollect} /> : <QuickSearch dropError={dropError} armed={searchArmed} />}
+      {collect ? <QuickCollectShell session={collect} onClose={closeCollect} /> : <QuickSearch dropError={dropError} armed={searchArmed} collectReady={collectReady} />}
       {dragging !== null && (
         <div className="quick-drop-overlay" data-testid="quick-drop-overlay">
           {dragging > 0 ? `松开即收纳 ${dragging} 项` : "松开即收纳"}
@@ -221,13 +313,26 @@ function useClipboardCandidates(): [string[], () => void] {
   return [paths, useCallback(() => setPaths([]), [])];
 }
 
-function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | null; armed: boolean }) {
+function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError: string | null; armed: boolean; collectReady: boolean }) {
   useThemeFollower();
   const [clipboardPaths, clearClipboardPaths] = useClipboardCandidates();
   const inputRef = useRef<HTMLInputElement>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
   const [prefs, setPrefs] = useState(readPrefs);
-  const [res, setRes] = useState<{ query: string; total: number; indexed: number; items: ItemWithTags[] } | null>(null);
+  const [res, setRes] = useState<{
+    query: string;
+    total: number;
+    indexed: number;
+    items: ItemWithTags[];
+    rustMs?: number;
+    rustSearchMs?: number;
+    rustAssembleMs?: number;
+    invokeMs?: number;
+  } | null>(null);
+  // 分帧绘制：首帧只画满可见区的类型图标行（不发缩略图 IPC、不建屏外行），
+  // 下一帧（产品自己的 RAF）再补其余行和缩略图。
+  const [iconsReady, setIconsReady] = useState(false);
+  const [rowsReady, setRowsReady] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const [status, setStatus] = useState<{ text: string; tone: "info" | "error" } | null>(null);
@@ -252,32 +357,62 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
   // 唤出事件也会武装（事件可能先于 pin-surface 到达）
   const [shown, setShown] = useState(false);
   const armed = armedByApp || shown;
-  useEffect(() => {
-    if (!armed) return;
+  // 在绘制前发出搜索（useLayoutEffect），避免等 useEffect 到绘制后再发 IPC 多等一帧，
+  // 把「输入到出结果」从 31–35ms 压回 30ms 预算内。调用本身是异步的，不阻塞绘制。
+  useLayoutEffect(() => {
+    if (!armed || !collectReady) return;
     const seq = ++searchSeq.current;
     const started = performance.now();
     runQuickSearch({ query, mode: prefs.searchMode, hideMissing: prefs.hideMissing, limit: QUICK_RESULT_LIMIT })
       .then((r) => {
         if (r === SKIPPED || seq !== searchSeq.current) return;
-        setRes({ query, total: r.total, indexed: r.indexed, items: r.items });
+        setRes({
+          query,
+          total: r.total,
+          indexed: r.indexed,
+          items: r.items,
+          rustMs: r.rustMs,
+          rustSearchMs: r.rustSearchMs,
+          rustAssembleMs: r.rustAssembleMs,
+          invokeMs: performance.now() - started,
+        });
+        setIconsReady(false);
+        setRowsReady(false);
         // 「加载」= 空查询结果就绪（含后端首次建索引），E2E 据此等待预热完成
         if (!query.trim()) recordQuickLoad(r.indexed, performance.now() - started);
       })
       .catch((e: unknown) => {
         if (seq === searchSeq.current) setStatus({ text: `搜索失败：${errorText(e)}`, tone: "error" });
       });
-  }, [armed, query, prefs.searchMode, prefs.hideMissing, dataTick]);
+  }, [armed, collectReady, query, prefs.searchMode, prefs.hideMissing, dataTick]);
   // 新词的结果到达前沿用上一次结果，避免列表闪空
   const results = res?.items ?? [];
+  const painted = rowsReady ? results : results.slice(0, FIRST_FRAME_ROWS);
   const current = results[Math.min(selected, results.length - 1)] ?? null;
 
-  // 「输入到出结果」：输入事件时刻 → 结果提交后的下一帧
+  // 「输入到出结果」：输入事件时刻 → 结果提交后的下一帧。
   useLayoutEffect(() => {
     const pending = pendingQueryStart.current;
     if (!pending || !res || pending.q !== res.query) return;
     pendingQueryStart.current = null;
-    const { query: q, total, indexed } = res;
-    requestAnimationFrame(() => recordQuickQuery(q, total, performance.now() - pending.start, indexed));
+    const { query: q, total, indexed, rustMs, rustSearchMs, rustAssembleMs, invokeMs } = res;
+    requestAnimationFrame(() =>
+      recordQuickQuery(q, total, performance.now() - pending.start, indexed, {
+        rustMs,
+        rustSearchMs,
+        rustAssembleMs,
+        invokeMs,
+      }),
+    );
+  }, [res]);
+  // 产品自己的分帧：首帧画满可见区，下一帧再补屏外行和缩略图。
+  useLayoutEffect(() => {
+    if (!res) return;
+    const id = requestAnimationFrame(() => {
+      setRowsReady(true);
+      setIconsReady(true);
+    });
+    return () => cancelAnimationFrame(id);
   }, [res]);
 
   // 唤出：聚焦并全选上次的输入（直接打字即替换）；选项「保留上次输入」关闭时清空
@@ -345,6 +480,14 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
       setStatus({ text: `${label}失败：${errorText(e)}`, tone: "error" });
     }
   }, []);
+
+  const onLaunchItem = useCallback((item: ItemWithTags) => {
+    void run("打开", async () => {
+      await db.launchItem(item.id);
+      announceWindowWrite({ source: "quick", itemIds: [item.id], tagsChanged: false });
+      hide();
+    });
+  }, [run, hide]);
 
   const openTagPicker = useCallback(async (item: ItemWithTags) => {
     await run("读取标签", async () => {
@@ -447,23 +590,29 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
 
   return (
     <div className="quick-shell" data-testid="quick-root">
-      <input
-        ref={inputRef}
-        data-testid="quick-input"
-        className="quick-input"
-        aria-label="快速搜索"
-        placeholder={res ? `搜索 ${res.indexed} 个对象…` : "正在加载…"}
-        value={query}
-        spellCheck={false}
-        autoComplete="off"
-        onChange={(event) => {
-          pendingQueryStart.current = { q: event.target.value, start: event.timeStamp };
-          setQuery(event.target.value);
-          setSelected(0);
-          setStatus(null);
-        }}
-        onKeyDown={onKeyDown}
-      />
+      <div className="quick-search">
+        <svg className="quick-search-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M10.5 10.5L14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+        <input
+          ref={inputRef}
+          data-testid="quick-input"
+          className="quick-input"
+          aria-label="快速搜索"
+          placeholder={res ? `搜索 ${res.indexed} 个对象…` : "正在加载…"}
+          value={query}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(event) => {
+            pendingQueryStart.current = { q: event.target.value, start: event.timeStamp };
+            setQuery(event.target.value);
+            setSelected(0);
+            setStatus(null);
+          }}
+          onKeyDown={onKeyDown}
+        />
+      </div>
       {clipboardPaths.length > 0 && !picker && (
         <button type="button" className="quick-button quick-clipboard" data-testid="quick-clipboard" data-count={clipboardPaths.length} onMouseDown={(e) => e.preventDefault()} onClick={collectClipboard}>
           收纳剪贴板中的 {clipboardPaths.length} 项（Ctrl+Shift+V）
@@ -501,36 +650,27 @@ function QuickSearch({ dropError, armed: armedByApp }: { dropError: string | nul
           </ul>
         </div>
       ) : (
-        <ul role="listbox" aria-label="搜索结果" className="quick-list" data-testid="quick-results">
+        <ul role="listbox" aria-label="搜索结果" className="quick-list" data-testid="quick-results" data-query={res?.query ?? ""}>
           {res && results.length === 0 && <li className="quick-empty">没有匹配的对象</li>}
-          {results.map((item, i) => (
-            <li
-              key={item.id}
-              role="option"
-              aria-selected={item === current}
-              data-testid="quick-result"
-              data-item-id={item.id}
-              className={`quick-row${item.is_missing ? " quick-missing" : ""}`}
-              onMouseEnter={() => setSelected(i)}
-              onMouseDown={(e) => e.preventDefault()}
-              onDoubleClick={() => void run("打开", async () => {
-                await db.launchItem(item.id);
-                announceWindowWrite({ source: "quick", itemIds: [item.id], tagsChanged: false });
-                hide();
-              })}
-            >
-              <span className="quick-icon" data-testid="quick-result-icon" data-visual={i < QUICK_ICON_LIMIT ? "visual" : "type"}>
-                {i < QUICK_ICON_LIMIT
-                  ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
-                  : <ItemTypeIcon item={item} emojiClass="" />}
-              </span>
-              <span className="quick-name" title={itemDisplayName(item)}>{itemDisplayName(item)}</span>
-              {item.tags.length > 0 && (
-                <span className="quick-tags" title={item.tags.map((t) => t.name).join(" · ")}>{item.tags.slice(0, 3).map((t) => t.name).join(" · ")}</span>
-              )}
-              <span className="quick-path" title={item.path}>{truncatePathMiddle(item.path)}</span>
-            </li>
-          ))}
+          {painted.map((item, i) => {
+            const label = getTypeLabel(item.type);
+            const prev = i > 0 ? getTypeLabel(painted[i - 1].type) : null;
+            return (
+              <QuickResultRow
+                key={item.id}
+                item={item}
+                highlightQuery={res?.query ?? ""}
+                selected={item === current}
+                showGroup={label !== prev}
+                groupLabel={label}
+                hoverIndex={i}
+                visual={i < QUICK_ICON_LIMIT}
+                iconsReady={iconsReady}
+                onHoverIndex={setSelected}
+                onLaunch={onLaunchItem}
+              />
+            );
+          })}
         </ul>
       )}
       <div className="quick-footer">
