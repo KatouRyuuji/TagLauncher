@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { FilePlus, FileText, Folder } from "lucide-react";
 import * as db from "../lib/db";
 import { announceWindowWrite } from "../lib/dataSync";
 import {
@@ -28,7 +29,6 @@ import {
 import type { Cabinet, Tag } from "../types";
 import { stepIndex } from "./quickModel";
 import { cabinetPathLabel } from "../lib/cabinetTree";
-import { truncatePathMiddle } from "../lib/itemUtils";
 
 type Step = "choose" | "tag" | "cabinet" | "running" | "done";
 
@@ -256,14 +256,14 @@ export function QuickCollect({ session, onClose }: { session: CollectSession; on
         </div>
       ) : (
         <>
-          <ul className="quick-list quick-collect-paths" aria-label="待收纳">
+          <ul className="quick-collect-paths" aria-label="待收纳">
             {session.paths.slice(0, 8).map((p) => (
-              <li key={p} className="quick-row" data-testid="collect-path">
-                <span className="quick-name" title={pathName(p)}>{pathName(p)}</span>
-                <span className="quick-path" title={p}>{truncatePathMiddle(p)}</span>
+              <li key={p} className="collect-chip" data-testid="collect-path" title={p}>
+                <span className="collect-chip-swatch" aria-hidden="true" />
+                <span className="quick-name">{pathName(p)}</span>
               </li>
             ))}
-            {count > 8 && <li className="quick-empty">…还有 {count - 8} 项</li>}
+            {count > 8 && <li className="quick-collect-more">…还有 {count - 8} 项</li>}
           </ul>
           {hasFolders && (
             <div role="radiogroup" aria-label="文件夹导入方式" className="quick-collect-modes">
@@ -277,17 +277,26 @@ export function QuickCollect({ session, onClose }: { session: CollectSession; on
           )}
           <div className="quick-collect-actions">
             <button type="button" className="collect-card collect-card-rec" data-testid="collect-action-tag" disabled={busy} onClick={() => { setIndex(0); setStep("tag"); }}>
-              <span className="collect-card-kicker">推荐</span>
-              <span className="collect-card-title">打标签…（T）</span>
-              <span className="collect-card-desc">给文件打上标签后收入对象库</span>
+              <span className="collect-card-icon" aria-hidden="true"><FileText strokeWidth={1.75} /></span>
+              <span className="collect-card-body">
+                <span className="collect-card-title">打标签 <kbd>T</kbd></span>
+                <span className="collect-card-desc">给文件打上标签后收入对象库</span>
+              </span>
+              <span className="collect-card-badge">推荐</span>
             </button>
             <button type="button" className="collect-card" data-testid="collect-action-cabinet" disabled={busy} onClick={() => { setIndex(0); setStep("cabinet"); }}>
-              <span className="collect-card-title">放入文件柜…（C）</span>
-              <span className="collect-card-desc">放到已有的普通文件柜里</span>
+              <span className="collect-card-icon" aria-hidden="true"><Folder strokeWidth={1.75} /></span>
+              <span className="collect-card-body">
+                <span className="collect-card-title">放入文件柜 <kbd>C</kbd></span>
+                <span className="collect-card-desc">放到已有的普通文件柜里</span>
+              </span>
             </button>
             <button type="button" className="collect-card" data-testid="collect-action-import" disabled={busy} onClick={runImport}>
-              <span className="collect-card-title">仅导入（I）</span>
-              <span className="collect-card-desc">先入库，稍后再整理</span>
+              <span className="collect-card-icon" aria-hidden="true"><FilePlus strokeWidth={1.75} /></span>
+              <span className="collect-card-body">
+                <span className="collect-card-title">仅导入 <kbd>I</kbd></span>
+                <span className="collect-card-desc">先入库，稍后再整理</span>
+              </span>
             </button>
           </div>
           <label className="quick-collect-remember">

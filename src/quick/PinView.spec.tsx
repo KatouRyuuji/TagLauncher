@@ -102,7 +102,8 @@ describe("PinView", () => {
     const { rerender } = render(<PinView view={view({ mode: "drawer" })} />);
     expect(screen.getByTestId("pin-panel")).toHaveAttribute("data-mode", "drawer");
     expect(screen.queryByTestId("pin-handle")).toBeNull();
-    expect(db.pinHandleColor).toHaveBeenCalledWith("#c0647d");
+    // 前端把 CSS 变量算成 rgb() 再交给后端（parse_css_color 两种都能吃）
+    expect(db.pinHandleColor).toHaveBeenCalledWith("rgb(192, 100, 125)");
     // 收起状态下离开不触发收回
     fireEvent.mouseLeave(document.documentElement);
     act(() => { vi.advanceTimersByTime(1000); });

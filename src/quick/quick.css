@@ -17,11 +17,19 @@ html, body.quick-body, #root { height: 100%; margin: 0; overflow: hidden; backgr
   box-shadow: var(--glass-highlight), var(--glass-shadow);
   animation: quick-pop var(--transition-normal) both;
   overflow: hidden; }
-/* ::before 只铺半透明底，不含 backdrop-filter：整窗滤镜会在列表重绘时拖慢查询 p95。
-   有系统亚克力（html[data-acrylic]）时由 DWM 负责整窗雾面；否则仅顶栏窄带 CSS 模糊回退。 */
+/* ::before 只铺半透明底与细颗粒，不含 backdrop-filter：整窗滤镜会在列表重绘时拖慢查询 p95。
+   有系统亚克力（html[data-acrylic]）时由 DWM 负责整窗雾面，本层再减透明以免盖实；
+   否则仅顶栏窄带 CSS 模糊回退。颗粒是静态 repeating 渐变，不进滤镜、不影响查询。 */
 .quick-shell::before, .pin-shell::before {
   content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; border-radius: inherit;
-  background: var(--glass-bg);
+  background-color: var(--glass-bg);
+  background-image:
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-primary) 3.5%, transparent) 0.7px, transparent 0);
+  background-size: 4px 4px;
+}
+html[data-acrylic] .quick-shell::before,
+html[data-acrylic] .pin-shell::before {
+  background-color: color-mix(in srgb, var(--glass-bg) 55%, transparent);
 }
 html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .quick-shell::after,
 html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .pin-shell::after {
@@ -31,17 +39,20 @@ html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .pin-shel
   -webkit-backdrop-filter: var(--glass-blur);
 }
 .quick-shell > *, .pin-shell > * { position: relative; z-index: 1; }
-.quick-search { position: relative; flex-shrink: 0; }
-.quick-search-icon { position: absolute; left: var(--spacing-md); top: 50%; transform: translateY(-50%);
+.quick-search { position: relative; flex-shrink: 0; padding-bottom: var(--spacing-sm);
+  border-bottom: var(--border-width, 1px) solid var(--border-subtle); }
+.quick-search-icon { position: absolute; left: var(--spacing-sm); top: 50%; transform: translateY(-50%);
   width: 1em; height: 1em; color: var(--text-muted); pointer-events: none; }
-.quick-search .quick-input { padding-left: calc(var(--spacing-md) + 1.6em); }
-.quick-input { width: 100%; box-sizing: border-box; height: 3.2em; padding: 0 var(--spacing-md); font-size: 1.15em;
-  border-radius: var(--radius-lg); border: var(--border-width, 1px) solid var(--border-subtle);
-  background: var(--glass-bg-strong); color: inherit; outline: none;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast); }
+.quick-search .quick-input { padding-left: calc(var(--spacing-sm) + 1.6em); }
+.quick-input { width: 100%; box-sizing: border-box; height: 2.8em; padding: 0 var(--spacing-md); font-size: 1.15em;
+  border-radius: var(--radius-lg); border: var(--border-width, 1px) solid transparent;
+  background: color-mix(in srgb, var(--glass-bg-strong) 70%, transparent); color: inherit; outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast); }
 .quick-input::placeholder { color: var(--text-placeholder); }
-.quick-input:focus { border-color: var(--accent-primary); box-shadow: var(--shadow-focus); }
-.quick-input-small { height: 2.45em; font-size: 1em; }
+.quick-input:focus { border-color: var(--accent-primary); box-shadow: var(--shadow-focus);
+  background: var(--glass-bg-strong); }
+.quick-input-small { height: 2.35em; font-size: 1em;
+  border-color: var(--border-subtle); background: var(--glass-bg-strong); }
 .quick-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none;
   contain: content; }
 .quick-group { padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs);
@@ -50,70 +61,87 @@ html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .pin-shel
 /* 只标每行首次：把衬底从 28% 提到 42%，单处标记仍清楚。 */
 .quick-mark { background: color-mix(in srgb, var(--accent-primary) 42%, transparent); color: inherit;
   font-weight: var(--font-weight-semibold); border-radius: calc(var(--radius-sm) / 2); padding: 0 0.12em; }
-.quick-row { display: grid; grid-template-columns: 1.6em minmax(0, 1fr) auto; column-gap: var(--spacing-sm); align-items: center; padding: calc(var(--spacing-xs) * 1.5) var(--spacing-sm);
+/* 标签列 minmax(0, 38%)：不再用 auto（不收缩），长标签必须省略。 */
+.quick-row { display: grid; grid-template-columns: 1.6em minmax(0, 1fr) minmax(0, 38%); column-gap: var(--spacing-sm); align-items: center; padding: calc(var(--spacing-xs) * 1.5) var(--spacing-sm);
   border-radius: var(--radius-sm); cursor: default; position: relative;
   transition: background-color var(--transition-fast);
   /* 视口外的行跳过绘制：5k 短前缀要画 50 行，较慢 runner 上 p95 33–34。测量在提交后下一帧，这能直接减那一帧的绘制。 */
   content-visibility: auto; contain-intrinsic-size: auto 3.4em; }
 .quick-row:hover { background: var(--bg-hover); }
-.quick-row[aria-selected="true"] { background: var(--row-selected-bg); color: var(--row-selected-fg); box-shadow: var(--row-selected-shadow); }
-.quick-row[aria-selected="true"] .quick-tags, .quick-row[aria-selected="true"] .quick-path { color: var(--row-selected-sub-fg); }
+.quick-row[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent-primary) 16%, var(--glass-bg-strong));
+  color: var(--text-primary);
+  box-shadow: var(--row-selected-shadow);
+}
+.quick-row[aria-selected="true"] .quick-tags, .quick-row[aria-selected="true"] .quick-path { color: var(--text-muted); }
 .quick-row[aria-selected="true"]::before {
   content: ""; position: absolute; left: 0; top: 18%; bottom: 18%;
   width: var(--glass-accent-bar); border-radius: var(--radius-full);
   background: var(--accent-primary); }
 .quick-icon { grid-row: span 2; display: flex; align-items: center; justify-content: center; font-size: 1.3em; }
 .quick-icon-img { width: 1.25em; height: 1.25em; object-fit: contain; border-radius: calc(var(--radius-sm) / 2); }
-.quick-name { font-weight: var(--font-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quick-tags { color: var(--text-muted); font-size: 0.85em; justify-self: end; white-space: nowrap; }
-.quick-path { grid-column: 2 / -1; color: var(--text-faint); font-size: 0.8em;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-name { font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.quick-tags { color: var(--text-muted); font-size: 0.8em; justify-self: end; align-self: center;
+  min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-path { grid-column: 2 / -1; color: var(--text-faint); font-size: 0.78em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .quick-missing .quick-name { text-decoration: line-through; opacity: 0.7; }
-.quick-empty { padding: var(--spacing-lg) var(--spacing-sm); color: var(--text-muted); }
+.quick-empty { padding: var(--spacing-lg) var(--spacing-sm); color: var(--text-muted); text-align: center; }
 .quick-footer {
   flex-shrink: 0;
   display: flex; flex-wrap: wrap; align-items: center;
-  gap: var(--spacing-xs) var(--spacing-sm);
+  gap: var(--spacing-sm) var(--spacing-md);
   margin-top: var(--spacing-xs);
-  padding: var(--spacing-xs) var(--spacing-sm) 0;
+  padding: var(--spacing-sm) var(--spacing-xs) 0;
   border-top: var(--border-width, 1px) solid var(--border-subtle);
   background: transparent;
-  color: var(--text-faint);
+  color: var(--text-secondary);
   font-size: calc(var(--font-size-xs) * var(--ui-font-scale, 1));
   min-height: calc(var(--spacing-lg) + var(--spacing-xs));
 }
-.quick-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-xs) var(--spacing-sm); }
-.quick-kbd { display: inline-flex; align-items: center; gap: calc(var(--spacing-xs) * 1.25); white-space: nowrap; }
+.quick-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-xs) var(--spacing-md); }
+.quick-kbd { display: inline-flex; align-items: center; gap: calc(var(--spacing-xs) * 1.25); white-space: nowrap;
+  color: var(--text-secondary); }
 .quick-kbd kbd {
   display: inline-block;
-  padding: 0 calc(var(--spacing-xs) * 0.75);
-  border: var(--border-width, 1px) solid var(--border-subtle);
+  padding: 0.08em 0.4em;
+  border: var(--border-width, 1px) solid var(--border-medium);
   border-radius: var(--radius-sm);
-  background: var(--glass-bg-strong);
-  color: var(--text-secondary);
+  background: var(--bg-surface);
+  color: var(--text-primary);
   font-family: var(--font-family-mono);
-  font-size: 0.95em;
+  font-size: 0.9em;
   font-weight: var(--font-weight-medium);
+  box-shadow: var(--shadow-sm);
+  line-height: 1.4;
 }
 .quick-error { color: var(--color-danger-ink); }
 .quick-picker { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) * 1.5); flex: 1; min-height: 8em; }
 .quick-picker-title { color: var(--text-muted); font-size: 0.9em; }
-.quick-picker .quick-row { grid-template-columns: 1.2em 0.8em 1fr; align-items: center; }
+.quick-picker .quick-row { grid-template-columns: 1.2em 0.8em minmax(0, 1fr); align-items: center; }
 .quick-check { color: var(--accent-primary); }
-.quick-tag-dot { width: 0.7em; height: 0.7em; border-radius: 50%; }
+.quick-tag-dot { width: 0.7em; height: 0.7em; border-radius: 50%; flex-shrink: 0; }
 /* 收纳模式（右键菜单 / 发送到）：先选动作 */
 .quick-collect-title { font-weight: var(--font-weight-semibold); display: flex; gap: var(--spacing-sm); align-items: baseline; flex-shrink: 0; }
 /* 中间可滚动：shell overflow:hidden 时不把页脚 / 标签选项裁到窗口外（Playwright 视为不可见）。 */
-.quick-collect-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--spacing-sm); }
+.quick-collect-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--spacing-md); }
 .quick-collect-note { color: var(--text-muted); font-size: 0.85em; font-weight: var(--font-weight-normal); }
-.quick-collect-paths { flex: 0 0 auto; max-height: 6.5em; }
-/* 待收纳列表没有图标列：文件名占整行、路径在下一行（沿用结果行网格会把名字挤进 1.6em 的图标列） */
-.quick-collect-paths .quick-row { grid-template-columns: minmax(0, 1fr); }
-.quick-collect-paths .quick-path { grid-column: 1; }
+/* 文件芯片：只露文件名，路径放 title。两条不再撑出滚动条。 */
+.quick-collect-paths { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: var(--spacing-xs); max-height: none;
+  list-style: none; margin: 0; padding: 0; overflow: visible; }
+.quick-collect-paths .collect-chip { display: inline-flex; align-items: center; gap: calc(var(--spacing-xs) * 1.25);
+  max-width: 16em; min-width: 0; padding: calc(var(--spacing-xs) * 0.85) var(--spacing-sm);
+  border: var(--border-width, 1px) solid var(--border-subtle); border-radius: var(--radius-md);
+  background: var(--glass-bg-strong); }
+.quick-collect-paths .collect-chip-swatch { width: 0.7em; height: 0.7em; border-radius: var(--radius-sm); flex-shrink: 0;
+  background: var(--accent-primary); opacity: 0.75; }
+.quick-collect-paths .quick-name { font-weight: var(--font-weight-medium); font-size: 0.9em; }
+.quick-collect-paths .quick-path { display: none; }
+.quick-collect-more { color: var(--text-muted); font-size: 0.85em; align-self: center; padding: 0 var(--spacing-xs); }
 .quick-collect-modes { display: flex; flex-wrap: wrap; gap: var(--spacing-xs) var(--spacing-md); font-size: 0.9em; }
 .quick-collect-actions { display: flex; flex-direction: column; gap: var(--spacing-sm); flex: 0 0 auto; }
-.collect-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  width: 100%; min-height: 0; padding: var(--spacing-sm) var(--spacing-md); text-align: left;
+.collect-card { display: grid; grid-template-columns: 2.1em minmax(0, 1fr) auto; column-gap: var(--spacing-sm);
+  align-items: center; width: 100%; min-height: 3.6em; padding: var(--spacing-sm) var(--spacing-md); text-align: left;
   border-radius: var(--radius-lg); border: var(--border-width, 1px) solid var(--border-subtle);
   background: var(--glass-bg-strong); color: inherit; font: inherit; cursor: pointer;
   transition: background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast); }
@@ -123,10 +151,24 @@ html:not([data-quick-hidden]):not([data-acrylic]):not([data-querying]) .pin-shel
 .collect-card-rec { border-color: var(--accent-primary);
   background: color-mix(in srgb, var(--accent-primary) 14%, var(--glass-bg-strong));
   box-shadow: var(--shadow-sm); }
-.collect-card-kicker { font-size: 0.75em; font-weight: var(--font-weight-semibold); color: var(--accent-primary); letter-spacing: 0.08em; }
-.collect-card-title { font-weight: var(--font-weight-semibold); font-size: 1.05em; }
-.collect-card-desc { font-size: 0.85em; color: var(--text-muted); }
-.quick-collect-remember { font-size: 0.85em; color: var(--text-muted); display: flex; gap: calc(var(--spacing-xs) * 1.5); align-items: center; }
+.collect-card-icon { display: flex; align-items: center; justify-content: center; width: 2.1em; height: 2.1em;
+  border-radius: var(--radius-md); background: color-mix(in srgb, var(--accent-primary) 12%, var(--bg-surface));
+  color: var(--accent-primary); font-size: 1.15em; grid-row: span 2; }
+.collect-card-icon svg { width: 1em; height: 1em; }
+.collect-card-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; grid-column: 2; }
+.collect-card-title { font-weight: var(--font-weight-semibold); font-size: 1.05em; display: inline-flex; align-items: center;
+  gap: var(--spacing-xs); min-width: 0; }
+.collect-card-title kbd { display: inline-block; padding: 0.05em 0.38em;
+  border: var(--border-width, 1px) solid var(--border-medium); border-radius: var(--radius-sm);
+  background: var(--bg-surface); color: var(--text-secondary);
+  font-family: var(--font-family-mono); font-size: 0.75em; font-weight: var(--font-weight-medium); line-height: 1.35; }
+.collect-card-desc { font-size: 0.85em; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.collect-card-badge { justify-self: end; align-self: start; padding: 0.12em 0.55em;
+  border-radius: var(--radius-full); background: var(--accent-primary); color: var(--text-invert);
+  font-size: 0.72em; font-weight: var(--font-weight-semibold); letter-spacing: 0.04em; line-height: 1.4;
+  grid-column: 3; grid-row: 1; }
+.quick-collect-remember { font-size: 0.85em; color: var(--text-muted); display: flex; gap: calc(var(--spacing-xs) * 1.5);
+  align-items: center; margin-top: auto; padding-top: var(--spacing-xs); }
 .quick-button { min-height: 2.45em; padding: 0 var(--spacing-md); border-radius: var(--radius-md); border: var(--border-width, 1px) solid var(--border-default);
   background: var(--glass-bg-strong); color: inherit; font: inherit; cursor: pointer; transition: background-color var(--transition-fast), border-color var(--transition-fast); }
 .quick-button:hover:not(:disabled) { background: var(--bg-input-hover); }
@@ -152,7 +194,7 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
   border: var(--border-width, 1px) solid var(--glass-border);
   box-shadow: var(--glass-highlight), var(--glass-shadow);
   overflow: hidden; }
-.pin-panel { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) * 1.5); padding: var(--spacing-sm); padding-top: 0; height: 100%; box-sizing: border-box; min-width: 0; }
+.pin-panel { display: flex; flex-direction: column; gap: var(--spacing-sm); padding: var(--spacing-sm); padding-top: 0; height: 100%; box-sizing: border-box; min-width: 0; }
 .pin-shell.pin-panel[data-mode="float"] { border-radius: var(--radius-2xl); animation: quick-pop var(--transition-normal) both; }
 /* 抽屉滑出时窗口宽度逐步变大：面板固定宽度并贴住远离屏幕边的一侧，视觉上从边缘滑入 */
 .pin-panel[data-mode="drawer"] { position: absolute; top: 0; bottom: 0; animation: none; box-shadow: var(--glass-highlight); }
@@ -160,25 +202,27 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
   border-radius: var(--radius-xl) 0 0 var(--radius-xl); border-right: none; }
 .pin-panel[data-mode="drawer"][data-edge="left"] { right: 0; border-right: var(--border-width, 1px) solid var(--glass-border);
   border-radius: 0 var(--radius-xl) var(--radius-xl) 0; border-left: none; }
+/* 顶栏：细来源色线 + 标题与数量写在一起。拖动由后端 HTCAPTION 兜底，不再用 32px 实底撑高度。 */
 .pin-chrome { flex-shrink: 0; cursor: move; user-select: none; margin: 0 calc(-1 * var(--spacing-sm)) 0;
-  /* 视觉：--glass-bg-strong（浅 78% / 深 70%）保留清单预览+镜面，不铺不透明 --bg-surface。
-     拖动命中：顶栏 32 逻辑像素由后端 WM_NCHITTEST→HTCAPTION 兜底（不依赖 WebView 半透明命中）。 */
-  background: var(--glass-bg-strong); min-height: 32px; }
-.pin-stripe { height: calc(var(--spacing-xs) + 1px); background: var(--accent-primary); }
-.pin-header { display: flex; align-items: center; gap: var(--spacing-sm); min-height: 2.2em; cursor: move; user-select: none;
-  padding: var(--spacing-xs) var(--spacing-sm) 0; }
-.pin-title { flex: 1; min-width: 0; font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pin-count { color: var(--text-muted); font-size: 0.85em; }
+  background: transparent; }
+.pin-stripe { height: 2px; background: var(--accent-primary); opacity: 0.9; }
+.pin-header { display: flex; align-items: baseline; gap: var(--spacing-xs); min-height: 2em; cursor: move; user-select: none;
+  padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs); }
+.pin-title { flex: 0 1 auto; min-width: 0; font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pin-count { flex: 0 0 auto; color: var(--text-muted); font-size: 0.85em; font-weight: var(--font-weight-medium); }
 .pin-row { grid-template-columns: 1.6em minmax(0, 1fr); padding: var(--spacing-xs) var(--spacing-sm); }
-.pin-row .quick-icon { grid-row: auto; }
+.pin-row .quick-icon { grid-row: auto; font-size: 1.15em; color: var(--text-secondary); }
 .pin-preview { flex-shrink: 0; display: grid; grid-template-columns: 1.8em minmax(0, 1fr) auto; column-gap: var(--spacing-sm);
   align-items: center; padding: var(--spacing-sm) var(--spacing-md);
   border: var(--border-width, 1px) solid var(--border-subtle); border-radius: var(--radius-md);
-  background: var(--glass-bg-strong); min-height: 3.8em; }
-.pin-preview-meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.pin-preview-name { font-weight: var(--font-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pin-preview-path { font-size: 0.8em; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--font-family-mono); }
+  background: var(--glass-bg-strong); min-height: 3.8em; min-width: 0; overflow: hidden; }
+.pin-preview > * { min-width: 0; }
+.pin-preview .quick-icon { font-size: 1.2em; }
+.pin-preview-meta { min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.pin-preview-name { font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pin-preview-path { font-size: 0.78em; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-family-mono); min-width: 0; }
+.pin-preview .quick-button { flex-shrink: 0; min-width: 3.6em; padding: 0 var(--spacing-sm); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

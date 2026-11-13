@@ -15,8 +15,8 @@ import { announceWindowWrite, onAnyDataChanged } from "../lib/dataSync";
 import { itemDisplayName } from "../lib/itemDisplay";
 import type { PinViewState } from "../lib/desktopShortcut";
 import { quickKeyAction, stepIndex } from "./quickModel";
-import { filterPinItems, PIN_ICON_LIMIT, PIN_LEAVE_COLLAPSE_MS, pinCountText } from "./pinModel";
-import { ItemTypeIcon, ItemVisualIcon } from "../components/ItemVisualIcon";
+import { filterPinItems, PIN_LEAVE_COLLAPSE_MS, pinCountText } from "./pinModel";
+import { ItemTypeIcon } from "../components/ItemVisualIcon";
 
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -55,14 +55,24 @@ export function PinView({ view }: { view: PinViewState }) {
     leaveTimer.current = null;
   };
   // 原生探头跟随主题强调色与卡片着色（主题在本窗口启动时从快照套用；切换主题后下次视图变化时同步）
+  // 用临时节点把 color-mix / 变量算成 rgb()，后端 parse_css_color 才能吃。
   useEffect(() => {
     if (!isDrawer) return;
-    const cs = getComputedStyle(document.documentElement);
-    const accent = cs.getPropertyValue("--accent-primary").trim();
+    const resolve = (name: string): string => {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      if (!raw) return "";
+      const el = document.createElement("span");
+      el.style.color = raw;
+      document.body.appendChild(el);
+      const rgb = getComputedStyle(el).color;
+      el.remove();
+      return rgb || raw;
+    };
+    const accent = resolve("--accent-primary");
     if (accent) void db.pinHandleColor(accent).catch(() => {});
-    const bg = cs.getPropertyValue("--bg-surface").trim();
-    const fg = cs.getPropertyValue("--text-primary").trim();
-    const muted = cs.getPropertyValue("--text-muted").trim() || cs.getPropertyValue("--text-secondary").trim();
+    const bg = resolve("--bg-surface");
+    const fg = resolve("--text-primary");
+    const muted = resolve("--text-muted") || resolve("--text-secondary");
     const dark = document.documentElement.getAttribute("data-scheme") === "dark";
     if (bg || fg) void db.pinHandleChrome(bg, fg, muted, dark).catch(() => {});
   }, [isDrawer, drawer]);
@@ -181,9 +191,7 @@ export function PinView({ view }: { view: PinViewState }) {
                 onDoubleClick={() => void open(item.id)}
               >
                 <span className="quick-icon">
-                  {i < PIN_ICON_LIMIT
-                    ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
-                    : <ItemTypeIcon item={item} emojiClass="" />}
+                  <ItemTypeIcon item={item} emojiClass="" />
                 </span>
                 <span className="quick-name" title={itemDisplayName(item)}>{itemDisplayName(item)}</span>
               </li>
