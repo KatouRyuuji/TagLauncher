@@ -1733,7 +1733,7 @@ pub fn pin_handle_color(app: AppHandle, color: String) {
     crate::pin_strip::set_color(&app, &color);
 }
 
-/// 前端告知探头卡片底 / 正文 / 次要文字与是否深色（亚克力着色与文字）
+/// 前端告知探头卡片底 / 正文 / 次要文字与是否深色（探头绘制）
 #[tauri::command]
 pub fn pin_handle_chrome(app: AppHandle, bg: String, fg: String, muted: String, dark: bool) {
     crate::pin_strip::set_chrome(&app, &bg, &fg, &muted, dark);
