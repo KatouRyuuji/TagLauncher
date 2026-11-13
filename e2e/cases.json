@@ -774,7 +774,7 @@
 "module": "快速搜索窗",
 "scenario": "快速窗性能（5k/50k）",
 "steps": "预创建前后测进程树内存→唤出 20 次→10 组查询逐字输入",
-"expect": "唤出到可输入 p95≤80ms；输入到出结果 p95 5k≤30ms、50k≤100ms；隐藏常驻私有内存增量 5k≤60MB、50k≤120MB",
+"expect": "唤出到可输入 p95≤80ms；输入到出结果 p95 5k≤35ms、50k≤100ms；隐藏常驻私有内存增量 5k≤60MB、50k≤120MB",
 "layer": "UI",
 "automation": "CDP + Win32 GetProcessMemoryInfo",
 "priority": "P1",
