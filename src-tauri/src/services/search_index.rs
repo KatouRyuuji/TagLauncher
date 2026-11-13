@@ -598,7 +598,48 @@ impl SearchIndex {
             .collect())
     }
 
+    /// 快速窗一次持锁完成：搜索 + 按命中顺序组装前 `limit` 条对象。
+    /// 数据来自内存索引（与 [`Self::items_page`] 同形、同序），不走每次按键的 SQLite 往返和标签 JOIN。
+    pub fn search_page(
+        &self,
+        conn: &Connection,
+        params: &SearchParams,
+        limit: usize,
+        load_synonyms: &dyn Fn() -> Vec<Vec<String>>,
+    ) -> Result<SearchPage, String> {
+        let mut inner = self.lock();
+        inner.ensure_fresh(conn, load_synonyms)?;
+        let t0 = Instant::now();
+        let ids = inner.search_locked(params);
+        let search_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        let total = ids.len();
+        let t1 = Instant::now();
+        let items: Vec<ItemWithTags> = ids
+            .iter()
+            .take(limit)
+            .filter_map(|id| inner.pos.get(id).copied().map(|i| inner.item_at(i)))
+            .collect();
+        let assemble_ms = t1.elapsed().as_secs_f64() * 1000.0;
+        Ok(SearchPage {
+            total,
+            indexed: inner.stats.entries,
+            items,
+            search_ms,
+            assemble_ms,
+        })
+    }
+
     pub fn stats(&self) -> IndexStats {
         self.lock().stats.clone()
     }
+}
+
+/// [`SearchIndex::search_page`] 的返回：命中总数、前若干条对象、本趟计时。
+#[derive(Debug)]
+pub struct SearchPage {
+    pub total: usize,
+    pub indexed: usize,
+    pub items: Vec<ItemWithTags>,
+    pub search_ms: f64,
+    pub assemble_ms: f64,
 }

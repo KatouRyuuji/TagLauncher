@@ -184,3 +184,81 @@ fn view_query_follows_db_with_frozen_smart_order() {
     };
     assert_eq!((stats.total, stats.recent, stats.untagged), (2, 1, 2));
 }
+
+#[test]
+fn search_page_matches_search_ids_and_sql_rows() {
+    let t = common::temp_db();
+    let _cq = add(&t, "重庆攻略.txt");
+    let vs = add(&t, "Visual Studio Code.exe");
+    let _vs2 = add(&t, "vscode-portable.exe");
+    let tag = {
+        let conn = t.db.get_conn();
+        let tag = tag_service::add_tag(&conn, "工具", "#888888").unwrap();
+        tag_service::set_item_tags(&conn, vs, &[tag.id]).unwrap();
+        tag
+    };
+    let idx = SearchIndex::default();
+    let ro = t.db.read_conn().unwrap();
+    let params = q("vsc");
+    let ids = idx.search(ro.conn(), &params, &no_synonyms).unwrap();
+    let page = idx
+        .search_page(ro.conn(), &params, 50, &no_synonyms)
+        .unwrap();
+    assert_eq!(page.total, ids.len());
+    assert_eq!(
+        page.items.iter().map(|it| it.item.id).collect::<Vec<_>>(),
+        ids,
+        "search_page 与 search 同序"
+    );
+    assert!(
+        page.items
+            .iter()
+            .any(|it| it.item.id == vs && it.tags.iter().any(|tg| tg.id == tag.id)),
+        "从索引组装的对象带标签"
+    );
+    let mut by_id: std::collections::HashMap<i64, _> =
+        item_service::get_items_by_ids(ro.conn(), &ids)
+            .unwrap()
+            .into_iter()
+            .map(|it| (it.item.id, it))
+            .collect();
+    for hit in &page.items {
+        let sql = by_id.remove(&hit.item.id).expect("SQL 行");
+        assert_eq!(hit.item.name, sql.item.name);
+        assert_eq!(hit.item.path, sql.item.path);
+        assert_eq!(hit.item.item_type, sql.item.item_type);
+        assert_eq!(hit.item.alias, sql.item.alias);
+        assert_eq!(hit.item.is_missing, sql.item.is_missing);
+        assert_eq!(hit.item.icon_path, sql.item.icon_path);
+        assert_eq!(hit.item.note, sql.item.note);
+        assert_eq!(hit.item.is_favorite, sql.item.is_favorite);
+        assert_eq!(
+            hit.tags
+                .iter()
+                .map(|t| (t.id, t.name.clone(), t.color.clone()))
+                .collect::<Vec<_>>(),
+            sql.tags
+                .iter()
+                .map(|t| (t.id, t.name.clone(), t.color.clone()))
+                .collect::<Vec<_>>(),
+        );
+    }
+    let empty = idx
+        .search_page(ro.conn(), &q(""), 50, &no_synonyms)
+        .unwrap();
+    let empty_ids = idx.search(ro.conn(), &q(""), &no_synonyms).unwrap();
+    assert_eq!(
+        empty.items.iter().map(|it| it.item.id).collect::<Vec<_>>(),
+        empty_ids,
+        "空查询保持默认排序"
+    );
+    // 限量：总数仍是全部命中，items 只有前 N
+    let limited = idx
+        .search_page(ro.conn(), &q("v"), 1, &no_synonyms)
+        .unwrap();
+    let all_v = idx.search(ro.conn(), &q("v"), &no_synonyms).unwrap();
+    assert!(all_v.len() >= 2);
+    assert_eq!(limited.total, all_v.len());
+    assert_eq!(limited.items.len(), 1);
+    assert_eq!(limited.items[0].item.id, all_v[0]);
+}
