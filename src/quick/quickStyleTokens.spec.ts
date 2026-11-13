@@ -32,3 +32,18 @@ describe("quick.css 只用主题令牌", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("截断规则", () => {
+  it("quick-tags 必须省略长标签，不再用 auto 列撑开行", () => {
+    expect(css).toMatch(/\.quick-tags\s*\{[^}]*text-overflow:\s*ellipsis/);
+    expect(css).toMatch(/\.quick-tags\s*\{[^}]*overflow:\s*hidden/);
+    expect(css).toMatch(/\.quick-tags\s*\{[^}]*min-width:\s*0/);
+    expect(css).toMatch(/grid-template-columns:\s*[^;]*minmax\(0,\s*38%\)/);
+  });
+
+  it("钉住预览路径与收纳芯片名字都会省略", () => {
+    expect(css).toMatch(/\.pin-preview-path\s*\{[^}]*text-overflow:\s*ellipsis/);
+    expect(css).toMatch(/\.pin-preview-name\s*\{[^}]*text-overflow:\s*ellipsis/);
+    expect(css).toMatch(/\.quick-collect-paths[^{]*\{[^}]*flex-wrap:\s*wrap/);
+  });
+});
