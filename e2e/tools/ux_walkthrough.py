@@ -191,7 +191,7 @@ class Recorder:
             if self.proc.stdin:
                 self.proc.stdin.write(b"q")
                 self.proc.stdin.flush()
-            self.proc.wait(timeout=25)
+            self.proc.wait(timeout=50)
         except Exception as e:
             log(f"ffmpeg q/wait: {e}")
             try:
@@ -318,6 +318,74 @@ def type_text(s: str, interval: float = 0.09) -> None:
                 win32._send(inp)
         time.sleep(interval)
     pause(0.25)
+
+
+def dismiss_collect_session(app) -> None:
+    """收纳会话与钉住/快速搜索共用同一 WebView。点「打标签」后 Esc 只返回动作卡，
+    必须再 Esc 或 collect_finish(handled=0) 才会关掉会话，否则第 7、9 章钉住界面画不出来。"""
+    sess = None
+    try:
+        sess = app.invoke("collect_session")
+    except Exception as e:
+        log(f"collect_session: {e}")
+    if sess:
+        sid = sess.get("id") if isinstance(sess, dict) else None
+        if sid is not None:
+            try:
+                app.invoke("collect_finish", {"id": sid, "handled": 0})
+                log(f"collect_finish id={sid} handled=0")
+                pause(0.7)
+            except Exception as e:
+                log(f"collect_finish: {e}")
+    for _ in range(3):
+        send_keys(VK_ESCAPE)
+        pause(0.35)
+    try:
+        leftover = app.invoke("collect_session")
+        if leftover:
+            log(f"collect still open after dismiss: {leftover}")
+        else:
+            log("collect session cleared")
+    except Exception:
+        pass
+
+
+def dismiss_system_dialogs() -> None:
+    """CI runner 偶发 pagefile「System Properties」挡在桌面中央。"""
+    user32 = ctypes.WinDLL("user32")
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    GetWindowTextW = user32.GetWindowTextW
+    GetClassNameW = user32.GetClassNameW
+    IsWindowVisible = user32.IsWindowVisible
+    PostMessageW = user32.PostMessageW
+    WM_CLOSE = 0x0010
+    closed = []
+
+    def cb(hwnd, _lp):
+        if not IsWindowVisible(hwnd):
+            return True
+        title = ctypes.create_unicode_buffer(512)
+        GetWindowTextW(hwnd, title, 512)
+        cls = ctypes.create_unicode_buffer(256)
+        GetClassNameW(hwnd, cls, 256)
+        name = title.value
+        if cls.value == "#32770" and name in ("System Properties", "系统属性"):
+            PostMessageW(hwnd, WM_CLOSE, 0, 0)
+            closed.append(name)
+        return True
+
+    user32.EnumWindows(EnumWindowsProc(cb), 0)
+    if closed:
+        log(f"closed system dialogs: {closed}")
+        pause(0.3)
+
+
+def pin_panel_page(app, timeout: float = 8):
+    """钉住与快速搜索共用 WebView；等 pin-panel 出现再给 page_shot 用。"""
+    from tests.ui.test_quick import quick_page
+    qp = quick_page(app, timeout=timeout)
+    qp.get_by_test_id("pin-panel").wait_for(state="visible", timeout=int(timeout * 1000))
+    return qp
 
 
 def hide_log_windows() -> int:
@@ -870,18 +938,19 @@ class Walk:
         pause(0.6)
         self.refresh_hwnd()
 
-    def shot(self, name: str, page=None) -> Path:
+    def shot(self, name: str, page=None, *, page_too: bool = True) -> Path:
         p = self.shots / f"{name}.png"
         grab_desktop(p)
         if page is not None:
             page_shot(page, self.shots / f"{name}-page.png")
-        elif self.app.page:
+        elif page_too and self.app.page:
             page_shot(self.app.page, self.shots / f"{name}-page.png")
         log(f"shot {p.name}")
         return p
 
     def chapter(self, n: int) -> None:
         hide_log_windows()
+        dismiss_system_dialogs()
         meta = CHAPTERS_META[n - 1]
         self.rec.mark(n, meta[1], meta[2])
         pause(0.6)
@@ -1281,10 +1350,12 @@ class Walk:
             except Exception as e:
                 log(f"collect action-first: {e}")
             pause(1.2)
-            send_keys(VK_ESCAPE)
-            pause(0.8)
+            # 点「打标签」后 Esc 只返回动作卡；必须关掉会话，否则第 7 章钉住画在同一窗口里看不见。
+            dismiss_collect_session(self.app)
+            pause(0.5)
         except Exception as e:
             log(f"collect page: {e}")
+            dismiss_collect_session(self.app)
 
         close_explorer_folders(["待收纳"])
         pause(0.8)
@@ -1292,19 +1363,25 @@ class Walk:
 
     def ch7(self):
         self.chapter(7)
+        dismiss_collect_session(self.app)
         ids = self.app.tag_ids()
         src = {"kind": "tag", "id": ids.get("工作") or list(ids.values())[0]}
         self.app.invoke("set_pin_settings", {"settings": {
             "enabled": True, "source": src, "mode": "float", "edge": "right", "topmost": True,
         }})
         pause(2.0)
-        self.shot("07-pin-float-light-f1")
+        qp = None
+        try:
+            qp = pin_panel_page(self.app, timeout=10)
+        except Exception as e:
+            log(f"pin float page: {e}")
+        self.shot("07-pin-float-light-f1", page=qp, page_too=False)
         # 抽屉
         self.app.invoke("set_pin_settings", {"settings": {
             "enabled": True, "source": src, "mode": "drawer", "edge": "right", "topmost": True,
         }})
         pause(1.5)
-        self.shot("07-pin-handle-light-f1")
+        self.shot("07-pin-handle-light-f1", page_too=False)
         # 碰边滑出：与 desktop pin 测试同一套命中（探头休息 68×148，悬停加宽到 168）
         try:
             wait_until(lambda: self.app.invoke("pin_diag")["handleVisible"], 8)
@@ -1337,23 +1414,35 @@ class Walk:
             pause(0.4)
             wait_until(lambda: self.app.invoke("pin_diag")["view"]["drawer"] == "expanded", 5)
             pause(1.5)
-            self.shot("07-pin-drawer-expanded-light-f1")
+            qp = None
+            try:
+                qp = pin_panel_page(self.app, timeout=6)
+            except Exception as e:
+                log(f"pin expanded page: {e}")
+            self.shot("07-pin-drawer-expanded-light-f1", page=qp, page_too=False)
+            self._shot_drawer_title_drag()
             # 离开收回：鼠标移到工作区中央
             work = win32.monitor_info(self.refresh_hwnd())["work"]
             move_slow((work[0] + work[2]) // 2, (work[1] + work[3]) // 2, 0.9)
             pause(0.3)
             wait_until(lambda: self.app.invoke("pin_diag")["view"]["drawer"] == "collapsed", 5)
             pause(1.0)
-            self.shot("07-pin-drawer-collapsed-light-f1")
+            self.shot("07-pin-drawer-collapsed-light-f1", page_too=False)
         except Exception as e:
             log(f"drawer hover: {e}")
             try:
                 self.app.invoke("pin_expand")
                 pause(1.5)
-                self.shot("07-pin-drawer-expanded-light-f1")
+                qp = None
+                try:
+                    qp = pin_panel_page(self.app, timeout=6)
+                except Exception as e3:
+                    log(f"pin expanded page (fallback): {e3}")
+                self.shot("07-pin-drawer-expanded-light-f1", page=qp, page_too=False)
+                self._shot_drawer_title_drag()
                 self.app.invoke("pin_collapse")
                 pause(1.0)
-                self.shot("07-pin-drawer-collapsed-light-f1")
+                self.shot("07-pin-drawer-collapsed-light-f1", page_too=False)
             except Exception as e2:
                 log(f"pin_expand: {e2}")
         # 关掉钉住，避免挡住后面
@@ -1362,7 +1451,40 @@ class Walk:
         }})
         pause(0.8)
 
+    def _shot_drawer_title_drag(self) -> None:
+        """展开后拖动顶栏（原生 HTCAPTION），中途抓一张；用于对比抽屉拖动。失败只记日志。"""
+        try:
+            from tests.desktop import oswin
+            q = oswin.window_by_title(self.app.proc.pid, "TagLauncher 快速搜索", visible_only=True)
+            if not q:
+                log("drawer drag: no visible quick/pin window")
+                return
+            l, t, r, b = win32.rect(q)
+            scale = win32.dpi_of(q) / 96
+            hx, hy = (l + r) // 2, t + round(16 * scale)
+            work = win32.monitor_info(q)["work"]
+            tx, ty = work[0] + 240, work[1] + 80 + (hy - t)
+            mx, my = (hx + tx) // 2, (hy + ty) // 2
+            move_slow(hx, hy, 0.45)
+            pause(0.15)
+            win32.mouse_down()
+            pause(0.12)
+            move_slow(mx, my, 0.8)
+            self.shot("07-pin-drawer-drag-light-f1", page_too=False)
+            move_slow(tx, ty, 0.55)
+            pause(0.15)
+            win32.mouse_up()
+            pause(0.8)
+            self.shot("07-pin-drawer-drag-docked-light-f1", page_too=False)
+        except Exception as e:
+            log(f"drawer title-bar drag: {e}")
+            try:
+                win32.mouse_up()
+            except Exception:
+                pass
+
     def ch8(self):
+
         self.chapter(8)
         pg = self.app.page
         self.place()
@@ -1467,6 +1589,7 @@ class Walk:
             send_keys(VK_CONTROL, VK_MENU, VK_SHIFT, 0x51)
             pause(1.5)
             from tests.ui.test_quick import quick_page
+            dismiss_collect_session(self.app)
             qp = quick_page(self.app, timeout=10)
             qp.get_by_test_id("quick-input").click()
             pause(0.2)
@@ -1481,13 +1604,19 @@ class Walk:
         except Exception as e:
             log(f"ch9 quick: {e}")
         try:
+            dismiss_collect_session(self.app)
             ids = self.app.tag_ids()
             src = {"kind": "tag", "id": ids.get("工作") or list(ids.values())[0]}
             self.app.invoke("set_pin_settings", {"settings": {
                 "enabled": True, "source": src, "mode": "float", "edge": "right", "topmost": True,
             }})
             pause(1.6)
-            self.shot("09-pin-dark-f1.25")
+            qp = None
+            try:
+                qp = pin_panel_page(self.app, timeout=8)
+            except Exception as e:
+                log(f"ch9 pin page: {e}")
+            self.shot("09-pin-dark-f1.25", page=qp, page_too=False)
             self.app.invoke("set_pin_settings", {"settings": {
                 "enabled": False, "source": None, "mode": "float", "edge": "right", "topmost": True,
             }})
