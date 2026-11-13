@@ -22,8 +22,8 @@ use tauri::AppHandle;
 /// 停留多久算「碰边停住」（与前端 PIN_HOVER_EXPAND_MS 一致）
 pub const HOVER: Duration = Duration::from_millis(120);
 const TITLE: &str = "TagLauncher 钉住把手";
-/// 亚克力不可用时的整体透明度（约 92%）
-const FALLBACK_ALPHA: u8 = 235;
+/// 亚克力不可用时的整体透明度（约 80%）：再高会在浅壁纸上读成实心白块
+const FALLBACK_ALPHA: u8 = 204;
 /// 探头悬停宽度相对休息宽度的倍率（168 / 68）
 const HOVER_RATIO: f64 = 168.0 / 68.0;
 /// 圆角（逻辑像素，按休息宽度折算缩放）
@@ -218,6 +218,46 @@ pub fn parse_css_color(css: &str) -> Option<u32> {
     Some(r | (g << 8) | (b << 16))
 }
 
+
+/// COLORREF（0x00BBGGRR）相对亮度 0–255（BT.601）
+pub fn colorref_luma(c: u32) -> u32 {
+    let r = c & 0xff;
+    let g = (c >> 8) & 0xff;
+    let b = (c >> 16) & 0xff;
+    (r * 299 + g * 587 + b * 114) / 1000
+}
+
+/// 正文相对底色对比不够时改用深/浅默认色，避免浅亚克力上画出近白的字。
+pub fn contrast_fg(fg: u32, bg: u32) -> u32 {
+    let lf = colorref_luma(fg);
+    let lb = colorref_luma(bg);
+    if lf.abs_diff(lb) >= 90 {
+        fg
+    } else if lb >= 128 {
+        0x002A170F // 霜靛正文，BGR
+    } else {
+        0x00F3EEE8
+    }
+}
+
+/// 次要文字：在对比安全的正文上再收一级，仍保持可读。
+pub fn contrast_muted(fg: u32, bg: u32) -> u32 {
+    let fg = contrast_fg(fg, bg);
+    let r = fg & 0xff;
+    let g = (fg >> 8) & 0xff;
+    let b = (fg >> 16) & 0xff;
+    let lb = colorref_luma(bg);
+    // 向对面方向收，不要收到和底色混在一起
+    if lb >= 128 {
+        ((r * 5 / 8) | ((g * 5 / 8) << 8) | ((b * 5 / 8) << 16)) as u32
+    } else {
+        let r = (r + 255 * 2) / 3;
+        let g = (g + 255 * 2) / 3;
+        let b = (b + 255 * 2) / 3;
+        (r.min(255) | (g.min(255) << 8) | (b.min(255) << 16)) as u32
+    }
+}
+
 #[cfg(windows)]
 fn apply(app: &AppHandle) {
     let (hwnd, creating) = {
@@ -256,10 +296,10 @@ mod win {
     use std::os::raw::c_void;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{
-        BeginPaint, CombineRgn, CreateFontW, CreatePen, CreateRectRgn, CreateRoundRectRgn,
-        CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect, GetSysColor, InvalidateRect,
-        LineTo, MoveToEx, SelectObject, SetBkMode, SetTextColor, SetWindowRgn, COLOR_HIGHLIGHT,
-        PAINTSTRUCT, PS_SOLID,
+        BeginPaint, BitBlt, CombineRgn, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW,
+        CreatePen, CreateRectRgn, CreateRoundRectRgn, CreateSolidBrush, DeleteDC, DeleteObject,
+        DrawTextW, EndPaint, FillRect, GetSysColor, InvalidateRect, LineTo, MoveToEx, SelectObject,
+        SetBkMode, SetTextColor, SetWindowRgn, COLOR_HIGHLIGHT, PAINTSTRUCT, PS_SOLID,
     };
     use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -282,13 +322,17 @@ mod win {
     const DT_END_ELLIPSIS: u32 = 0x8000;
     const FW_NORMAL: i32 = 400;
     const FW_SEMIBOLD: i32 = 600;
-    const DEFAULT_CHARSET: u32 = 1;
-    const CLEARTYPE_QUALITY: u32 = 5;
     const BK_TRANSPARENT: i32 = 1;
     const RGN_OR: i32 = 2;
     const COLOR_WINDOWTEXT: i32 = 8;
     const ACCENT_ENABLE_ACRYLICBLURBEHIND: i32 = 4;
     const WCA_ACCENT_POLICY: u32 = 19;
+    const CS_DROPSHADOW: u32 = 0x0002_0000;
+    const CS_HREDRAW: u32 = 0x0002;
+    const CS_VREDRAW: u32 = 0x0001;
+    const ANTIALIASED_QUALITY: u32 = 4;
+    const GB2312_CHARSET: u32 = 134;
+    const SRCCOPY: u32 = 0x00CC_0020;
 
     #[repr(C)]
     struct AccentPolicy {
@@ -330,7 +374,8 @@ mod win {
         };
         let f: SetAttr = std::mem::transmute(f);
         // GradientColor = 0xAABBGGRR（COLORREF + 高位 alpha）
-        let alpha: u32 = if dark { 0xCC } else { 0xC0 };
+        // 0xC0（75%）配近白底会把探头做成实心白块；降到约 53%/63% 让壁纸透出来。
+        let alpha: u32 = if dark { 0xA0 } else { 0x88 };
         let gradient = (alpha << 24) | (bg & 0x00FF_FFFF);
         let mut policy = AccentPolicy {
             accent_state: ACCENT_ENABLE_ACRYLICBLURBEHIND,
@@ -372,7 +417,7 @@ mod win {
         unsafe {
             let hinst = GetModuleHandleW(std::ptr::null());
             let wc = WNDCLASSW {
-                style: 0,
+                style: CS_DROPSHADOW | CS_HREDRAW | CS_VREDRAW,
                 lpfnWndProc: Some(proc_),
                 cbClsExtra: 0,
                 cbWndExtra: 0,
@@ -516,11 +561,45 @@ mod win {
         }
     }
 
+    fn create_ui_font(height: i32, weight: i32) -> *mut c_void {
+        // ANTIALIASED 而非 ClearType：亚克力/透明 DC 上 ClearType 按错误底色算抗锯齿，CJK 描边发白发糊。
+        // GB2312_CHARSET 让 GDI 在 YaHei 缺失时仍尽量链到系统中文字体。
+        for name in [
+            "Microsoft YaHei UI",
+            "Microsoft YaHei",
+            "Noto Sans SC",
+            "Segoe UI",
+        ] {
+            let font = unsafe {
+                CreateFontW(
+                    height,
+                    0,
+                    0,
+                    0,
+                    weight,
+                    0,
+                    0,
+                    0,
+                    GB2312_CHARSET,
+                    0,
+                    0,
+                    ANTIALIASED_QUALITY,
+                    0,
+                    wide(name).as_ptr(),
+                )
+            };
+            if !font.is_null() {
+                return font;
+            }
+        }
+        std::ptr::null_mut()
+    }
+
     fn paint(hwnd: HWND) {
         unsafe {
             let mut ps: PAINTSTRUCT = std::mem::zeroed();
-            let dc = BeginPaint(hwnd, &mut ps);
-            let (accent, bg, fg, muted, peek, acrylic, rest_w, flush_right) = {
+            let window_dc = BeginPaint(hwnd, &mut ps);
+            let (accent, bg, mut fg, mut muted, peek, acrylic, rest_w, flush_right, dark) = {
                 let s = lock();
                 let accent = s
                     .chrome
@@ -530,18 +609,13 @@ mod win {
                 let bg = s.chrome.bg.unwrap_or(if s.chrome.dark {
                     0x003A2A21
                 } else {
-                    0x00FFFFF8
+                    0x00FAF5F5
                 });
                 let fg = s
                     .chrome
                     .fg
                     .unwrap_or_else(|| GetSysColor(COLOR_WINDOWTEXT));
-                let muted = s.chrome.muted.unwrap_or({
-                    let r = fg & 0xff;
-                    let g = (fg >> 8) & 0xff;
-                    let b = (fg >> 16) & 0xff;
-                    ((r * 5 / 8) | ((g * 5 / 8) << 8) | ((b * 5 / 8) << 16)) as u32
-                });
+                let muted = s.chrome.muted.unwrap_or(fg);
                 (
                     accent,
                     bg,
@@ -551,6 +625,7 @@ mod win {
                     s.acrylic,
                     s.rect.2,
                     s.edge == PinEdge::Right,
+                    s.chrome.dark,
                 )
             };
             let mut rc: RECT = std::mem::zeroed();
@@ -559,15 +634,34 @@ mod win {
             let h = (rc.bottom - rc.top).max(1);
             let scale = scale_of(rest_w);
 
-            // 亚克力开启时不铺实底，让 DWM 模糊透出；退回分层窗口时铺半透明实底
-            if !acrylic {
-                let brush = CreateSolidBrush(bg);
-                FillRect(dc, &rc, brush);
-                DeleteObject(brush as _);
-            }
+            // 亚克力背后是桌面模糊，对比按中等浅/深底估算，避免按近白 surface 误判。
+            let contrast_bg = if acrylic {
+                if dark {
+                    0x00302820
+                } else {
+                    0x00E8E0D8
+                }
+            } else {
+                bg
+            };
+            fg = contrast_fg(fg, contrast_bg);
+            muted = contrast_muted(muted, contrast_bg);
 
-            // 顶条：来源色（6 逻辑像素）
-            let stripe_h = ((6.0 * scale).round() as i32).max(3);
+            // 回退路径双缓冲并铺实底；亚克力路径直接画在窗口 DC 上、不铺底，让 DWM 雾面透出。
+            let (dc, mem, bmp, old_bmp) = if acrylic {
+                (window_dc, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut())
+            } else {
+                let mem = CreateCompatibleDC(window_dc);
+                let bmp = CreateCompatibleBitmap(window_dc, w, h);
+                let old_bmp = SelectObject(mem, bmp as _);
+                let brush = CreateSolidBrush(bg);
+                FillRect(mem, &rc, brush);
+                DeleteObject(brush as _);
+                (mem, mem, bmp, old_bmp)
+            };
+
+            // 顶条：来源色（3 逻辑像素，细线而不是厚色带）
+            let stripe_h = ((3.0 * scale).round() as i32).max(2);
             let stripe = peek.stripe.unwrap_or(accent);
             let stripe_brush = CreateSolidBrush(stripe);
             let stripe_rc = RECT {
@@ -579,24 +673,22 @@ mod win {
             FillRect(dc, &stripe_rc, stripe_brush);
             DeleteObject(stripe_brush as _);
 
-            // 细边高光：内侧 1px 淡白，贴边一侧不画以免漏缝
-            let hi: u32 = 0x00FFFFFF;
-            let pen = CreatePen(PS_SOLID, 1, hi);
+            // 可见描边：内侧用次要文字色，贴边一侧不画以免漏缝。不再用纯白高光（浅壁纸上等于没边）。
+            let pen = CreatePen(PS_SOLID, 1, muted);
             let old_pen = SelectObject(dc, pen as _);
             let inset = 1;
             let x1 = rc.left + inset;
-            let y1 = rc.top + inset + stripe_h.min(0); // 顶条之下仍沿顶画，被顶条盖住也无妨
+            let y1 = rc.top + inset;
             let x2 = rc.right - inset;
             let y2 = rc.bottom - inset;
-            let _ = y1;
             if flush_right {
                 MoveToEx(dc, x1, y2, std::ptr::null_mut());
-                LineTo(dc, x1, rc.top + inset);
-                LineTo(dc, x2, rc.top + inset);
+                LineTo(dc, x1, y1);
+                LineTo(dc, x2, y1);
             } else {
                 MoveToEx(dc, x2, y2, std::ptr::null_mut());
-                LineTo(dc, x2, rc.top + inset);
-                LineTo(dc, x1, rc.top + inset);
+                LineTo(dc, x2, y1);
+                LineTo(dc, x1, y1);
             }
             SelectObject(dc, old_pen);
             DeleteObject(pen as _);
@@ -608,28 +700,12 @@ mod win {
             let text_right = rc.right - pad + 2;
             let text_left = rc.left + pad;
 
-            // 标题
             let title = if peek.title.is_empty() {
                 "钉住视图".to_string()
             } else {
                 peek.title.clone()
             };
-            let font_title = CreateFontW(
-                -((15.0 * scale).round() as i32).max(12),
-                0,
-                0,
-                0,
-                FW_SEMIBOLD,
-                0,
-                0,
-                0,
-                DEFAULT_CHARSET,
-                0,
-                0,
-                CLEARTYPE_QUALITY,
-                0,
-                wide("Microsoft YaHei UI").as_ptr(),
-            );
+            let font_title = create_ui_font(-((15.0 * scale).round() as i32).max(12), FW_SEMIBOLD);
             let old_font = SelectObject(dc, font_title as _);
             SetTextColor(dc, fg);
             let mut title_w = wide(&title);
@@ -650,24 +726,8 @@ mod win {
             SelectObject(dc, old_font);
             DeleteObject(font_title as _);
 
-            // 「N 项」
             let sub = format!("{} 项", peek.count);
-            let font_sub = CreateFontW(
-                -((12.0 * scale).round() as i32).max(10),
-                0,
-                0,
-                0,
-                FW_NORMAL,
-                0,
-                0,
-                0,
-                DEFAULT_CHARSET,
-                0,
-                0,
-                CLEARTYPE_QUALITY,
-                0,
-                wide("Microsoft YaHei UI").as_ptr(),
-            );
+            let font_sub = create_ui_font(-((12.0 * scale).round() as i32).max(10), FW_NORMAL);
             let old_font = SelectObject(dc, font_sub as _);
             SetTextColor(dc, muted);
             let mut sub_w = wide(&sub);
@@ -686,7 +746,7 @@ mod win {
             );
             y = sr.bottom + ((6.0 * scale).round() as i32);
 
-            // 最多三行对象名
+            SetTextColor(dc, fg);
             for name in peek.names.iter().take(3) {
                 let mut nw = wide(name);
                 let mut nr = RECT {
@@ -710,7 +770,12 @@ mod win {
             SelectObject(dc, old_font);
             DeleteObject(font_sub as _);
 
-            let _ = (w, h); // 保持可读
+            if !acrylic {
+                BitBlt(window_dc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
+                SelectObject(mem, old_bmp);
+                DeleteObject(bmp as _);
+                DeleteDC(mem);
+            }
             EndPaint(hwnd, &ps);
         }
     }
@@ -741,5 +806,39 @@ mod tests {
         let rest = (0, 80, 68, 148);
         let h = hover_rect(rest, PinEdge::Left, 168);
         assert_eq!(h, (0, 80, 168, 148));
+    }
+
+    #[test]
+    fn contrast_fg_keeps_readable_colors_and_replaces_washed_ones() {
+        // 深字浅底：保持
+        assert_eq!(contrast_fg(0x002A170F, 0x00FAF5F5), 0x002A170F);
+        // 浅字浅底：换成深色
+        let fg = contrast_fg(0x00FFFFF8, 0x00FAF5F5);
+        assert!(colorref_luma(fg) < 80, "luma {}", colorref_luma(fg));
+        // 浅字深底：保持（对比足够）
+        assert_eq!(contrast_fg(0x00F3EEE8, 0x003A2A21), 0x00F3EEE8);
+        // 深字深底：换成浅色
+        let fg = contrast_fg(0x00201008, 0x003A2A21);
+        assert!(colorref_luma(fg) > 170, "luma {}", colorref_luma(fg));
+    }
+
+    #[test]
+    fn contrast_muted_stays_on_the_readable_side() {
+        let bg = 0x00FAF5F5;
+        let m = contrast_muted(0x00FFFFF8, bg);
+        assert!(
+            colorref_luma(m).abs_diff(colorref_luma(bg)) >= 40,
+            "light muted luma {} vs bg {}",
+            colorref_luma(m),
+            colorref_luma(bg)
+        );
+        let bg = 0x003A2A21;
+        let m = contrast_muted(0x00201008, bg);
+        assert!(
+            colorref_luma(m).abs_diff(colorref_luma(bg)) >= 40,
+            "dark muted luma {} vs bg {}",
+            colorref_luma(m),
+            colorref_luma(bg)
+        );
     }
 }
