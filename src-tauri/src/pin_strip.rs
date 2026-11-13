@@ -11,11 +11,12 @@
 //! - 鼠标离开：回到休息宽度。
 //!
 //! 窗口：WS_POPUP + TOOLWINDOW + TOPMOST + NOACTIVATE + LAYERED。
-//! 用 `UpdateLayeredWindow` 上传预乘 BGRA：软件抗锯齿圆角（仅内侧）、边距里的软阴影、
-//! 1px 描边、灰度抗锯齿文字（不用 ClearType，分层透明上会带彩边）。卡片本体约 98% 不透明，
-//! 桌面图标不会透过来；通透感靠顶部高光，不靠把整张卡片画淡。
+//! 用 `UpdateLayeredWindow` 上传预乘 BGRA：软件抗锯齿圆角（仅内侧）、边距里较淡的软阴影、
+//! 1px 描边（贴边一侧不画，避免屏幕边缘发丝）、灰度抗锯齿文字（不用 ClearType）。
+//! 文字在拷入预乘缓冲前按覆盖率做对比度提升并以线性空间再合成，避免 12px 灰度 AA 发细发灰。
+//! 卡片本体约 98% 不透明，桌面图标不会透过来；通透感靠顶部高光，不靠把整张卡片画淡。
 //! 不用 `SetWindowRgn`（会锯齿）也不用 `SetLayeredWindowAttributes`（与按像素 alpha 冲突）。
-//! HWND 比卡片大一圈阴影边距；贴边一侧边距为 0，仍与工作区齐平。阴影区点击穿透。
+//! HWND 比卡片大一圈阴影边距（约 10 逻辑像素）；贴边一侧边距为 0，仍与工作区齐平。阴影区点击穿透。
 //! 颜色：强调色由前端 `pin_handle_color` 告知；正文 / 底色由 `set_chrome`；探头内容由 `set_peek`。
 
 use crate::pin::{PinEdge, Rect};
@@ -30,8 +31,12 @@ const TITLE: &str = "TagLauncher 钉住把手";
 const HOVER_RATIO: f64 = 168.0 / 68.0;
 /// 圆角（逻辑像素，按休息宽度折算缩放）
 const RADIUS_LOGIC: f64 = 16.0;
-/// 阴影边距（逻辑像素）。贴边一侧为 0。
-pub const SHADOW_LOGIC: f64 = 16.0;
+/// 阴影边距（逻辑像素）。贴边一侧为 0。比卡片宽度 68 小一截，避免一圈发闷的黑晕。
+pub const SHADOW_LOGIC: f64 = 10.0;
+/// 阴影峰值不透明度（紧贴卡片外侧）。0.18–0.22：淡、不浑。
+pub const SHADOW_PEAK: f64 = 0.20;
+/// 灰度 AA 覆盖率对比度：`cov' = 1 - (1-cov)^power`。>1 让字重更实，不引入 ClearType 彩边。
+pub const TEXT_AA_POWER: f64 = 1.85;
 /// 卡片本体不透明度（约 98%）：图标不得从底下透出来。
 pub const BODY_ALPHA: u8 = 250;
 
@@ -224,7 +229,11 @@ pub fn hit_in_card(px: i32, py: i32, card: Rect, flush_right: bool, rest_w: u32)
 }
 
 fn colorref_channels(c: u32) -> (u8, u8, u8) {
-    ((c & 0xff) as u8, ((c >> 8) & 0xff) as u8, ((c >> 16) & 0xff) as u8)
+    (
+        (c & 0xff) as u8,
+        ((c >> 8) & 0xff) as u8,
+        ((c >> 16) & 0xff) as u8,
+    )
 }
 
 fn blend_over(dst: &mut [u8], i: usize, r: u8, g: u8, b: u8, a: f64) {
@@ -236,7 +245,9 @@ fn blend_over(dst: &mut [u8], i: usize, r: u8, g: u8, b: u8, a: f64) {
     dst[i] = (b as f64 * sa + dst[i] as f64 * ia).round() as u8;
     dst[i + 1] = (g as f64 * sa + dst[i + 1] as f64 * ia).round() as u8;
     dst[i + 2] = (r as f64 * sa + dst[i + 2] as f64 * ia).round() as u8;
-    dst[i + 3] = ((sa * 255.0) + dst[i + 3] as f64 * ia).round().clamp(0.0, 255.0) as u8;
+    dst[i + 3] = ((sa * 255.0) + dst[i + 3] as f64 * ia)
+        .round()
+        .clamp(0.0, 255.0) as u8;
 }
 
 /// 把卡片、描边、顶条、高光和软阴影栅格化到预乘 BGRA（自上而下，stride = width×4）。
@@ -264,7 +275,11 @@ pub fn rasterize_handle(
     let (rtl, rtr, rbl, rbr) = corner_radii(flush_right, rest_w);
     let m = shadow_margin(rest_w) as f64;
     let off_y = (2.0 * scale).round();
-    let off_x = if flush_right { -scale.round() } else { scale.round() };
+    let off_x = if flush_right {
+        -scale.round()
+    } else {
+        scale.round()
+    };
     let stripe_h = ((3.0 * scale).round() as f64).max(2.0);
     let (br, bgc, bb) = colorref_channels(bg);
     let (mr, mg, mb) = colorref_channels(muted);
@@ -300,10 +315,10 @@ pub fn rasterize_handle(
                 rbr,
             );
             let i = (y * fw + x) * 4;
-            // 软阴影：只画在卡片外面，贴边一侧 sd 也会落在窗外（那边没像素）。
+            // 软阴影：只画在卡片外面；峰值约 0.20，二次衰减，比 16px/0.40 的旧晕更淡更窄。
             if sd > 0.0 && sd_shadow < m && m > 0.0 {
                 let t = (1.0 - (sd_shadow.max(0.0) / m)).clamp(0.0, 1.0);
-                let sa = t * t * 0.40;
+                let sa = t * t * SHADOW_PEAK;
                 blend_over(&mut pixels[i..i + 4], 0, 0, 0, 0, sa);
             }
             let cov = coverage(sd);
@@ -321,10 +336,18 @@ pub fn rasterize_handle(
                     blend_over(&mut pixels[i..i + 4], 0, 255, 255, 255, hc);
                 }
             }
-            // 1px 描边
+            // 1px 描边：贴边一侧不画，避免屏幕边缘出现发丝缝。
             let ring = coverage(sd.abs() - 0.5);
             if ring > 0.0 {
-                blend_over(&mut pixels[i..i + 4], 0, mr, mg, mb, ring * 0.92);
+                let flush_fade = if flush_right {
+                    ((ox as f64 + card_w as f64 - 1.0) - px).clamp(0.0, 1.0)
+                } else {
+                    (px - ox as f64).clamp(0.0, 1.0)
+                };
+                let ra = ring * flush_fade * 0.92;
+                if ra > 0.001 {
+                    blend_over(&mut pixels[i..i + 4], 0, mr, mg, mb, ra);
+                }
             }
         }
     }
@@ -434,34 +457,163 @@ pub fn colorref_luma(c: u32) -> u32 {
     (r * 299 + g * 587 + b * 114) / 1000
 }
 
-/// 正文相对底色对比不够时改用深/浅默认色，避免浅底上画出近白的字。
-pub fn contrast_fg(fg: u32, bg: u32) -> u32 {
-    let lf = colorref_luma(fg);
-    let lb = colorref_luma(bg);
-    if lf.abs_diff(lb) >= 90 {
-        fg
-    } else if lb >= 128 {
-        0x002A170F // 霜靛正文，BGR
+/// sRGB 8-bit 通道 → 线性光（WCAG 2）
+pub fn srgb_to_linear(c: f64) -> f64 {
+    let c = (c / 255.0).clamp(0.0, 1.0);
+    if c <= 0.04045 {
+        c / 12.92
     } else {
-        0x00F3EEE8
+        ((c + 0.055) / 1.055).powf(2.4)
     }
 }
 
-/// 次要文字：在对比安全的正文上再收一级，仍保持可读。
-pub fn contrast_muted(fg: u32, bg: u32) -> u32 {
-    let fg = contrast_fg(fg, bg);
-    let r = fg & 0xff;
-    let g = (fg >> 8) & 0xff;
-    let b = (fg >> 16) & 0xff;
-    let lb = colorref_luma(bg);
-    if lb >= 128 {
-        ((r * 5 / 8) | ((g * 5 / 8) << 8) | ((b * 5 / 8) << 16)) as u32
-    } else {
-        let r = (r + 255 * 2) / 3;
-        let g = (g + 255 * 2) / 3;
-        let b = (b + 255 * 2) / 3;
-        (r.min(255) | (g.min(255) << 8) | (b.min(255) << 16)) as u32
+/// COLORREF 的 WCAG 相对亮度
+pub fn wcag_luminance(c: u32) -> f64 {
+    let (r, g, b) = colorref_channels(c);
+    0.2126 * srgb_to_linear(r as f64)
+        + 0.7152 * srgb_to_linear(g as f64)
+        + 0.0722 * srgb_to_linear(b as f64)
+}
+
+/// WCAG 2 对比度（≥1）
+pub fn wcag_contrast(a: u32, b: u32) -> f64 {
+    let la = wcag_luminance(a);
+    let lb = wcag_luminance(b);
+    let (hi, lo) = if la >= lb { (la, lb) } else { (lb, la) };
+    (hi + 0.05) / (lo + 0.05)
+}
+
+fn pack_colorref(r: u8, g: u8, b: u8) -> u32 {
+    r as u32 | ((g as u32) << 8) | ((b as u32) << 16)
+}
+
+/// 把 `c` 朝黑（浅底）或白（深底）推，直到与 `bg` 的对比度达到 `min_ratio`。
+pub fn ensure_contrast(c: u32, bg: u32, min_ratio: f64) -> u32 {
+    if wcag_contrast(c, bg) >= min_ratio {
+        return c;
     }
+    let toward = if wcag_luminance(bg) >= 0.5 {
+        0x00000000
+    } else {
+        0x00FFFFFF
+    };
+    let (cr, cg, cb) = colorref_channels(c);
+    let (tr, tg, tb) = colorref_channels(toward);
+    let mut lo = 0.0;
+    let mut hi = 1.0;
+    let mut best = toward;
+    for _ in 0..16 {
+        let t = (lo + hi) * 0.5;
+        let r = (cr as f64 + (tr as f64 - cr as f64) * t).round() as u8;
+        let g = (cg as f64 + (tg as f64 - cg as f64) * t).round() as u8;
+        let b = (cb as f64 + (tb as f64 - cb as f64) * t).round() as u8;
+        let mixed = pack_colorref(r, g, b);
+        if wcag_contrast(mixed, bg) >= min_ratio {
+            best = mixed;
+            hi = t;
+        } else {
+            lo = t;
+        }
+    }
+    if wcag_contrast(best, bg) >= min_ratio {
+        best
+    } else {
+        toward
+    }
+}
+
+/// 标题色：相对底色至少 7:1（WCAG AAA 小字）。不够则朝黑/白推到刚好达标。
+pub fn contrast_fg(fg: u32, bg: u32) -> u32 {
+    ensure_contrast(fg, bg, 7.0)
+}
+
+/// 次要文字（「N 项」、文件名行）：至少 4.5:1，并再收一级更深，避免 12px 发灰。
+pub fn contrast_muted(fg: u32, bg: u32) -> u32 {
+    let base = ensure_contrast(fg, bg, 4.5);
+    let (r, g, b) = colorref_channels(base);
+    let light = wcag_luminance(bg) >= 0.5;
+    let (r, g, b) = if light {
+        // 比主题 muted（如 #626e7c）更深：约 0.55，仍比标题略浅。
+        (
+            (r as f64 * 0.55).round() as u8,
+            (g as f64 * 0.55).round() as u8,
+            (b as f64 * 0.55).round() as u8,
+        )
+    } else {
+        (
+            (r as f64 + (255.0 - r as f64) * 0.35).round() as u8,
+            (g as f64 + (255.0 - g as f64) * 0.35).round() as u8,
+            (b as f64 + (255.0 - b as f64) * 0.35).round() as u8,
+        )
+    };
+    ensure_contrast(pack_colorref(r, g, b), bg, 4.5)
+}
+
+fn color_dist2(a: (u8, u8, u8), b: (u8, u8, u8)) -> i32 {
+    let dr = a.0 as i32 - b.0 as i32;
+    let dg = a.1 as i32 - b.1 as i32;
+    let db = a.2 as i32 - b.2 as i32;
+    dr * dr + dg * dg + db * db
+}
+
+fn dist_to_segment(p: (u8, u8, u8), a: (u8, u8, u8), b: (u8, u8, u8)) -> f64 {
+    let ab = (
+        b.0 as f64 - a.0 as f64,
+        b.1 as f64 - a.1 as f64,
+        b.2 as f64 - a.2 as f64,
+    );
+    let ap = (
+        p.0 as f64 - a.0 as f64,
+        p.1 as f64 - a.1 as f64,
+        p.2 as f64 - a.2 as f64,
+    );
+    let ab2 = ab.0 * ab.0 + ab.1 * ab.1 + ab.2 * ab.2;
+    if ab2 < 1.0 {
+        return (color_dist2(p, a) as f64).sqrt();
+    }
+    let t = ((ap.0 * ab.0 + ap.1 * ab.1 + ap.2 * ab.2) / ab2).clamp(0.0, 1.0);
+    let qx = a.0 as f64 + ab.0 * t - p.0 as f64;
+    let qy = a.1 as f64 + ab.1 * t - p.1 as f64;
+    let qz = a.2 as f64 + ab.2 * t - p.2 as f64;
+    (qx * qx + qy * qy + qz * qz).sqrt()
+}
+
+/// 从 GDI sRGB 混合结果还原覆盖率，做对比度提升后再合成到 `fg`/`muted`。
+pub fn enhance_aa_pixel(
+    out: (u8, u8, u8),
+    fg: (u8, u8, u8),
+    muted: (u8, u8, u8),
+    bg: (u8, u8, u8),
+    power: f64,
+) -> (u8, u8, u8) {
+    let ink = if dist_to_segment(out, bg, fg) <= dist_to_segment(out, bg, muted) {
+        fg
+    } else {
+        muted
+    };
+    let mut cov_sum = 0.0;
+    let mut cov_n = 0.0;
+    let oc = [out.0, out.1, out.2];
+    let ic = [ink.0, ink.1, ink.2];
+    let bc = [bg.0, bg.1, bg.2];
+    for i in 0..3 {
+        let denom = ic[i] as f64 - bc[i] as f64;
+        if denom.abs() > 1.0 {
+            cov_sum += ((oc[i] as f64 - bc[i] as f64) / denom).clamp(0.0, 1.0);
+            cov_n += 1.0;
+        }
+    }
+    if cov_n < 1.0 {
+        return out;
+    }
+    // 覆盖率提升后仍在 sRGB 里合成：GDI 本来就在 sRGB 混合，再走线性会把提升抵消掉，字依旧发灰。
+    let cov = 1.0 - (1.0 - cov_sum / cov_n).powf(power.max(1.0));
+    let comp = |f: u8, b: u8| {
+        (cov * f as f64 + (1.0 - cov) * b as f64)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    (comp(ink.0, bg.0), comp(ink.1, bg.1), comp(ink.2, bg.2))
 }
 
 #[cfg(windows)]
@@ -502,9 +654,9 @@ mod win {
     use std::os::raw::c_void;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{
-        BeginPaint, CreateCompatibleDC, CreateFontW, CreateSolidBrush, DeleteDC, DeleteObject,
-        DrawTextW, EndPaint, FillRect, GetSysColor, SelectObject, SetBkMode, SetTextColor,
-        COLOR_HIGHLIGHT, CreateDIBSection, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS,
+        BeginPaint, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateSolidBrush, DeleteDC,
+        DeleteObject, DrawTextW, EndPaint, FillRect, GetSysColor, SelectObject, SetBkMode,
+        SetTextColor, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, COLOR_HIGHLIGHT, DIB_RGB_COLORS,
         PAINTSTRUCT,
     };
     use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
@@ -821,10 +973,7 @@ mod win {
                 } else {
                     0x00FCFAFA // #fafafc
                 });
-                let fg = s
-                    .chrome
-                    .fg
-                    .unwrap_or_else(|| GetSysColor(COLOR_WINDOWTEXT));
+                let fg = s.chrome.fg.unwrap_or_else(|| GetSysColor(COLOR_WINDOWTEXT));
                 let muted = s.chrome.muted.unwrap_or(fg);
                 (
                     accent,
@@ -868,7 +1017,14 @@ mod win {
                 return;
             }
             let mut bits: *mut c_void = std::ptr::null_mut();
-            let dib = CreateDIBSection(mem, &bmi, DIB_RGB_COLORS, &mut bits, std::ptr::null_mut(), 0);
+            let dib = CreateDIBSection(
+                mem,
+                &bmi,
+                DIB_RGB_COLORS,
+                &mut bits,
+                std::ptr::null_mut(),
+                0,
+            );
             if dib.is_null() || bits.is_null() {
                 DeleteDC(mem);
                 return;
@@ -907,8 +1063,14 @@ mod win {
             };
             let tdc = CreateCompatibleDC(mem);
             let mut t_bits: *mut c_void = std::ptr::null_mut();
-            let t_dib =
-                CreateDIBSection(tdc, &t_bmi, DIB_RGB_COLORS, &mut t_bits, std::ptr::null_mut(), 0);
+            let t_dib = CreateDIBSection(
+                tdc,
+                &t_bmi,
+                DIB_RGB_COLORS,
+                &mut t_bits,
+                std::ptr::null_mut(),
+                0,
+            );
             if !tdc.is_null() && !t_dib.is_null() && !t_bits.is_null() {
                 let old_t = SelectObject(tdc, t_dib as _);
                 let (br, bgc, bb) = colorref_channels(bg);
@@ -977,7 +1139,7 @@ mod win {
                 );
                 y = sr.bottom + ((6.0 * scale).round() as i32);
 
-                SetTextColor(tdc, fg);
+                // 文件名行用次要色（已保证 ≥ 4.5:1），与「N 项」同一支。
                 for name in peek.names.iter().take(3) {
                     let mut nw = wide(name);
                     let mut nr = RECT {
@@ -1001,11 +1163,13 @@ mod win {
                 SelectObject(tdc, old_font);
                 DeleteObject(font_sub as _);
 
-                // 把与底色不同的像素拷到主缓冲（卡片原点）。已是与底混合的灰度 AA。
+                // 把与底色不同的像素拷到主缓冲。GDI 灰度 AA 先提升覆盖率、线性再合成，再预乘。
                 let t_len = (cw as usize) * (ch as usize) * 4;
                 let tbuf = std::slice::from_raw_parts(t_bits as *const u8, t_len);
                 let dst_w = fw as usize;
                 let body_a = BODY_ALPHA;
+                let (fr, fgc, fb) = colorref_channels(fg);
+                let (mr2, mg2, mb2) = colorref_channels(muted);
                 for ty in 0..(ch as usize) {
                     for tx in 0..(cw as usize) {
                         let ti = (ty * cw as usize + tx) * 4;
@@ -1020,12 +1184,19 @@ mod win {
                         if dx >= fw as usize || dy >= fh as usize {
                             continue;
                         }
+                        let (r2, g2, b2) = enhance_aa_pixel(
+                            (r, g, b),
+                            (fr, fgc, fb),
+                            (mr2, mg2, mb2),
+                            (br, bgc, bb),
+                            TEXT_AA_POWER,
+                        );
                         let di = (dy * dst_w + dx) * 4;
                         // 预乘：文字在本体上，用本体 alpha。
                         let a = body_a as f64 / 255.0;
-                        buf[di] = (b as f64 * a).round() as u8;
-                        buf[di + 1] = (g as f64 * a).round() as u8;
-                        buf[di + 2] = (r as f64 * a).round() as u8;
+                        buf[di] = (b2 as f64 * a).round() as u8;
+                        buf[di + 1] = (g2 as f64 * a).round() as u8;
+                        buf[di + 2] = (r2 as f64 * a).round() as u8;
                         buf[di + 3] = body_a;
                     }
                 }
@@ -1070,11 +1241,43 @@ mod tests {
     #[test]
     fn contrast_fg_keeps_readable_colors_and_replaces_washed_ones() {
         assert_eq!(contrast_fg(0x002A170F, 0x00FAF5F5), 0x002A170F);
+        assert!(wcag_contrast(0x002A170F, 0x00FAF5F5) >= 7.0);
         let fg = contrast_fg(0x00FFFFF8, 0x00FAF5F5);
-        assert!(colorref_luma(fg) < 80, "luma {}", colorref_luma(fg));
+        // 刚好 7:1 的替代色亮度约 83（BT.601）；用 WCAG 约束，不卡死旧的 80。
+        assert!(colorref_luma(fg) < 100, "luma {}", colorref_luma(fg));
+        assert!(
+            wcag_contrast(fg, 0x00FAF5F5) >= 7.0,
+            "replaced fg contrast {}",
+            wcag_contrast(fg, 0x00FAF5F5)
+        );
         assert_eq!(contrast_fg(0x00F3EEE8, 0x003A2A21), 0x00F3EEE8);
         let fg = contrast_fg(0x00201008, 0x003A2A21);
         assert!(colorref_luma(fg) > 170, "luma {}", colorref_luma(fg));
+        assert!(wcag_contrast(fg, 0x003A2A21) >= 7.0);
+    }
+
+    #[test]
+    fn contrast_meets_wcag_on_handle_body() {
+        // 走查实测本体 (250, 252, 253) = COLORREF 0x00FDFCFA
+        let body = 0x00FDFCFA;
+        assert!((wcag_contrast(contrast_fg(0x00FFFFF8, body), body) - 7.0) >= -0.05);
+        assert!(wcag_contrast(contrast_fg(0x002A170F, body), body) >= 7.0);
+        // 主题 --text-muted #626e7c 在 5/8 启发式下看起来发灰；现在至少 4.5:1 且更深。
+        let muted_theme = 0x007C6E62; // RGB 0x62,0x6e,0x7c
+        let m = contrast_muted(muted_theme, body);
+        let ratio = wcag_contrast(m, body);
+        assert!(ratio >= 4.5, "muted contrast {ratio} on handle body");
+        // 比主题原色更深（浅底上亮度更低）
+        assert!(
+            wcag_luminance(m) < wcag_luminance(muted_theme),
+            "muted should be darker than theme #626e7c"
+        );
+        let m_dark = contrast_muted(0x00201008, 0x00201C1C);
+        assert!(
+            wcag_contrast(m_dark, 0x00201C1C) >= 4.5,
+            "dark muted contrast {}",
+            wcag_contrast(m_dark, 0x00201C1C)
+        );
     }
 
     #[test]
@@ -1082,19 +1285,52 @@ mod tests {
         let bg = 0x00FAF5F5;
         let m = contrast_muted(0x00FFFFF8, bg);
         assert!(
-            colorref_luma(m).abs_diff(colorref_luma(bg)) >= 40,
-            "light muted luma {} vs bg {}",
-            colorref_luma(m),
-            colorref_luma(bg)
+            wcag_contrast(m, bg) >= 4.5,
+            "light muted contrast {} vs bg",
+            wcag_contrast(m, bg)
         );
         let bg = 0x003A2A21;
         let m = contrast_muted(0x00201008, bg);
         assert!(
-            colorref_luma(m).abs_diff(colorref_luma(bg)) >= 40,
-            "dark muted luma {} vs bg {}",
-            colorref_luma(m),
-            colorref_luma(bg)
+            wcag_contrast(m, bg) >= 4.5,
+            "dark muted contrast {} vs bg",
+            wcag_contrast(m, bg)
         );
+    }
+
+    #[test]
+    fn enhance_aa_darkens_mid_coverage_and_keeps_endpoints() {
+        let fg = (41u8, 52, 67);
+        let muted = (54u8, 60, 68);
+        let bg = (250u8, 252, 253);
+        assert_eq!(enhance_aa_pixel(fg, fg, muted, bg, TEXT_AA_POWER), fg);
+        assert_eq!(enhance_aa_pixel(bg, fg, muted, bg, TEXT_AA_POWER), bg);
+        // 走查实测的约 45% 覆盖率灰边 (156,162,169)，提升后应更靠近墨色。
+        let fringe = (156u8, 162, 169);
+        let out = enhance_aa_pixel(fringe, fg, muted, bg, TEXT_AA_POWER);
+        let luma =
+            |c: (u8, u8, u8)| 0.2126 * c.0 as f64 + 0.7152 * c.1 as f64 + 0.0722 * c.2 as f64;
+        assert!(
+            luma(out) < luma(fringe) - 20.0,
+            "fringe should darken, got {:?} luma {} vs {}",
+            out,
+            luma(out),
+            luma(fringe)
+        );
+        assert!(
+            luma(out) > luma(fg),
+            "must not overshoot past ink, got {:?}",
+            out
+        );
+        // muted 线段上的灰边也归到 muted，而不是被拉成标题色。
+        let mute_fringe = (
+            ((muted.0 as u16 + bg.0 as u16) / 2) as u8,
+            ((muted.1 as u16 + bg.1 as u16) / 2) as u8,
+            ((muted.2 as u16 + bg.2 as u16) / 2) as u8,
+        );
+        let out_m = enhance_aa_pixel(mute_fringe, fg, muted, bg, TEXT_AA_POWER);
+        assert!(luma(out_m) < luma(mute_fringe) - 10.0);
+        assert!(luma(out_m) > luma(muted) - 4.0, "muted fringe {:?}", out_m);
     }
 
     #[test]
@@ -1102,12 +1338,12 @@ mod tests {
         let card = (1852, 200, 68, 148);
         let f = frame_rect(card, true, 68);
         assert_eq!(f.0 + f.2 as i32, card.0 + card.2 as i32, "右缘仍贴齐");
-        assert_eq!(shadow_margin(68), 16);
-        assert_eq!(f, (1852 - 16, 200 - 16, 68 + 16, 148 + 32));
+        assert_eq!(shadow_margin(68), 10);
+        assert_eq!(f, (1852 - 10, 200 - 10, 68 + 10, 148 + 20));
         let card = (0, 80, 68, 148);
         let f = frame_rect(card, false, 68);
         assert_eq!(f.0, 0, "左缘仍贴齐");
-        assert_eq!(f, (0, 80 - 16, 68 + 16, 148 + 32));
+        assert_eq!(f, (0, 80 - 10, 68 + 10, 148 + 20));
         // 卡片尺寸本身不变（E2E handleRect）
         let (vis_rect_w, vis_rect_h) = (card.2, card.3);
         assert_eq!((vis_rect_w, vis_rect_h), (68, 148));
@@ -1123,29 +1359,46 @@ mod tests {
         // 左上圆角外侧沿 45°
         let cx = 16.0 + r;
         let cy = 16.0 + r;
-        let on_arc = sd_round_rect(cx - r * 0.707, cy - r * 0.707, 16.0, 16.0, 68.0, 148.0, r, 0.0, r, 0.0);
-        assert!(coverage(on_arc) > 0.2 && coverage(on_arc) < 0.9, "arc cov {}", coverage(on_arc));
+        let on_arc = sd_round_rect(
+            cx - r * 0.707,
+            cy - r * 0.707,
+            16.0,
+            16.0,
+            68.0,
+            148.0,
+            r,
+            0.0,
+            r,
+            0.0,
+        );
+        assert!(
+            coverage(on_arc) > 0.2 && coverage(on_arc) < 0.9,
+            "arc cov {}",
+            coverage(on_arc)
+        );
         // 贴边右上角是直角：刚好在矩形外 1px 覆盖率为 0
-        let outside_flush = sd_round_rect(16.0 + 68.0 + 2.0, 16.0 + 2.0, 16.0, 16.0, 68.0, 148.0, r, 0.0, r, 0.0);
+        let outside_flush = sd_round_rect(
+            16.0 + 68.0 + 2.0,
+            16.0 + 2.0,
+            16.0,
+            16.0,
+            68.0,
+            148.0,
+            r,
+            0.0,
+            r,
+            0.0,
+        );
         assert_eq!(coverage(outside_flush), 0.0);
     }
 
     #[test]
     fn raster_body_is_nearly_opaque_shadow_is_outside_and_flush_is_clean() {
-        let fw = 68 + 16;
-        let fh = 148 + 32;
+        let fw = 68 + 10;
+        let fh = 148 + 20;
         let mut px = vec![0u8; fw * fh * 4];
         rasterize_handle(
-            &mut px,
-            fw as u32,
-            fh as u32,
-            68,
-            148,
-            true,
-            68,
-            0x00FCFAFA,
-            0x00666666,
-            0x00C0647D,
+            &mut px, fw as u32, fh as u32, 68, 148, true, 68, 0x00FCFAFA, 0x00666666, 0x00C0647D,
             BODY_ALPHA,
         );
         // 卡片中心：接近本体 alpha，不是 90% 那种会透图标的淡底。
@@ -1154,14 +1407,34 @@ mod tests {
         let cy = (oy + 74) as usize;
         let a = px[(cy * fw + cx) * 4 + 3];
         assert!(a >= 245, "body alpha {a}, want >= 245");
-        // 贴边右侧 1px 外（窗口里没有这些像素——右缘就是卡片右缘）。最右列应是卡片，不是阴影。
+        // 贴边右侧：是卡片本体，不是阴影，也不是 1px 灰描边发丝。
         let right = fw - 1;
         let mid = oy as usize + 74;
-        let ra = px[(mid * fw + right) * 4 + 3];
+        let ri = (mid * fw + right) * 4;
+        let ra = px[ri + 3];
         assert!(ra >= 245, "flush-edge pixel should be card, alpha {ra}");
-        // 左侧阴影边距中部：有软阴影，但远低于本体。
-        let sa = px[(mid * fw + 8) * 4 + 3];
-        assert!(sa > 8 && sa < 140, "shadow alpha {sa}");
+        let (br, bgc, bb) = colorref_channels(0x00FCFAFA);
+        let body_a = BODY_ALPHA as f64 / 255.0;
+        let exp_r = (br as f64 * body_a).round() as i32;
+        let exp_g = (bgc as f64 * body_a).round() as i32;
+        let exp_b = (bb as f64 * body_a).round() as i32;
+        // 缓冲是 BGRA
+        let (pb, pg, pr) = (px[ri] as i32, px[ri + 1] as i32, px[ri + 2] as i32);
+        assert!(
+            (pr - exp_r).abs() < 12 && (pg - exp_g).abs() < 12 && (pb - exp_b).abs() < 12,
+            "flush edge should be body, not a gray hairline: got RGB({pr},{pg},{pb}) want ~({exp_r},{exp_g},{exp_b})"
+        );
+        // 左侧阴影：紧贴卡片处峰值约 0.20（≤ 0.22*255≈56），外缘更淡；不再是 0.40 的闷晕。
+        let sa_near = px[(mid * fw + (ox as usize).saturating_sub(2)) * 4 + 3];
+        assert!(
+            sa_near > 12 && sa_near < 70,
+            "near-card shadow alpha {sa_near}, want ~0.18–0.22 peak (12–56) with a little headroom"
+        );
+        let sa_mid = px[(mid * fw + 4) * 4 + 3];
+        assert!(
+            sa_mid < sa_near,
+            "shadow should fall off, mid {sa_mid} vs near {sa_near}"
+        );
         // 阴影点击判定：边距里不是卡片。
         assert!(!hit_in_card(8, mid as i32, (ox, oy, 68, 148), true, 68));
         assert!(hit_in_card(ox + 34, oy + 74, (ox, oy, 68, 148), true, 68));
@@ -1175,6 +1448,9 @@ mod tests {
                 }
             }
         }
-        assert!(mid_alpha >= 8, "expected AA fringe, got {mid_alpha} mid-alpha pixels");
+        assert!(
+            mid_alpha >= 8,
+            "expected AA fringe, got {mid_alpha} mid-alpha pixels"
+        );
     }
 }
