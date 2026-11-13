@@ -1117,8 +1117,8 @@ mod tests {
     fn rounded_corners_are_antialiased_and_flush_side_is_square() {
         // 内侧圆角：角上覆盖率介于 0 与 1；贴边直角外侧覆盖率为 0。
         let r = 16.0;
-        // 右缘贴边：左上圆角在 (16, 16) 附近
-        let sd_inside = sd_round_rect(20.0, 20.0, 16.0, 16.0, 68.0, 148.0, r, 0.0, r, 0.0);
+        // 右缘贴边：左上圆角圆心在 (32, 32)，卡片内部取远离圆弧的点。
+        let sd_inside = sd_round_rect(48.0, 60.0, 16.0, 16.0, 68.0, 148.0, r, 0.0, r, 0.0);
         assert!(sd_inside < -2.0, "内部 sd {sd_inside}");
         // 左上圆角外侧沿 45°
         let cx = 16.0 + r;
