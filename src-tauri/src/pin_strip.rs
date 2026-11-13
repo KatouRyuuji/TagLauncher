@@ -10,8 +10,10 @@
 //! - TME_HOVER 停留 120ms 或点击：打开抽屉（「划过不弹」）。
 //! - 鼠标离开：回到休息宽度。
 //!
-//! 窗口：WS_POPUP + TOOLWINDOW + TOPMOST + NOACTIVATE。优先用
-//! SetWindowCompositionAttribute 的亚克力模糊（不是 Mica）；失败则退回 LAYERED 半透明实底。
+//! 窗口：WS_POPUP + TOOLWINDOW + TOPMOST + NOACTIVATE + LAYERED。
+//! 不用 SetWindowCompositionAttribute 亚克力：GDI `DrawText` 叠在亚克力上几乎不可见
+//! （走查实测亮度 253–255、标准差 0.63，对比拉伸后才能认出「工作」「7 项」）。
+//! 改用分层窗口铺实底再画不透明文字，整体约 90% 不透明；圆角、描边与 `CS_DROPSHADOW` 保留。
 //! 颜色：强调色由前端 `pin_handle_color` 告知；正文 / 底色由 `set_chrome`；探头内容由 `set_peek`。
 
 use crate::pin::{PinEdge, Rect};
@@ -22,8 +24,8 @@ use tauri::AppHandle;
 /// 停留多久算「碰边停住」（与前端 PIN_HOVER_EXPAND_MS 一致）
 pub const HOVER: Duration = Duration::from_millis(120);
 const TITLE: &str = "TagLauncher 钉住把手";
-/// 亚克力不可用时的整体透明度（约 80%）：再高会在浅壁纸上读成实心白块
-const FALLBACK_ALPHA: u8 = 204;
+/// 分层窗口整体透明度（约 90%）：探头是窄卡片，正文必须清楚可读。
+const FALLBACK_ALPHA: u8 = 230;
 /// 探头悬停宽度相对休息宽度的倍率（168 / 68）
 const HOVER_RATIO: f64 = 168.0 / 68.0;
 /// 圆角（逻辑像素，按休息宽度折算缩放）
@@ -40,12 +42,12 @@ pub struct PeekContent {
 
 #[derive(Clone, Debug, Default)]
 struct Chrome {
-    /// 卡片底（COLORREF）；亚克力的着色也用它
+    /// 卡片底（COLORREF）
     bg: Option<u32>,
     fg: Option<u32>,
     muted: Option<u32>,
     accent: Option<u32>,
-    /// 深色主题时用更暗的亚克力着色
+    /// 深色主题
     dark: bool,
 }
 
@@ -61,7 +63,6 @@ struct Strip {
     color: Option<u32>,
     chrome: Chrome,
     peek: PeekContent,
-    acrylic: bool,
 }
 
 static STRIP: Mutex<Strip> = Mutex::new(Strip {
@@ -85,7 +86,6 @@ static STRIP: Mutex<Strip> = Mutex::new(Strip {
         names: Vec::new(),
         stripe: None,
     },
-    acrylic: false,
 });
 static APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
 
@@ -159,7 +159,7 @@ pub fn set_color(app: &AppHandle, css: &str) {
     apply(app);
 }
 
-/// 前端告知卡片底 / 正文 / 次要文字与是否深色（供探头绘制与亚克力着色）
+/// 前端告知卡片底 / 正文 / 次要文字与是否深色（供探头绘制）
 pub fn set_chrome(app: &AppHandle, bg: &str, fg: &str, muted: &str, dark: bool) {
     let bg = parse_css_color(bg);
     let fg = parse_css_color(fg);
@@ -227,7 +227,7 @@ pub fn colorref_luma(c: u32) -> u32 {
     (r * 299 + g * 587 + b * 114) / 1000
 }
 
-/// 正文相对底色对比不够时改用深/浅默认色，避免浅亚克力上画出近白的字。
+/// 正文相对底色对比不够时改用深/浅默认色，避免浅底上画出近白的字。
 pub fn contrast_fg(fg: u32, bg: u32) -> u32 {
     let lf = colorref_luma(fg);
     let lb = colorref_luma(bg);
@@ -301,7 +301,7 @@ mod win {
         DrawTextW, EndPaint, FillRect, GetSysColor, InvalidateRect, LineTo, MoveToEx, SelectObject,
         SetBkMode, SetTextColor, SetWindowRgn, COLOR_HIGHLIGHT, PAINTSTRUCT, PS_SOLID,
     };
-    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         TrackMouseEvent, TME_HOVER, TME_LEAVE, TRACKMOUSEEVENT,
     };
@@ -325,29 +325,13 @@ mod win {
     const BK_TRANSPARENT: i32 = 1;
     const RGN_OR: i32 = 2;
     const COLOR_WINDOWTEXT: i32 = 8;
-    const ACCENT_ENABLE_ACRYLICBLURBEHIND: i32 = 4;
-    const WCA_ACCENT_POLICY: u32 = 19;
     const CS_DROPSHADOW: u32 = 0x0002_0000;
     const CS_HREDRAW: u32 = 0x0002;
     const CS_VREDRAW: u32 = 0x0001;
-    const ANTIALIASED_QUALITY: u32 = 4;
+    /// 已铺实底，ClearType 按正确底色算抗锯齿，CJK 更清晰。
+    const CLEARTYPE_QUALITY: u32 = 5;
     const GB2312_CHARSET: u32 = 134;
     const SRCCOPY: u32 = 0x00CC_0020;
-
-    #[repr(C)]
-    struct AccentPolicy {
-        accent_state: i32,
-        accent_flags: u32,
-        gradient_color: u32,
-        animation_id: u32,
-    }
-
-    #[repr(C)]
-    struct WinCompAttrData {
-        attribute: u32,
-        data: *mut c_void,
-        data_size: u32,
-    }
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -360,35 +344,6 @@ mod win {
 
     fn radius_px(rest_w: u32) -> i32 {
         (RADIUS_LOGIC * scale_of(rest_w)).round() as i32
-    }
-
-    /// 尝试给窗口套亚克力模糊；成功返回 true。
-    unsafe fn try_acrylic(hwnd: HWND, bg: u32, dark: bool) -> bool {
-        type SetAttr = unsafe extern "system" fn(HWND, *mut WinCompAttrData) -> i32;
-        let user32 = GetModuleHandleW(wide("user32.dll").as_ptr());
-        if user32.is_null() {
-            return false;
-        }
-        let Some(f) = GetProcAddress(user32, b"SetWindowCompositionAttribute\0".as_ptr()) else {
-            return false;
-        };
-        let f: SetAttr = std::mem::transmute(f);
-        // GradientColor = 0xAABBGGRR（COLORREF + 高位 alpha）
-        // 0xC0（75%）配近白底会把探头做成实心白块；降到约 53%/63% 让壁纸透出来。
-        let alpha: u32 = if dark { 0xA0 } else { 0x88 };
-        let gradient = (alpha << 24) | (bg & 0x00FF_FFFF);
-        let mut policy = AccentPolicy {
-            accent_state: ACCENT_ENABLE_ACRYLICBLURBEHIND,
-            accent_flags: 0,
-            gradient_color: gradient,
-            animation_id: 0,
-        };
-        let mut data = WinCompAttrData {
-            attribute: WCA_ACCENT_POLICY,
-            data: (&mut policy) as *mut _ as *mut c_void,
-            data_size: std::mem::size_of::<AccentPolicy>() as u32,
-        };
-        f(hwnd, &mut data) != 0
     }
 
     fn apply_region(hwnd: HWND, w: i32, h: i32, rest_w: u32, flush_right: bool) {
@@ -451,33 +406,13 @@ mod win {
         }
     }
 
-    fn ensure_style_and_acrylic(hwnd: HWND) {
-        let (bg, dark) = {
-            let s = lock();
-            let bg = s.chrome.bg.unwrap_or(if s.chrome.dark {
-                0x003A2A21 // 霜靛暗 surface，COLORREF BGR
-            } else {
-                0x00FAF5F5
-            });
-            (bg, s.chrome.dark)
-        };
+    fn ensure_layered_style(hwnd: HWND) {
         unsafe {
-            let ok = try_acrylic(hwnd, bg, dark);
-            {
-                lock().acrylic = ok;
-            }
             let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-            if ok {
-                // 亚克力与 LWA_ALPHA 冲突；若之前加过 LAYERED，去掉
-                if ex & WS_EX_LAYERED != 0 {
-                    SetWindowLongW(hwnd, GWL_EXSTYLE, (ex & !WS_EX_LAYERED) as i32);
-                }
-            } else {
-                if ex & WS_EX_LAYERED == 0 {
-                    SetWindowLongW(hwnd, GWL_EXSTYLE, (ex | WS_EX_LAYERED) as i32);
-                }
-                SetLayeredWindowAttributes(hwnd, 0, FALLBACK_ALPHA, LWA_ALPHA);
+            if ex & WS_EX_LAYERED == 0 {
+                SetWindowLongW(hwnd, GWL_EXSTYLE, (ex | WS_EX_LAYERED) as i32);
             }
+            SetLayeredWindowAttributes(hwnd, 0, FALLBACK_ALPHA, LWA_ALPHA);
         }
     }
 
@@ -491,7 +426,7 @@ mod win {
         // SAFETY：h 是本进程建的把手窗口
         unsafe {
             if visible {
-                ensure_style_and_acrylic(h);
+                ensure_layered_style(h);
                 SetWindowPos(
                     h,
                     HWND_TOPMOST,
@@ -528,7 +463,7 @@ mod win {
     ) -> LRESULT {
         match msg {
             WM_MOUSEACTIVATE => MA_NOACTIVATE as LRESULT,
-            WM_ERASEBKGND => 1, // 自己画；避免默认擦除盖住亚克力
+            WM_ERASEBKGND => 1, // 自己画，避免闪白
             WM_MOUSEMOVE => {
                 set_hover(hwnd, true);
                 let mut t = TRACKMOUSEEVENT {
@@ -562,8 +497,7 @@ mod win {
     }
 
     fn create_ui_font(height: i32, weight: i32) -> *mut c_void {
-        // ANTIALIASED 而非 ClearType：亚克力/透明 DC 上 ClearType 按错误底色算抗锯齿，CJK 描边发白发糊。
-        // GB2312_CHARSET 让 GDI 在 YaHei 缺失时仍尽量链到系统中文字体。
+        // 已铺实底，用 ClearType。GB2312_CHARSET 让 GDI 在 YaHei 缺失时仍尽量链到系统中文字体。
         for name in [
             "Microsoft YaHei UI",
             "Microsoft YaHei",
@@ -583,7 +517,7 @@ mod win {
                     GB2312_CHARSET,
                     0,
                     0,
-                    ANTIALIASED_QUALITY,
+                    CLEARTYPE_QUALITY,
                     0,
                     wide(name).as_ptr(),
                 )
@@ -599,7 +533,7 @@ mod win {
         unsafe {
             let mut ps: PAINTSTRUCT = std::mem::zeroed();
             let window_dc = BeginPaint(hwnd, &mut ps);
-            let (accent, bg, mut fg, mut muted, peek, acrylic, rest_w, flush_right, dark) = {
+            let (accent, bg, mut fg, mut muted, peek, rest_w, flush_right) = {
                 let s = lock();
                 let accent = s
                     .chrome
@@ -622,10 +556,8 @@ mod win {
                     fg,
                     muted,
                     s.peek.clone(),
-                    s.acrylic,
                     s.rect.2,
                     s.edge == PinEdge::Right,
-                    s.chrome.dark,
                 )
             };
             let mut rc: RECT = std::mem::zeroed();
@@ -634,31 +566,17 @@ mod win {
             let h = (rc.bottom - rc.top).max(1);
             let scale = scale_of(rest_w);
 
-            // 亚克力背后是桌面模糊，对比按中等浅/深底估算，避免按近白 surface 误判。
-            let contrast_bg = if acrylic {
-                if dark {
-                    0x00302820
-                } else {
-                    0x00E8E0D8
-                }
-            } else {
-                bg
-            };
-            fg = contrast_fg(fg, contrast_bg);
-            muted = contrast_muted(muted, contrast_bg);
+            fg = contrast_fg(fg, bg);
+            muted = contrast_muted(muted, bg);
 
-            // 回退路径双缓冲并铺实底；亚克力路径直接画在窗口 DC 上、不铺底，让 DWM 雾面透出。
-            let (dc, mem, bmp, old_bmp) = if acrylic {
-                (window_dc, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut())
-            } else {
-                let mem = CreateCompatibleDC(window_dc);
-                let bmp = CreateCompatibleBitmap(window_dc, w, h);
-                let old_bmp = SelectObject(mem, bmp as _);
-                let brush = CreateSolidBrush(bg);
-                FillRect(mem, &rc, brush);
-                DeleteObject(brush as _);
-                (mem, mem, bmp, old_bmp)
-            };
+            // 双缓冲、铺实底，再画不透明文字（GDI 叠在亚克力上会变成近白）。
+            let mem = CreateCompatibleDC(window_dc);
+            let bmp = CreateCompatibleBitmap(window_dc, w, h);
+            let old_bmp = SelectObject(mem, bmp as _);
+            let brush = CreateSolidBrush(bg);
+            FillRect(mem, &rc, brush);
+            DeleteObject(brush as _);
+            let dc = mem;
 
             // 顶条：来源色（3 逻辑像素，细线而不是厚色带）
             let stripe_h = ((3.0 * scale).round() as i32).max(2);
@@ -673,7 +591,7 @@ mod win {
             FillRect(dc, &stripe_rc, stripe_brush);
             DeleteObject(stripe_brush as _);
 
-            // 可见描边：内侧用次要文字色，贴边一侧不画以免漏缝。不再用纯白高光（浅壁纸上等于没边）。
+            // 可见描边：内侧用次要文字色，画顶、底和朝向屏幕内侧的一边；贴边一侧不画以免漏缝。
             let pen = CreatePen(PS_SOLID, 1, muted);
             let old_pen = SelectObject(dc, pen as _);
             let inset = 1;
@@ -685,10 +603,14 @@ mod win {
                 MoveToEx(dc, x1, y2, std::ptr::null_mut());
                 LineTo(dc, x1, y1);
                 LineTo(dc, x2, y1);
+                MoveToEx(dc, x1, y2, std::ptr::null_mut());
+                LineTo(dc, x2, y2);
             } else {
                 MoveToEx(dc, x2, y2, std::ptr::null_mut());
                 LineTo(dc, x2, y1);
                 LineTo(dc, x1, y1);
+                MoveToEx(dc, x2, y2, std::ptr::null_mut());
+                LineTo(dc, x1, y2);
             }
             SelectObject(dc, old_pen);
             DeleteObject(pen as _);
@@ -770,12 +692,10 @@ mod win {
             SelectObject(dc, old_font);
             DeleteObject(font_sub as _);
 
-            if !acrylic {
-                BitBlt(window_dc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
-                SelectObject(mem, old_bmp);
-                DeleteObject(bmp as _);
-                DeleteDC(mem);
-            }
+            BitBlt(window_dc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
+            SelectObject(mem, old_bmp);
+            DeleteObject(bmp as _);
+            DeleteDC(mem);
             EndPaint(hwnd, &ps);
         }
     }
