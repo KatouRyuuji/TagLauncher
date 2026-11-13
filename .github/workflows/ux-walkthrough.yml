@@ -1,4 +1,4 @@
-# 临时工作流：在 Windows runner 上构建并录制 PR #67（cursor/ui-redesign-8f3b @ 055e84e）新 UI 走查。
+# 临时工作流：在 Windows runner 上构建并录制 PR #67（cursor/ui-redesign-8f3b @ 95323a8）新 UI 走查。
 # 仅存在于 cursor/ux-walkthrough-redesign-8f3b，不合入 main、不进 PR #67。
 # 本作业自己做正式构建（tauri build --no-bundle），不触发 Release 发版工作流。
 name: UX Walkthrough

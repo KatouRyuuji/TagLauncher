@@ -98,23 +98,29 @@ class Recorder:
 
     def start(self) -> None:
         self.raw.parent.mkdir(parents=True, exist_ok=True)
+        # frag+empty_moov：录制中途文件也可探测，停录被 kill 也不丢 moov。
         cmd = [
             "ffmpeg", "-y", "-f", "gdigrab", "-framerate", "30",
             "-draw_mouse", "1", "-i", "desktop",
             "-thread_queue_size", "4096",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-            "-pix_fmt", "yuv420p", "-an", str(self.raw),
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+frag_keyframe+empty_moov",
+            "-an", str(self.raw),
         ]
         log("ffmpeg " + " ".join(cmd))
-        kw = dict(stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # stderr 写到文件，避免 PIPE 撑满导致 ffmpeg 卡死、写不出 moov。
+        self._fflog = self.raw.with_name("ffmpeg-record.log")
+        fflog = open(self._fflog, "wb")
+        kw = dict(stdin=subprocess.PIPE, stdout=fflog, stderr=fflog)
         if os.name == "nt":
-            # 只用 SW_HIDE：CREATE_NO_WINDOW 会让 ffmpeg 收不到 stdin 的 q，
-            # 上次 40s wait 超时后被 kill，raw 无 moov，stitch 的 ffprobe 失败。
+            # 只用 SW_HIDE：CREATE_NO_WINDOW 会让 ffmpeg 收不到 stdin 的 q。
             si = subprocess.STARTUPINFO()
             si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             si.wShowWindow = 0
             kw["startupinfo"] = si
         self.proc = subprocess.Popen(cmd, **kw)
+        self._fflog_fh = fflog
         time.sleep(1.5)
         if self.proc.poll() is not None:
             err = (self.proc.stderr.read() if self.proc.stderr else b"").decode("utf-8", "replace")
@@ -191,6 +197,10 @@ class Recorder:
             if self.proc.stdin:
                 self.proc.stdin.write(b"q")
                 self.proc.stdin.flush()
+                try:
+                    self.proc.stdin.close()
+                except Exception:
+                    pass
             self.proc.wait(timeout=50)
         except Exception as e:
             log(f"ffmpeg q/wait: {e}")
@@ -198,32 +208,47 @@ class Recorder:
                 self.proc.terminate()
                 self.proc.wait(timeout=15)
             except Exception:
-                self.proc.kill()
                 try:
-                    self.proc.wait(timeout=5)
+                    self.proc.kill()
+                    self.proc.wait(timeout=10)
                 except Exception:
                     pass
-        # 等 moov 落盘：上次停录瞬间 ffprobe 失败，artifact 里 raw 之后才完整
-        for i in range(12):
-            time.sleep(1)
+        if getattr(self, "_fflog_fh", None):
+            try:
+                self._fflog_fh.close()
+            except Exception:
+                pass
+        # 分片 MP4 再封成常规 +faststart，方便 stitch / 播放器
+        for i in range(20):
             try:
                 dur = subprocess.check_output(
                     ["ffprobe", "-v", "error", "-show_entries", "format=duration",
                      "-of", "csv=p=0", str(self.raw)], text=True, stderr=subprocess.STDOUT).strip()
                 if float(dur or 0) > 1:
-                    log(f"raw moov ok after {i+1}s duration={dur} size={self.raw.stat().st_size}")
+                    log(f"raw probe ok after {i+1}s duration={dur} size={self.raw.stat().st_size}")
                     break
             except Exception as e:
-                log(f"raw moov wait {i+1}: {e}")
+                log(f"raw probe wait {i+1}: {e}")
+            time.sleep(1)
+        fixed = self.raw.with_name("raw-faststart.mp4")
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(self.raw), "-c", "copy", "-movflags", "+faststart", str(fixed)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if r.returncode == 0 and fixed.exists() and fixed.stat().st_size > 1000:
+            # 再 probe 一次，确认封出来的文件有 moov
+            try:
+                dur = subprocess.check_output(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                     "-of", "csv=p=0", str(fixed)], text=True, stderr=subprocess.STDOUT).strip()
+                if float(dur or 0) > 1:
+                    fixed.replace(self.raw)
+                    log(f"raw remuxed duration={dur} size={self.raw.stat().st_size}")
+                else:
+                    log(f"raw remux duration bad ({dur}), keep original")
+            except Exception as e:
+                log(f"raw remux probe: {e}")
         else:
-            # 尝试 -c copy 补 moov
-            fixed = self.raw.with_name("raw-faststart.mp4")
-            r = subprocess.run(
-                ["ffmpeg", "-y", "-i", str(self.raw), "-c", "copy", "-movflags", "+faststart", str(fixed)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-            if r.returncode == 0 and fixed.exists() and fixed.stat().st_size > 1000:
-                fixed.replace(self.raw)
-                log(f"raw remuxed size={self.raw.stat().st_size}")
+            log(f"raw remux failed rc={r.returncode} {r.stderr[-400:] if r.stderr else b''}")
         log(f"recording stopped rc={self.proc.returncode} size={self.raw.stat().st_size if self.raw.exists() else 0}")
 
 
