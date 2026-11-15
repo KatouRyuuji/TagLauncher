@@ -565,6 +565,7 @@ pub(crate) fn is_cut_separator(c: char) -> bool {
 /// 单行省略：放得下就原样返回；否则取「前缀 + …」能放下的最长前缀，再去掉前缀末尾的分隔符。
 /// 更短的切点只会保留更少的有效字符，所以最长前缀去掉分隔符后就是保留有效字符最多的切点；
 /// 能留下 ≥2 个有效字符时一定留下，只有宽度实在不够时才退到 1 个或只剩 "…"。
+/// 分隔符后只露出 1 个字符的残段也不要，退到该分隔符之前（前面够 2 个有效字符时）。
 /// `fits` 必须对前缀长度单调（宽度随字符增加不减）。
 pub fn ellipsize(text: &str, fits: &dyn Fn(&str) -> bool) -> String {
     if fits(text) {
@@ -586,9 +587,22 @@ pub fn ellipsize(text: &str, fits: &dyn Fn(&str) -> bool) -> String {
             hi = mid - 1;
         }
     }
-    let mut n = lo;
-    while n > 0 && is_cut_separator(chars[n - 1]) {
-        n -= 1;
+    let strip = |mut n: usize| {
+        while n > 0 && is_cut_separator(chars[n - 1]) {
+            n -= 1;
+        }
+        n
+    };
+    let meaningful = |n: usize| chars[..n].iter().filter(|c| !is_cut_separator(**c)).count();
+    let mut n = strip(lo);
+    // 切开的末段只剩 1 个字符（「截图 2…」「已付款.p…」）时退到上一个分隔符前，前面仍有 ≥2 个有效字符才退。
+    // 本来就是单字符的完整段（「a - b - c」）不算残段。
+    if let Some(sep) = chars[..n].iter().rposition(|c| is_cut_separator(*c)) {
+        let back = strip(sep);
+        let split_token = n < chars.len() && !is_cut_separator(chars[n]);
+        if split_token && n - sep - 1 < 2 && meaningful(back) >= 2 {
+            n = back;
+        }
     }
     with_ellipsis(n)
 }
@@ -1099,6 +1113,11 @@ mod tests {
         assert_eq!(ellipsize("截图 2026-11-15 18.30.png", &fit(6)), "截图…");
         assert_eq!(ellipsize("截图 2026-11-15 18.30.png", &fit(8)), "截图 20…");
         assert_eq!(ellipsize("项目 · 设计稿 · 终版", &fit(9)), "项目…");
+        // 分隔符后只露 1 个字符的残段退掉
+        assert_eq!(ellipsize("截图 2026-11-15 18.30.png", &fit(7)), "截图…");
+        assert_eq!(ellipsize("已付款.pdf", &fit(9)), "已付款…");
+        assert_eq!(ellipsize("report_final.docx", &fit(9)), "report…");
+        assert_eq!(ellipsize("report_final.docx", &fit(10)), "report_fi…");
         // 连续分隔符全部去掉
         assert_eq!(ellipsize("ab--__..cdef", &fit(7)), "ab…");
         // 宽度实在不够时才少于 2 个有效字符，且仍不以分隔符结尾
@@ -1128,6 +1147,14 @@ mod tests {
                             && width(&format!("{p}…")) <= max
                     });
                     assert!(meaningful >= 2 || !two_possible, "{name} @{max}: {out}");
+                    // 切开的末段不是孤零零 1 个字符（除非前面不足 2 个有效字符）
+                    if let Some(i) = body.rfind(is_cut_separator) {
+                        let tail = body[i..].chars().skip(1).count();
+                        let head = body[..i].chars().filter(|c| !is_cut_separator(*c)).count();
+                        let next = name[body.len()..].chars().next();
+                        let split = next.is_some_and(|c| !is_cut_separator(c));
+                        assert!(!split || tail >= 2 || head < 2, "{name} @{max}: {out}");
+                    }
                 }
             }
         }
