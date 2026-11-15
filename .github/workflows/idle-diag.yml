@@ -1,20 +1,47 @@
-# 临时分支专用：空闲 CPU 对照实验（同一 release 构建，测量窗口内 CDP 挂着 / 断开 / 再暂停 stealth 轮询）。
+# 临时分支专用：收起抽屉 / 浮动窗合成线程唤醒二分（产品源码取各 SHA，测试 harness 统一取本分支）。
 name: Idle diag
 
 on:
   push:
     branches: [cursor/ux-walkthrough-redesign-8f3b]
+  workflow_dispatch:
 
 jobs:
-  idle:
+  bisect:
     runs-on: windows-latest
-    timeout-minutes: 75
+    timeout-minutes: 80
     strategy:
       fail-fast: false
       matrix:
-        quiet: ['none', 'detach', 'detach,noguard']
+        include:
+          - { label: '76aa205', sha: '76aa205b9bde5870fb438aa15befa8fbffc7ab27', variant: '' }
+          - { label: '98b4169', sha: '98b4169', variant: '' }
+          - { label: '735c608', sha: '735c608', variant: '' }
+          - { label: '530150f', sha: '530150f', variant: '' }
+          - { label: '96fc4c5', sha: '96fc4c5', variant: '' }
+          - { label: '4fdc124', sha: '4fdc124', variant: '' }
+          - { label: '4fdc124-noscroll', sha: '4fdc124', variant: 'noscroll' }
+          - { label: '4fdc124-nomix', sha: '4fdc124', variant: 'nomix' }
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Product source at SHA, harness from temp branch
+        shell: bash
+        run: |
+          set -e
+          cp -r e2e /tmp/e2e-harness
+          git checkout -q ${{ matrix.sha }}
+          rm -rf e2e && cp -r /tmp/e2e-harness e2e
+          if [ "${{ matrix.variant }}" = "noscroll" ]; then
+            sed -i 's/ scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;//' src/quick/quick.css
+            ! grep -n "scrollbar-width" src/quick/quick.css
+          fi
+          if [ "${{ matrix.variant }}" = "nomix" ]; then
+            git show 98b4169 -- src/quick/quick.css | git apply -R
+            grep -n "glass-bg-strong));" src/quick/quick.css
+          fi
+          git log --oneline -1
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
@@ -39,12 +66,11 @@ jobs:
           node scripts/prepare-cli-bin.mjs
           npx tauri build --bundles nsis
           "TL_E2E_EXE=$((Get-Item src-tauri/target/release/tag-launcher.exe).FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-      - name: Idle tests
+      - name: Pin idle x2
         timeout-minutes: 40
         shell: pwsh
         env:
           CI: '1'
-          TL_E2E_RUN_DIR: ${{ github.workspace }}/.tmp-test/e2e/idle-run
           TL_E2E_WEBVIEW2_HKLM_POLICY: '1'
           TL_E2E_ALLOW_REGISTRY: '1'
           TL_E2E_ALLOW_PHYSICAL: '1'
@@ -54,10 +80,13 @@ jobs:
           TL_E2E_BUILD: release
           PYTHONIOENCODING: utf-8
         run: |
-          if ('${{ matrix.quiet }}' -ne 'none') { $env:TL_E2E_IDLE_QUIET = '${{ matrix.quiet }}' }
-          python -m pytest -c e2e/pytest.ini e2e/tests/ui/test_quick.py::test_idle_cpu_with_both_windows_hidden e2e/tests/ui/test_pin.py::test_pin_resident_memory_and_idle_cpu --allow-physical-input --window-countdown 0 -s
+          foreach ($i in 1, 2) {
+            $env:TL_E2E_RUN_DIR = "${{ github.workspace }}/.tmp-test/e2e/run-$i"
+            python -m pytest -c e2e/pytest.ini e2e/tests/ui/test_pin.py::test_pin_resident_memory_and_idle_cpu --allow-physical-input --window-countdown 0 -q
+          }
+          exit 0
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: idle-${{ strategy.job-index }}
-          path: .tmp-test/e2e/idle-run/artifacts/
+          name: bisect-${{ matrix.label }}
+          path: .tmp-test/e2e/run-*/artifacts/test_pin_resident_memory_and_idle_cpu/pin-perf.json
