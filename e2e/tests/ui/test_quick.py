@@ -486,14 +486,16 @@ IDLE_CPU_PCT = 1.0  # §3.3「两窗都隐藏时平均 ≈ 0%」：按单核 1% 
 
 @pytest.mark.case("E-PERF-IDLE")
 def measure_idle(app, window_s: float) -> dict:
-    """空闲窗口：进程树 CPU（判定口径不变）+ 线程级诊断（窗口两端各一次只读快照：
-    每线程 CPU 毫秒、上下文切换≈唤醒次数、线程名）。TL_E2E_IDLE_QUIET 控制窗口内是否断开 CDP /
-    暂停 stealth 轮询（逗号分隔：detach、noguard）。"""
-    quiet = {q for q in os.environ.get("TL_E2E_IDLE_QUIET", "").split(",") if q}
+    """空闲窗口：进程树 CPU（判定口径：单核 ≤ IDLE_CPU_PCT，不变）+ 线程级诊断（窗口两端各一次只读快照：
+    每线程 CPU 毫秒、上下文切换≈唤醒次数、线程名）。
+
+    测量窗口内断开 Playwright 的 CDP 连接，结束后重连：用户机器上没有调试会话。对照实验（同一构建）里
+    CDP 挂着时，隐藏的快速窗渲染进程仍以约 19 Hz 合成（renderer Compositor ≈2200 次、
+    GPU VizCompositorThread ≈2700 次唤醒 / 120s），浏览器主线程也多约 150ms；断开后这两项消失。
+    见 DESIGN_ASSERTION_CHANGES.md §17。TL_E2E_IDLE_ATTACHED=1 保持连接（复现 / 对照用）。"""
+    attached = os.environ.get("TL_E2E_IDLE_ATTACHED") == "1"
     pid = app.proc.pid
-    if "noguard" in quiet and app.guard is not None:
-        app.guard.paused.set()
-    if "detach" in quiet:
+    if not attached:
         app.detach_cdp()
     try:
         pids0 = [p for p, _ in procmem.tree(pid)]
@@ -503,9 +505,7 @@ def measure_idle(app, window_s: float) -> dict:
         t1, c1 = time.time(), procmem.tree_cpu(pid)
         th1 = procmem.threads(pids0)
     finally:
-        if app.guard is not None:
-            app.guard.paused.clear()
-        if "detach" in quiet:
+        if not attached:
             app.reattach_cdp()
     rows = [{"pid": p, "exe": exe, "cpu_s": round(s - c0[p][1], 3)} for p, (exe, s) in c1.items() if p in c0]
     total = sum(r["cpu_s"] for r in rows)
@@ -519,7 +519,7 @@ def measure_idle(app, window_s: float) -> dict:
             k = f"{role.get(a['pid'], '?')}:{a['pid']}"
             wake[k] = wake.get(k, 0) + a["cs"] - b["cs"]
     return {"window_s": round(t1 - t0, 1), "cpu_s": round(total, 3),
-            "avg_pct_one_core": round(total / (t1 - t0) * 100, 3), "quiet": sorted(quiet),
+            "avg_pct_one_core": round(total / (t1 - t0) * 100, 3), "cdp_attached": attached,
             "processes": sorted(rows, key=lambda r: -r["cpu_s"]),
             "wakeups_by_process": dict(sorted(wake.items(), key=lambda kv: -kv[1])),
             "threads": procmem.thread_delta(th0, th1, role, top=20)}
