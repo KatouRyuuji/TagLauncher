@@ -436,6 +436,11 @@ pub fn surface() -> Surface {
     rt().surface
 }
 
+/// quick 窗口当前是不是钉住视图（而不是搜索）
+pub fn is_pin_surface() -> bool {
+    rt().surface == Surface::Pin
+}
+
 /// data_sync 是否把 quick 窗口算作「可见」：收起的把手 / 全屏隐藏不算（不因常驻把手提高检测频率）
 pub fn counts_as_visible() -> bool {
     let r = rt();
@@ -575,6 +580,8 @@ fn hide_window(window: &WebviewWindow) {
     {
         let _ = window.hide();
     }
+    // 只隐藏 HWND 不够：WebView2 仍认为可见，收起的抽屉会继续合成（DESIGN §19）
+    crate::quick::sync_controller_to_hwnd(window);
 }
 
 /// 显示但不抢前台
@@ -588,6 +595,8 @@ fn show_no_activate(window: &WebviewWindow) {
             unsafe {
                 ShowWindow(h.0 as _, SW_SHOWNOACTIVATE);
             }
+            // 展开动画开始前恢复可见（排在任何仍在队列里的隐藏之后）
+            crate::quick::sync_controller_to_hwnd(window);
             crate::quick::apply_glass_effect(window);
             return;
         }

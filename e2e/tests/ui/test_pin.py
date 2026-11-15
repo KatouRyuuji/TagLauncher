@@ -22,6 +22,8 @@ from tests.ui.test_quick import (HIDDEN_MEM_MB, IDLE_CPU_PCT, build_library, ena
 # 钉住视图开启（浮动窗显示一个 300 项的柜）且快速搜索未开：常驻私有内存增量沿用快速窗隐藏常驻同档阈值
 PIN_MEM_MB = {5000: HIDDEN_MEM_MB[5000]}
 PIN_IDLE_WINDOW_S = 120
+# 收起抽屉 120s 内渲染 Compositor / GPU VizCompositorThread 各自的唤醒上限（健康基线约 1000 的 5 倍）
+DRAWER_COMPOSITOR_WAKEUPS = 5000
 OFF = {"enabled": False, "source": None, "mode": "float", "edge": "right", "topmost": True}
 
 
@@ -240,4 +242,8 @@ def test_pin_resident_memory_and_idle_cpu(sandbox, app_factory):
     for r in (idle_float, idle_drawer):
         if r["avg_pct_one_core"] > IDLE_CPU_PCT:
             problems.append(f"{r['state']} 空闲 CPU {r['avg_pct_one_core']}% > {IDLE_CPU_PCT}%")
+    # 收起的抽屉不渲染：120s 内合成线程唤醒（健康约 ≤1000）超过 5000 说明隐藏的钉住页面又在持续出帧（DESIGN §19）
+    for k, n in idle_drawer["compositor_wakeups"].items():
+        if n > DRAWER_COMPOSITOR_WAKEUPS:
+            problems.append(f"drawer-collapsed {k} 合成线程唤醒 {n} > {DRAWER_COMPOSITOR_WAKEUPS}（收起的抽屉仍在出帧）")
     assert not problems, "；".join(problems) + "（详见 pin-perf.json）"

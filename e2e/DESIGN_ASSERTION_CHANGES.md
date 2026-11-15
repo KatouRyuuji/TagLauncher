@@ -119,3 +119,28 @@
 - **新单测**：`ellipsize` 纯函数单测（任意平台），覆盖分隔符结尾、连续分隔符、单字符残段、窄到只剩 1 个或 0 个字符的情况，并对一组名字逐个宽度断言放得下、不以分隔符结尾、能留 2 个有效字符时就留。Windows 上用真实字宽在 1.0/1.25/1.5、休息 / 悬停下复查，并写出 `handle-trunc-*.png`。
 - **视觉基线**：只影响被截断的文件名行末尾。基线不入库。
 - **性能**：每次重绘探头最多 3 行，每行一次二分（约 log₂(名长) 次排版测量），不在查询热路径。
+
+## 17. 空闲 CPU 测量窗口内断开 CDP（harness，1% 上限不变）
+
+- **原因**：空闲 CPU 门在 289a323、530150f 等多个 SHA 上以 1.03–1.15% 失败，735c608 上一度 8–12%。进程级数据只能看到「WebView2 浏览器进程 + 宿主」。
+- **诊断**（492568c，新增线程级只读快照：每线程 CPU、上下文切换≈唤醒数、线程名）：
+  - PR E2E 43712052582（CDP 挂着）：两个 job 的快速窗隐藏用例都出现**隐藏的渲染进程仍在合成**：renderer `Compositor` ≈2230 次、GPU `VizCompositorThread` ≈2720 次、GPU `Chrome_ChildIOThread` ≈2030 次唤醒 / 120s（约 19 Hz），GPU+renderer 0.26+0.17 s。735c608 那次 8–12% 是同一组线程。
+  - 临时分支同一 release 构建对照（Idle diag 43712073932）：CDP 挂着 / 窗口内断开 / 断开且暂停 stealth 轮询，分别为快速窗隐藏 0.49 / 0.61 / 0.47%，浮动窗 0.89 / 0.52 / 0.65%，抽屉收起 0.98 / 0.52 / 0.73%。断开后 GPU 进程唤醒从 ≈5700 降到 ≈75，浏览器 `CrBrowserMain` 从 ≈190ms 降到 ≈30ms（浮动窗）。stealth 守护线程只做只读枚举，暂停它没有可分辨的差别，因此不改。
+  - 剩下的浏览器进程开销（`ThreadPoolForeground/BackgroundWorker` 约 0.15–0.2 s，唤醒很少、单次任务长）在三种变体里都在，集中在切换抽屉后的窗口，属于 WebView2 自身的后台任务；`Chrome_DevToolsHandlerThread` ≈430 次唤醒是调试端口本身（需要重启才能去掉，CPU ≈15–45ms）。
+- **改动**（`e2e/tests/ui/test_quick.py::measure_idle`，快速窗和钉住视图两个空闲用例共用）：测量窗口开始前 `detach_cdp()`（Playwright `connect_over_cdp` 的 close 只关 websocket，不关 WebView），窗口结束后 `reattach_cdp()` 找回主窗页面（不 reload）。进程树、判定公式、120 s 窗口、10 s 收尾、1% 上限都不变。线程诊断写进 `idle-cpu.json` / `pin-perf.json`（`threads`、`wakeups_by_process`、`cdp_attached`）。`TL_E2E_IDLE_ATTACHED=1` 可恢复挂着的旧口径做对照。
+- **为什么不算放宽**：测的是用户机器上的状态（没有调试会话）；挂着 CDP 时多出来的合成与浏览器主线程工作是测试工具造成的，不是产品行为。
+
+## 18. 只有钉住视图在屏幕上时，外部写入检测 100ms → 500ms
+
+- **原因**：线程快照里浮动窗可见时 `tl-data-sync` 每 120 s 约 2200 次唤醒（94–109ms CPU），宿主主线程约 900 次唤醒（另两种状态约 300 次）。原因是钉住视图可见就按主窗口径每 100ms 查一次，而钉住浮动窗设计上可以整天常驻，检测线程永远不降频。
+- **改动**（`data_sync.rs` / `pin.rs`）：按屏幕上的窗口选间隔：主窗或快速搜索可见 100ms（主窗 0.3 s 反映目标不变，E-DS-* 不受影响）；只有钉住视图（浮动窗或展开的抽屉）500ms；都不可见 2 s。仅钉住视图时每 5 轮（2.5 s）重新查一次可见性；获焦 / 唤出仍立即检测。
+- **视觉基线**：无。
+- **性能**：浮动窗常驻时检测唤醒约降到 1/5。
+
+## 19. 收起的抽屉不渲染：钉住视图隐藏时同步 WebView2 可见性 + 合成线程唤醒回归检查
+
+- **原因**：693bec8（E2E 43714668793，CDP 已在测量窗口断开）两个跑空闲的 job 里，抽屉收起的 120 s 窗口内钉住页面的渲染进程 `Compositor` 约 21 300 次、GPU `VizCompositorThread` 19 000–21 000 次唤醒（约 175 Hz），debug job 因此 1.029%。健康时这两项约 ≤1000。宿主主线程同期只有约 330 次唤醒（把手没有重绘循环）。
+- **根因**：钉住视图的隐藏只用原生 `SW_HIDE`（`pin::hide_window`），从不告诉 WebView2；搜索表面的隐藏和主窗收托盘（530150f）都会 `SetIsVisible(false)`，钉住表面漏了。HWND 隐藏而 controller 仍「可见」时，Chromium 不进入隐藏状态，合成器可以在没有 vsync 节流的情况下持续出帧。
+- **改动**（`pin.rs` / `quick.rs`）：新增 `quick::sync_controller_to_hwnd`，在 WebView 线程回调里按 HWND 真实状态（可见且未最小化）设 `SetIsVisible`，与 530150f 同一按投递顺序的模式。`pin::hide_window`（抽屉收起、全屏隐藏、切到抽屉、关闭钉住）在 `SW_HIDE` 后调用它 → false；`pin::show_no_activate`（展开、浮动窗显示）在 `SW_SHOWNOACTIVATE` 后、展开动画前调用 → true（展开结束的 `sync_webview_bounds` 仍会再设一次 true）。
+- **页面侧排查**：钉住页面没有 rAF 循环（`QuickApp` 的 rAF 都是唤出时的一次性回调）、没有无限动画（`quick-pop` 只用于浮动窗且有限次，抽屉 `animation: none`，隐藏时 `html[data-quick-hidden]` 再关一次），过渡都是有限时长；展开/收起动画在 Rust 工作线程里 6 步 `SetWindowPos`，有代号守卫，必定结束。把手是独立的无属主分层窗口，只在显示和 `WM_PAINT` 时 `UpdateLayeredWindow`，不触碰 WebView。
+- **回归检查**（`test_pin.py`，`measure_idle` 新增 `compositor_wakeups`）：抽屉收起窗口内渲染 `Compositor`、GPU `VizCompositorThread` 各自 ≤ 5000 次（健康基线约 1000 的 5 倍）。这是诊断性断言，防止隐藏页面出帧悄悄回来；1% 空闲上限不变。
