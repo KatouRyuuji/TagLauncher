@@ -320,33 +320,6 @@ pub(crate) fn set_controller_visible(window: &WebviewWindow, visible: bool) {
     let _ = (window, visible);
 }
 
-/// 获焦兜底用：只在 HWND 此刻确实可见、未最小化时把 controller 设回可见。
-/// 判断放在 WebView 线程的回调里，和收托盘的 `SetIsVisible(false)` 按投递顺序执行：
-/// 隐藏前后排队的 Focused(true) 不会在 HWND 已隐藏时把 WebView2 重新标成可见
-/// （那样 Chromium 不再按遮挡降频，隐藏的主窗会持续合成）。
-pub(crate) fn restore_controller_if_shown(window: &WebviewWindow) {
-    #[cfg(windows)]
-    {
-        let Ok(h) = window.hwnd() else {
-            return;
-        };
-        let hwnd = h.0 as isize;
-        let _ = window.with_webview(move |webview| {
-            use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
-            // SAFETY：hwnd 来自本进程窗口；回调在 WebView 所在线程，controller 在回调期间有效
-            let shown = unsafe { IsWindowVisible(hwnd as _) != 0 && IsIconic(hwnd as _) == 0 };
-            if !shown {
-                return;
-            }
-            if let Err(e) = unsafe { webview.controller().SetIsVisible(true) } {
-                log::warn!("[quick] SetIsVisible(true) 失败：{e}");
-            }
-        });
-    }
-    #[cfg(not(windows))]
-    let _ = window;
-}
-
 pub fn destroy_window(app: &AppHandle) {
     // 作废延后开玻璃的任务，避免 50ms 后 apply_glass 与 destroy 抢同一窗口。
     VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
