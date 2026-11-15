@@ -116,7 +116,7 @@ html[data-scheme="light"][data-acrylic] .pin-shell::before {
 .quick-shortcuts { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--spacing-xs) var(--spacing-md);
   min-width: 0; overflow: hidden; }
 /* 选择器比后面的 .quick-kbd { display: inline-flex } 更具体，否则同权重下后者覆盖。 */
-@container (max-width: 54em) { .quick-shortcuts .quick-kbd-optional { display: none; } }
+@container (max-width: 47em) { .quick-shortcuts .quick-kbd-optional { display: none; } }
 .quick-kbd { display: inline-flex; align-items: center; gap: calc(var(--spacing-xs) * 1.25); white-space: nowrap;
   color: var(--text-secondary); }
 .quick-kbd kbd {
