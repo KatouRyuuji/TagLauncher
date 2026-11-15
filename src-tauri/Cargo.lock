@@ -4136,6 +4136,7 @@ dependencies = [
  "lofty",
  "log",
  "notify-debouncer-full",
+ "png 0.17.16",
  "ratatui",
  "rusqlite",
  "serde",

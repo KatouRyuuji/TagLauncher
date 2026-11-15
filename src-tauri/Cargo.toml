@@ -44,6 +44,8 @@ crossterm = "0.28"
 # 集成测试（tests/）需直接用 rusqlite 播种旧版本 schema 并做原始 SQL 断言。
 # 与主依赖同版本，Cargo 统一为同一实例（不重复编译 sqlite）；仅暴露给测试，不入库产物。
 rusqlite = { version = "0.31", features = ["bundled"] }
+# 探头文字离屏测试把渲染结果写成 PNG 供走查（已在依赖树里，不新增下载）
+png = "0.17"
 
 [features]
 # debug 构建也用 Windows GUI 子系统（见 main.rs；E2E desktop 作业用）
@@ -54,8 +56,9 @@ gui-subsystem = []
 webview2-com = "0.39"
 # 资源管理器右键菜单（HKCU 动词）与「发送到」快捷方式（阶段③）
 winreg = "0.56"
-# 热键 B 读取资源管理器选中项（IShellWindows → IFolderView2::GetSelection）
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }
+# 热键 B 读取资源管理器选中项（IShellWindows → IFolderView2::GetSelection）；
+# 探头文字用 Direct2D + DirectWrite + WIC（灰度 AA 画进分层窗口的预乘缓冲）
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Direct2D", "Win32_Graphics_Direct2D_Common", "Win32_Graphics_DirectWrite", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Imaging"] }
 # 用于按 NTFS 文件ID重定位对象当前路径（OpenFileById / GetFinalPathNameByHandleW），
 # 用关联程序打开对象（ShellExecuteW，替代经 cmd.exe 的启动，杜绝命令注入），
 # 以及视频等内容的系统缩略图提取（IShellItemImageFactory + GDI+ 落盘 PNG）、

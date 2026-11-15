@@ -8,6 +8,9 @@ mod explorer_selection;
 /// 钉住视图 / 边缘抽屉（复用快速窗 WebView）
 mod pin;
 mod pin_strip;
+/// 探头文字（DirectWrite 灰度 AA → 预乘缓冲）
+#[cfg(windows)]
+mod handle_text;
 mod quick;
 /// Win11 系统瞬态背景（DWMWA_SYSTEMBACKDROP_TYPE）
 #[cfg(windows)]

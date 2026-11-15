@@ -31,6 +31,20 @@ html[data-acrylic] .quick-shell::before,
 html[data-acrylic] .pin-shell::before {
   background-color: var(--glass-bg);
 }
+/* 浅色镜面：上沿一段镜面高光渐变、底部一点回光，读成有厚度的玻璃，而不是一张平的磨砂卡片。
+   只是静态渐变层，不进滤镜、不随查询重绘。 */
+html[data-scheme="light"][data-acrylic] .quick-shell::before,
+html[data-scheme="light"][data-acrylic] .pin-shell::before {
+  background-image:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--glass-bg-strong) 72%, transparent) 0,
+      color-mix(in srgb, var(--glass-bg-strong) 26%, transparent) 2.75rem,
+      transparent 40%,
+      transparent 80%,
+      color-mix(in srgb, var(--glass-bg-strong) 16%, transparent) 100%),
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-primary) 3.5%, transparent) 0.7px, transparent 0);
+  background-size: 100% 100%, 4px 4px;
+}
 .quick-shell > *, .pin-shell > * { position: relative; z-index: 1; }
 .quick-search { position: relative; flex-shrink: 0; padding-bottom: var(--spacing-sm);
   border-bottom: var(--border-width, 1px) solid var(--border-subtle); }
@@ -47,9 +61,13 @@ html[data-acrylic] .pin-shell::before {
 .quick-input-small { height: 2.35em; font-size: 1em;
   border-color: var(--border-subtle); background: var(--glass-bg-strong); }
 .quick-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none;
-  contain: content; }
+  contain: content;
+  /* 细滚动条跟主题走：深色下不再是一根白色系统滚动条。 */
+  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+/* 玻璃上的次要文字：主题 muted 向正文色收三成。实测浅色玻璃底约 232–235、选中行约 221，
+   原 #626e7c 只有约 3.9–4.4:1；收后 ≥ 5:1。深色同理（向浅色正文收，更亮）。 */
 .quick-group { padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs);
-  color: var(--text-muted); font-size: calc(var(--font-size-xs) * var(--ui-font-scale, 1));
+  color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); font-size: calc(var(--font-size-xs) * var(--ui-font-scale, 1));
   font-weight: var(--font-weight-semibold); letter-spacing: 0.04em; }
 /* 只标每行首次：把衬底从 28% 提到 42%，单处标记仍清楚。 */
 .quick-mark { background: color-mix(in srgb, var(--accent-primary) 42%, transparent); color: inherit;
@@ -66,7 +84,7 @@ html[data-acrylic] .pin-shell::before {
   color: var(--text-primary);
   box-shadow: var(--row-selected-shadow);
 }
-.quick-row[aria-selected="true"] .quick-tags, .quick-row[aria-selected="true"] .quick-path { color: var(--text-muted); }
+.quick-row[aria-selected="true"] .quick-tags, .quick-row[aria-selected="true"] .quick-path { color: color-mix(in srgb, var(--text-muted) 62%, var(--text-primary)); }
 .quick-row[aria-selected="true"]::before {
   content: ""; position: absolute; left: 0; top: 18%; bottom: 18%;
   width: var(--glass-accent-bar); border-radius: var(--radius-full);
@@ -74,9 +92,9 @@ html[data-acrylic] .pin-shell::before {
 .quick-icon { grid-row: span 2; display: flex; align-items: center; justify-content: center; font-size: 1.3em; }
 .quick-icon-img { width: 1.25em; height: 1.25em; object-fit: contain; border-radius: calc(var(--radius-sm) / 2); }
 .quick-name { font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.quick-tags { color: var(--text-muted); font-size: 0.8em; justify-self: end; align-self: center;
+.quick-tags { color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); font-size: 0.8em; justify-self: end; align-self: center;
   min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quick-path { grid-column: 2 / -1; color: var(--text-faint); font-size: 0.78em;
+.quick-path { grid-column: 2 / -1; color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); font-size: 0.78em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .quick-missing .quick-name { text-decoration: line-through; opacity: 0.7; }
 .quick-empty { padding: var(--spacing-lg) var(--spacing-sm); color: var(--text-muted); text-align: center; }
@@ -92,7 +110,11 @@ html[data-acrylic] .pin-shell::before {
   font-size: calc(var(--font-size-xs) * var(--ui-font-scale, 1));
   min-height: calc(var(--spacing-lg) + var(--spacing-xs));
 }
-.quick-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-xs) var(--spacing-md); }
+/* 脚注快捷键只占一行：窄（125% 缩放或大字号）时先收起次要的两个（完整列表在 title 里），仍不够则裁掉尾部，不换行。 */
+.quick-footer { container-type: inline-size; }
+.quick-shortcuts { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--spacing-xs) var(--spacing-md);
+  min-width: 0; overflow: hidden; }
+@container (max-width: 46em) { .quick-kbd-optional { display: none; } }
 .quick-kbd { display: inline-flex; align-items: center; gap: calc(var(--spacing-xs) * 1.25); white-space: nowrap;
   color: var(--text-secondary); }
 .quick-kbd kbd {

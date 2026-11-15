@@ -12,8 +12,9 @@
 //!
 //! 窗口：WS_POPUP + TOOLWINDOW + TOPMOST + NOACTIVATE + LAYERED。
 //! 用 `UpdateLayeredWindow` 上传预乘 BGRA：软件抗锯齿圆角（仅内侧）、边距里较淡的软阴影、
-//! 1px 描边（贴边一侧不画，避免屏幕边缘发丝）、灰度抗锯齿文字（不用 ClearType）。
-//! 文字在拷入预乘缓冲前按覆盖率做对比度提升并以线性空间再合成，避免 12px 灰度 AA 发细发灰。
+//! 1px 描边（贴边一侧不画，避免屏幕边缘发丝）、灰度抗锯齿文字（不用 ClearType，分层 alpha 上会带彩边）。
+//! 文字用 DirectWrite（灰度 AA、自定 gamma 与增强对比、网格对齐）经 Direct2D 直接画进同一张
+//! 预乘缓冲，见 `handle_text`；字号 16 / 13 逻辑像素，按设备缩放取整。
 //! 卡片本体约 98% 不透明，桌面图标不会透过来；通透感靠顶部高光，不靠把整张卡片画淡。
 //! 不用 `SetWindowRgn`（会锯齿）也不用 `SetLayeredWindowAttributes`（与按像素 alpha 冲突）。
 //! HWND 比卡片大一圈阴影边距（约 10 逻辑像素）；贴边一侧边距为 0，仍与工作区齐平。阴影区点击穿透。
@@ -35,8 +36,10 @@ const RADIUS_LOGIC: f64 = 16.0;
 pub const SHADOW_LOGIC: f64 = 10.0;
 /// 阴影峰值不透明度（紧贴卡片外侧）。0.18–0.22：淡、不浑。
 pub const SHADOW_PEAK: f64 = 0.20;
-/// 灰度 AA 覆盖率对比度：`cov' = 1 - (1-cov)^power`。>1 让字重更实，不引入 ClearType 彩边。
-pub const TEXT_AA_POWER: f64 = 1.85;
+/// 标题字号（逻辑像素）。比 15 大半级，68 宽里仍能放下四个汉字。
+pub const TITLE_PX: f64 = 16.0;
+/// 「N 项」与文件名行字号（逻辑像素）。比 12 大半级。
+pub const BODY_PX: f64 = 13.0;
 /// 卡片本体不透明度（约 98%）：图标不得从底下透出来。
 pub const BODY_ALPHA: u8 = 250;
 
@@ -549,71 +552,83 @@ pub fn contrast_muted(fg: u32, bg: u32) -> u32 {
     ensure_contrast(pack_colorref(r, g, b), bg, 4.5)
 }
 
-fn color_dist2(a: (u8, u8, u8), b: (u8, u8, u8)) -> i32 {
-    let dr = a.0 as i32 - b.0 as i32;
-    let dg = a.1 as i32 - b.1 as i32;
-    let db = a.2 as i32 - b.2 as i32;
-    dr * dr + dg * dg + db * db
+/// 文件名行：至少 7:1（与标题同一级可读），仍取次要色的色相，比标题略轻。
+pub fn contrast_name(muted: u32, bg: u32) -> u32 {
+    ensure_contrast(contrast_muted(muted, bg), bg, 7.0)
 }
 
-fn dist_to_segment(p: (u8, u8, u8), a: (u8, u8, u8), b: (u8, u8, u8)) -> f64 {
-    let ab = (
-        b.0 as f64 - a.0 as f64,
-        b.1 as f64 - a.1 as f64,
-        b.2 as f64 - a.2 as f64,
-    );
-    let ap = (
-        p.0 as f64 - a.0 as f64,
-        p.1 as f64 - a.1 as f64,
-        p.2 as f64 - a.2 as f64,
-    );
-    let ab2 = ab.0 * ab.0 + ab.1 * ab.1 + ab.2 * ab.2;
-    if ab2 < 1.0 {
-        return (color_dist2(p, a) as f64).sqrt();
-    }
-    let t = ((ap.0 * ab.0 + ap.1 * ab.1 + ap.2 * ab.2) / ab2).clamp(0.0, 1.0);
-    let qx = a.0 as f64 + ab.0 * t - p.0 as f64;
-    let qy = a.1 as f64 + ab.1 * t - p.1 as f64;
-    let qz = a.2 as f64 + ab.2 * t - p.2 as f64;
-    (qx * qx + qy * qy + qz * qz).sqrt()
+/// 探头上的一行文字（帧坐标，物理像素）。
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextRun {
+    pub text: String,
+    /// COLORREF
+    pub color: u32,
+    /// 字号（物理像素，已按缩放取整）
+    pub px: f32,
+    pub semibold: bool,
+    /// (left, top, right, bottom)
+    pub rect: (i32, i32, i32, i32),
 }
 
-/// 从 GDI sRGB 混合结果还原覆盖率，做对比度提升后再合成到 `fg`/`muted`。
-pub fn enhance_aa_pixel(
-    out: (u8, u8, u8),
-    fg: (u8, u8, u8),
-    muted: (u8, u8, u8),
-    bg: (u8, u8, u8),
-    power: f64,
-) -> (u8, u8, u8) {
-    let ink = if dist_to_segment(out, bg, fg) <= dist_to_segment(out, bg, muted) {
-        fg
+/// 探头文字排版：标题 / 「N 项」/ 最多三行文件名。纯函数，渲染与离屏测试共用。
+#[allow(clippy::too_many_arguments)]
+pub fn handle_text_runs(
+    peek: &PeekContent,
+    fg: u32,
+    sub_color: u32,
+    name_color: u32,
+    card_x: i32,
+    card_y: i32,
+    card_w: u32,
+    card_h: u32,
+    scale: f64,
+) -> Vec<TextRun> {
+    let px = |v: f64| (v * scale).round() as i32;
+    let pad = px(10.0).max(6);
+    let stripe_h = px(3.0).max(2);
+    let left = card_x + pad;
+    let right = card_x + card_w as i32 - pad + 2;
+    let bottom_limit = card_y + card_h as i32 - px(4.0).max(3);
+    let mut y = card_y + stripe_h + px(8.0).max(4);
+    let mut runs = Vec::with_capacity(5);
+    let title = if peek.title.is_empty() {
+        "钉住视图".to_string()
     } else {
-        muted
+        peek.title.clone()
     };
-    let mut cov_sum = 0.0;
-    let mut cov_n = 0.0;
-    let oc = [out.0, out.1, out.2];
-    let ic = [ink.0, ink.1, ink.2];
-    let bc = [bg.0, bg.1, bg.2];
-    for i in 0..3 {
-        let denom = ic[i] as f64 - bc[i] as f64;
-        if denom.abs() > 1.0 {
-            cov_sum += ((oc[i] as f64 - bc[i] as f64) / denom).clamp(0.0, 1.0);
-            cov_n += 1.0;
+    let title_h = px(22.0).max(16);
+    runs.push(TextRun {
+        text: title,
+        color: fg,
+        px: (TITLE_PX * scale).round().max(12.0) as f32,
+        semibold: true,
+        rect: (left, y, right, y + title_h),
+    });
+    y += title_h + px(2.0);
+    let row_h = px(18.0).max(14);
+    let body_px = (BODY_PX * scale).round().max(10.0) as f32;
+    runs.push(TextRun {
+        text: format!("{} 项", peek.count),
+        color: sub_color,
+        px: body_px,
+        semibold: false,
+        rect: (left, y, right, y + row_h),
+    });
+    y += row_h + px(6.0);
+    for name in peek.names.iter().take(3) {
+        if y + row_h > bottom_limit {
+            break;
         }
+        runs.push(TextRun {
+            text: name.clone(),
+            color: name_color,
+            px: body_px,
+            semibold: false,
+            rect: (left, y, right, y + row_h),
+        });
+        y += row_h + px(2.0);
     }
-    if cov_n < 1.0 {
-        return out;
-    }
-    // 覆盖率提升后仍在 sRGB 里合成：GDI 本来就在 sRGB 混合，再走线性会把提升抵消掉，字依旧发灰。
-    let cov = 1.0 - (1.0 - cov_sum / cov_n).powf(power.max(1.0));
-    let comp = |f: u8, b: u8| {
-        (cov * f as f64 + (1.0 - cov) * b as f64)
-            .round()
-            .clamp(0.0, 255.0) as u8
-    };
-    (comp(ink.0, bg.0), comp(ink.1, bg.1), comp(ink.2, bg.2))
+    runs
 }
 
 #[cfg(windows)]
@@ -654,10 +669,9 @@ mod win {
     use std::os::raw::c_void;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{
-        BeginPaint, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateSolidBrush, DeleteDC,
-        DeleteObject, DrawTextW, EndPaint, FillRect, GetSysColor, SelectObject, SetBkMode,
-        SetTextColor, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, COLOR_HIGHLIGHT, DIB_RGB_COLORS,
-        PAINTSTRUCT,
+        BeginPaint, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, EndPaint,
+        GetSysColor, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, COLOR_HIGHLIGHT,
+        DIB_RGB_COLORS, PAINTSTRUCT,
     };
     use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -674,19 +688,9 @@ mod win {
     const WM_NCHITTEST: u32 = 0x0084;
     const WM_MOUSEHOVER: u32 = 0x02A1;
     const WM_MOUSELEAVE: u32 = 0x02A3;
-    const DT_LEFT: u32 = 0x0000;
-    const DT_SINGLELINE: u32 = 0x0020;
-    const DT_NOPREFIX: u32 = 0x0800;
-    const DT_END_ELLIPSIS: u32 = 0x8000;
-    const FW_NORMAL: i32 = 400;
-    const FW_SEMIBOLD: i32 = 600;
-    const BK_TRANSPARENT: i32 = 1;
     const COLOR_WINDOWTEXT: i32 = 8;
     const CS_HREDRAW: u32 = 0x0002;
     const CS_VREDRAW: u32 = 0x0001;
-    /// 灰度抗锯齿：分层预乘 alpha 上 ClearType 会带彩边。
-    const ANTIALIASED_QUALITY: u32 = 4;
-    const GB2312_CHARSET: u32 = 134;
     const HTCLIENT: isize = 1;
     const HTTRANSPARENT: isize = -1;
     const ULW_ALPHA: u32 = 0x0000_0002;
@@ -893,38 +897,6 @@ mod win {
         }
     }
 
-    fn create_ui_font(height: i32, weight: i32) -> *mut c_void {
-        for name in [
-            "Microsoft YaHei UI",
-            "Microsoft YaHei",
-            "Noto Sans SC",
-            "Segoe UI",
-        ] {
-            let font = unsafe {
-                CreateFontW(
-                    height,
-                    0,
-                    0,
-                    0,
-                    weight,
-                    0,
-                    0,
-                    0,
-                    GB2312_CHARSET,
-                    0,
-                    0,
-                    ANTIALIASED_QUALITY,
-                    0,
-                    wide(name).as_ptr(),
-                )
-            };
-            if !font.is_null() {
-                return font;
-            }
-        }
-        std::ptr::null_mut()
-    }
-
     fn update_layered(hwnd: HWND, src: *mut c_void, w: i32, h: i32) -> bool {
         // SAFETY：user32 常驻；UpdateLayeredWindow 签名与文档一致。
         unsafe {
@@ -992,6 +964,7 @@ mod win {
             let fh = (rc.bottom - rc.top).max(1);
             let scale = scale_of(rest_w);
             fg = contrast_fg(fg, bg);
+            let name_color = contrast_name(muted, bg);
             muted = contrast_muted(muted, bg);
             let stripe = peek.stripe.unwrap_or(accent);
             let (ox, oy) = card_origin_in_frame(flush_right, rest_w);
@@ -1046,163 +1019,10 @@ mod win {
                 BODY_ALPHA,
             );
 
-            // 文字画在不透明卡片上：另开一张与卡片同大的 DIB，GDI 灰度抗锯齿后再拷回。
-            let mut t_bmi: BITMAPINFO = std::mem::zeroed();
-            t_bmi.bmiHeader = BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: cw as i32,
-                biHeight: -(ch as i32),
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB,
-                biSizeImage: 0,
-                biXPelsPerMeter: 0,
-                biYPelsPerMeter: 0,
-                biClrUsed: 0,
-                biClrImportant: 0,
-            };
-            let tdc = CreateCompatibleDC(mem);
-            let mut t_bits: *mut c_void = std::ptr::null_mut();
-            let t_dib = CreateDIBSection(
-                tdc,
-                &t_bmi,
-                DIB_RGB_COLORS,
-                &mut t_bits,
-                std::ptr::null_mut(),
-                0,
-            );
-            if !tdc.is_null() && !t_dib.is_null() && !t_bits.is_null() {
-                let old_t = SelectObject(tdc, t_dib as _);
-                let (br, bgc, bb) = colorref_channels(bg);
-                // GDI 在 32 位 DIB 上用 COLORREF 铺底；之后按字节读 BGRA。
-                let brush = CreateSolidBrush(bg);
-                let fill = RECT {
-                    left: 0,
-                    top: 0,
-                    right: cw as i32,
-                    bottom: ch as i32,
-                };
-                FillRect(tdc, &fill, brush);
-                DeleteObject(brush as _);
-                SetBkMode(tdc, BK_TRANSPARENT);
-
-                let pad = ((10.0 * scale).round() as i32).max(6);
-                let stripe_h = ((3.0 * scale).round() as i32).max(2);
-                let mut y = stripe_h + ((8.0 * scale).round() as i32).max(4);
-                let text_right = cw as i32 - pad + 2;
-                let text_left = pad;
-
-                let title = if peek.title.is_empty() {
-                    "钉住视图".to_string()
-                } else {
-                    peek.title.clone()
-                };
-                let font_title =
-                    create_ui_font(-((15.0 * scale).round() as i32).max(12), FW_SEMIBOLD);
-                let old_font = SelectObject(tdc, font_title as _);
-                SetTextColor(tdc, fg);
-                let mut title_w = wide(&title);
-                let mut tr = RECT {
-                    left: text_left,
-                    top: y,
-                    right: text_right,
-                    bottom: y + ((22.0 * scale).round() as i32).max(16),
-                };
-                DrawTextW(
-                    tdc,
-                    title_w.as_mut_ptr(),
-                    (title_w.len() - 1) as i32,
-                    &mut tr,
-                    DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
-                );
-                y = tr.bottom + ((2.0 * scale).round() as i32);
-                SelectObject(tdc, old_font);
-                DeleteObject(font_title as _);
-
-                let sub = format!("{} 项", peek.count);
-                let font_sub = create_ui_font(-((12.0 * scale).round() as i32).max(10), FW_NORMAL);
-                let old_font = SelectObject(tdc, font_sub as _);
-                SetTextColor(tdc, muted);
-                let mut sub_w = wide(&sub);
-                let mut sr = RECT {
-                    left: text_left,
-                    top: y,
-                    right: text_right,
-                    bottom: y + ((18.0 * scale).round() as i32).max(14),
-                };
-                DrawTextW(
-                    tdc,
-                    sub_w.as_mut_ptr(),
-                    (sub_w.len() - 1) as i32,
-                    &mut sr,
-                    DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
-                );
-                y = sr.bottom + ((6.0 * scale).round() as i32);
-
-                // 文件名行用次要色（已保证 ≥ 4.5:1），与「N 项」同一支。
-                for name in peek.names.iter().take(3) {
-                    let mut nw = wide(name);
-                    let mut nr = RECT {
-                        left: text_left,
-                        top: y,
-                        right: text_right,
-                        bottom: y + ((18.0 * scale).round() as i32).max(14),
-                    };
-                    DrawTextW(
-                        tdc,
-                        nw.as_mut_ptr(),
-                        (nw.len() - 1) as i32,
-                        &mut nr,
-                        DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
-                    );
-                    y = nr.bottom + ((2.0 * scale).round() as i32);
-                    if y > ch as i32 - 4 {
-                        break;
-                    }
-                }
-                SelectObject(tdc, old_font);
-                DeleteObject(font_sub as _);
-
-                // 把与底色不同的像素拷到主缓冲。GDI 灰度 AA 先提升覆盖率、线性再合成，再预乘。
-                let t_len = (cw as usize) * (ch as usize) * 4;
-                let tbuf = std::slice::from_raw_parts(t_bits as *const u8, t_len);
-                let dst_w = fw as usize;
-                let body_a = BODY_ALPHA;
-                let (fr, fgc, fb) = colorref_channels(fg);
-                let (mr2, mg2, mb2) = colorref_channels(muted);
-                for ty in 0..(ch as usize) {
-                    for tx in 0..(cw as usize) {
-                        let ti = (ty * cw as usize + tx) * 4;
-                        let b = tbuf[ti];
-                        let g = tbuf[ti + 1];
-                        let r = tbuf[ti + 2];
-                        if b == bb && g == bgc && r == br {
-                            continue;
-                        }
-                        let dx = ox as usize + tx;
-                        let dy = oy as usize + ty;
-                        if dx >= fw as usize || dy >= fh as usize {
-                            continue;
-                        }
-                        let (r2, g2, b2) = enhance_aa_pixel(
-                            (r, g, b),
-                            (fr, fgc, fb),
-                            (mr2, mg2, mb2),
-                            (br, bgc, bb),
-                            TEXT_AA_POWER,
-                        );
-                        let di = (dy * dst_w + dx) * 4;
-                        // 预乘：文字在本体上，用本体 alpha。
-                        let a = body_a as f64 / 255.0;
-                        buf[di] = (b2 as f64 * a).round() as u8;
-                        buf[di + 1] = (g2 as f64 * a).round() as u8;
-                        buf[di + 2] = (r2 as f64 * a).round() as u8;
-                        buf[di + 3] = body_a;
-                    }
-                }
-                SelectObject(tdc, old_t);
-                DeleteObject(t_dib as _);
-                DeleteDC(tdc);
+            // 文字：DirectWrite 灰度抗锯齿直接画进同一张预乘缓冲（不再 GDI 画到临时 DIB 再猜覆盖率）。
+            let runs = handle_text_runs(&peek, fg, muted, name_color, ox, oy, cw, ch, scale);
+            if let Err(e) = crate::handle_text::draw_runs(buf, fw as u32, fh as u32, &runs) {
+                log::warn!("[pin] 探头文字绘制失败：{e}");
             }
 
             let _ = update_layered(hwnd, mem, fw, fh);
@@ -1299,38 +1119,68 @@ mod tests {
     }
 
     #[test]
-    fn enhance_aa_darkens_mid_coverage_and_keeps_endpoints() {
-        let fg = (41u8, 52, 67);
-        let muted = (54u8, 60, 68);
-        let bg = (250u8, 252, 253);
-        assert_eq!(enhance_aa_pixel(fg, fg, muted, bg, TEXT_AA_POWER), fg);
-        assert_eq!(enhance_aa_pixel(bg, fg, muted, bg, TEXT_AA_POWER), bg);
-        // 走查实测的约 45% 覆盖率灰边 (156,162,169)，提升后应更靠近墨色。
-        let fringe = (156u8, 162, 169);
-        let out = enhance_aa_pixel(fringe, fg, muted, bg, TEXT_AA_POWER);
-        let luma =
-            |c: (u8, u8, u8)| 0.2126 * c.0 as f64 + 0.7152 * c.1 as f64 + 0.0722 * c.2 as f64;
-        assert!(
-            luma(out) < luma(fringe) - 20.0,
-            "fringe should darken, got {:?} luma {} vs {}",
-            out,
-            luma(out),
-            luma(fringe)
-        );
-        assert!(
-            luma(out) > luma(fg),
-            "must not overshoot past ink, got {:?}",
-            out
-        );
-        // muted 线段上的灰边也归到 muted，而不是被拉成标题色。
-        let mute_fringe = (
-            ((muted.0 as u16 + bg.0 as u16) / 2) as u8,
-            ((muted.1 as u16 + bg.1 as u16) / 2) as u8,
-            ((muted.2 as u16 + bg.2 as u16) / 2) as u8,
-        );
-        let out_m = enhance_aa_pixel(mute_fringe, fg, muted, bg, TEXT_AA_POWER);
-        assert!(luma(out_m) < luma(mute_fringe) - 10.0);
-        assert!(luma(out_m) > luma(muted) - 4.0, "muted fringe {:?}", out_m);
+    fn name_rows_read_at_title_grade_contrast_and_stay_lighter_than_title() {
+        for (muted, bg) in [
+            (0x007C6E62u32, 0x00FDFCFAu32),
+            (0x00FFFFF8, 0x00FAF5F5),
+            (0x00201008, 0x00201C1C),
+        ] {
+            let name = contrast_name(muted, bg);
+            assert!(
+                wcag_contrast(name, bg) >= 7.0,
+                "name contrast {} on {bg:06x}",
+                wcag_contrast(name, bg)
+            );
+            assert!(wcag_contrast(name, bg) >= wcag_contrast(contrast_muted(muted, bg), bg) - 0.01);
+        }
+    }
+
+    #[test]
+    fn text_runs_fit_card_and_scale_with_dpi() {
+        let peek = PeekContent {
+            title: "工作".into(),
+            count: 7,
+            names: vec![
+                "设计稿 v3.fig".into(),
+                "报告.docx".into(),
+                "截图.png".into(),
+                "第四个".into(),
+            ],
+            stripe: None,
+        };
+        for (scale, title_px, body_px) in [(1.0, 16.0, 13.0), (1.25, 20.0, 16.0), (1.5, 24.0, 20.0)]
+        {
+            let cw = (68.0 * scale as f64).round() as u32;
+            let ch = (148.0 * scale as f64).round() as u32;
+            let (ox, oy) = (11, 9);
+            let runs = handle_text_runs(&peek, 1, 2, 3, ox, oy, cw, ch, scale);
+            // 标题 + 「7 项」+ 最多三行文件名
+            assert_eq!(runs.len(), 5, "scale {scale}");
+            assert_eq!(runs[0].px, title_px);
+            assert!(runs[0].semibold);
+            assert_eq!(runs[1].text, "7 项");
+            assert_eq!(runs[1].px, body_px);
+            assert_eq!((runs[2].color, runs[2].px), (3, body_px));
+            let mut prev_bottom = oy;
+            for r in &runs {
+                let (l, t, rr, b) = r.rect;
+                assert!(l > ox && rr <= ox + cw as i32, "x inside card {:?}", r.rect);
+                assert!(t >= prev_bottom, "rows must not overlap {:?}", r.rect);
+                assert!(
+                    b <= oy + ch as i32 - 3,
+                    "row inside card {:?} at {scale}",
+                    r.rect
+                );
+                // 行高装得下字号（含中文行距）
+                assert!(
+                    (b - t) as f32 >= r.px * 1.3,
+                    "row {} for px {}",
+                    b - t,
+                    r.px
+                );
+                prev_bottom = b;
+            }
+        }
     }
 
     #[test]

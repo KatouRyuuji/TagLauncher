@@ -682,8 +682,8 @@ function QuickSearch({ dropError, armed: armedByApp, collectReady }: { dropError
           <span className="quick-shortcuts" title="Enter 打开 · Ctrl+Enter 位置 · Ctrl+Shift+C 复制路径 · Alt+Enter 主窗定位 · Ctrl+T 标签 · Esc 收起">
             <span className="quick-kbd"><kbd>Enter</kbd>打开</span>
             <span className="quick-kbd"><kbd>Ctrl+Enter</kbd>位置</span>
-            <span className="quick-kbd"><kbd>Ctrl+Shift+C</kbd>复制</span>
-            <span className="quick-kbd"><kbd>Alt+Enter</kbd>主窗</span>
+            <span className="quick-kbd quick-kbd-optional"><kbd>Ctrl+Shift+C</kbd>复制</span>
+            <span className="quick-kbd quick-kbd-optional"><kbd>Alt+Enter</kbd>主窗</span>
             <span className="quick-kbd"><kbd>Ctrl+T</kbd>标签</span>
             <span className="quick-kbd"><kbd>Esc</kbd>收起</span>
           </span>
