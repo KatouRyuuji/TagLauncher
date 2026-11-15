@@ -436,6 +436,11 @@ pub fn surface() -> Surface {
     rt().surface
 }
 
+/// quick 窗口当前是不是钉住视图（而不是搜索）
+pub fn is_pin_surface() -> bool {
+    rt().surface == Surface::Pin
+}
+
 /// data_sync 是否把 quick 窗口算作「可见」：收起的把手 / 全屏隐藏不算（不因常驻把手提高检测频率）
 pub fn counts_as_visible() -> bool {
     let r = rt();
