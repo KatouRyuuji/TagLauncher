@@ -79,12 +79,16 @@ html[data-scheme="light"][data-acrylic] .pin-shell::before {
   transition: background-color var(--transition-fast);
   /* 视口外的行跳过绘制：5k 短前缀要画 50 行，较慢 runner 上 p95 33–34。测量在提交后下一帧，这能直接减那一帧的绘制。 */
   content-visibility: auto; contain-intrinsic-size: auto 3.4em; }
-.quick-row:hover { background: var(--bg-hover); }
+/* 行底叠在玻璃上（透明混色），不再垫一层近乎不透明的 glass-bg-strong：那层在深色下是一块无色暗板，
+   看不出强调色。悬停与选中同一色相：悬停约 6–8%，选中 16–18% + 左侧竖条，悬停始终比选中轻。 */
+.quick-row:hover { background: color-mix(in srgb, var(--accent-primary) 6%, transparent); }
 .quick-row[aria-selected="true"] {
-  background: color-mix(in srgb, var(--accent-primary) 16%, var(--glass-bg-strong));
+  background: color-mix(in srgb, var(--accent-primary) 16%, transparent);
   color: var(--text-primary);
   box-shadow: var(--row-selected-shadow);
 }
+html[data-scheme="dark"] .quick-row:hover { background: color-mix(in srgb, var(--accent-primary) 8%, transparent); }
+html[data-scheme="dark"] .quick-row[aria-selected="true"] { background: color-mix(in srgb, var(--accent-primary) 18%, transparent); }
 .quick-row[aria-selected="true"] .quick-tags, .quick-row[aria-selected="true"] .quick-path { color: color-mix(in srgb, var(--text-muted) 62%, var(--text-primary)); }
 .quick-row[aria-selected="true"]::before {
   content: ""; position: absolute; left: 0; top: 18%; bottom: 18%;
