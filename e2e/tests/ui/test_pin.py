@@ -16,7 +16,7 @@ from harness import files
 from harness import procmem
 from harness.app import wait_until
 from tests.cli.conftest import Tl
-from tests.ui.test_quick import (HIDDEN_MEM_MB, IDLE_CPU_PCT, build_library, enable_quick, is_visible,
+from tests.ui.test_quick import (HIDDEN_MEM_MB, IDLE_CPU_PCT, build_library, enable_quick, is_visible, measure_idle,
                                  quick_page, quick_pages, summon)
 
 # 钉住视图开启（浮动窗显示一个 300 项的柜）且快速搜索未开：常驻私有内存增量沿用快速窗隐藏常驻同档阈值
@@ -222,19 +222,7 @@ def test_pin_resident_memory_and_idle_cpu(sandbox, app_factory):
 
     def idle(label: str) -> dict:
         time.sleep(10)
-        t0, c0 = time.time(), procmem.tree_cpu(pid)
-        time.sleep(PIN_IDLE_WINDOW_S)
-        t1, c1 = time.time(), procmem.tree_cpu(pid)
-        rows = [{"pid": p, "exe": exe, "cpu_s": round(s - c0[p][1], 3)} for p, (exe, s) in c1.items() if p in c0]
-        total = sum(r["cpu_s"] for r in rows)
-        top = sorted(rows, key=lambda r: -r["cpu_s"])[:6]
-        # 采样窗口之后再查角色（WebView2 browser / renderer / gpu / utility），定位空闲 CPU 落在哪个子进程
-        role = procmem.roles([r["pid"] for r in top])
-        for r in top:
-            r["role"] = role.get(r["pid"], "?")
-        return {"state": label, "window_s": round(t1 - t0, 1), "cpu_s": round(total, 3),
-                "avg_pct_one_core": round(total / (t1 - t0) * 100, 3),
-                "processes": top}
+        return {"state": label, **measure_idle(app, PIN_IDLE_WINDOW_S)}
 
     idle_float = idle("float-visible")
     pin_settings(app, mode="drawer")

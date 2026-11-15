@@ -127,6 +127,7 @@ class Guard:
     def __init__(self, root, interval: float = 0.01):
         self.root, self.interval = str(root).lower().rstrip("\\") + "\\", interval
         self.stop_evt = threading.Event()
+        self.paused = threading.Event()   # 空闲测量窗口里暂停轮询（诊断开关）
         self.fg0 = int(user32.GetForegroundWindow() or 0)
         self.violations: list[str] = []   # 可见且在屏幕内的采样
         self.fg_stolen = 0                 # 前台窗口变成本进程窗口的采样数
@@ -137,6 +138,9 @@ class Guard:
 
     def _run(self):
         while not self.stop_evt.is_set():
+            if self.paused.is_set():
+                time.sleep(self.interval)
+                continue
             try:
                 mine = _windows_under(self.root)
                 fg = int(user32.GetForegroundWindow() or 0)
