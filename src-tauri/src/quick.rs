@@ -347,30 +347,6 @@ pub(crate) fn restore_controller_if_shown(window: &WebviewWindow) {
     let _ = window;
 }
 
-/// 让 WebView2 controller 的可见性跟 HWND 的真实状态一致：HWND 隐藏 / 最小化 → `SetIsVisible(false)`，
-/// 否则 `true`。判断放在 WebView 线程回调里（与 [`restore_controller_if_shown`] 同一模式），
-/// 按投递顺序执行，排在前面的隐藏不会盖掉之后的显示。钉住视图的原生 SW_HIDE / SW_SHOWNOACTIVATE 后调用：
-/// 只隐藏 HWND 时 WebView2 仍认为自己可见，收起的抽屉页面曾以约 175 Hz 持续合成（DESIGN §19）。
-pub(crate) fn sync_controller_to_hwnd(window: &WebviewWindow) {
-    #[cfg(windows)]
-    {
-        let Ok(h) = window.hwnd() else {
-            return;
-        };
-        let hwnd = h.0 as isize;
-        let _ = window.with_webview(move |webview| {
-            use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
-            // SAFETY：hwnd 来自本进程窗口；回调在 WebView 所在线程，controller 在回调期间有效
-            let shown = unsafe { IsWindowVisible(hwnd as _) != 0 && IsIconic(hwnd as _) == 0 };
-            if let Err(e) = unsafe { webview.controller().SetIsVisible(shown) } {
-                log::warn!("[pin] SetIsVisible({shown}) 失败：{e}");
-            }
-        });
-    }
-    #[cfg(not(windows))]
-    let _ = window;
-}
-
 pub fn destroy_window(app: &AppHandle) {
     // 作废延后开玻璃的任务，避免 50ms 后 apply_glass 与 destroy 抢同一窗口。
     VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
