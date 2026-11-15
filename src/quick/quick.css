@@ -31,6 +31,20 @@ html[data-acrylic] .quick-shell::before,
 html[data-acrylic] .pin-shell::before {
   background-color: var(--glass-bg);
 }
+/* 浅色镜面：上沿一段镜面高光渐变、底部一点回光，读成有厚度的玻璃，而不是一张平的磨砂卡片。
+   只是静态渐变层，不进滤镜、不随查询重绘。 */
+html[data-scheme="light"][data-acrylic] .quick-shell::before,
+html[data-scheme="light"][data-acrylic] .pin-shell::before {
+  background-image:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--glass-bg-strong) 72%, transparent) 0,
+      color-mix(in srgb, var(--glass-bg-strong) 26%, transparent) 2.75rem,
+      transparent 40%,
+      transparent 80%,
+      color-mix(in srgb, var(--glass-bg-strong) 16%, transparent) 100%),
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-primary) 3.5%, transparent) 0.7px, transparent 0);
+  background-size: 100% 100%, 4px 4px;
+}
 .quick-shell > *, .pin-shell > * { position: relative; z-index: 1; }
 .quick-search { position: relative; flex-shrink: 0; padding-bottom: var(--spacing-sm);
   border-bottom: var(--border-width, 1px) solid var(--border-subtle); }
