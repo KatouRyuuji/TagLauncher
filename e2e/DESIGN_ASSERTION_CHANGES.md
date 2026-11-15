@@ -137,10 +137,21 @@
 - **视觉基线**：无。
 - **性能**：浮动窗常驻时检测唤醒约降到 1/5。
 
-## 19. 收起的抽屉不渲染：钉住视图隐藏时同步 WebView2 可见性 + 合成线程唤醒回归检查
+## 19. 收起的抽屉不渲染：合成循环的真正原因是 530150f，回退；保留合成线程唤醒回归检查
 
-- **原因**：693bec8（E2E 43714668793，CDP 已在测量窗口断开）两个跑空闲的 job 里，抽屉收起的 120 s 窗口内钉住页面的渲染进程 `Compositor` 约 21 300 次、GPU `VizCompositorThread` 19 000–21 000 次唤醒（约 175 Hz），debug job 因此 1.029%。健康时这两项约 ≤1000。宿主主线程同期只有约 330 次唤醒（把手没有重绘循环）。
-- **根因**：钉住视图的隐藏只用原生 `SW_HIDE`（`pin::hide_window`），从不告诉 WebView2；搜索表面的隐藏和主窗收托盘（530150f）都会 `SetIsVisible(false)`，钉住表面漏了。HWND 隐藏而 controller 仍「可见」时，Chromium 不进入隐藏状态，合成器可以在没有 vsync 节流的情况下持续出帧。
-- **改动**（`pin.rs` / `quick.rs`）：新增 `quick::sync_controller_to_hwnd`，在 WebView 线程回调里按 HWND 真实状态（可见且未最小化）设 `SetIsVisible`，与 530150f 同一按投递顺序的模式。`pin::hide_window`（抽屉收起、全屏隐藏、切到抽屉、关闭钉住）在 `SW_HIDE` 后调用它 → false；`pin::show_no_activate`（展开、浮动窗显示）在 `SW_SHOWNOACTIVATE` 后、展开动画前调用 → true（展开结束的 `sync_webview_bounds` 仍会再设一次 true）。
-- **页面侧排查**：钉住页面没有 rAF 循环（`QuickApp` 的 rAF 都是唤出时的一次性回调）、没有无限动画（`quick-pop` 只用于浮动窗且有限次，抽屉 `animation: none`，隐藏时 `html[data-quick-hidden]` 再关一次），过渡都是有限时长；展开/收起动画在 Rust 工作线程里 6 步 `SetWindowPos`，有代号守卫，必定结束。把手是独立的无属主分层窗口，只在显示和 `WM_PAINT` 时 `UpdateLayeredWindow`，不触碰 WebView。
-- **回归检查**（`test_pin.py`，`measure_idle` 新增 `compositor_wakeups`）：抽屉收起窗口内渲染 `Compositor`、GPU `VizCompositorThread` 各自 ≤ 5000 次（健康基线约 1000 的 5 倍）。这是诊断性断言，防止隐藏页面出帧悄悄回来；1% 空闲上限不变。
+- **现象**：693bec8 / 4fdc124（CDP 已在测量窗口断开）抽屉收起的 120 s 窗口内，渲染进程 `Compositor` 约 19 600–23 600 次、GPU `VizCompositorThread` 约 18 100–21 000 次唤醒（约 190 Hz），偶尔浮动窗窗口也出现（6 000–22 000 次）。空闲 CPU 因此 1.04–1.5%。健康时两项都在几十次（最多 389）。`CrRendererMain` 同期只有约 280 次唤醒：页面主线程不在工作。
+- **更正**：原先这里写的根因（钉住视图隐藏不调 `SetIsVisible(false)`）是错的。`pin::hide_window` 经 `clear_glass_effect` 早就 `SetIsVisible(false)`，显示经 `native_show` / `apply_glass_effect` 设回 true。据此加的 7bb7783 是冗余的，已回退（d916423）。
+- **二分**（临时分支 Idle diag，release 构建，每 job 跑两次钉住空闲用例，CDP 断开；表内为抽屉收起的出循环次数 / 样本数）：
+  - 健康：76aa205 0/4、98b4169（选中叠色）0/2、735c608（探头截断）0/2。
+  - 出问题：530150f 2/2（其中一次浮动窗也在循环）、96fc4c5 1/2、4fdc124 3/4。
+  - CSS 无关：4fdc124 去掉 ca51b3c 细滚动条 1/2、去掉 98b4169 color-mix 叠色 1/2。
+  - 回退验证：4fdc124 上回退 530150f + 7bb7783 0/6（43724166373），只把获焦恢复改回无条件 0/4（43726031760）。
+- **机理**（43726031760 追踪轮，记录每个 Focused 事件和每次 `SetIsVisible` 回调时的 HWND 状态）：
+  - 这条用例里主窗 HWND 始终不可见（`IsWindowVisible=0`，未最小化，未 cloak）。它仍会收到 `Focused(true)`：启动时一次，收托盘后焦点回弹又有 2–3 次，都在 `hide` 后 5 ms 内。
+  - 0971b85 原本的写法：获焦时无条件 `SetIsVisible(true)`。收托盘时的 false 随即被撤销，空闲期间主窗 controller 处于「可见」状态，HWND 隐藏，由 Chromium 的遮挡推断处理。实测 0 次循环。
+  - 530150f 给获焦恢复加了「HWND 真可见」判断，这些事件都被跳过，主窗 controller 停在 `IsVisible(false)`。此后共享的渲染进程 / GPU 进程间歇进入约 190 Hz 的合成循环（追踪轮 4fdc124 7/8 个样本）。
+  - 循环时页面里没有运行中的动画：`document.getAnimations()` 中 running 的为 0。主窗和钉住页面的 `document.visibilityState` 都还是 `visible`。所以循环不是页面内容驱动的，而是 WebView2 / Chromium 在「controller 不可见 + HWND 隐藏」组合下的合成器行为。具体是哪段 Chromium 代码没有定位到。
+- **改动**：回退 530150f（3cc9c06），回到 0971b85 的行为：收托盘设 false，获焦恢复 true。
+  - 试过的替代方案：按 HWND 真实状态（可见、未最小化、未 cloak）同步主窗 controller，并在隐藏页暂停 CSS 动画。它在 4 个 job 里都让主窗页面停在 `about:blank`，启动失败（43730494755），而且动画假设已被上面的 0 个运行中动画否定，所以没有采用。
+- **0971b85 的空闲收益**：收托盘仍调用 `SetIsVisible(false)`。回退后 E2E 各 job 的快速窗隐藏、浮动窗、抽屉收起空闲都在 1% 以下（见本 PR 的 E2E 记录）。
+- **回归检查**（`test_pin.py`，`measure_idle` 的 `compositor_wakeups`，4fdc124 加入，不变）：抽屉收起窗口内渲染 `Compositor`、GPU `VizCompositorThread` 各 ≤ 5000 次。这是诊断性断言，防止隐藏页面出帧悄悄回来。1% 空闲上限不变。
