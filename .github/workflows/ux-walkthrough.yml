@@ -42,6 +42,8 @@ jobs:
           path: handle-shots/
 
   record:
+    # 定向采集轮：只跑 handle-shots，不录完整走查（下一轮全量走查时去掉）
+    if: false
     runs-on: windows-latest
     timeout-minutes: 70
     steps:
