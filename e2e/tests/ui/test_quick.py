@@ -513,15 +513,23 @@ def measure_idle(app, window_s: float) -> dict:
     for r in rows:
         r["role"] = role.get(r["pid"], "?")
     wake: dict[str, int] = {}
+    # 合成线程唤醒：渲染进程 Compositor + GPU 进程 VizCompositorThread（页面在出帧时两者同步飙升）
+    comp = {"renderer": 0, "gpu": 0}
     for tid, a in th1.items():
         b = th0.get(tid)
         if b and b["pid"] == a["pid"]:
-            k = f"{role.get(a['pid'], '?')}:{a['pid']}"
+            r = role.get(a["pid"], "?")
+            k = f"{r}:{a['pid']}"
             wake[k] = wake.get(k, 0) + a["cs"] - b["cs"]
+            if r == "renderer" and a["name"] == "Compositor":
+                comp["renderer"] += a["cs"] - b["cs"]
+            elif r == "gpu-process" and a["name"] == "VizCompositorThread":
+                comp["gpu"] += a["cs"] - b["cs"]
     return {"window_s": round(t1 - t0, 1), "cpu_s": round(total, 3),
             "avg_pct_one_core": round(total / (t1 - t0) * 100, 3), "cdp_attached": attached,
             "processes": sorted(rows, key=lambda r: -r["cpu_s"]),
             "wakeups_by_process": dict(sorted(wake.items(), key=lambda kv: -kv[1])),
+            "compositor_wakeups": comp,
             "threads": procmem.thread_delta(th0, th1, role, top=20)}
 
 

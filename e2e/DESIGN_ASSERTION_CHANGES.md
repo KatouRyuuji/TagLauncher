@@ -136,3 +136,11 @@
 - **改动**（`data_sync.rs` / `pin.rs`）：按屏幕上的窗口选间隔：主窗或快速搜索可见 100ms（主窗 0.3 s 反映目标不变，E-DS-* 不受影响）；只有钉住视图（浮动窗或展开的抽屉）500ms；都不可见 2 s。仅钉住视图时每 5 轮（2.5 s）重新查一次可见性；获焦 / 唤出仍立即检测。
 - **视觉基线**：无。
 - **性能**：浮动窗常驻时检测唤醒约降到 1/5。
+
+## 19. 收起的抽屉不渲染：钉住视图隐藏时同步 WebView2 可见性 + 合成线程唤醒回归检查
+
+- **原因**：693bec8（E2E 43714668793，CDP 已在测量窗口断开）两个跑空闲的 job 里，抽屉收起的 120 s 窗口内钉住页面的渲染进程 `Compositor` 约 21 300 次、GPU `VizCompositorThread` 19 000–21 000 次唤醒（约 175 Hz），debug job 因此 1.029%。健康时这两项约 ≤1000。宿主主线程同期只有约 330 次唤醒（把手没有重绘循环）。
+- **根因**：钉住视图的隐藏只用原生 `SW_HIDE`（`pin::hide_window`），从不告诉 WebView2；搜索表面的隐藏和主窗收托盘（530150f）都会 `SetIsVisible(false)`，钉住表面漏了。HWND 隐藏而 controller 仍「可见」时，Chromium 不进入隐藏状态，合成器可以在没有 vsync 节流的情况下持续出帧。
+- **改动**（`pin.rs` / `quick.rs`）：新增 `quick::sync_controller_to_hwnd`，在 WebView 线程回调里按 HWND 真实状态（可见且未最小化）设 `SetIsVisible`，与 530150f 同一按投递顺序的模式。`pin::hide_window`（抽屉收起、全屏隐藏、切到抽屉、关闭钉住）在 `SW_HIDE` 后调用它 → false；`pin::show_no_activate`（展开、浮动窗显示）在 `SW_SHOWNOACTIVATE` 后、展开动画前调用 → true（展开结束的 `sync_webview_bounds` 仍会再设一次 true）。
+- **页面侧排查**：钉住页面没有 rAF 循环（`QuickApp` 的 rAF 都是唤出时的一次性回调）、没有无限动画（`quick-pop` 只用于浮动窗且有限次，抽屉 `animation: none`，隐藏时 `html[data-quick-hidden]` 再关一次），过渡都是有限时长；展开/收起动画在 Rust 工作线程里 6 步 `SetWindowPos`，有代号守卫，必定结束。把手是独立的无属主分层窗口，只在显示和 `WM_PAINT` 时 `UpdateLayeredWindow`，不触碰 WebView。
+- **回归检查**（`test_pin.py`，`measure_idle` 新增 `compositor_wakeups`）：抽屉收起窗口内渲染 `Compositor`、GPU `VizCompositorThread` 各自 ≤ 5000 次（健康基线约 1000 的 5 倍）。这是诊断性断言，防止隐藏页面出帧悄悄回来；1% 空闲上限不变。
