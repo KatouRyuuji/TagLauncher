@@ -14,12 +14,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { label: 'trace-a', sha: '4fdc124', variant: 'trace' }
-          - { label: 'trace-b', sha: '4fdc124', variant: 'trace' }
-          - { label: 'trace-c', sha: '4fdc124', variant: 'trace' }
-          - { label: 'trace-d', sha: '4fdc124', variant: 'trace' }
-          - { label: 'trace-rev530-a', sha: '4fdc124', variant: 'trace-rev530' }
-          - { label: 'trace-rev530-b', sha: '4fdc124', variant: 'trace-rev530' }
+          - { label: 'anim-4fdc124-a', sha: '4fdc124', variant: '' }
+          - { label: 'anim-4fdc124-b', sha: '4fdc124', variant: '' }
+          - { label: 'cand-a', sha: '4fdc124', variant: 'cand' }
+          - { label: 'cand-b', sha: '4fdc124', variant: 'cand' }
+          - { label: 'cand-c', sha: '4fdc124', variant: 'cand' }
+          - { label: 'cand-d', sha: '4fdc124', variant: 'cand' }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,6 +30,7 @@ jobs:
           set -e
           cp -r e2e /tmp/e2e-harness
           cp .github/diag/vis-trace.patch /tmp/vt.patch
+          cp .github/diag/candidate.patch /tmp/cand.patch
           git checkout -q ${{ matrix.sha }}
           rm -rf e2e && cp -r /tmp/e2e-harness e2e
           if [ "${{ matrix.variant }}" = "noscroll" ]; then
@@ -52,6 +53,10 @@ jobs:
           if [ "${{ matrix.variant }}" = "trace-rev530" ]; then
             sed -i 's/quick::restore_controller_if_shown(&w);/quick::set_controller_visible(\&w, true);/' src-tauri/src/lib.rs
             grep -n "set_controller_visible(&w, true)" src-tauri/src/lib.rs
+          fi
+          if [ "${{ matrix.variant }}" = "cand" ]; then
+            git apply /tmp/cand.patch
+            grep -n "install_main_visibility_hook" src-tauri/src/lib.rs
           fi
           git status --short
           git log --oneline -1

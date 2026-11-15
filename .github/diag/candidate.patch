@@ -1,0 +1,286 @@
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index 47c1750..3fc949b 100644
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -63,7 +63,7 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com"
+ # 用关联程序打开对象（ShellExecuteW，替代经 cmd.exe 的启动，杜绝命令注入），
+ # 以及视频等内容的系统缩略图提取（IShellItemImageFactory + GDI+ 落盘 PNG）、
+ # 「复制文件」（CF_HDROP 剪贴板）与「打开方式…」（SHOpenWithDialog）。
+-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_LibraryLoader", "Win32_Storage_FileSystem", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Graphics_GdiPlus", "Win32_UI_Controls", "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Diagnostics_Debug", "Win32_System_Registry", "Win32_System_Threading"] }
++windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_LibraryLoader", "Win32_Storage_FileSystem", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Graphics_GdiPlus", "Win32_UI_Controls", "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Diagnostics_Debug", "Win32_System_Registry", "Win32_System_Threading", "Win32_Graphics_Dwm"] }
+ 
+ # 发布构建优化：LTO + 单代码生成单元提升运行性能，strip 移除调试符号显著减小二进制体积。
+ # 不启用 panic="abort"：连接层依赖 Mutex 锁中毒恢复（panic 展开），abort 会改变该容错行为。
+diff --git a/src-tauri/src/desktop.rs b/src-tauri/src/desktop.rs
+index f899eee..282b591 100644
+--- a/src-tauri/src/desktop.rs
++++ b/src-tauri/src/desktop.rs
+@@ -445,21 +445,119 @@ pub fn toggle_main_window(app: &AppHandle) {
+     }
+ }
+ 
+-/// 主窗收到托盘：隐藏 HWND，并把 WebView2 controller 设为不可见。
+-/// Tauri 的 `hide` 只隐藏窗口，WebView2 仍以为自己可见，页面里的无限动画（缩略图占位脉冲、
+-/// 加载转圈）和光标闪烁会继续合成，只能靠 Chromium 的遮挡推断才停。显式 `SetIsVisible(false)`
+-/// 让页面进入 hidden：rAF 与 CSS 动画停止、渲染降频（WebView2 文档推荐的隐藏 / 最小化做法）。
++/// 主窗 WebView2 的可见性只由 HWND 的真实状态决定：显示、未最小化、未被 DWM cloak 时可见，否则不可见。
++/// 判断放在 WebView 线程回调里，与其它 `SetIsVisible` 按投递顺序执行，读到的是执行时刻的 HWND 状态。
++/// 同时给页面打 / 去 `data-window-hidden`，由 CSS 暂停全部 CSS 动画（DESIGN §19）：
++/// WebView2 `SetIsVisible(false)` 后页面的 `document.visibilityState` 仍是 visible，
++/// 合成线程驱动的无限动画（骨架 shimmer、加载转圈）没有显示器节拍可跟，渲染 Compositor 与
++/// GPU VizCompositorThread 会以约 190 Hz 空转。
++/// 显示 / 隐藏 / 最小化 / 还原由主窗子类（[`install_main_visibility_hook`]）在
++/// `WM_WINDOWPOSCHANGED` / `WM_SIZE` 上触发，收托盘、唤出与获焦失焦也各调一次（幂等）。
++pub fn sync_main_webview(window: &tauri::WebviewWindow) {
++    #[cfg(windows)]
++    {
++        let Ok(h) = window.hwnd() else {
++            return;
++        };
++        let hwnd = h.0 as isize;
++        let w = window.clone();
++        let _ = window.with_webview(move |webview| {
++            let shown = hwnd_shown(hwnd);
++            // SAFETY：回调在 WebView 所在线程，controller 在回调期间有效
++            if let Err(e) = unsafe { webview.controller().SetIsVisible(shown) } {
++                log::warn!("[desktop] 主窗 SetIsVisible({shown}) 失败：{e}");
++            }
++            let js = if shown {
++                "document.documentElement.removeAttribute('data-window-hidden');"
++            } else {
++                "document.documentElement.setAttribute('data-window-hidden','');"
++            };
++            let _ = w.eval(js);
++        });
++    }
++    #[cfg(not(windows))]
++    let _ = window;
++}
++
++/// HWND 真的在屏幕上：可见、未最小化、未被 DWM cloak（虚拟桌面切换 / 系统隐藏）。
++#[cfg(windows)]
++fn hwnd_shown(hwnd: isize) -> bool {
++    use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
++    use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
++    // SAFETY：hwnd 来自本进程窗口；DWMWA_CLOAKED 输出为 4 字节 DWORD
++    unsafe {
++        if IsWindowVisible(hwnd as _) == 0 || IsIconic(hwnd as _) != 0 {
++            return false;
++        }
++        let mut cloaked: u32 = 0;
++        let hr = DwmGetWindowAttribute(
++            hwnd as _,
++            DWMWA_CLOAKED as u32,
++            &mut cloaked as *mut u32 as *mut _,
++            std::mem::size_of::<u32>() as u32,
++        );
++        hr != 0 || cloaked == 0
++    }
++}
++
++/// 主窗子类：HWND 显示 / 隐藏 / 最小化 / 还原时同步 WebView2 可见性。
++/// 前端 `show()`、Tauri `hide()`、任务栏最小化都不经过本文件，只有窗口消息能覆盖所有路径。
++#[cfg(windows)]
++pub fn install_main_visibility_hook(window: &tauri::WebviewWindow) {
++    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
++    use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
++    use windows_sys::Win32::UI::WindowsAndMessaging::{
++        SWP_HIDEWINDOW, SWP_SHOWWINDOW, WINDOWPOS, WM_SIZE, WM_WINDOWPOSCHANGED,
++    };
++    static MAIN: OnceLock<tauri::WebviewWindow> = OnceLock::new();
++    unsafe extern "system" fn proc(
++        hwnd: HWND,
++        msg: u32,
++        wparam: WPARAM,
++        lparam: LPARAM,
++        _id: usize,
++        _data: usize,
++    ) -> LRESULT {
++        let changed = match msg {
++            // SAFETY：WM_WINDOWPOSCHANGED 的 lparam 指向 WINDOWPOS
++            WM_WINDOWPOSCHANGED => unsafe {
++                (*(lparam as *const WINDOWPOS)).flags & (SWP_SHOWWINDOW | SWP_HIDEWINDOW) != 0
++            },
++            WM_SIZE => true,
++            _ => false,
++        };
++        if changed {
++            if let Some(w) = MAIN.get() {
++                sync_main_webview(w);
++            }
++        }
++        // SAFETY：子类过程必须把消息交给下一个过程
++        unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
++    }
++    let Ok(h) = window.hwnd() else {
++        return;
++    };
++    if MAIN.set(window.clone()).is_err() {
++        return;
++    }
++    // SAFETY：hwnd 是本线程创建的主窗；proc 为 'static 函数
++    unsafe {
++        SetWindowSubclass(h.0 as _, Some(proc), 0x544c_5649, 0);
++    }
++}
++
++/// 主窗收到托盘：隐藏 HWND，再按 HWND 真实状态同步 WebView2（见 [`sync_main_webview`]）。
+ pub fn hide_main_to_tray(window: &tauri::WebviewWindow) {
+     let _ = window.hide();
+-    crate::quick::set_controller_visible(window, false);
++    sync_main_webview(window);
+ }
+ 
+ pub fn show_main_window(app: &AppHandle) {
+     if let Some(window) = app.get_webview_window("main") {
+-        crate::quick::set_controller_visible(&window, true);
+         let _ = window.unminimize();
+         let _ = window.show();
+         let _ = window.set_focus();
++        sync_main_webview(&window);
+     }
+     // 唤出即检测外部写入：隐藏期间检测间隔较长，唤出时不等下一轮
+     crate::data_sync::poke();
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 465d286..01ecf79 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -247,11 +247,12 @@ pub fn run() {
+                 if window.label() == "main" || window.label() == quick::QUICK_LABEL {
+                     data_sync::poke();
+                 }
+-                // 主窗经任何路径重新显示并获焦（含前端 show）：确保 WebView2 恢复可见（幂等）。
+-                // 只在 HWND 真的可见时恢复，隐藏 / 收托盘前后的焦点事件不能把隐藏的主窗标成可见。
++            }
++            // 主窗焦点变化：按 HWND 真实状态同步 WebView2 可见性（幂等，DESIGN §19）
++            if let tauri::WindowEvent::Focused(_) = event {
+                 if window.label() == "main" {
+                     if let Some(w) = window.app_handle().get_webview_window("main") {
+-                        quick::restore_controller_if_shown(&w);
++                        desktop::sync_main_webview(&w);
+                     }
+                 }
+             }
+@@ -295,6 +296,7 @@ pub fn run() {
+                 #[cfg(windows)]
+                 {
+                     enforce_min_content_size(&window);
++                    desktop::install_main_visibility_hook(&window);
+                     let w = window.clone();
+                     window.on_window_event(move |e| {
+                         if matches!(e, tauri::WindowEvent::ScaleFactorChanged { .. }) {
+diff --git a/src-tauri/src/pin.rs b/src-tauri/src/pin.rs
+index 0b4c994..372a70d 100644
+--- a/src-tauri/src/pin.rs
++++ b/src-tauri/src/pin.rs
+@@ -580,8 +580,6 @@ fn hide_window(window: &WebviewWindow) {
+     {
+         let _ = window.hide();
+     }
+-    // 只隐藏 HWND 不够：WebView2 仍认为可见，收起的抽屉会继续合成（DESIGN §19）
+-    crate::quick::sync_controller_to_hwnd(window);
+ }
+ 
+ /// 显示但不抢前台
+@@ -595,8 +593,6 @@ fn show_no_activate(window: &WebviewWindow) {
+             unsafe {
+                 ShowWindow(h.0 as _, SW_SHOWNOACTIVATE);
+             }
+-            // 展开动画开始前恢复可见（排在任何仍在队列里的隐藏之后）
+-            crate::quick::sync_controller_to_hwnd(window);
+             crate::quick::apply_glass_effect(window);
+             return;
+         }
+diff --git a/src-tauri/src/quick.rs b/src-tauri/src/quick.rs
+index aae1d55..5d37b0d 100644
+--- a/src-tauri/src/quick.rs
++++ b/src-tauri/src/quick.rs
+@@ -320,57 +320,6 @@ pub(crate) fn set_controller_visible(window: &WebviewWindow, visible: bool) {
+     let _ = (window, visible);
+ }
+ 
+-/// 获焦兜底用：只在 HWND 此刻确实可见、未最小化时把 controller 设回可见。
+-/// 判断放在 WebView 线程的回调里，和收托盘的 `SetIsVisible(false)` 按投递顺序执行：
+-/// 隐藏前后排队的 Focused(true) 不会在 HWND 已隐藏时把 WebView2 重新标成可见
+-/// （那样 Chromium 不再按遮挡降频，隐藏的主窗会持续合成）。
+-pub(crate) fn restore_controller_if_shown(window: &WebviewWindow) {
+-    #[cfg(windows)]
+-    {
+-        let Ok(h) = window.hwnd() else {
+-            return;
+-        };
+-        let hwnd = h.0 as isize;
+-        let _ = window.with_webview(move |webview| {
+-            use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
+-            // SAFETY：hwnd 来自本进程窗口；回调在 WebView 所在线程，controller 在回调期间有效
+-            let shown = unsafe { IsWindowVisible(hwnd as _) != 0 && IsIconic(hwnd as _) == 0 };
+-            if !shown {
+-                return;
+-            }
+-            if let Err(e) = unsafe { webview.controller().SetIsVisible(true) } {
+-                log::warn!("[quick] SetIsVisible(true) 失败：{e}");
+-            }
+-        });
+-    }
+-    #[cfg(not(windows))]
+-    let _ = window;
+-}
+-
+-/// 让 WebView2 controller 的可见性跟 HWND 的真实状态一致：HWND 隐藏 / 最小化 → `SetIsVisible(false)`，
+-/// 否则 `true`。判断放在 WebView 线程回调里（与 [`restore_controller_if_shown`] 同一模式），
+-/// 按投递顺序执行，排在前面的隐藏不会盖掉之后的显示。钉住视图的原生 SW_HIDE / SW_SHOWNOACTIVATE 后调用：
+-/// 只隐藏 HWND 时 WebView2 仍认为自己可见，收起的抽屉页面曾以约 175 Hz 持续合成（DESIGN §19）。
+-pub(crate) fn sync_controller_to_hwnd(window: &WebviewWindow) {
+-    #[cfg(windows)]
+-    {
+-        let Ok(h) = window.hwnd() else {
+-            return;
+-        };
+-        let hwnd = h.0 as isize;
+-        let _ = window.with_webview(move |webview| {
+-            use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
+-            // SAFETY：hwnd 来自本进程窗口；回调在 WebView 所在线程，controller 在回调期间有效
+-            let shown = unsafe { IsWindowVisible(hwnd as _) != 0 && IsIconic(hwnd as _) == 0 };
+-            if let Err(e) = unsafe { webview.controller().SetIsVisible(shown) } {
+-                log::warn!("[pin] SetIsVisible({shown}) 失败：{e}");
+-            }
+-        });
+-    }
+-    #[cfg(not(windows))]
+-    let _ = window;
+-}
+-
+ pub fn destroy_window(app: &AppHandle) {
+     // 作废延后开玻璃的任务，避免 50ms 后 apply_glass 与 destroy 抢同一窗口。
+     VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
+diff --git a/src/index.css b/src/index.css
+index da32d4a..c8beec6 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -1628,3 +1628,11 @@ html.theme-switching * {
+     animation: app-drawer-in var(--transition-normal);
+   }
+ }
++
++/* 主窗 HWND 隐藏 / 最小化 / cloak 时（desktop::sync_main_webview 打标）暂停全部 CSS 动画：
++   WebView2 SetIsVisible(false) 不会让页面变 hidden，合成线程动画没有显示器节拍会空转（DESIGN §19）。 */
++html[data-window-hidden] *,
++html[data-window-hidden] *::before,
++html[data-window-hidden] *::after {
++  animation-play-state: paused !important;
++}
+diff --git a/src/quick/quick.css b/src/quick/quick.css
+index 04fb3a9..cd1e8fd 100644
+--- a/src/quick/quick.css
++++ b/src/quick/quick.css
+@@ -246,6 +246,9 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
+ @media (prefers-reduced-motion: reduce) {
+   *, *::before, *::after { animation: none !important; transition: none !important; }
+ }
+-/* 窗口隐藏：停动画。 */
++/* 窗口隐藏：停动画。SetIsVisible(false) 不会让页面变 hidden，其余无限动画也要暂停（DESIGN §19）。 */
+ html[data-quick-hidden] .quick-shell,
+ html[data-quick-hidden] .pin-shell { animation: none; }
++html[data-quick-hidden] *,
++html[data-quick-hidden] *::before,
++html[data-quick-hidden] *::after { animation-play-state: paused !important; }

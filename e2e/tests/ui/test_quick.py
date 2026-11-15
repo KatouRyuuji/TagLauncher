@@ -502,7 +502,7 @@ def measure_idle(app, window_s: float) -> dict:
             for pg in ctx.pages:
                 url = pg.url or ""
                 key = ("quick" + url.split("quick.html", 1)[1][:30]) if "quick.html" in url else ("main" if url.startswith("http://tauri.localhost") else url[:40])
-                visibility[key] = pg.evaluate("document.visibilityState")
+                visibility[key] = pg.evaluate("""() => document.visibilityState + ' hidden-attr=' + document.documentElement.hasAttribute('data-window-hidden') + '/' + document.documentElement.hasAttribute('data-quick-hidden') + ' anims=' + JSON.stringify(document.getAnimations().filter(a => a.playState === 'running').slice(0, 8).map(a => (a.animationName || a.constructor.name) + '@' + String((a.effect && a.effect.target && (a.effect.target.className && a.effect.target.className.baseVal !== undefined ? a.effect.target.className.baseVal : a.effect.target.className)) || '').slice(0, 50))) + ' n=' + document.getAnimations().filter(a => a.playState === 'running').length""")
     except Exception as e:  # 诊断不影响测量
         visibility["error"] = str(e)[:120]
     if not attached:
