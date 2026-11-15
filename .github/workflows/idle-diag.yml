@@ -15,13 +15,12 @@ jobs:
       matrix:
         include:
           - { label: '76aa205', sha: '76aa205b9bde5870fb438aa15befa8fbffc7ab27', variant: '' }
-          - { label: '98b4169', sha: '98b4169', variant: '' }
-          - { label: '735c608', sha: '735c608', variant: '' }
-          - { label: '530150f', sha: '530150f', variant: '' }
-          - { label: '96fc4c5', sha: '96fc4c5', variant: '' }
           - { label: '4fdc124', sha: '4fdc124', variant: '' }
-          - { label: '4fdc124-noscroll', sha: '4fdc124', variant: 'noscroll' }
-          - { label: '4fdc124-nomix', sha: '4fdc124', variant: 'nomix' }
+          - { label: '4fdc124-rev530-a', sha: '4fdc124', variant: 'rev530' }
+          - { label: '4fdc124-rev530-b', sha: '4fdc124', variant: 'rev530' }
+          - { label: '4fdc124-rev530-7bb-a', sha: '4fdc124', variant: 'rev530-7bb' }
+          - { label: '4fdc124-rev530-7bb-b', sha: '4fdc124', variant: 'rev530-7bb' }
+          - { label: '4fdc124-rev530-7bb-c', sha: '4fdc124', variant: 'rev530-7bb' }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,6 +40,13 @@ jobs:
             git show 98b4169 -- src/quick/quick.css | git apply -R
             grep -n "glass-bg-strong));" src/quick/quick.css
           fi
+          if [ "${{ matrix.variant }}" = "rev530" ]; then
+            git -c user.name=diag -c user.email=diag@local revert --no-commit 530150f
+          fi
+          if [ "${{ matrix.variant }}" = "rev530-7bb" ]; then
+            git -c user.name=diag -c user.email=diag@local revert --no-commit 7bb7783 530150f
+          fi
+          git status --short
           git log --oneline -1
       - uses: actions/setup-node@v4
         with:
