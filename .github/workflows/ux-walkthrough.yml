@@ -13,6 +13,34 @@ permissions:
   actions: read
 
 jobs:
+  # 探头文字离屏渲染（DirectWrite）：1.0 / 1.25 / 1.5 × 浅 / 深 × 休息 / 悬停 PNG。
+  # runner 系统 DPI 固定 96，真实 125/150% 无法在原生把手上截到，用离屏单测的输出代替。
+  handle-shots:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Render handle text offscreen
+        shell: pwsh
+        run: |
+          node scripts/prepare-cli-bin.mjs --placeholder
+          node scripts/prepare-win11-menu.mjs --placeholder
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $env:TL_HANDLE_SHOTS_DIR = "$PWD/handle-shots"
+          cargo test --manifest-path src-tauri/Cargo.toml --lib handle_text -- --nocapture
+          Get-ChildItem handle-shots | Format-Table Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: handle-shots
+          path: handle-shots/
+
   record:
     runs-on: windows-latest
     timeout-minutes: 70
