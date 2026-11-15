@@ -227,9 +227,14 @@ def test_pin_resident_memory_and_idle_cpu(sandbox, app_factory):
         t1, c1 = time.time(), procmem.tree_cpu(pid)
         rows = [{"pid": p, "exe": exe, "cpu_s": round(s - c0[p][1], 3)} for p, (exe, s) in c1.items() if p in c0]
         total = sum(r["cpu_s"] for r in rows)
+        top = sorted(rows, key=lambda r: -r["cpu_s"])[:6]
+        # 采样窗口之后再查角色（WebView2 browser / renderer / gpu / utility），定位空闲 CPU 落在哪个子进程
+        role = procmem.roles([r["pid"] for r in top])
+        for r in top:
+            r["role"] = role.get(r["pid"], "?")
         return {"state": label, "window_s": round(t1 - t0, 1), "cpu_s": round(total, 3),
                 "avg_pct_one_core": round(total / (t1 - t0) * 100, 3),
-                "processes": sorted(rows, key=lambda r: -r["cpu_s"])[:6]}
+                "processes": top}
 
     idle_float = idle("float-visible")
     pin_settings(app, mode="drawer")

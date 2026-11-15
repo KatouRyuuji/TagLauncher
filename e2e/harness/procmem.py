@@ -143,3 +143,31 @@ def tree_cpu(root_pid: int) -> dict[int, tuple[str, float]]:
         if s is not None:
             out[pid] = (exe, s)
     return out
+
+
+def roles(pids: list[int]) -> dict[int, str]:
+    """进程角色（诊断用，在采样窗口之后调用，不影响测量）：WebView2 子进程按命令行 --type=
+    （browser / renderer / gpu-process / utility:<sub-type> / crashpad-handler）区分。一次 CIM 查询。"""
+    if not pids:
+        return {}
+    import re
+    import subprocess
+    flt = " OR ".join(f"ProcessId={int(p)}" for p in pids)
+    cmd = ["powershell", "-NoProfile", "-Command",
+           f"Get-CimInstance Win32_Process -Filter '{flt}' | ForEach-Object {{ \"$($_.ProcessId)`t$($_.CommandLine)\" }}"]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace").stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    res: dict[int, str] = {}
+    for line in out.splitlines():
+        pid_s, _, cl = line.partition("\t")
+        if not pid_s.strip().isdigit():
+            continue
+        t = re.search(r"--type=([\w-]+)", cl)
+        sub = re.search(r"--utility-sub-type=([\w.-]+)", cl)
+        role = t.group(1) if t else ("browser" if "msedgewebview2" in cl.lower() else "host")
+        if sub:
+            role += ":" + sub.group(1).rsplit(".", 1)[-1]
+        res[int(pid_s)] = role
+    return res

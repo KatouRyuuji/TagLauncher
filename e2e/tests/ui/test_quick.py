@@ -506,6 +506,9 @@ def test_idle_cpu_with_both_windows_hidden(app_factory, sandbox):
     rows = [{"pid": pid, "exe": exe, "cpu_s": round(s - c0[pid][1], 3)} for pid, (exe, s) in c1.items() if pid in c0]
     total = sum(r["cpu_s"] for r in rows)
     pct = round(total / (t1 - t0) * 100, 3)
+    role = procmem.roles([r["pid"] for r in rows])  # 采样窗口之后：定位落在哪个 WebView2 子进程
+    for r in rows:
+        r["role"] = role.get(r["pid"], "?")
     out = {"window_s": round(t1 - t0, 1), "cpu_s": round(total, 3), "avg_pct_one_core": pct, "target_pct": IDLE_CPU_PCT,
            "processes": sorted(rows, key=lambda r: -r["cpu_s"])}
     (sandbox.artifacts / "idle-cpu.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")

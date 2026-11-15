@@ -154,7 +154,8 @@ const GLASS_TOKENS: Record<ShapeScheme, Record<string, string>> = {
     "glass-blur": "none",
     // 外沿一根干净的深色发丝（不再掺 border-medium 的灰），内沿一圈亮边 + 顶部 1px 镜面线：玻璃的边。
     "glass-border": "color-mix(in srgb, var(--text-primary) 20%, transparent)",
-    "glass-highlight": "inset 0 1px 0 color-mix(in srgb, #ffffff 95%, transparent), inset 0 0 0 1px color-mix(in srgb, #ffffff 46%, transparent)",
+    // 顶部 1px 镜面线、底部 1px 暗沿（玻璃的厚度）、一圈 70% 亮内边；与外沿深色发丝组成「暗外亮内」的玻璃边。
+    "glass-highlight": "inset 0 1px 0 color-mix(in srgb, #ffffff 95%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent), inset 0 0 0 1px color-mix(in srgb, #ffffff 70%, transparent)",
     "glass-shadow": "0 1px 2px rgb(20 28 44 / 0.06), 0 10px 28px rgb(20 28 44 / 0.14), 0 28px 64px rgb(20 28 44 / 0.12)",
     "glass-accent-bar": "3px",
   },

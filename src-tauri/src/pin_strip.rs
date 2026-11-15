@@ -587,7 +587,8 @@ pub fn handle_text_runs(
     let pad = px(10.0).max(6);
     let stripe_h = px(3.0).max(2);
     let left = card_x + pad;
-    let right = card_x + card_w as i32 - pad + 2;
+    // 右侧留白收窄到约 6 逻辑像素：正文行不在圆角高度内，125/150% 下文件名也能多显示一个字。
+    let right = card_x + card_w as i32 - px(6.0).max(4);
     let bottom_limit = card_y + card_h as i32 - px(4.0).max(3);
     let mut y = card_y + stripe_h + px(8.0).max(4);
     let mut runs = Vec::with_capacity(5);
