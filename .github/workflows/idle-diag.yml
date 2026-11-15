@@ -14,13 +14,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { label: '76aa205', sha: '76aa205b9bde5870fb438aa15befa8fbffc7ab27', variant: '' }
-          - { label: '4fdc124', sha: '4fdc124', variant: '' }
-          - { label: '4fdc124-rev530-a', sha: '4fdc124', variant: 'rev530' }
-          - { label: '4fdc124-rev530-b', sha: '4fdc124', variant: 'rev530' }
-          - { label: '4fdc124-rev530-7bb-a', sha: '4fdc124', variant: 'rev530-7bb' }
-          - { label: '4fdc124-rev530-7bb-b', sha: '4fdc124', variant: 'rev530-7bb' }
-          - { label: '4fdc124-rev530-7bb-c', sha: '4fdc124', variant: 'rev530-7bb' }
+          - { label: 'trace-a', sha: '4fdc124', variant: 'trace' }
+          - { label: 'trace-b', sha: '4fdc124', variant: 'trace' }
+          - { label: 'trace-c', sha: '4fdc124', variant: 'trace' }
+          - { label: 'trace-d', sha: '4fdc124', variant: 'trace' }
+          - { label: 'trace-rev530-a', sha: '4fdc124', variant: 'trace-rev530' }
+          - { label: 'trace-rev530-b', sha: '4fdc124', variant: 'trace-rev530' }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,6 +29,7 @@ jobs:
         run: |
           set -e
           cp -r e2e /tmp/e2e-harness
+          cp .github/diag/vis-trace.patch /tmp/vt.patch
           git checkout -q ${{ matrix.sha }}
           rm -rf e2e && cp -r /tmp/e2e-harness e2e
           if [ "${{ matrix.variant }}" = "noscroll" ]; then
@@ -45,6 +45,13 @@ jobs:
           fi
           if [ "${{ matrix.variant }}" = "rev530-7bb" ]; then
             git -c user.name=diag -c user.email=diag@local revert --no-commit 7bb7783 530150f
+          fi
+          if [ "${{ matrix.variant }}" = "trace" ] || [ "${{ matrix.variant }}" = "trace-rev530" ]; then
+            git apply /tmp/vt.patch
+          fi
+          if [ "${{ matrix.variant }}" = "trace-rev530" ]; then
+            sed -i 's/quick::restore_controller_if_shown(&w);/quick::set_controller_visible(\&w, true);/' src-tauri/src/lib.rs
+            grep -n "set_controller_visible(&w, true)" src-tauri/src/lib.rs
           fi
           git status --short
           git log --oneline -1
@@ -88,6 +95,8 @@ jobs:
         run: |
           foreach ($i in 1, 2) {
             $env:TL_E2E_RUN_DIR = "${{ github.workspace }}/.tmp-test/e2e/run-$i"
+            New-Item -ItemType Directory -Force "${{ github.workspace }}/.tmp-test/vis" | Out-Null
+            $env:TL_DIAG_VIS_LOG = "${{ github.workspace }}/.tmp-test/vis/run-$i.log"
             python -m pytest -c e2e/pytest.ini e2e/tests/ui/test_pin.py::test_pin_resident_memory_and_idle_cpu --allow-physical-input --window-countdown 0 -q
           }
           exit 0
@@ -95,4 +104,6 @@ jobs:
         if: always()
         with:
           name: bisect-${{ matrix.label }}
-          path: .tmp-test/e2e/run-*/artifacts/test_pin_resident_memory_and_idle_cpu/pin-perf.json
+          path: |
+            .tmp-test/e2e/run-*/artifacts/test_pin_resident_memory_and_idle_cpu/pin-perf.json
+            .tmp-test/vis/*.log

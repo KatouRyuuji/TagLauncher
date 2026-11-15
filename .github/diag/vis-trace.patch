@@ -1,0 +1,90 @@
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index 47c1750..3fc949b 100644
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -63,7 +63,7 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com"
+ # 用关联程序打开对象（ShellExecuteW，替代经 cmd.exe 的启动，杜绝命令注入），
+ # 以及视频等内容的系统缩略图提取（IShellItemImageFactory + GDI+ 落盘 PNG）、
+ # 「复制文件」（CF_HDROP 剪贴板）与「打开方式…」（SHOpenWithDialog）。
+-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_LibraryLoader", "Win32_Storage_FileSystem", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Graphics_GdiPlus", "Win32_UI_Controls", "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Diagnostics_Debug", "Win32_System_Registry", "Win32_System_Threading"] }
++windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_LibraryLoader", "Win32_Storage_FileSystem", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Graphics_GdiPlus", "Win32_UI_Controls", "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Diagnostics_Debug", "Win32_System_Registry", "Win32_System_Threading", "Win32_Graphics_Dwm"] }
+ 
+ # 发布构建优化：LTO + 单代码生成单元提升运行性能，strip 移除调试符号显著减小二进制体积。
+ # 不启用 panic="abort"：连接层依赖 Mutex 锁中毒恢复（panic 展开），abort 会改变该容错行为。
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 465d286..9ce01a8 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -243,6 +243,10 @@ pub fn run() {
+         // F18：关闭行为为「最小化到托盘」时拦截关闭、只隐藏主窗口；默认（退出）不拦截，保持旧行为
+         .on_window_event(|window, event| {
+             // 主窗获焦：立即检测一次外部写入（tl 在后台改了库，切回来就能看到）
++            if let tauri::WindowEvent::Focused(f) = event {
++                #[cfg(windows)]
++                quick::diag_vis(&format!("Focused({f}) {} {}", window.label(), window.hwnd().map(|h| quick::diag_hwnd(h.0 as isize)).unwrap_or_default()));
++            }
+             if let tauri::WindowEvent::Focused(true) = event {
+                 if window.label() == "main" || window.label() == quick::QUICK_LABEL {
+                     data_sync::poke();
+diff --git a/src-tauri/src/quick.rs b/src-tauri/src/quick.rs
+index aae1d55..034ec43 100644
+--- a/src-tauri/src/quick.rs
++++ b/src-tauri/src/quick.rs
+@@ -303,12 +303,41 @@ pub fn set_glass_dark(app: AppHandle, dark: bool) {
+     let _ = window;
+ }
+ 
++
++/// 诊断（临时分支）：可见性事件追踪写到 TL_DIAG_VIS_LOG。
++#[allow(dead_code)]
++pub(crate) fn diag_vis(msg: &str) {
++    if let Ok(p) = std::env::var("TL_DIAG_VIS_LOG") {
++        use std::io::Write;
++        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
++            let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
++            let _ = writeln!(f, "{ms} {msg}");
++        }
++    }
++}
++#[cfg(windows)]
++pub(crate) fn diag_hwnd(hwnd: isize) -> String {
++    use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible, GetWindowRect};
++    use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
++    unsafe {
++        let mut cloaked: u32 = 0;
++        let _ = DwmGetWindowAttribute(hwnd as _, DWMWA_CLOAKED as u32, &mut cloaked as *mut u32 as _, 4);
++        let mut r = std::mem::zeroed();
++        GetWindowRect(hwnd as _, &mut r);
++        format!("hwnd={hwnd:x} vis={} icon={} cloak={cloaked} rect=({},{},{},{})", IsWindowVisible(hwnd as _), IsIconic(hwnd as _), r.left, r.top, r.right, r.bottom)
++    }
++}
++
+ /// WebView2 的 HWND 隐藏后，controller 不一定跟着停绘（透明窗尤其如此）。
+ /// 主窗收到托盘时也用它：Tauri 的 hide 只隐藏 HWND，不告诉 WebView2。
+ pub(crate) fn set_controller_visible(window: &WebviewWindow, visible: bool) {
+     #[cfg(windows)]
+     {
++        let label = window.label().to_string();
++        let hw = window.hwnd().map(|h| h.0 as isize).unwrap_or(0);
++        diag_vis(&format!("post set_controller_visible {label} {visible} {}", diag_hwnd(hw)));
+         let _ = window.with_webview(move |webview| {
++            diag_vis(&format!("cb set_controller_visible {label} {visible} {}", diag_hwnd(hw)));
+             // SAFETY：with_webview 回调在 WebView 所在线程，controller 在回调期间有效
+             let result = unsafe { webview.controller().SetIsVisible(visible.into()) };
+             if let Err(e) = result {
+@@ -335,6 +364,7 @@ pub(crate) fn restore_controller_if_shown(window: &WebviewWindow) {
+             use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
+             // SAFETY：hwnd 来自本进程窗口；回调在 WebView 所在线程，controller 在回调期间有效
+             let shown = unsafe { IsWindowVisible(hwnd as _) != 0 && IsIconic(hwnd as _) == 0 };
++            diag_vis(&format!("cb restore_if_shown shown={shown} {}", diag_hwnd(hwnd)));
+             if !shown {
+                 return;
+             }
+@@ -362,6 +392,7 @@ pub(crate) fn sync_controller_to_hwnd(window: &WebviewWindow) {
+             use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
+             // SAFETY：hwnd 来自本进程窗口；回调在 WebView 所在线程，controller 在回调期间有效
+             let shown = unsafe { IsWindowVisible(hwnd as _) != 0 && IsIconic(hwnd as _) == 0 };
++            diag_vis(&format!("cb sync_to_hwnd shown={shown} {}", diag_hwnd(hwnd)));
+             if let Err(e) = unsafe { webview.controller().SetIsVisible(shown) } {
+                 log::warn!("[pin] SetIsVisible({shown}) 失败：{e}");
+             }

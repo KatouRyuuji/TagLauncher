@@ -495,6 +495,16 @@ def measure_idle(app, window_s: float) -> dict:
     见 DESIGN_ASSERTION_CHANGES.md §17。TL_E2E_IDLE_ATTACHED=1 保持连接（复现 / 对照用）。"""
     attached = os.environ.get("TL_E2E_IDLE_ATTACHED") == "1"
     pid = app.proc.pid
+    # 诊断：窗口开始前各页面自认的可见性（WebView2 controller IsVisible 会反映到 document.visibilityState）
+    visibility = {}
+    try:
+        for ctx in app.browser.contexts:
+            for pg in ctx.pages:
+                url = pg.url or ""
+                key = ("quick" + url.split("quick.html", 1)[1][:30]) if "quick.html" in url else ("main" if url.startswith("http://tauri.localhost") else url[:40])
+                visibility[key] = pg.evaluate("document.visibilityState")
+    except Exception as e:  # 诊断不影响测量
+        visibility["error"] = str(e)[:120]
     if not attached:
         app.detach_cdp()
     try:
@@ -530,6 +540,7 @@ def measure_idle(app, window_s: float) -> dict:
             "processes": sorted(rows, key=lambda r: -r["cpu_s"]),
             "wakeups_by_process": dict(sorted(wake.items(), key=lambda kv: -kv[1])),
             "compositor_wakeups": comp,
+            "visibility_before": visibility,
             "threads": procmem.thread_delta(th0, th1, role, top=20)}
 
 
