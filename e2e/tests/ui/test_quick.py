@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import os
 import statistics
 import time
 
@@ -484,6 +485,46 @@ IDLE_CPU_PCT = 1.0  # §3.3「两窗都隐藏时平均 ≈ 0%」：按单核 1% 
 
 
 @pytest.mark.case("E-PERF-IDLE")
+def measure_idle(app, window_s: float) -> dict:
+    """空闲窗口：进程树 CPU（判定口径不变）+ 线程级诊断（窗口两端各一次只读快照：
+    每线程 CPU 毫秒、上下文切换≈唤醒次数、线程名）。TL_E2E_IDLE_QUIET 控制窗口内是否断开 CDP /
+    暂停 stealth 轮询（逗号分隔：detach、noguard）。"""
+    quiet = {q for q in os.environ.get("TL_E2E_IDLE_QUIET", "").split(",") if q}
+    pid = app.proc.pid
+    if "noguard" in quiet and app.guard is not None:
+        app.guard.paused.set()
+    if "detach" in quiet:
+        app.detach_cdp()
+    try:
+        pids0 = [p for p, _ in procmem.tree(pid)]
+        th0 = procmem.threads(pids0)
+        t0, c0 = time.time(), procmem.tree_cpu(pid)
+        time.sleep(window_s)
+        t1, c1 = time.time(), procmem.tree_cpu(pid)
+        th1 = procmem.threads(pids0)
+    finally:
+        if app.guard is not None:
+            app.guard.paused.clear()
+        if "detach" in quiet:
+            app.reattach_cdp()
+    rows = [{"pid": p, "exe": exe, "cpu_s": round(s - c0[p][1], 3)} for p, (exe, s) in c1.items() if p in c0]
+    total = sum(r["cpu_s"] for r in rows)
+    role = procmem.roles([r["pid"] for r in rows])  # 采样窗口之后：定位落在哪个 WebView2 子进程
+    for r in rows:
+        r["role"] = role.get(r["pid"], "?")
+    wake: dict[str, int] = {}
+    for tid, a in th1.items():
+        b = th0.get(tid)
+        if b and b["pid"] == a["pid"]:
+            k = f"{role.get(a['pid'], '?')}:{a['pid']}"
+            wake[k] = wake.get(k, 0) + a["cs"] - b["cs"]
+    return {"window_s": round(t1 - t0, 1), "cpu_s": round(total, 3),
+            "avg_pct_one_core": round(total / (t1 - t0) * 100, 3), "quiet": sorted(quiet),
+            "processes": sorted(rows, key=lambda r: -r["cpu_s"]),
+            "wakeups_by_process": dict(sorted(wake.items(), key=lambda kv: -kv[1])),
+            "threads": procmem.thread_delta(th0, th1, role, top=20)}
+
+
 def test_idle_cpu_with_both_windows_hidden(app_factory, sandbox):
     """关闭到托盘 + 快速搜索开启（预创建隐藏）：主窗、快速窗都隐藏后，进程树（含 WebView2）
     120 s 平均 CPU ≤ 单核 1%。进程级明细写入 idle-cpu.json。"""
@@ -500,17 +541,9 @@ def test_idle_cpu_with_both_windows_hidden(app_factory, sandbox):
     wait_until(lambda: not win32.is_visible(h), 8, "关闭到托盘应隐藏主窗")
     assert not is_visible(qp)
     time.sleep(10)  # 隐藏后的收尾（GC、索引、data_sync 降频）
-    t0, c0 = time.time(), procmem.tree_cpu(app.proc.pid)
-    time.sleep(IDLE_WINDOW_S)
-    t1, c1 = time.time(), procmem.tree_cpu(app.proc.pid)
-    rows = [{"pid": pid, "exe": exe, "cpu_s": round(s - c0[pid][1], 3)} for pid, (exe, s) in c1.items() if pid in c0]
-    total = sum(r["cpu_s"] for r in rows)
-    pct = round(total / (t1 - t0) * 100, 3)
-    role = procmem.roles([r["pid"] for r in rows])  # 采样窗口之后：定位落在哪个 WebView2 子进程
-    for r in rows:
-        r["role"] = role.get(r["pid"], "?")
-    out = {"window_s": round(t1 - t0, 1), "cpu_s": round(total, 3), "avg_pct_one_core": pct, "target_pct": IDLE_CPU_PCT,
-           "processes": sorted(rows, key=lambda r: -r["cpu_s"])}
+    out = measure_idle(app, IDLE_WINDOW_S)
+    out["target_pct"] = IDLE_CPU_PCT
+    pct = out["avg_pct_one_core"]
     (sandbox.artifacts / "idle-cpu.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print("IDLE_CPU", json.dumps(out, ensure_ascii=False))
     assert pct <= IDLE_CPU_PCT, f"两窗隐藏时平均 CPU {pct}% > {IDLE_CPU_PCT}%：{out}"

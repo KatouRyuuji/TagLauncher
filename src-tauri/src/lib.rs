@@ -247,10 +247,11 @@ pub fn run() {
                 if window.label() == "main" || window.label() == quick::QUICK_LABEL {
                     data_sync::poke();
                 }
-                // 主窗经任何路径重新显示并获焦（含前端 show）：确保 WebView2 恢复可见（幂等）
+                // 主窗经任何路径重新显示并获焦（含前端 show）：确保 WebView2 恢复可见（幂等）。
+                // 只在 HWND 真的可见时恢复，隐藏 / 收托盘前后的焦点事件不能把隐藏的主窗标成可见。
                 if window.label() == "main" {
                     if let Some(w) = window.app_handle().get_webview_window("main") {
-                        quick::set_controller_visible(&w, true);
+                        quick::restore_controller_if_shown(&w);
                     }
                 }
             }
