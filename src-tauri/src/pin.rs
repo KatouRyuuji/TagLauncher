@@ -580,6 +580,8 @@ fn hide_window(window: &WebviewWindow) {
     {
         let _ = window.hide();
     }
+    // 只隐藏 HWND 不够：WebView2 仍认为可见，收起的抽屉会继续合成（DESIGN §19）
+    crate::quick::sync_controller_to_hwnd(window);
 }
 
 /// 显示但不抢前台
@@ -593,6 +595,8 @@ fn show_no_activate(window: &WebviewWindow) {
             unsafe {
                 ShowWindow(h.0 as _, SW_SHOWNOACTIVATE);
             }
+            // 展开动画开始前恢复可见（排在任何仍在队列里的隐藏之后）
+            crate::quick::sync_controller_to_hwnd(window);
             crate::quick::apply_glass_effect(window);
             return;
         }
