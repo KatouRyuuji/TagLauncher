@@ -1,0 +1,63 @@
+# 临时分支专用：空闲 CPU 对照实验（同一 release 构建，测量窗口内 CDP 挂着 / 断开 / 再暂停 stealth 轮询）。
+name: Idle diag
+
+on:
+  push:
+    branches: [cursor/ux-walkthrough-redesign-8f3b]
+
+jobs:
+  idle:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        quiet: ['none', 'detach', 'detach,noguard']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release
+      - name: Install dependencies
+        run: |
+          npm ci
+          python -m pip install -r e2e/requirements-e2e.txt
+      - name: Build release app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'; $PSNativeCommandUseErrorActionPreference = $true
+          node scripts/prepare-win11-menu.mjs
+          node scripts/prepare-cli-bin.mjs
+          npx tauri build --bundles nsis
+          "TL_E2E_EXE=$((Get-Item src-tauri/target/release/tag-launcher.exe).FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Idle tests
+        timeout-minutes: 40
+        shell: pwsh
+        env:
+          CI: '1'
+          TL_E2E_RUN_DIR: ${{ github.workspace }}/.tmp-test/e2e/idle-run
+          TL_E2E_WEBVIEW2_HKLM_POLICY: '1'
+          TL_E2E_ALLOW_REGISTRY: '1'
+          TL_E2E_ALLOW_PHYSICAL: '1'
+          TL_E2E_ALLOW_WINDOW: '1'
+          TL_E2E_ALLOW_VISIBLE: '1'
+          TL_E2E_DESKTOP: '1'
+          TL_E2E_BUILD: release
+          PYTHONIOENCODING: utf-8
+        run: |
+          if ('${{ matrix.quiet }}' -ne 'none') { $env:TL_E2E_IDLE_QUIET = '${{ matrix.quiet }}' }
+          python -m pytest -c e2e/pytest.ini e2e/tests/ui/test_quick.py::test_idle_cpu_with_both_windows_hidden e2e/tests/ui/test_pin.py::test_pin_resident_memory_and_idle_cpu --allow-physical-input --window-countdown 0 -s
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: idle-${{ strategy.job-index }}
+          path: .tmp-test/e2e/idle-run/artifacts/
