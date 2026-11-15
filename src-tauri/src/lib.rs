@@ -247,6 +247,12 @@ pub fn run() {
                 if window.label() == "main" || window.label() == quick::QUICK_LABEL {
                     data_sync::poke();
                 }
+                // 主窗经任何路径重新显示并获焦（含前端 show）：确保 WebView2 恢复可见（幂等）
+                if window.label() == "main" {
+                    if let Some(w) = window.app_handle().get_webview_window("main") {
+                        quick::set_controller_visible(&w, true);
+                    }
+                }
             }
             // 快速搜索窗不会真正关闭（Alt+F4 也只是收起），下次唤出复用
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -273,7 +279,11 @@ pub fn run() {
                         .is_some_and(|s| s.close_to_tray())
                 {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if let Some(w) = window.app_handle().get_webview_window("main") {
+                        desktop::hide_main_to_tray(&w);
+                    } else {
+                        let _ = window.hide();
+                    }
                 }
             }
         })
