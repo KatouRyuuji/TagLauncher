@@ -557,6 +557,42 @@ pub fn contrast_name(muted: u32, bg: u32) -> u32 {
     ensure_contrast(contrast_muted(muted, bg), bg, 7.0)
 }
 
+/// 截断时不允许停在这些字符上（会读成「发票-…」「截图_…」）。
+pub(crate) fn is_cut_separator(c: char) -> bool {
+    matches!(c, '-' | '_' | '.' | '·' | '・' | '—' | '–') || c.is_whitespace()
+}
+
+/// 单行省略：放得下就原样返回；否则取「前缀 + …」能放下的最长前缀，再去掉前缀末尾的分隔符。
+/// 更短的切点只会保留更少的有效字符，所以最长前缀去掉分隔符后就是保留有效字符最多的切点；
+/// 能留下 ≥2 个有效字符时一定留下，只有宽度实在不够时才退到 1 个或只剩 "…"。
+/// `fits` 必须对前缀长度单调（宽度随字符增加不减）。
+pub fn ellipsize(text: &str, fits: &dyn Fn(&str) -> bool) -> String {
+    if fits(text) {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let with_ellipsis = |n: usize| -> String {
+        let mut s: String = chars[..n].iter().collect();
+        s.push('…');
+        s
+    };
+    // 最大的 n（< len）使 prefix(n) + "…" 放得下；n = 0 时只画 "…"。
+    let (mut lo, mut hi) = (0usize, chars.len().saturating_sub(1));
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if fits(&with_ellipsis(mid)) {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    let mut n = lo;
+    while n > 0 && is_cut_separator(chars[n - 1]) {
+        n -= 1;
+    }
+    with_ellipsis(n)
+}
+
 /// 探头上的一行文字（帧坐标，物理像素）。
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextRun {
@@ -1037,6 +1073,65 @@ mod win {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 等宽近似：CJK 2 单位，其余 1 单位，"…" 1 单位。
+    fn width(s: &str) -> usize {
+        s.chars()
+            .map(|c| {
+                if (c as u32) >= 0x2E80 && c != '…' {
+                    2
+                } else {
+                    1
+                }
+            })
+            .sum()
+    }
+
+    #[test]
+    fn ellipsize_never_ends_on_separator_and_keeps_meaningful_chars() {
+        let fit = |max: usize| move |s: &str| width(s) <= max;
+        // 放得下原样返回
+        assert_eq!(ellipsize("报告.pdf", &fit(20)), "报告.pdf");
+        // 切点正好落在分隔符后：去掉分隔符再加省略号
+        assert_eq!(ellipsize("发票-某某科技.pdf", &fit(6)), "发票…");
+        assert_eq!(ellipsize("report_final_v2.docx", &fit(8)), "report…");
+        assert_eq!(ellipsize("a.b.c.d.e.f", &fit(5)), "a.b…");
+        assert_eq!(ellipsize("截图 2026-11-15 18.30.png", &fit(6)), "截图…");
+        assert_eq!(ellipsize("截图 2026-11-15 18.30.png", &fit(8)), "截图 20…");
+        assert_eq!(ellipsize("项目 · 设计稿 · 终版", &fit(9)), "项目…");
+        // 连续分隔符全部去掉
+        assert_eq!(ellipsize("ab--__..cdef", &fit(7)), "ab…");
+        // 宽度实在不够时才少于 2 个有效字符，且仍不以分隔符结尾
+        assert_eq!(ellipsize("A-某某某", &fit(3)), "A…");
+        assert_eq!(ellipsize("某某某某", &fit(1)), "…");
+        // 所有省略结果：放得下、不以分隔符结尾
+        let names = [
+            "发票-某某科技-已付款.pdf",
+            "截图_2026_11_15.png",
+            "a - b - c - d.txt",
+            "项目·设计稿·终版·v3.psd",
+            "README.md",
+        ];
+        for name in names {
+            for max in 1..=width(name) + 1 {
+                let out = ellipsize(name, &fit(max));
+                assert!(width(&out) <= max || out == "…", "{name} @{max}: {out}");
+                if let Some(body) = out.strip_suffix('…') {
+                    assert!(!body.ends_with(is_cut_separator), "{name} @{max}: {out}");
+                    let meaningful = body.chars().filter(|c| !is_cut_separator(*c)).count();
+                    // 只要存在一个能放下、保留 ≥2 个有效字符的切点，就必须用上
+                    let chars: Vec<char> = name.chars().collect();
+                    let two_possible = (1..chars.len()).any(|n| {
+                        let p: String = chars[..n].iter().collect();
+                        !p.ends_with(is_cut_separator)
+                            && p.chars().filter(|c| !is_cut_separator(*c)).count() >= 2
+                            && width(&format!("{p}…")) <= max
+                    });
+                    assert!(meaningful >= 2 || !two_possible, "{name} @{max}: {out}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn parses_theme_colors_to_colorref() {
