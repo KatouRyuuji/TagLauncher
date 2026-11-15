@@ -23,10 +23,10 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteFactory2, IDWriteRenderingParams,
-    DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-    DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_GRID_FIT_MODE_ENABLED,
-    DWRITE_MEASURING_MODE_NATURAL, DWRITE_PIXEL_GEOMETRY_FLAT,
-    DWRITE_RENDERING_MODE_NATURAL_SYMMETRIC, DWRITE_TRIMMING,
+    IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
+    DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+    DWRITE_GRID_FIT_MODE_ENABLED, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PIXEL_GEOMETRY_FLAT,
+    DWRITE_RENDERING_MODE_NATURAL_SYMMETRIC, DWRITE_TEXT_METRICS, DWRITE_TRIMMING,
     DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -102,6 +102,55 @@ fn color_f(c: u32) -> D2D1_COLOR_F {
     }
 }
 
+/// 一行文字的格式：雅黑 UI、单行、字符级省略号兜底。
+fn text_format(f: &Factories, run: &TextRun) -> Result<IDWriteTextFormat> {
+    unsafe {
+        let weight = if run.semibold {
+            DWRITE_FONT_WEIGHT_SEMI_BOLD
+        } else {
+            DWRITE_FONT_WEIGHT_NORMAL
+        };
+        let format = f.dw.CreateTextFormat(
+            w!("Microsoft YaHei UI"),
+            None,
+            weight,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            run.px,
+            w!("zh-cn"),
+        )?;
+        format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+        let sign = f.dw.CreateEllipsisTrimmingSign(&format)?;
+        let trimming = DWRITE_TRIMMING {
+            granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+            delimiter: 0,
+            delimiterCount: 0,
+        };
+        format.SetTrimming(&trimming, &sign)?;
+        Ok(format)
+    }
+}
+
+/// 按真实字宽挑截断点（见 `pin_strip::ellipsize`）。
+fn fit_run(f: &Factories, format: &IDWriteTextFormat, run: &TextRun) -> String {
+    let (l, _, r, _) = run.rect;
+    let avail = (r - l) as f32;
+    crate::pin_strip::ellipsize(&run.text, &|s: &str| {
+        text_width(f, format, s).is_some_and(|wd| wd <= avail)
+    })
+}
+
+/// 单行排版宽度（DIP = 物理像素，渲染目标 96 DPI）。
+fn text_width(f: &Factories, format: &IDWriteTextFormat, s: &str) -> Option<f32> {
+    let wide: Vec<u16> = s.encode_utf16().collect();
+    unsafe {
+        let layout = f.dw.CreateTextLayout(&wide, format, 1.0e5, 1.0e4).ok()?;
+        let mut m = DWRITE_TEXT_METRICS::default();
+        layout.GetMetrics(&mut m).ok()?;
+        Some(m.widthIncludingTrailingWhitespace)
+    }
+}
+
 /// 把文字画进自上而下、stride = w×4 的预乘 BGRA 缓冲（已含卡片底）。
 pub fn draw_runs(buf: &mut [u8], w: u32, h: u32, runs: &[TextRun]) -> Result<()> {
     let len = (w as usize) * (h as usize) * 4;
@@ -141,28 +190,7 @@ fn draw_with(f: &Factories, buf: &mut [u8], w: u32, h: u32, runs: &[TextRun]) ->
         rt.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
         rt.SetTextRenderingParams(&f.params);
         for run in runs {
-            let weight = if run.semibold {
-                DWRITE_FONT_WEIGHT_SEMI_BOLD
-            } else {
-                DWRITE_FONT_WEIGHT_NORMAL
-            };
-            let format = f.dw.CreateTextFormat(
-                w!("Microsoft YaHei UI"),
-                None,
-                weight,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                run.px,
-                w!("zh-cn"),
-            )?;
-            format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
-            let sign = f.dw.CreateEllipsisTrimmingSign(&format)?;
-            let trimming = DWRITE_TRIMMING {
-                granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER,
-                delimiter: 0,
-                delimiterCount: 0,
-            };
-            format.SetTrimming(&trimming, &sign)?;
+            let format = text_format(f, run)?;
             let brush = rt.CreateSolidColorBrush(&color_f(run.color), None)?;
             let (l, t, r, b) = run.rect;
             let rect = D2D_RECT_F {
@@ -171,7 +199,9 @@ fn draw_with(f: &Factories, buf: &mut [u8], w: u32, h: u32, runs: &[TextRun]) ->
                 right: r as f32,
                 bottom: b as f32,
             };
-            let text: Vec<u16> = run.text.encode_utf16().collect();
+            // 自己挑截断点（不停在分隔符上），DirectWrite 的字符级裁切只作兜底。
+            let fitted = fit_run(f, &format, run);
+            let text: Vec<u16> = fitted.encode_utf16().collect();
             rt.DrawText(
                 &text,
                 &format,
@@ -240,6 +270,15 @@ mod tests {
     }
 
     fn render(t: &Theme, scale: f64, hover: bool) -> Frame {
+        render_names(
+            t,
+            scale,
+            hover,
+            &["设计稿 v3.fig", "季度报告.docx", "截图 2026-11-13.png"],
+        )
+    }
+
+    fn render_names(t: &Theme, scale: f64, hover: bool, names: &[&str]) -> Frame {
         let rest_w = (68.0 * scale).round() as u32;
         let card_w = if hover {
             (168.0 * scale).round() as u32
@@ -257,11 +296,7 @@ mod tests {
         let peek = PeekContent {
             title: "工作".into(),
             count: 7,
-            names: vec![
-                "设计稿 v3.fig".into(),
-                "季度报告.docx".into(),
-                "截图 2026-11-13.png".into(),
-            ],
+            names: names.iter().map(|n| n.to_string()).collect(),
             stripe: None,
         };
         let (ox, oy) = card_origin_in_frame(true, rest_w);
@@ -357,6 +392,51 @@ mod tests {
                         let a = f.px[i + 3];
                         assert!(f.px[i] <= a && f.px[i + 1] <= a && f.px[i + 2] <= a);
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn handle_truncation_never_ends_on_separator_with_real_glyph_widths() {
+        let names = [
+            "发票-某某科技-已付款.pdf",
+            "report_final_v2.docx",
+            "项目 · 设计稿 · 终版.psd",
+        ];
+        for t in [&LIGHT, &DARK] {
+            for (scale, tag) in [(1.0, "100"), (1.25, "125"), (1.5, "150")] {
+                for hover in [false, true] {
+                    let f = render_names(t, scale, hover, &names);
+                    let state = if hover { "hover" } else { "rest" };
+                    write_png(&f, &format!("handle-trunc-{}-{tag}-{state}.png", t.name));
+                    FACTORIES.with(|cell| {
+                        let slot = cell.borrow();
+                        let fx = slot.as_ref().expect("render 已创建工厂");
+                        for run in &f.runs[2..] {
+                            let format = text_format(fx, run).expect("format");
+                            let out = fit_run(fx, &format, run);
+                            let (l, _, r, _) = run.rect;
+                            let wd = text_width(fx, &format, &out).expect("width");
+                            assert!(
+                                wd <= (r - l) as f32,
+                                "{tag} {state} {out:?} {wd} > {}",
+                                r - l
+                            );
+                            if let Some(body) = out.strip_suffix('…') {
+                                assert!(
+                                    !body.ends_with(crate::pin_strip::is_cut_separator),
+                                    "{tag} {state}: {out:?}"
+                                );
+                                let meaningful = body
+                                    .chars()
+                                    .filter(|c| !crate::pin_strip::is_cut_separator(*c))
+                                    .count();
+                                assert!(meaningful >= 2, "{tag} {state}: {out:?}");
+                            }
+                            eprintln!("{} {tag} {state}: {:?} -> {out:?}", t.name, run.text);
+                        }
+                    });
                 }
             }
         }
