@@ -31,17 +31,18 @@ html[data-acrylic] .quick-shell::before,
 html[data-acrylic] .pin-shell::before {
   background-color: var(--glass-bg);
 }
-/* 浅色镜面：上沿一段镜面高光渐变、底部一点回光，读成有厚度的玻璃，而不是一张平的磨砂卡片。
+/* 浅色镜面：上沿到中段一层由亮渐透的镜面渐变、底部一点回光，读成有厚度的玻璃，而不是一张平的磨砂卡片。
    只是静态渐变层，不进滤镜、不随查询重绘。 */
 html[data-scheme="light"][data-acrylic] .quick-shell::before,
 html[data-scheme="light"][data-acrylic] .pin-shell::before {
   background-image:
     linear-gradient(180deg,
-      color-mix(in srgb, var(--glass-bg-strong) 72%, transparent) 0,
-      color-mix(in srgb, var(--glass-bg-strong) 26%, transparent) 2.75rem,
-      transparent 40%,
-      transparent 80%,
-      color-mix(in srgb, var(--glass-bg-strong) 16%, transparent) 100%),
+      color-mix(in srgb, var(--glass-bg-strong) 60%, transparent) 0,
+      color-mix(in srgb, var(--glass-bg-strong) 34%, transparent) 18%,
+      color-mix(in srgb, var(--glass-bg-strong) 12%, transparent) 42%,
+      transparent 64%,
+      transparent 86%,
+      color-mix(in srgb, var(--glass-bg-strong) 10%, transparent) 100%),
     radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-primary) 3.5%, transparent) 0.7px, transparent 0);
   background-size: 100% 100%, 4px 4px;
 }
@@ -114,7 +115,7 @@ html[data-scheme="light"][data-acrylic] .pin-shell::before {
 .quick-footer { container-type: inline-size; }
 .quick-shortcuts { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--spacing-xs) var(--spacing-md);
   min-width: 0; overflow: hidden; }
-@container (max-width: 46em) { .quick-kbd-optional { display: none; } }
+@container (max-width: 54em) { .quick-kbd-optional { display: none; } }
 .quick-kbd { display: inline-flex; align-items: center; gap: calc(var(--spacing-xs) * 1.25); white-space: nowrap;
   color: var(--text-secondary); }
 .quick-kbd kbd {
