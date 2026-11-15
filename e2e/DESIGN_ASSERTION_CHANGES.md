@@ -82,3 +82,11 @@
 - **改动**（`pin_strip.rs`）：标题色按 WCAG ≥ 7:1、次要色（「N 项」与文件名行）≥ 4.5:1 且更深；GDI 灰度 AA 在拷入预乘缓冲前按覆盖率做对比度提升（`TEXT_AA_POWER = 1.85`）。阴影边距 16→10 逻辑像素，峰值 alpha 0.40→0.20，仍带轻微 y 偏移。贴边一侧不再画 1px 描边。卡片仍是 68×148 / 168，E2E 继续看 `handleRect`。
 - **视觉基线**：探头文字更实、阴影更淡、贴边无发丝。基线不入库，CI 首次运行 `baseline-created`。
 - **性能**：探头不在查询热路径；5k 35ms 及其它上限均不改。
+
+## 12. 探头文字改 DirectWrite，字号大半级，文件名行 ≥ 7:1（pt54u）
+
+- **原因**：ef34f2b 走查（v5）4× 里探头标题已实，但「N 项」和三行文件名在 96 DPI 上竖笔只有约 4–6:1，读起来发灰。根因是 GDI `ANTIALIASED_QUALITY` 只能画进不透明临时 DIB，再从颜色里猜覆盖率拷回（`TEXT_AA_POWER` 补偿），不能调 gamma。
+- **改动**（`pin_strip.rs` + 新 `handle_text.rs`）：文字改用 DirectWrite，经 Direct2D（WIC 软件目标，`D2D1_ALPHA_MODE_PREMULTIPLIED`）直接画进同一张预乘缓冲。灰度 AA、gamma 1.8、灰度增强对比 1.6、ClearType 级别 0、网格对齐，字体缺失时走系统回退，省略号截断。删掉 GDI 文字路径与 `enhance_aa_pixel` / `TEXT_AA_POWER`（及其单测）。字号 15/12 → 16/13 逻辑像素，按设备缩放取整。文件名行颜色 ≥ 7:1（`contrast_name`），「N 项」仍是 ≥ 4.5:1 的次要色。卡片仍是 68×148 / 168，E2E 继续看 `handleRect`。
+- **新单测**：`handle_text_runs` 排版在 1.0/1.25/1.5 下不越出卡片、不重叠；Windows 上离屏渲染浅 / 深色、休息 / 悬停、三种缩放，断言每行峰值对比与实墨像素数、文字不在卡片上打洞、预乘合法，并写出 PNG（`TL_HANDLE_SHOTS_DIR`，缺省系统临时目录）供走查。runner 系统 DPI 固定 96，125/150% 用离屏渲染代替真实系统缩放。
+- **视觉基线**：探头文字更大更实。基线不入库，CI 首次运行 `baseline-created`。
+- **性能**：探头不在快速窗查询热路径；5k 35ms 及其它上限均不改。
