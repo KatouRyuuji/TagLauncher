@@ -304,7 +304,8 @@ pub fn set_glass_dark(app: AppHandle, dark: bool) {
 }
 
 /// WebView2 的 HWND 隐藏后，controller 不一定跟着停绘（透明窗尤其如此）。
-fn set_controller_visible(window: &WebviewWindow, visible: bool) {
+/// 主窗收到托盘时也用它：Tauri 的 hide 只隐藏 HWND，不告诉 WebView2。
+pub(crate) fn set_controller_visible(window: &WebviewWindow, visible: bool) {
     #[cfg(windows)]
     {
         let _ = window.with_webview(move |webview| {
