@@ -1,0 +1,171 @@
+# 临时工作流：在 Windows runner 上对 PR #67 @ 626f8db 做最小原生 DWM 毛玻璃截图。
+# 仅存在于 cursor/ux-glass-shots-8f3b，不合入 main、不进 PR #67，不触发发版。
+# 用 ffmpeg gdigrab 抓桌面合成帧（含系统瞬态背景）；Playwright page 截图不能当完成证据。
+name: UX Glass Shots
+
+on:
+  push:
+    branches: [cursor/ux-glass-shots-8f3b]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  glass-shots:
+    runs-on: windows-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          python -m pip install -r e2e/requirements-e2e.txt
+
+      - name: Build release app + CLI (no installer, no GitHub Release)
+        run: |
+          node scripts/prepare-cli-bin.mjs --placeholder
+          node scripts/prepare-win11-menu.mjs --placeholder
+          npx tauri build --no-bundle
+          cargo build --manifest-path src-tauri/Cargo.toml --release --bin tl
+          New-Item -ItemType Directory -Force dist | Out-Null
+        shell: pwsh
+
+      - name: Locate exe, install ffmpeg
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-Item src-tauri/target/release/tag-launcher.exe
+          if (-not $exe) { throw '没有 src-tauri/target/release/tag-launcher.exe' }
+          $tl = Get-Item src-tauri/target/release/tl.exe -ErrorAction SilentlyContinue
+          "TL_E2E_EXE=$($exe.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "EXE: $($exe.FullName)  $($exe.Length) bytes  sha256=$((Get-FileHash $exe.FullName -Algorithm SHA256).Hash)"
+          if ($tl) { "CLI: $($tl.FullName) $($tl.Length)" }
+
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          if (-not $ffmpeg) {
+            try { choco install ffmpeg -y --no-progress } catch { Write-Host "choco: $_" }
+            $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          }
+          if (-not $ffmpeg) {
+            New-Item -ItemType Directory -Force tools | Out-Null
+            $zipff = 'tools/ffmpeg.zip'
+            Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zipff -UseBasicParsing
+            Expand-Archive -LiteralPath $zipff -DestinationPath tools/ffmpeg -Force
+            $ff = Get-ChildItem -Recurse tools/ffmpeg -Filter ffmpeg.exe | Select-Object -First 1
+            "PATH=$($ff.DirectoryName);$env:PATH" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+            $env:PATH = "$($ff.DirectoryName);$env:PATH"
+          }
+          ffmpeg -version | Select-Object -First 3
+
+      - name: Prepare desktop (1920x1080, hide consoles)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Stop-Process -Name ServerManager,SecurityHealthSystray -ErrorAction SilentlyContinue
+          Add-Type -TypeDefinition @"
+          using System; using System.Runtime.InteropServices; using System.Text;
+          public static class Native {
+            [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+            public struct DEVMODE {
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+              public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra; public int dmFields;
+              public int dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+              public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+              public short dmLogPixels; public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+              public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+            }
+            public delegate bool EnumProc(IntPtr h, IntPtr l);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplaySettings(string d, int m, ref DEVMODE dm);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettings(ref DEVMODE dm, int f);
+            [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr l);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+            [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
+            [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool r);
+            [DllImport("user32.dll")] public static extern IntPtr GetConsoleWindow();
+            [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr h);
+            [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr h, IntPtr dc);
+            [DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int i);
+            public static int SetRes(int w, int h) {
+              var dm = new DEVMODE(); dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+              if (!EnumDisplaySettings(null, -1, ref dm)) return -100;
+              dm.dmPelsWidth = w; dm.dmPelsHeight = h;
+              dm.dmFields = 0x80000 | 0x100000;
+              return ChangeDisplaySettings(ref dm, 1);
+            }
+            public static int HideConsoles() {
+              int n = 0;
+              EnumProc cb = (h, l) => {
+                if (!IsWindowVisible(h)) return true;
+                var cls = new StringBuilder(256);
+                GetClassName(h, cls, 256);
+                var title = new StringBuilder(512);
+                GetWindowText(h, title, 512);
+                string c = cls.ToString();
+                string t = title.ToString();
+                bool hide = c == "ConsoleWindowClass" || c == "CASCADIA_HOSTING_WINDOW_CLASS"
+                  || t.IndexOf("runner", StringComparison.OrdinalIgnoreCase) >= 0
+                  || t.IndexOf("orchestration", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (hide && t.IndexOf("TagLauncher", StringComparison.OrdinalIgnoreCase) < 0) {
+                  if (!ShowWindow(h, 0)) MoveWindow(h, 4000, 0, 200, 200, true);
+                  n++;
+                }
+                return true;
+              };
+              EnumWindows(cb, IntPtr.Zero);
+              var self = GetConsoleWindow();
+              if (self != IntPtr.Zero) { ShowWindow(self, 0); n++; }
+              return n;
+            }
+          }
+          "@
+          "ChangeDisplaySettings(1920x1080) = $([Native]::SetRes(1920, 1080))  (0 = 成功)"
+          Start-Sleep -Seconds 1
+          Add-Type -AssemblyName System.Windows.Forms
+          "Screen: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
+          "Hidden consoles: $([Native]::HideConsoles())"
+
+      - name: Capture native glass shots
+        timeout-minutes: 20
+        env:
+          CI: '1'
+          TL_E2E_VISIBLE: '1'
+          TL_E2E_WEBVIEW2_HKLM_POLICY: '1'
+          TL_E2E_ALLOW_REGISTRY: '1'
+          TL_E2E_ALLOW_PHYSICAL: '1'
+          TL_E2E_ALLOW_VISIBLE: '1'
+          UX_GLASS_ONLY: '1'
+          PYTHONIOENCODING: utf-8
+          PYTHONPATH: ${{ github.workspace }}/e2e
+          UX_OUT: ${{ github.workspace }}/ux-review-redesign
+          UX_HEAD_SHA: ${{ github.sha }}
+        run: python e2e/tools/ux_walkthrough.py
+
+      - name: Upload glass shots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-glass-shots
+          path: ux-review-redesign/
+          if-no-files-found: error
+          retention-days: 14
