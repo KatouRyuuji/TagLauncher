@@ -21,9 +21,10 @@ mod v020_text_type;
 mod v021_hide_from_all;
 mod v022_item_alias;
 mod v023_cabinet_parent;
-mod v024_hide_from_all_watch;
+mod v025_hide_from_all_watch;
 
 use rusqlite::Connection;
+use std::collections::HashSet;
 
 /// 迁移 trait：每个版本升级实现此接口
 pub trait Migration {
@@ -198,8 +199,42 @@ fn all_migrations() -> Vec<Box<dyn Migration>> {
         Box::new(v021_hide_from_all::V021HideFromAll),
         Box::new(v022_item_alias::V022ItemAlias),
         Box::new(v023_cabinet_parent::V023CabinetParent),
-        Box::new(v024_hide_from_all_watch::V024HideFromAllWatch),
+        // v024 由 PR66/67 的 document type 占用；本分支基于 main，变基前注册表为 1..=23,25。
+        Box::new(v025_hide_from_all_watch::V025HideFromAllWatch),
     ]
+}
+
+
+/// 运行时防护：注册表必须版本唯一且严格递增，否则 `version() <= current` 会静默跳过其中一条。
+/// 连续无空号：本分支在变基到含 v024 的 66/67 树之前允许 23 之后直接是 25；合入后应由测试锁定 1..=N。
+pub fn validate_migration_registry(migrations: &[Box<dyn Migration>]) -> Result<(), rusqlite::Error> {
+    let mut seen = HashSet::new();
+    let mut prev: Option<u32> = None;
+    for migration in migrations {
+        let v = migration.version();
+        if !seen.insert(v) {
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+                Some(format!(
+                    "迁移注册表存在重复版本 {v}（{}），拒绝启动以免静默跳过",
+                    migration.description()
+                )),
+            ));
+        }
+        if let Some(p) = prev {
+            if v <= p {
+                return Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+                    Some(format!(
+                        "迁移版本必须严格递增，{p} 之后是 {v}（{}）",
+                        migration.description()
+                    )),
+                ));
+            }
+        }
+        prev = Some(v);
+    }
+    Ok(())
 }
 
 /// 注册表中的最高 schema 版本——测试与运行库以此为准，不再各自硬编码版本号。
@@ -209,6 +244,7 @@ pub fn latest_schema_version() -> u32 {
 
 pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
     let migrations = all_migrations();
+    validate_migration_registry(&migrations)?;
 
     let current_version = get_schema_version(conn);
     let latest = latest_schema_version();
@@ -379,4 +415,42 @@ mod tests {
             "unexpected error: {msg}"
         );
     }
+
+    struct Fake(u32, &'static str);
+    impl Migration for Fake {
+        fn version(&self) -> u32 {
+            self.0
+        }
+        fn description(&self) -> &str {
+            self.1
+        }
+        fn up(&self, _conn: &Connection) -> Result<(), rusqlite::Error> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn registered_migrations_are_unique_and_strictly_increasing() {
+        validate_migration_registry(&all_migrations()).expect("registry must be unique and increasing");
+    }
+
+    #[test]
+    fn registry_validation_rejects_duplicate_versions() {
+        let list: Vec<Box<dyn Migration>> = vec![
+            Box::new(Fake(23, "a")),
+            Box::new(Fake(24, "document")),
+            Box::new(Fake(24, "hide watch")),
+        ];
+        let err = validate_migration_registry(&list).expect_err("duplicate v024 must fail");
+        let msg = err.to_string();
+        assert!(msg.contains("重复版本 24") && msg.contains("静默跳过"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn registry_validation_rejects_non_increasing_versions() {
+        let list: Vec<Box<dyn Migration>> = vec![Box::new(Fake(3, "c")), Box::new(Fake(2, "b"))];
+        let err = validate_migration_registry(&list).expect_err("decreasing versions must fail");
+        assert!(err.to_string().contains("必须严格递增"), "{}", err);
+    }
+
 }
