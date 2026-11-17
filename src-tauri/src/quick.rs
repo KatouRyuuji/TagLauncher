@@ -216,6 +216,10 @@ pub(crate) fn apply_glass_effect(window: &WebviewWindow) {
     {
         if let Ok(h) = window.hwnd() {
             native = crate::dwm_backdrop::apply(h.0 as isize, GLASS_DARK.load(Ordering::SeqCst));
+            if !native {
+                // apply 失败路径已 clear；此处再清一次，覆盖未进入 apply 的残留。
+                crate::dwm_backdrop::clear(h.0 as isize);
+            }
         }
         set_controller_visible(window, true);
     }

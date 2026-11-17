@@ -186,12 +186,14 @@ fn clear_layered(hwnd: HWND) {
 }
 
 /// 开启瞬态亚克力、沉浸式深色、合成器圆角。失败返回 false，调用方走干净实底。
+/// 任何走回退的路径都先 `clear`，避免上次成功的 TRANSIENTWINDOW 残留。
 pub fn apply(hwnd: isize, dark: bool) -> bool {
     if hwnd == 0 || !supported() {
         return false;
     }
     // 合成关闭或用户关掉「透明效果」时不要宣称原生亚克力，前端走 Win10 式干净实底。
     if !composition_enabled() || !transparency_enabled() {
+        clear(hwnd);
         return false;
     }
     let h = hwnd as HWND;
@@ -206,25 +208,22 @@ pub fn apply(hwnd: isize, dark: bool) -> bool {
             bottom: -1,
         },
     ) {
+        clear(hwnd);
         return false;
     }
     let dark_v = if dark { 1u32 } else { 0 };
-    let mut dark_ok = set_attr(h, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_v);
-    if !dark_ok {
-        dark_ok = set_attr(h, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_v);
-        if !dark_ok {
-            log::warn!("[dwm] DWMWA_USE_IMMERSIVE_DARK_MODE 失败，仍尝试系统背景");
-        }
+    if !set_attr(h, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_v) {
+        log::warn!("[dwm] DWMWA_USE_IMMERSIVE_DARK_MODE 失败，仍尝试系统背景");
     }
-    let mut corner_ok = set_attr(h, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND);
-    if !corner_ok {
-        corner_ok = set_attr(h, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND);
-        if !corner_ok {
-            log::warn!("[dwm] DWMWCP_ROUND 失败，仍尝试系统背景");
-        }
+    if !set_attr(h, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND) {
+        log::warn!("[dwm] DWMWCP_ROUND 失败，仍尝试系统背景");
     }
     // 成败以 TRANSIENTWINDOW 为准：dark/corner 失败不改走实底，也不改变 Win10 fallback 条件。
-    set_attr(h, DWMWA_SYSTEMBACKDROP_TYPE, &DWMSBT_TRANSIENTWINDOW)
+    if !set_attr(h, DWMWA_SYSTEMBACKDROP_TYPE, &DWMSBT_TRANSIENTWINDOW) {
+        clear(hwnd);
+        return false;
+    }
+    true
 }
 
 /// 只更新深色模式（窗口已在显示、背景已打开时跟随主题切换）。
