@@ -1362,35 +1362,60 @@ pub fn resolve_current_path(conn: &Connection, id: i64) -> Result<String, String
 
     // 路径仍存在时：无身份记录直接采信；有身份记录则校验该路径处文件确为同一对象，
     // 防止原文件被删后同位置放入了不同文件，从而启动/打开到错误对象。
-    if Path::new(&path).exists() {
-        match identity {
-            Some(idn) if file_identity::get_identity(&path) != Some(idn) => {
-                // 路径已被其它文件占用 → 落到下方按文件ID重定位真正的对象
-            }
-            _ => {
-                // 路径处文件确认无误：曾因短暂失联被标记失效时顺手愈合标记
-                if is_missing != 0 {
-                    let _ = conn.execute("UPDATE items SET is_missing = 0 WHERE id = ?1", [id]);
+    // 权限/其它 IO 不确定不得当成丢失，也不在此时重定位覆盖。
+    match path_presence(&path) {
+        PathPresence::Present => {
+            match identity {
+                Some(idn) if file_identity::get_identity(&path) != Some(idn) => {
+                    // 路径已被其它文件占用 → 落到下方按文件ID重定位真正的对象
                 }
-                return Ok(path);
+                _ => {
+                    // 路径处文件确认无误：曾因短暂失联被标记失效时顺手愈合标记
+                    if is_missing != 0 {
+                        let _ = conn.execute(
+                            "UPDATE items SET is_missing = 0 WHERE id = ?1 AND path = ?2",
+                            params![id, path],
+                        );
+                    }
+                    return Ok(path);
+                }
             }
         }
+        PathPresence::Indeterminate => return Ok(path),
+        PathPresence::Absent => {}
     }
 
     if let Some(idn) = identity {
-        if let Some(new_path) = file_identity::resolve_path(idn, &path) {
-            if let Some(new_path) = accepted_relocate_path(&new_path) {
-                conn.execute(
-                    "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
-                    params![new_path, get_name(&new_path), id],
-                )
-                .map_err(|e| e.to_string())?;
+        if let Some(found) = file_identity::resolve_path(idn, &path) {
+            if let Some(new_path) = accepted_relocate_path(&found) {
+                let n = conn
+                    .execute(
+                        "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3 AND path = ?4",
+                        params![new_path, get_name(&new_path), id, path],
+                    )
+                    .map_err(|e| e.to_string())?;
+                if n == 0 {
+                    // 并发已改写：采信当前库路径，避免覆盖更新的重定位
+                    if let Ok(current) = conn.query_row(
+                        "SELECT path FROM items WHERE id = ?1",
+                        [id],
+                        |r| r.get::<_, String>(0),
+                    ) {
+                        return Ok(current);
+                    }
+                }
                 return Ok(new_path);
             }
         }
     }
 
-    let _ = conn.execute("UPDATE items SET is_missing = 1 WHERE id = ?1", [id]);
+    // 仅确定不存在才标丢失；CAS 避免覆盖并发重定位
+    if path_presence(&path) == PathPresence::Absent {
+        let _ = conn.execute(
+            "UPDATE items SET is_missing = 1 WHERE id = ?1 AND path = ?2",
+            params![id, path],
+        );
+    }
     Err("对象已丢失，无法定位文件".to_string())
 }
 
