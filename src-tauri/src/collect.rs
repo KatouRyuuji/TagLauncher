@@ -170,7 +170,19 @@ pub fn submit(app: &AppHandle, raw: Vec<String>) {
     let Some(state) = app.try_state::<CollectState>() else {
         return;
     };
-    let arrival = state.lock().merge(&raw, crate::quick::now_ms());
+    let arrival = {
+        let mut inner = state.lock();
+        let arrival = inner.merge(&raw, crate::quick::now_ms());
+        let session = &inner.session;
+        log::info!(
+            "[collect] submit arrival={arrival} session={} paths={} invalid={} truncated={}",
+            session.id,
+            session.paths.len(),
+            session.invalid,
+            session.truncated
+        );
+        arrival
+    };
     let app = app.clone();
     let _ = std::thread::Builder::new()
         .name("tl-collect".into())
@@ -204,8 +216,16 @@ pub fn submit_now(app: &AppHandle, raw: Vec<String>) -> Option<CollectSession> {
 /// 把当前会话交给快速窗（必要时创建窗口）。在非主线程调用。
 fn present(app: &AppHandle) {
     let Some(session) = app.state::<CollectState>().snapshot() else {
+        log::info!("[collect] present skipped: no session");
         return;
     };
+    if session.paths.is_empty() {
+        log::warn!(
+            "[collect] present: session={} has no valid paths (invalid={})",
+            session.id,
+            session.invalid
+        );
+    }
     if let Err(e) = crate::quick::show(app, session.started_ms, activate_on_show()) {
         log::warn!("[collect] 弹出快速窗失败：{e}");
         return;

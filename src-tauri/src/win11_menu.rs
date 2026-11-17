@@ -29,6 +29,8 @@ pub const CLI_ARG: &str = "--win11-menu";
 pub const MIN_BUILD: u32 = 22000;
 /// 程序目录下的资源子目录（tauri.conf.json bundle.resources）
 pub const RESOURCE_DIR: &str = "win11-menu";
+/// 注册时写入的宿主 exe 指针文件名（供 DLL FindExe 在模块路径偏离时回退）
+pub const HOST_FILE: &str = "tl_menu.host";
 pub const MSIX_FILE: &str = "TagLauncher.ShellMenu.msix";
 pub const DLL_FILE: &str = "tl_menu.dll";
 
@@ -359,7 +361,24 @@ pub mod platform {
             Privilege::Uac => run_ps_elevated(&script),
             _ => run_ps(&script).map(|_| ()),
         };
-        result.map_err(|e| register_error(privilege, &e))
+        result.map_err(|e| register_error(privilege, &e))?;
+        if let Err(e) = write_host_file(&dir) {
+            log::warn!("[win11-menu] 写入 {} 失败：{e}", super::HOST_FILE);
+        }
+        Ok(())
+    }
+
+    fn write_host_file(dir: &std::path::Path) -> Result<(), String> {
+        let exe = dir.join("tag-launcher.exe");
+        let dest = dir.join(super::RESOURCE_DIR).join(super::HOST_FILE);
+        std::fs::write(&dest, exe.to_string_lossy().as_bytes()).map_err(|e| e.to_string())
+    }
+
+    fn remove_host_file() {
+        if let Ok(dir) = program_dir() {
+            let dest = dir.join(super::RESOURCE_DIR).join(super::HOST_FILE);
+            let _ = std::fs::remove_file(dest);
+        }
     }
 
     /// 移除自己的注册不需要提权；万一失败且可提权，再经 UAC 重试一次
@@ -369,6 +388,9 @@ pub mod platform {
             Err(_) if privilege() == Privilege::Uac => run_ps_elevated(&remove_script()),
             other => other,
         };
+        if result.is_ok() {
+            remove_host_file();
+        }
         result.map_err(|e| format!("移除 Win11 右键菜单失败：{e}"))
     }
 }

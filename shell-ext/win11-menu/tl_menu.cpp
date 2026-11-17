@@ -24,17 +24,65 @@ static std::wstring ModuleDir() {
     return buf;
 }
 
-// 程序目录：DLL 在 <程序目录>\win11-menu\ 下（tauri resources），exe 在上一级；探针布局里 exe 与 DLL 同级
+// 程序目录：DLL 在 <程序目录>\win11-menu\ 下（tauri resources），exe 在上一级；探针布局里 exe 与 DLL 同级。
+// 若包加载路径与 ExternalLocation 不一致，回退读注册时写入的 tl_menu.host（一行 UTF-8 绝对路径）。
+static bool ExeExists(const std::wstring& path) {
+    DWORD attr = GetFileAttributesW(path.c_str());
+    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+static std::wstring ReadHostExe(const std::wstring& dir) {
+    std::wstring file = dir + L"\\tl_menu.host";
+    HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return {};
+    char buf[4096];
+    DWORD n = 0;
+    BOOL ok = ReadFile(h, buf, sizeof(buf) - 1, &n, nullptr);
+    CloseHandle(h);
+    if (!ok || n == 0) return {};
+    buf[n] = 0;
+    // 去掉换行与首尾空白，不把路径写进状态日志
+    while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r' || buf[n - 1] == ' ' || buf[n - 1] == '\t')) {
+        buf[--n] = 0;
+    }
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, buf, n, nullptr, 0);
+    if (wlen <= 0) return {};
+    std::wstring out((size_t)wlen, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, buf, n, out.data(), wlen);
+    return out;
+}
+
 static std::wstring FindExe() {
     std::wstring dir = ModuleDir();
     std::wstring same = dir + L"\\tag-launcher.exe";
-    if (GetFileAttributesW(same.c_str()) != INVALID_FILE_ATTRIBUTES) return same;
+    if (ExeExists(same)) return same;
     wchar_t parent[MAX_PATH * 4] = {};
     lstrcpynW(parent, dir.c_str(), ARRAYSIZE(parent));
     PathRemoveFileSpecW(parent);
     std::wstring up = std::wstring(parent) + L"\\tag-launcher.exe";
-    if (GetFileAttributesW(up.c_str()) != INVALID_FILE_ATTRIBUTES) return up;
+    if (ExeExists(up)) return up;
+    std::wstring hosted = ReadHostExe(dir);
+    if (!hosted.empty() && ExeExists(hosted)) return hosted;
     return std::wstring();
+}
+
+// 只写结果码，不写路径，避免泄漏用户文件位置。
+static void AppendStatus(const wchar_t* line) {
+    PWSTR base = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &base))) return;
+    std::wstring dir = std::wstring(base) + L"\\TagLauncher";
+    CoTaskMemFree(base);
+    CreateDirectoryW(dir.c_str(), nullptr);
+    std::wstring file = dir + L"\\win11-menu-status.txt";
+    HANDLE h = CreateFileW(file.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return;
+    int n = WideCharToMultiByte(CP_UTF8, 0, line, -1, nullptr, 0, nullptr, nullptr);
+    if (n <= 1) { CloseHandle(h); return; }
+    std::string utf8((size_t)n - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, line, -1, utf8.data(), n - 1, nullptr, nullptr);
+    DWORD written = 0;
+    WriteFile(h, utf8.data(), (DWORD)utf8.size(), &written, nullptr);
+    CloseHandle(h);
 }
 
 static void AppendMarker(const std::wstring& text) {
@@ -166,19 +214,26 @@ public:
         AppendMarker(marker);
 #endif
         std::wstring exe = FindExe();
-        if (!exe.empty()) {
+        if (exe.empty()) {
+            AppendStatus(L"find_exe=0\n");
 #ifdef TL_MENU_PROBE
-            // 探针：两条启动路径都走一遍，子进程替身记录各自是否带包标识
-            ShellExecuteW(nullptr, L"open", exe.c_str(), (L"--via=direct " + args).c_str(), nullptr, SW_SHOWNORMAL);
-            HRESULT viaHr = ShellExecuteViaExplorer(exe, L"--via=explorer " + args);
-            wchar_t note[64];
-            wsprintfW(note, L"via_explorer_hr=0x%08X\n", (unsigned)viaHr);
+            AppendMarker(L"find_exe=0\n");
+#endif
+            return E_FAIL;
+        }
+        AppendStatus(L"find_exe=1\n");
+        // 探针与产品同一条启动路径（先经 explorer，失败再直接启动），避免双启打到不同实例。
+        HRESULT viaHr = ShellExecuteViaExplorer(exe, args);
+        if (FAILED(viaHr)) {
+            ShellExecuteW(nullptr, L"open", exe.c_str(), args.c_str(), nullptr, SW_SHOWNORMAL);
+#ifdef TL_MENU_PROBE
+            wchar_t note[80];
+            wsprintfW(note, L"via=direct_fallback hr=0x%08X\n", (unsigned)viaHr);
             AppendMarker(note);
-#else
-            // 经桌面 explorer 启动，TagLauncher 不继承 dllhost 的包标识；explorer 不可用时退回直接启动
-            if (FAILED(ShellExecuteViaExplorer(exe, args))) {
-                ShellExecuteW(nullptr, L"open", exe.c_str(), args.c_str(), nullptr, SW_SHOWNORMAL);
-            }
+#endif
+        } else {
+#ifdef TL_MENU_PROBE
+            AppendMarker(L"via=explorer\n");
 #endif
         }
         return S_OK;
