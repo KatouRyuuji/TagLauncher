@@ -204,32 +204,38 @@ fn all_migrations() -> Vec<Box<dyn Migration>> {
 }
 
 
-/// 运行时防护：注册表必须版本唯一且严格递增，否则 `version() <= current` 会静默跳过其中一条。
-/// 连续无空号由当前已包含全部中间迁移的分支用测试锁定（跨 PR 变基完成后再要求 1..=N 连续）。
+/// 运行时防护：注册表必须从 1 起唯一且连续（v == prev+1）。
+/// 空号会让 `version() <= current` 永久跳过中间迁移（例如 23→25 后再合入 v024）。
 pub fn validate_migration_registry(migrations: &[Box<dyn Migration>]) -> Result<(), rusqlite::Error> {
+    let fail = |msg: String| {
+        rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR), Some(msg))
+    };
     let mut seen = HashSet::new();
     let mut prev: Option<u32> = None;
     for migration in migrations {
         let v = migration.version();
         if !seen.insert(v) {
-            return Err(rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-                Some(format!(
-                    "迁移注册表存在重复版本 {v}（{}），拒绝启动以免静默跳过",
-                    migration.description()
-                )),
-            ));
+            return Err(fail(format!(
+                "迁移注册表存在重复版本 {v}（{}），拒绝启动以免静默跳过",
+                migration.description()
+            )));
         }
-        if let Some(p) = prev {
-            if v <= p {
-                return Err(rusqlite::Error::SqliteFailure(
-                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-                    Some(format!(
-                        "迁移版本必须严格递增，{p} 之后是 {v}（{}）",
-                        migration.description()
-                    )),
-                ));
+        match prev {
+            None if v != 1 => {
+                return Err(fail(format!(
+                    "迁移注册表必须以版本 1 开头，实际是 {v}（{}）",
+                    migration.description()
+                )));
             }
+            Some(p) if v != p + 1 => {
+                return Err(fail(format!(
+                    "迁移版本必须从 1 起连续（{} 之后应为 {}，实际是 {v}，{}），拒绝空号以免跳过中间迁移",
+                    p,
+                    p + 1,
+                    migration.description()
+                )));
+            }
+            _ => {}
         }
         prev = Some(v);
     }
@@ -440,20 +446,30 @@ mod tests {
     #[test]
     fn registry_validation_rejects_duplicate_versions() {
         let list: Vec<Box<dyn Migration>> = vec![
-            Box::new(Fake(23, "a")),
-            Box::new(Fake(24, "document")),
-            Box::new(Fake(24, "hide watch")),
+            Box::new(Fake(1, "a")),
+            Box::new(Fake(2, "b")),
+            Box::new(Fake(2, "dup")),
         ];
-        let err = validate_migration_registry(&list).expect_err("duplicate v024 must fail");
+        let err = validate_migration_registry(&list).expect_err("duplicate version must fail");
         let msg = err.to_string();
-        assert!(msg.contains("重复版本 24") && msg.contains("静默跳过"), "unexpected: {msg}");
+        assert!(msg.contains("重复版本 2") && msg.contains("静默跳过"), "unexpected: {msg}");
     }
 
     #[test]
     fn registry_validation_rejects_non_increasing_versions() {
-        let list: Vec<Box<dyn Migration>> = vec![Box::new(Fake(3, "c")), Box::new(Fake(2, "b"))];
+        let list: Vec<Box<dyn Migration>> = vec![Box::new(Fake(1, "a")), Box::new(Fake(0, "back"))];
         let err = validate_migration_registry(&list).expect_err("decreasing versions must fail");
-        assert!(err.to_string().contains("必须严格递增"), "{}", err);
+        let msg = err.to_string();
+        assert!(msg.contains("必须从 1 起连续") && msg.contains("实际是 0"), "unexpected: {msg}");
+    }
+
+
+    #[test]
+    fn registry_validation_rejects_version_holes() {
+        let list: Vec<Box<dyn Migration>> = vec![Box::new(Fake(1, "a")), Box::new(Fake(2, "b")), Box::new(Fake(4, "skip3"))];
+        let err = validate_migration_registry(&list).expect_err("23-to-25 style hole must fail");
+        let msg = err.to_string();
+        assert!(msg.contains("必须从 1 起连续") && msg.contains("实际是 4"), "unexpected: {msg}");
     }
 
 }
