@@ -10,7 +10,6 @@
 
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
@@ -117,8 +116,6 @@ static QUERY_GLASS_GEN: AtomicU64 = AtomicU64::new(0);
 static GLASS_DARK: AtomicBool = AtomicBool::new(false);
 /// 当前是否处于低内存目标（唤出时只在确实降过时才恢复）
 static LOW_MEMORY: AtomicBool = AtomicBool::new(false);
-/// 串行化 WebView2 SetIsVisible，避免预创建暂停与 show 的 with_webview 回调交错。
-static CONTROLLER_VIS_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -320,8 +317,10 @@ pub(crate) fn set_controller_visible(window: &WebviewWindow, visible: bool) {
     #[cfg(windows)]
     {
         let _ = window.with_webview(move |webview| {
-            let _guard = CONTROLLER_VIS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            // SAFETY：with_webview 回调在 WebView 所在线程，controller 在回调期间有效
+            // SAFETY：with_webview 回调在 runtime 主线程（即 Windows UI/WebView2 线程）执行，
+            // controller 在回调期间有效。wry 2.12：调用方已在主线程则同步跑完；否则
+            // send_event FIFO 排队。不再加非可重入锁：主线程上 with_webview 同步重入
+            // （例如 SetIsVisible 派发 Focused 再进 set_controller_visible）会自锁。
             let result = unsafe { webview.controller().SetIsVisible(visible.into()) };
             if let Err(e) = result {
                 log::warn!("[quick] SetIsVisible({visible}) 失败：{e}");
@@ -332,13 +331,13 @@ pub(crate) fn set_controller_visible(window: &WebviewWindow, visible: bool) {
     let _ = (window, visible);
 }
 
-/// 预创建或尚未 intended 显示时暂停 controller。须在 WebView 线程上复核
-/// `INTENDED_VISIBLE`：若 show() 已抢先把意图设为可见，则不要把 SetIsVisible(true) 打回 false。
+/// 预创建或尚未 intended 显示时暂停 controller。须在 WebView/UI 线程上按
+/// `INTENDED_VISIBLE` 的最终状态决定：若 show() 已把意图设为可见，则不要保持 false
+/// （排队中的 SetIsVisible(true) 仍会再跑一次，此处恢复是为了不让中间态把页面留空）。
 fn pause_quick_controller_if_unintended(window: &WebviewWindow) {
     #[cfg(windows)]
     {
         let _ = window.with_webview(move |webview| {
-            let _guard = CONTROLLER_VIS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             if INTENDED_VISIBLE.load(Ordering::SeqCst) {
                 return;
             }
@@ -346,6 +345,12 @@ fn pause_quick_controller_if_unintended(window: &WebviewWindow) {
             let result = unsafe { webview.controller().SetIsVisible(false.into()) };
             if let Err(e) = result {
                 log::warn!("[quick] SetIsVisible(false) 失败：{e}");
+            }
+            if INTENDED_VISIBLE.load(Ordering::SeqCst) {
+                let result = unsafe { webview.controller().SetIsVisible(true.into()) };
+                if let Err(e) = result {
+                    log::warn!("[quick] SetIsVisible(true) 失败：{e}");
+                }
             }
         });
     }

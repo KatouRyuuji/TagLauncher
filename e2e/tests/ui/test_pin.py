@@ -152,6 +152,31 @@ def test_pin_shares_window_with_quick_search(app, sandbox):
     wait_until(lambda: not is_visible(qp), 3)
 
 
+def test_pin_float_after_hidden_precreate_then_search_and_back(app, sandbox):
+    """预创建且从未 show 后切到钉住浮动窗（第一次显示走钉住，不是搜索）；搜索/还原/关闭钉住后再唤出搜索。"""
+    _, parent, _ = seed(app, sandbox)
+    qp = enable_quick(app)
+    wait_until(lambda: qp.evaluate("() => document.readyState") == "complete", 20, "预创建隐藏页应就绪")
+    assert not is_visible(qp), "开启钉住前，预创建窗应仍隐藏"
+    pin_settings(app, enabled=True, source={"kind": "cabinet", "id": parent})
+    wait_until(lambda: is_visible(qp) and surface(qp) == "pin", 8,
+               lambda: (is_visible(qp), surface(qp)))
+    assert len(quick_pages(app)) == 1
+    summon(app, qp)
+    assert surface(qp) == "search"
+    assert qp.evaluate("() => document.activeElement?.dataset?.testid") == "quick-input"
+    app.invoke("quick_hide")
+    wait_until(lambda: is_visible(qp) and surface(qp) == "pin", 5,
+               lambda: (is_visible(qp), surface(qp)))
+    pin_settings(app, enabled=False)
+    wait_until(lambda: not is_visible(qp), 5, "关闭钉住且搜索仍开：窗口应隐藏保留")
+    assert len(quick_pages(app)) == 1
+    summon(app, qp)
+    assert surface(qp) == "search" and is_visible(qp)
+    app.invoke("quick_hide")
+    wait_until(lambda: not is_visible(qp), 3)
+
+
 @pytest.mark.case("E-PIN-04")
 @pytest.mark.visible_window  # 抽屉按设计贴在屏幕边、展开动画在屏幕内：放到允许可见窗口的 desktop 作业跑（后台分片的隐身守护会判违规）
 def test_drawer_handle_expand_collapse_sizes(app, sandbox):
