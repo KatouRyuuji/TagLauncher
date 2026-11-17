@@ -28,10 +28,25 @@ def handle_hwnd(app) -> int:
                       "没有找到原生把手窗口")
 
 
+# 有意设计变更：探头休息宽度 68 逻辑像素（不再是 8px 细条）。取整允许 ±4。
+# 悬停时卡片会加宽到 168，collapsed() 只在鼠标已离开（park）后断言休息宽度。
+# HWND 含阴影边距，比卡片大；宽度与上下位置用 pin_diag.handleRect（卡片），不用 GetWindowRect。
+PEEK_REST_WIDTH = 68
+
+
+def handle_card(app) -> list:
+    """卡片物理矩形 [x, y, w, h]，不含阴影边距。"""
+    return app.invoke("pin_diag")["handleRect"]
+
+
 def collapsed(app, strip: int, quick: int) -> bool:
-    # 设计：把手 8 逻辑像素（取整允许 ±2）
     s = scale(strip)
-    return win32.is_visible(strip) and 6 <= width(strip) <= round(8 * s) + 2 and not win32.is_visible(quick)
+    rest = round(PEEK_REST_WIDTH * s)
+    try:
+        w = int(handle_card(app)[2])
+    except Exception:
+        w = width(strip)
+    return win32.is_visible(strip) and rest - 4 <= w <= rest + 4 and not win32.is_visible(quick)
 
 
 def expanded(app, quick: int) -> bool:
@@ -87,7 +102,7 @@ def hit_edge(h: int) -> tuple[int, int]:
 
 @pytest.mark.case("D-PIN-01")
 def test_drawer_slides_out_on_edge_hover_and_collapses_on_leave(app, sandbox):
-    """把手贴在工作区右边缘；鼠标碰边停留 → 滑出到面板宽；划过（不停留）不弹；离开面板 → 收回。"""
+    """探头贴在工作区右边缘；鼠标碰边停留 → 滑出到面板宽；划过（不停留）不弹；离开面板 → 收回。"""
     h, q = setup_drawer(app, sandbox)
     work = win32.monitor_info(h)["work"]
     l, t, r, b = win32.rect(h)
@@ -174,15 +189,18 @@ def test_drawer_drag_switches_edge_and_position_survives_restart(app, sandbox):
     top_before = win32.rect(q)[1]
     park_mouse(h)
     wait_until(lambda: collapsed(app, h, q), 3)
-    assert win32.rect(h)[0] == work[0] and abs(win32.rect(h)[1] - top_before) <= 2, win32.rect(h)
+    card = handle_card(app)
+    # 贴边看 HWND 左缘（贴边一侧无阴影）；上下对齐看卡片顶，不是带阴影的 HWND 顶。
+    assert win32.rect(h)[0] == work[0] and abs(card[1] - top_before) <= 2, (win32.rect(h), card)
 
     app.restart()
     q = quick_hwnd(app)
     h = handle_hwnd(app)
     wait_until(lambda: collapsed(app, h, q) and win32.rect(h)[0] == work[0], 10,
                lambda: f"重启后把手应在左边：rect={win32.rect(h)}")
-    assert abs(win32.rect(h)[1] - top_before) <= 2, f"上下位置应记住：{win32.rect(h)[1]} vs {top_before}"
-    print(f"PIN_REMEMBER offset={offset} rect={win32.rect(h)} monitor={dbh.meta(sandbox.db_path, 'pin.drawer_monitor')}")
+    card = handle_card(app)
+    assert abs(card[1] - top_before) <= 2, f"上下位置应记住：卡片 {card[1]} vs 抽屉 {top_before}"
+    print(f"PIN_REMEMBER offset={offset} rect={win32.rect(h)} card={card} monitor={dbh.meta(sandbox.db_path, 'pin.drawer_monitor')}")
 
 
 @pytest.mark.case("D-PIN-04")

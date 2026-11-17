@@ -4,7 +4,7 @@
 // 浮动窗：标题可拖动（后端记位置），列表双击 / Enter 打开。
 // 边缘抽屉：收起时本窗口隐藏，贴边的是后端的原生把手（pin_strip.rs，系统悬停判定后滑出）；
 // 面板始终渲染好，滑出即见内容。展开后鼠标离开面板 PIN_LEAVE_COLLAPSE_MS 收回（失焦由后端收回）。
-// 把手颜色跟随主题强调色（pin_handle_color）。没有任何轮询。
+// 探头颜色 / 毛玻璃着色跟随主题（pin_handle_color + pin_handle_chrome）。没有任何轮询。
 // 数据：任何来源的写入（主窗、快速窗、tl CLI）都重新取 pin_items。
 // ============================================================================
 
@@ -15,8 +15,8 @@ import { announceWindowWrite, onAnyDataChanged } from "../lib/dataSync";
 import { itemDisplayName } from "../lib/itemDisplay";
 import type { PinViewState } from "../lib/desktopShortcut";
 import { quickKeyAction, stepIndex } from "./quickModel";
-import { filterPinItems, PIN_ICON_LIMIT, PIN_LEAVE_COLLAPSE_MS, pinCountText } from "./pinModel";
-import { ItemTypeIcon, ItemVisualIcon } from "../components/ItemVisualIcon";
+import { filterPinItems, PIN_LEAVE_COLLAPSE_MS, pinCountText } from "./pinModel";
+import { ItemTypeIcon } from "../components/ItemVisualIcon";
 
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -54,11 +54,27 @@ export function PinView({ view }: { view: PinViewState }) {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
     leaveTimer.current = null;
   };
-  // 原生把手跟随主题强调色（主题在本窗口启动时从快照套用；切换主题后下次视图变化时同步）
+  // 原生探头跟随主题强调色与卡片着色（主题在本窗口启动时从快照套用；切换主题后下次视图变化时同步）
+  // 用临时节点把 color-mix / 变量算成 rgb()，后端 parse_css_color 才能吃。
   useEffect(() => {
     if (!isDrawer) return;
-    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent-primary").trim();
+    const resolve = (name: string): string => {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      if (!raw) return "";
+      const el = document.createElement("span");
+      el.style.color = raw;
+      document.body.appendChild(el);
+      const rgb = getComputedStyle(el).color;
+      el.remove();
+      return rgb || raw;
+    };
+    const accent = resolve("--accent-primary");
     if (accent) void db.pinHandleColor(accent).catch(() => {});
+    const bg = resolve("--bg-surface");
+    const fg = resolve("--text-primary");
+    const muted = resolve("--text-muted") || resolve("--text-secondary");
+    const dark = document.documentElement.getAttribute("data-scheme") === "dark";
+    if (bg || fg) void db.pinHandleChrome(bg, fg, muted, dark).catch(() => {});
   }, [isDrawer, drawer]);
   useEffect(() => clearTimers, []);
   useEffect(() => clearTimers(), [collapsed]);
@@ -131,11 +147,14 @@ export function PinView({ view }: { view: PinViewState }) {
       data-edge={settings.edge}
       style={isDrawer ? { width: "var(--pin-drawer-width)" } : undefined}
     >
-      <div className="pin-header" data-tauri-drag-region data-testid="pin-header">
+      <div className="pin-chrome" data-tauri-drag-region data-testid="pin-header">
+      <div className="pin-stripe" aria-hidden="true" />
+      <div className="pin-header" data-tauri-drag-region>
         <span className="pin-title" data-tauri-drag-region data-testid="pin-title" title={missing ? "来源已删除" : (data?.title ?? undefined)}>
           {missing ? "来源已删除" : data?.title ?? "正在加载…"}
         </span>
         {data && !missing && <span className="pin-count" data-tauri-drag-region data-testid="pin-count">{data.total}</span>}
+      </div>
       </div>
       {missing ? (
         <p className="quick-empty" role="alert" data-testid="pin-missing">
@@ -172,15 +191,27 @@ export function PinView({ view }: { view: PinViewState }) {
                 onDoubleClick={() => void open(item.id)}
               >
                 <span className="quick-icon">
-                  {i < PIN_ICON_LIMIT
-                    ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
-                    : <ItemTypeIcon item={item} emojiClass="" />}
+                  <ItemTypeIcon item={item} emojiClass="" />
                 </span>
                 <span className="quick-name" title={itemDisplayName(item)}>{itemDisplayName(item)}</span>
               </li>
             ))}
           </ul>
         </>
+      )}
+      {current && !missing && (
+        <div className="pin-preview" data-testid="pin-preview">
+          <span className="quick-icon">
+            <ItemTypeIcon item={current} emojiClass="" />
+          </span>
+          <div className="pin-preview-meta">
+            <div className="pin-preview-name" title={itemDisplayName(current)}>{itemDisplayName(current)}</div>
+            <div className="pin-preview-path" title={current.path}>{current.path}</div>
+          </div>
+          <button type="button" className="quick-button quick-button-primary" data-testid="pin-preview-open" onClick={() => void open(current.id)}>
+            打开
+          </button>
+        </div>
       )}
       <div className="quick-footer">
         {error ? (

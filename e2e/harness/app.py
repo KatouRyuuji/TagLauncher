@@ -293,6 +293,34 @@ class AppSession:
         return self
 
     # ------------------------------------------------------------------ IPC 工具
+    # ------------------------------------------------------------------ 空闲测量窗口
+    def detach_cdp(self) -> None:
+        """断开 Playwright 的 CDP 连接（connect_over_cdp 的 close 只关 websocket，不关 WebView）。
+        空闲 CPU 测的是用户实际体验：测量窗口里不该有调试会话挂在 WebView2 上。"""
+        if self.browser is not None:
+            try:
+                self.browser.close()
+            except Exception:
+                pass
+        self.browser, self.page = None, None
+
+    def reattach_cdp(self, timeout: float = 30) -> None:
+        """重新连上 CDP 并找回主窗页面（不 reload：页面里的桩与状态保持）。"""
+        endpoint = f"http://127.0.0.1:{self.port}"
+        deadline = time.monotonic() + timeout
+        while True:
+            self.browser = self.pw.chromium.connect_over_cdp(endpoint)
+            for ctx in self.browser.contexts:
+                for cand in ctx.pages:
+                    url = cand.url or ""
+                    if url.startswith("http://tauri.localhost") and "quick.html" not in url:
+                        self.page = cand
+                        cand.on("pageerror", lambda err: self.page_errors.append(str(err)))
+                        return
+            if time.monotonic() > deadline:
+                raise RuntimeError("重新连接 CDP 后找不到主窗页面")
+            time.sleep(0.5)
+
     def invoke(self, cmd: str, args: dict | None = None):
         return self.page.evaluate("([c, a]) => window.__TAURI__.core.invoke(c, a)", [cmd, args or {}])
 

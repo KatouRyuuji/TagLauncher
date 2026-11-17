@@ -1,5 +1,5 @@
 import type { ThemeDefinition, ThemeTokenLayers } from "../types/theme";
-import { saveThemeSnapshot } from "./themeSnapshot";
+import { saveThemeSnapshot, setExtraSnapshotVars } from "./themeSnapshot";
 import { showToast } from "./toast";
 import { DEFAULT_THEME_VARIABLES, THEME_VARIABLE_KEYS } from "../themes";
 import { inferThemeScheme, resolveShapeLang } from "../themes/shapeLang";
@@ -280,15 +280,25 @@ export function applyTheme(theme: ThemeDefinition, options: ApplyThemeOptions = 
     root.style.removeProperty(`--${key}`);
   }
   dynamicThemeVariableKeys.clear();
+  const glassForSnapshot: Record<string, string> = {};
   for (const [key, value] of Object.entries(variables)) {
     // 防御：非字符串值（JSON 可携带数字/对象）无法消毒也无法作为 CSS 变量写入，
     // 跳过而非抛错——mod 主题在注册前已做值类型校验，此处兜底持久化/旧数据场景
     if (typeof value !== "string") continue;
-    root.style.setProperty(`--${key}`, sanitizeVar(value));
+    const sanitized = sanitizeVar(value);
+    if (key.startsWith("glass-")) {
+      // 毛玻璃只给快速窗 / 钉住浮动窗：不写主窗 :root，避免 7 个 color-mix / blur
+      // 变量继承到整棵树（PR67 相对 PR66 进了主窗路径的唯一样式改动）。
+      // 仍写入主题快照，快速窗 applyThemeSnapshot 能拿到。
+      glassForSnapshot[`--${key}`] = sanitized;
+      continue;
+    }
+    root.style.setProperty(`--${key}`, sanitized);
     if (!THEME_VARIABLE_KEYS.includes(key)) {
       dynamicThemeVariableKeys.add(key);
     }
   }
+  setExtraSnapshotVars(glassForSnapshot);
   for (const [key, value] of Object.entries(theme.assets ?? {})) {
     if (typeof value !== "string") continue;
     const variableKey = `asset-${key}`;
