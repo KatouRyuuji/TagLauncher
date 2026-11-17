@@ -20,6 +20,7 @@ import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from harness import files
 from harness.app import AppSession, wait_until
@@ -59,7 +60,7 @@ log_fp = None
 def log(msg: str) -> None:
     line = f"{time.strftime('%H:%M:%S')} {msg}"
     print(line, flush=True)
-    if log_fp:
+    if log_fp and not getattr(log_fp, "closed", True):
         log_fp.write(line + "\n")
         log_fp.flush()
 
@@ -1677,10 +1678,30 @@ class Walk:
         pause(1.0)
         self.shot("09-main-light-f1-end")
 
+
+def _write_system_probe() -> None:
+    try:
+        from glass_diag import write_system_probe
+        path = write_system_probe(OUT)
+        log(f"glass-diag system {path}")
+    except Exception as e:
+        log(f"glass-diag system: {e}")
+
+
+def _record_glass_diag(walk, label: str, page=None) -> None:
+    try:
+        from glass_diag import record_snapshot
+        info = record_snapshot(OUT, walk.app, page=page, label=label, pid=walk.app.proc.pid)
+        log(f"glass-diag {label} acrylic={info.get('has_acrylic')} apply_n={info.get('apply_n')} path={info.get('path')}")
+    except Exception as e:
+        log(f"glass-diag {label}: {e}")
+
+
     def ch_glass(self):
         """最小原生截图：浅色快速窗/钉住浮窗叠在彩色大图标和白底柜上，以及深色快速窗。只用 gdigrab 桌面帧。"""
         pg = self.app.page
         self.place()
+        _write_system_probe()
 
         def apply(tid, mode, font):
             pg.evaluate("""s => { const k = 'taglauncher.workspace_prefs';
@@ -1724,6 +1745,7 @@ class Walk:
             # 桌面 gdigrab 才含 DWM 瞬态背景；page 裁切只作结构对照，不能当原生毛玻璃证据。
             self.shot(shot_name, page=qp, page_too=False)
             page_shot(qp, self.shots / f"{shot_name}-page.png")
+            _record_glass_diag(self, shot_name, qp)
             inp.fill("")
             pause(0.3)
             send_keys(VK_ESCAPE)
@@ -1768,6 +1790,7 @@ class Walk:
         except Exception as e:
             log(f"pin page: {e}")
         self.shot("07-pin-float-light-f1-grid", page=qp, page_too=False)
+        _record_glass_diag(self, "07-pin-float-light-f1-grid", qp)
         self.app.invoke("set_pin_settings", {"settings": {
             "enabled": False, "source": None, "mode": "float", "edge": "right", "topmost": True,
         }})
@@ -1957,7 +1980,6 @@ def main() -> int:
     (OUT / "DISCLOSURES.md").write_text("\n".join("- " + d for d in summary["disclosures"]) + "\n", encoding="utf-8")
     (OUT / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     log(json.dumps(summary, ensure_ascii=False, indent=2))
-    log_fp.close()
     if os.environ.get("UX_GLASS_ONLY") == "1":
         needed = [
             "05-quick-search-light-f1-grid.png",
@@ -1967,7 +1989,13 @@ def main() -> int:
         ]
         missing = [n for n in needed if not (shots / n).exists()]
         log(f"glass shots missing={missing}")
+        if log_fp and not getattr(log_fp, "closed", True):
+            log_fp.close()
+        log_fp = None
         return 0 if not missing else 1
+    if log_fp and not getattr(log_fp, "closed", True):
+        log_fp.close()
+    log_fp = None
     # 有视频就算可交付；章节失败记入 summary 不阻断上传
     return 0 if (OUT / "after.mp4").exists() or rec.raw.exists() else (rc or 1)
 

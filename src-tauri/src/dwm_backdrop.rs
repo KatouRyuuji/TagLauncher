@@ -8,10 +8,15 @@
 //! 会读成浑浊灰卡片。不支持时返回 false，由前端用干净实底回退，绝不走浑浊灰路径。
 //!
 //! API 全部经 GetProcAddress 调用，不增加 Cargo feature；失败即视为不支持。
+//!
+//! 诊断（只记日志/文件，不改变 apply/clear 判定）：若设置了环境变量 `TL_DWM_DIAG`，
+//! 每次 apply/clear/set_dark 把 HRESULT 与窗口样式追加写成 JSONL。仅用于临时走查分支。
 
 #![cfg(windows)]
 
 use std::ffi::c_void;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::sync::OnceLock;
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
@@ -50,10 +55,12 @@ struct Margins {
 
 type RtlGetVersionFn = unsafe extern "system" fn(*mut OsVersionInfoW) -> i32;
 type DwmSetAttrFn = unsafe extern "system" fn(HWND, u32, *const c_void, u32) -> i32;
+type DwmGetAttrFn = unsafe extern "system" fn(HWND, u32, *mut c_void, u32) -> i32;
 type DwmExtendFn = unsafe extern "system" fn(HWND, *const Margins) -> i32;
 
 struct DwmApi {
     set_attr: DwmSetAttrFn,
+    get_attr: Option<DwmGetAttrFn>,
     extend: DwmExtendFn,
 }
 
@@ -66,7 +73,6 @@ fn proc_addr(h: windows_sys::Win32::Foundation::HMODULE, name: &[u8]) -> *const 
     let proc = unsafe { GetProcAddress(h, name.as_ptr() as _) };
     unsafe { std::mem::transmute(proc) }
 }
-
 
 fn nt_build() -> u32 {
     // SAFETY：ntdll 常驻；RtlGetVersion 写调用方提供的结构体。
@@ -109,8 +115,14 @@ fn api() -> Option<&'static DwmApi> {
             if set_attr.is_null() || extend.is_null() {
                 return None;
             }
+            let get_attr = proc_addr(lib, b"DwmGetWindowAttribute\0");
             Some(DwmApi {
                 set_attr: std::mem::transmute(set_attr),
+                get_attr: if get_attr.is_null() {
+                    None
+                } else {
+                    Some(std::mem::transmute(get_attr))
+                },
                 extend: std::mem::transmute(extend),
             })
         }
@@ -124,19 +136,66 @@ pub fn supported() -> bool {
     *OK.get_or_init(|| api().is_some() && nt_build() >= MIN_BUILD)
 }
 
-fn set_attr(hwnd: HWND, attr: u32, value: &u32) -> bool {
+fn hr_hex(hr: i32) -> String {
+    format!("0x{:08X}", hr as u32)
+}
+
+fn exstyle(hwnd: HWND) -> u32 {
+    unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 }
+}
+
+fn set_attr_hr(hwnd: HWND, attr: u32, value: &u32) -> i32 {
     let Some(api) = api() else {
-        return false;
+        return -1;
     };
     // SAFETY：hwnd 是本进程窗口；value 在调用期间有效。
-    unsafe { (api.set_attr)(hwnd, attr, value as *const u32 as *const c_void, 4) == 0 }
+    unsafe { (api.set_attr)(hwnd, attr, value as *const u32 as *const c_void, 4) }
+}
+
+fn set_attr(hwnd: HWND, attr: u32, value: &u32) -> bool {
+    set_attr_hr(hwnd, attr, value) == 0
+}
+
+fn get_attr_u32(hwnd: HWND, attr: u32) -> (i32, Option<u32>) {
+    let Some(api) = api() else {
+        return (-1, None);
+    };
+    let Some(get) = api.get_attr else {
+        return (-1, None);
+    };
+    let mut val: u32 = 0;
+    // SAFETY：hwnd 是本进程窗口；val 在调用期间有效。
+    let hr = unsafe { get(hwnd, attr, &mut val as *mut u32 as *mut c_void, 4) };
+    if hr == 0 {
+        (hr, Some(val))
+    } else {
+        (hr, None)
+    }
+}
+
+fn extend_frame_hr(hwnd: HWND, margins: Margins) -> i32 {
+    let Some(api) = api() else {
+        return -1;
+    };
+    unsafe { (api.extend)(hwnd, &margins) }
 }
 
 fn extend_frame(hwnd: HWND, margins: Margins) -> bool {
-    let Some(api) = api() else {
-        return false;
+    extend_frame_hr(hwnd, margins) == 0
+}
+
+fn write_diag(line: &str) {
+    let Some(path) = std::env::var_os("TL_DWM_DIAG") else {
+        return;
     };
-    unsafe { (api.extend)(hwnd, &margins) == 0 }
+    let path = std::path::PathBuf::from(path);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{line}");
+    }
+    log::info!("[dwm-diag] {line}");
 }
 
 /// 去掉 Tauri `transparent(true)` 可能带上的 `WS_EX_LAYERED`：系统背景与分层窗口互斥。
@@ -151,13 +210,22 @@ fn clear_layered(hwnd: HWND) {
 
 /// 开启瞬态亚克力、沉浸式深色、合成器圆角。失败返回 false，调用方走干净实底。
 pub fn apply(hwnd: isize, dark: bool) -> bool {
-    if hwnd == 0 || !supported() {
+    let build = nt_build();
+    let api_loaded = api().is_some();
+    let supp = supported();
+    if hwnd == 0 || !supp {
+        write_diag(&format!(
+            "{{\"op\":\"apply\",\"ok\":false,\"skip_reason\":\"{}\",\"hwnd\":{hwnd},\"dark\":{dark},\"build\":{build},\"min_build\":{MIN_BUILD},\"supported\":{supp},\"api_loaded\":{api_loaded}}}",
+            if hwnd == 0 { "hwnd0" } else { "unsupported" }
+        ));
         return false;
     }
     let h = hwnd as HWND;
+    let ex_before = exstyle(h);
     clear_layered(h);
+    let ex_after = exstyle(h);
     // 客户区全部作为 DWM 画框，背景才能透出来。
-    if !extend_frame(
+    let extend_hr = extend_frame_hr(
         h,
         Margins {
             left: -1,
@@ -165,13 +233,37 @@ pub fn apply(hwnd: isize, dark: bool) -> bool {
             top: -1,
             bottom: -1,
         },
-    ) {
+    );
+    if extend_hr != 0 {
+        write_diag(&format!(
+            "{{\"op\":\"apply\",\"ok\":false,\"fail_step\":\"extend_frame\",\"hwnd\":{hwnd},\"dark\":{dark},\"build\":{build},\"min_build\":{MIN_BUILD},\"supported\":true,\"api_loaded\":true,\"exstyle_before\":{ex_before},\"exstyle_after\":{ex_after},\"layered_before\":{},\"layered_after\":{},\"extend_hr\":\"{}\"}}",
+            (ex_before & WS_EX_LAYERED) != 0,
+            (ex_after & WS_EX_LAYERED) != 0,
+            hr_hex(extend_hr)
+        ));
         return false;
     }
     let dark_v = if dark { 1u32 } else { 0 };
-    let _ = set_attr(h, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_v);
-    let _ = set_attr(h, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND);
-    set_attr(h, DWMWA_SYSTEMBACKDROP_TYPE, &DWMSBT_TRANSIENTWINDOW)
+    let dark_hr = set_attr_hr(h, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_v);
+    let corner_hr = set_attr_hr(h, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND);
+    let backdrop_hr = set_attr_hr(h, DWMWA_SYSTEMBACKDROP_TYPE, &DWMSBT_TRANSIENTWINDOW);
+    let (backdrop_get_hr, backdrop_get) = get_attr_u32(h, DWMWA_SYSTEMBACKDROP_TYPE);
+    let ok = backdrop_hr == 0;
+    let backdrop_get_s = match backdrop_get {
+        Some(v) => v.to_string(),
+        None => "null".into(),
+    };
+    write_diag(&format!(
+        "{{\"op\":\"apply\",\"ok\":{ok},\"hwnd\":{hwnd},\"dark\":{dark},\"build\":{build},\"min_build\":{MIN_BUILD},\"supported\":true,\"api_loaded\":true,\"exstyle_before\":{ex_before},\"exstyle_after\":{ex_after},\"layered_before\":{},\"layered_after\":{},\"extend_hr\":\"{}\",\"dark_hr\":\"{}\",\"corner_hr\":\"{}\",\"backdrop_hr\":\"{}\",\"backdrop_get\":{backdrop_get_s},\"backdrop_get_hr\":\"{}\",\"want_backdrop\":{DWMSBT_TRANSIENTWINDOW}}}",
+        (ex_before & WS_EX_LAYERED) != 0,
+        (ex_after & WS_EX_LAYERED) != 0,
+        hr_hex(extend_hr),
+        hr_hex(dark_hr),
+        hr_hex(corner_hr),
+        hr_hex(backdrop_hr),
+        hr_hex(backdrop_get_hr)
+    ));
+    ok
 }
 
 /// 只更新深色模式（窗口已在显示、背景已打开时跟随主题切换）。
@@ -180,7 +272,12 @@ pub fn set_dark(hwnd: isize, dark: bool) {
         return;
     }
     let dark_v = if dark { 1u32 } else { 0 };
-    let _ = set_attr(hwnd as HWND, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_v);
+    let hr = set_attr_hr(hwnd as HWND, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_v);
+    write_diag(&format!(
+        "{{\"op\":\"set_dark\",\"ok\":{},\"hwnd\":{hwnd},\"dark\":{dark},\"dark_hr\":\"{}\"}}",
+        hr == 0,
+        hr_hex(hr)
+    ));
 }
 
 /// 隐藏时关掉系统背景，避免 DWM 在不可见窗口上继续合成（空闲 CPU）。
@@ -189,8 +286,8 @@ pub fn clear(hwnd: isize) {
         return;
     }
     let h = hwnd as HWND;
-    let _ = set_attr(h, DWMWA_SYSTEMBACKDROP_TYPE, &DWMSBT_NONE);
-    let _ = extend_frame(
+    let backdrop_hr = set_attr_hr(h, DWMWA_SYSTEMBACKDROP_TYPE, &DWMSBT_NONE);
+    let extend_hr = extend_frame_hr(
         h,
         Margins {
             left: 0,
@@ -199,4 +296,16 @@ pub fn clear(hwnd: isize) {
             bottom: 0,
         },
     );
+    let (backdrop_get_hr, backdrop_get) = get_attr_u32(h, DWMWA_SYSTEMBACKDROP_TYPE);
+    let backdrop_get_s = match backdrop_get {
+        Some(v) => v.to_string(),
+        None => "null".into(),
+    };
+    write_diag(&format!(
+        "{{\"op\":\"clear\",\"ok\":{},\"hwnd\":{hwnd},\"backdrop_hr\":\"{}\",\"extend_hr\":\"{}\",\"backdrop_get\":{backdrop_get_s},\"backdrop_get_hr\":\"{}\"}}",
+        backdrop_hr == 0 && extend_hr == 0,
+        hr_hex(backdrop_hr),
+        hr_hex(extend_hr),
+        hr_hex(backdrop_get_hr)
+    ));
 }

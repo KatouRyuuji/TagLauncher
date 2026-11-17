@@ -159,6 +159,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/e2e
           UX_OUT: ${{ github.workspace }}/ux-review-redesign
           UX_HEAD_SHA: ${{ github.sha }}
+          TL_DWM_DIAG: ${{ github.workspace }}/ux-review-redesign/dwm-apply.jsonl
         run: python e2e/tools/ux_walkthrough.py
 
       - name: Upload glass shots
