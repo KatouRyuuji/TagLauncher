@@ -10,6 +10,7 @@
 
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
@@ -116,6 +117,8 @@ static QUERY_GLASS_GEN: AtomicU64 = AtomicU64::new(0);
 static GLASS_DARK: AtomicBool = AtomicBool::new(false);
 /// 当前是否处于低内存目标（唤出时只在确实降过时才恢复）
 static LOW_MEMORY: AtomicBool = AtomicBool::new(false);
+/// 串行化 WebView2 SetIsVisible，避免预创建暂停与 show 的 with_webview 回调交错。
+static CONTROLLER_VIS_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -199,6 +202,10 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     crate::pin::install_caption_drag(&window);
     // 页面默认带 data-quick-hidden。此处不调用 clear_glass_effect：它的 with_webview
     // 与紧接着的首次 show/apply 竞态，可能把刚 SetIsVisible(true) 又打回 false。
+    // 但仍须暂停默认可见的 controller：HWND 已 hidden，页面加载后否则可能在不可见
+    // 窗口上以刷新率合成（两窗隐藏空闲门禁，约 180Hz）。回调内复核 INTENDED_VISIBLE，
+    // 已发起的 show()/native_show 会再设回 true。
+    pause_quick_controller_if_unintended(&window);
     Ok(window)
 }
 
@@ -313,6 +320,7 @@ pub(crate) fn set_controller_visible(window: &WebviewWindow, visible: bool) {
     #[cfg(windows)]
     {
         let _ = window.with_webview(move |webview| {
+            let _guard = CONTROLLER_VIS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             // SAFETY：with_webview 回调在 WebView 所在线程，controller 在回调期间有效
             let result = unsafe { webview.controller().SetIsVisible(visible.into()) };
             if let Err(e) = result {
@@ -322,6 +330,27 @@ pub(crate) fn set_controller_visible(window: &WebviewWindow, visible: bool) {
     }
     #[cfg(not(windows))]
     let _ = (window, visible);
+}
+
+/// 预创建或尚未 intended 显示时暂停 controller。须在 WebView 线程上复核
+/// `INTENDED_VISIBLE`：若 show() 已抢先把意图设为可见，则不要把 SetIsVisible(true) 打回 false。
+fn pause_quick_controller_if_unintended(window: &WebviewWindow) {
+    #[cfg(windows)]
+    {
+        let _ = window.with_webview(move |webview| {
+            let _guard = CONTROLLER_VIS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            if INTENDED_VISIBLE.load(Ordering::SeqCst) {
+                return;
+            }
+            // SAFETY：同 set_controller_visible
+            let result = unsafe { webview.controller().SetIsVisible(false.into()) };
+            if let Err(e) = result {
+                log::warn!("[quick] SetIsVisible(false) 失败：{e}");
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = window;
 }
 
 pub fn destroy_window(app: &AppHandle) {
