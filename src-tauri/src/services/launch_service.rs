@@ -70,18 +70,36 @@ pub fn open_path(path: &str) -> Result<(), String> {
 
 /// 启动项目
 pub fn launch_item(conn: &Connection, id: i64) -> Result<(), String> {
+    // 记住启动前的 path/name：resolve 可能先持久化重定位；若随后打开失败且目标已不存在，要能恢复。
+    let (old_path, old_name): (String, String) = conn
+        .query_row(
+            "SELECT path, name FROM items WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("对象不存在（id {id}），可能已被删除"),
+            other => other.to_string(),
+        })?;
+
     // 路径可能已因重命名/移动失效：先按文件ID重定位到当前真实路径（并持久化）。
     let path = item_service::resolve_current_path(conn, id)?;
 
     // 经 ShellExecuteW 用关联程序打开。与旧的 cmd/start 不同，这里能拿到成功/失败信号：
     // 打开失败（如路径无效）直接返回 Err，从而不更新 last_used_at、不污染"最近使用"排序。
     #[cfg(target_os = "windows")]
-    shell_open(&path)?;
+    {
+        if let Err(e) = shell_open(&path) {
+            // 仅当目标已不存在才标 missing / 回滚异常重定位；权限或无关联不等于丢失。
+            let _ = item_service::revert_launch_if_target_gone(conn, id, &old_path, &old_name, &path);
+            return Err(e);
+        }
+    }
 
     // 非 Windows 平台没有打开动作：直接报错，而不是什么都不做却更新 last_used_at
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = &path;
+        let _ = (&path, &old_path, &old_name);
         return Err("当前平台暂不支持启动对象".to_string());
     }
 

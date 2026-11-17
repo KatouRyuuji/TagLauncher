@@ -151,6 +151,65 @@ pub fn get_name(path: &str) -> String {
         .to_string()
 }
 
+/// 用户可见的普通文件系统路径形态（按路径字符串判定，不依赖本机 Path::is_absolute）。
+/// 拒绝 NT 设备路径、卷 GUID、回收站位置，避免把内部定位结果的 basename 写成显示名。
+pub fn has_user_path_form(path: &str) -> bool {
+    let p = path.trim();
+    if p.is_empty() || p.contains('\0') {
+        return false;
+    }
+    let lower = p.to_ascii_lowercase();
+    if lower.starts_with(r#"\device\"#)
+        || lower.starts_with(r#"\\.\"#)
+        || lower.contains(r#"\??\unc\"#)
+    {
+        return false;
+    }
+    let stripped = p.strip_prefix(r#"\\?\"#).unwrap_or(p);
+    let sl = stripped.replace('/', "\\");
+    let sl_lower = sl.to_ascii_lowercase();
+    if sl_lower.starts_with("volume{") {
+        return false;
+    }
+    if sl_lower.contains(r#"\$recycle.bin\"#) || sl_lower.ends_with(r#"\$recycle.bin"#) {
+        return false;
+    }
+    // 盘符路径：X:\...
+    let b = sl.as_bytes();
+    if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
+        return true;
+    }
+    // UNC：\\server\share\...
+    if sl.starts_with("\\\\") && !sl.starts_with("\\\\?") {
+        let rest = &sl[2..];
+        if !rest.is_empty() && !rest.starts_with('\\') && rest.contains('\\') {
+            return true;
+        }
+    }
+    // 非 Windows 单测用的 POSIX 绝对路径
+    #[cfg(not(windows))]
+    {
+        if stripped.starts_with('/') && !stripped.starts_with("/proc/") {
+            return true;
+        }
+    }
+    false
+}
+
+/// 可持久化的重定位目标：形态合法且当前确实存在（文件或目录）。
+pub fn accepted_relocate_path(path: &str) -> bool {
+    has_user_path_form(path) && Path::new(path).exists()
+}
+
+fn path_key_eq(a: &str, b: &str) -> bool {
+    let n = |s: &str| {
+        s.replace('/', "\\")
+            .trim_end_matches('\\')
+            .to_ascii_lowercase()
+    };
+    n(a) == n(b)
+}
+
 /// 单文件元数据（锁外预采集）：get_identity(FFI) / compute_signature(读文件) /
 /// detect_type(文件系统) 是重 IO，与库写入分离后可在不持有全局 DB 锁时采集。
 struct AddFileMeta {
@@ -1091,7 +1150,7 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
             }
         } else if let Some(idn) = identity {
             match resolver.resolve(idn, &row.path) {
-                Some(new_path) => {
+                Some(new_path) if accepted_relocate_path(&new_path) => {
                     let new_name = get_name(&new_path);
                     // 重定位后扩展名可能已变，锁外预计算 type（detect_type 含 FS IO，不进锁内回写段）
                     let new_type = detect_type(&new_path);
@@ -1109,6 +1168,14 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
                         expected: expected(),
                     });
                 }
+                // OpenFileById 给出异常/已不存在路径：当作没找到，避免用内部 basename 覆盖显示名
+                Some(_) if row.is_missing == 0 => {
+                    writes.push(ReconcileWrite::MarkMissing {
+                        id: row.id,
+                        expected: expected(),
+                    });
+                }
+                Some(_) => {}
                 None if row.is_missing == 0 => {
                     writes.push(ReconcileWrite::MarkMissing {
                         id: row.id,
@@ -1162,6 +1229,16 @@ pub fn apply_reconcile(conn: &Connection, writes: &[ReconcileWrite]) -> Result<(
                 );
             }
             ReconcileWrite::Relocate { id, new_path, new_name, new_type, new_sig, new_times, expected } => {
+                // 回写时再校验一次：计划生成后目标可能已消失或形态不可用，避免覆盖原名
+                if !accepted_relocate_path(new_path) {
+                    if expected.is_missing == 0 {
+                        let _ = tx.execute(
+                            "UPDATE items SET is_missing = 1 WHERE id = ?1 AND path = ?2 AND is_missing = ?3",
+                            params![id, expected.path, expected.is_missing],
+                        );
+                    }
+                    continue;
+                }
                 // 重定位时若已采到内容签名则一并刷新（见 plan_reconcile）；文件时间随新路径更新
                 let (created, modified) = new_times;
                 let _ = match new_sig {
@@ -1239,17 +1316,45 @@ pub fn resolve_current_path(conn: &Connection, id: i64) -> Result<String, String
 
     if let Some(idn) = identity {
         if let Some(new_path) = file_identity::resolve_path(idn, &path) {
-            conn.execute(
-                "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
-                params![new_path, get_name(&new_path), id],
-            )
-            .map_err(|e| e.to_string())?;
-            return Ok(new_path);
+            if accepted_relocate_path(&new_path) {
+                conn.execute(
+                    "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
+                    params![new_path, get_name(&new_path), id],
+                )
+                .map_err(|e| e.to_string())?;
+                return Ok(new_path);
+            }
         }
     }
 
     let _ = conn.execute("UPDATE items SET is_missing = 1 WHERE id = ?1", [id]);
     Err("对象已丢失，无法定位文件".to_string())
+}
+
+/// 启动失败后的领域收口：仅当启动目标已经不存在时才标 missing。
+/// 权限不足、没有关联程序等失败时目标仍在，不得标丢失。
+/// 若本次曾把路径/名称改到现已无效的位置，恢复启动前的 path/name，避免异常 basename 覆盖原显示名。
+pub fn revert_launch_if_target_gone(
+    conn: &Connection,
+    id: i64,
+    old_path: &str,
+    old_name: &str,
+    launched_path: &str,
+) -> Result<(), String> {
+    if Path::new(launched_path).exists() {
+        return Ok(());
+    }
+    crate::db::ensure_writes_allowed()?;
+    if path_key_eq(launched_path, old_path) {
+        let _ = conn.execute("UPDATE items SET is_missing = 1 WHERE id = ?1", [id]);
+    } else {
+        conn.execute(
+            "UPDATE items SET path = ?1, name = ?2, is_missing = 1 WHERE id = ?3",
+            params![old_path, old_name, id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2089,4 +2194,133 @@ mod tests {
         assert!(scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 2).unwrap().is_empty());
         std::fs::remove_dir_all(base).unwrap();
     }
+
+
+    #[test]
+    fn user_path_form_accepts_drive_and_unc_rejects_device_volume_recycle() {
+        assert!(has_user_path_form(r"C:\Users\a\将删除.exe"));
+        assert!(has_user_path_form(r"D:\dir\file"));
+        assert!(has_user_path_form(r"\\server\share\file.exe"));
+        assert!(!has_user_path_form(""));
+        assert!(!has_user_path_form("relative.exe"));
+        assert!(!has_user_path_form(r"\Device\HarddiskVolume1\x"));
+        assert!(!has_user_path_form(r"\\.\C:\x"));
+        assert!(!has_user_path_form(r"\\?\Volume{12345678-1234-1234-1234-1234567890ab}\x"));
+        assert!(!has_user_path_form(r"Volume{12345678-1234-1234-1234-1234567890ab}\0049"));
+        assert!(!has_user_path_form(r"C:\$Recycle.Bin\S-1-5-18\00490000000062D879F2CF6D"));
+        assert!(!has_user_path_form(r"D:\foo\$Recycle.Bin\xxx"));
+    }
+
+    #[test]
+    fn accepted_relocate_path_requires_existing_user_path() {
+        let dir = std::env::temp_dir().join(format!("tl-relocate-ok-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("keep-name.exe");
+        std::fs::write(&f, b"x").unwrap();
+        let p = f.to_str().unwrap();
+        assert!(accepted_relocate_path(p), "真实存在的绝对路径应可持久化");
+        std::fs::remove_file(&f).unwrap();
+        assert!(!accepted_relocate_path(p), "刚删除的路径不得持久化");
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(!accepted_relocate_path(r"C:\__tl_no_such__\a.exe"));
+        assert!(!accepted_relocate_path(r"\Device\HarddiskVolume1\x"));
+    }
+
+    #[test]
+    fn revert_launch_restores_name_when_relocated_target_is_gone() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO items (name, path, type, is_missing) VALUES ('将删除.exe', 'D:\\old\\将删除.exe', 'exe', 0)",
+            [],
+        )
+        .unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM items WHERE name = '将删除.exe'", [], |r| r.get(0))
+            .unwrap();
+        // 模拟 resolve 已把路径/名称改成异常 basename，且该路径不存在
+        conn.execute(
+            "UPDATE items SET path = 'D:\\ghost\\00490000000062D879F2CF6D', name = '00490000000062D879F2CF6D', is_missing = 0 WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+        revert_launch_if_target_gone(
+            &conn,
+            id,
+            r"D:\old\将删除.exe",
+            "将删除.exe",
+            r"D:\ghost\00490000000062D879F2CF6D",
+        )
+        .unwrap();
+        let (name, path, missing): (String, String, i64) = conn
+            .query_row(
+                "SELECT name, path, is_missing FROM items WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(name, "将删除.exe");
+        assert_eq!(path, r"D:\old\将删除.exe");
+        assert_eq!(missing, 1);
+    }
+
+    #[test]
+    fn revert_launch_does_not_mark_missing_when_target_still_exists() {
+        let conn = setup();
+        let dir = std::env::temp_dir().join(format!("tl-launch-still-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("alive.exe");
+        std::fs::write(&f, b"x").unwrap();
+        let p = f.to_str().unwrap().to_string();
+        conn.execute(
+            "INSERT INTO items (name, path, type, is_missing) VALUES ('alive.exe', ?1, 'exe', 0)",
+            [&p],
+        )
+        .unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM items WHERE name = 'alive.exe'", [], |r| r.get(0))
+            .unwrap();
+        revert_launch_if_target_gone(&conn, id, &p, "alive.exe", &p).unwrap();
+        let missing: i64 = conn
+            .query_row("SELECT is_missing FROM items WHERE id = ?1", [id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(missing, 0, "目标仍在时不得因启动失败标丢失（权限/无关联等）");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn apply_reconcile_skips_unusable_relocate_and_marks_missing() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO items (name, path, type, is_missing) VALUES ('将删除.exe', 'D:\\old\\将删除.exe', 'exe', 0)",
+            [],
+        )
+        .unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM items WHERE name = '将删除.exe'", [], |r| r.get(0))
+            .unwrap();
+        let writes = vec![ReconcileWrite::Relocate {
+            id,
+            new_path: r"\Device\HarddiskVolume1\00490000000062D879F2CF6D".to_string(),
+            new_name: "00490000000062D879F2CF6D".to_string(),
+            new_type: "exe",
+            new_sig: None,
+            new_times: (None, None),
+            expected: ReconcileGuard {
+                path: r"D:\old\将删除.exe".to_string(),
+                is_missing: 0,
+            },
+        }];
+        apply_reconcile(&conn, &writes).unwrap();
+        let (name, path, missing): (String, String, i64) = conn
+            .query_row(
+                "SELECT name, path, is_missing FROM items WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(name, "将删除.exe", "异常路径不得覆盖显示名");
+        assert_eq!(path, r"D:\old\将删除.exe");
+        assert_eq!(missing, 1);
+    }
+
 }
