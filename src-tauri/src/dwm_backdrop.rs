@@ -52,9 +52,12 @@ type RtlGetVersionFn = unsafe extern "system" fn(*mut OsVersionInfoW) -> i32;
 type DwmSetAttrFn = unsafe extern "system" fn(HWND, u32, *const c_void, u32) -> i32;
 type DwmExtendFn = unsafe extern "system" fn(HWND, *const Margins) -> i32;
 
+type DwmIsCompFn = unsafe extern "system" fn(*mut i32) -> i32;
+
 struct DwmApi {
     set_attr: DwmSetAttrFn,
     extend: DwmExtendFn,
+    is_comp: Option<DwmIsCompFn>,
 }
 
 fn wide(s: &str) -> Vec<u16> {
@@ -109,9 +112,16 @@ fn api() -> Option<&'static DwmApi> {
             if set_attr.is_null() || extend.is_null() {
                 return None;
             }
+            let is_comp_ptr = proc_addr(lib, b"DwmIsCompositionEnabled\0");
+            let is_comp = if is_comp_ptr.is_null() {
+                None
+            } else {
+                Some(std::mem::transmute::<_, DwmIsCompFn>(is_comp_ptr))
+            };
             Some(DwmApi {
                 set_attr: std::mem::transmute(set_attr),
                 extend: std::mem::transmute(extend),
+                is_comp,
             })
         }
     })
@@ -122,6 +132,32 @@ fn api() -> Option<&'static DwmApi> {
 pub fn supported() -> bool {
     static OK: OnceLock<bool> = OnceLock::new();
     *OK.get_or_init(|| api().is_some() && nt_build() >= MIN_BUILD)
+}
+
+
+/// 合成是否开启。探测函数缺失时视为开启，避免误走实底。
+fn composition_enabled() -> bool {
+    let Some(api) = api() else {
+        return false;
+    };
+    let Some(is_comp) = api.is_comp else {
+        return true;
+    };
+    let mut enabled = 0i32;
+    // SAFETY：官方 DwmIsCompositionEnabled 写调用方的 BOOL。
+    unsafe { is_comp(&mut enabled) == 0 && enabled != 0 }
+}
+
+/// 系统「透明效果」开关。键缺失时按开启处理（Win11 默认）。每次 apply 现读，不缓存，以便设置变更后下次唤出生效。
+fn transparency_enabled() -> bool {
+    let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
+    let Ok(key) = hkcu.open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") else {
+        return true;
+    };
+    match key.get_value::<u32, _>("EnableTransparency") {
+        Ok(0) => false,
+        _ => true,
+    }
 }
 
 fn set_attr(hwnd: HWND, attr: u32, value: &u32) -> bool {
@@ -154,6 +190,10 @@ pub fn apply(hwnd: isize, dark: bool) -> bool {
     if hwnd == 0 || !supported() {
         return false;
     }
+    // 合成关闭或用户关掉「透明效果」时不要宣称原生亚克力，前端走 Win10 式干净实底。
+    if !composition_enabled() || !transparency_enabled() {
+        return false;
+    }
     let h = hwnd as HWND;
     clear_layered(h);
     // 客户区全部作为 DWM 画框，背景才能透出来。
@@ -169,8 +209,21 @@ pub fn apply(hwnd: isize, dark: bool) -> bool {
         return false;
     }
     let dark_v = if dark { 1u32 } else { 0 };
-    let _ = set_attr(h, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_v);
-    let _ = set_attr(h, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND);
+    let mut dark_ok = set_attr(h, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_v);
+    if !dark_ok {
+        dark_ok = set_attr(h, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_v);
+        if !dark_ok {
+            log::warn!("[dwm] DWMWA_USE_IMMERSIVE_DARK_MODE 失败，仍尝试系统背景");
+        }
+    }
+    let mut corner_ok = set_attr(h, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND);
+    if !corner_ok {
+        corner_ok = set_attr(h, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND);
+        if !corner_ok {
+            log::warn!("[dwm] DWMWCP_ROUND 失败，仍尝试系统背景");
+        }
+    }
+    // 成败以 TRANSIENTWINDOW 为准：dark/corner 失败不改走实底，也不改变 Win10 fallback 条件。
     set_attr(h, DWMWA_SYSTEMBACKDROP_TYPE, &DWMSBT_TRANSIENTWINDOW)
 }
 
