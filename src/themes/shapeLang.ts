@@ -146,17 +146,18 @@ const SHADOW_TOKENS: Record<ShapeLang, Record<ShapeScheme, Record<string, string
  *  和 1px 内高光，不是旧亚克力、也不是 Mica。不支持时 --glass-bg-strong 作干净实底回退。 */
 const GLASS_TOKENS: Record<ShapeScheme, Record<string, string>> = {
   light: {
-    // 内容层：明亮近白 56%，不掺强调色（掺了在白底主窗上是浑浊灰）。比 62% 略透，让系统背景的
-    // 亮度与噪点透出来；顶部镜面渐变（quick.css）补回上沿的亮。次要文字在实测底上仍 ≥ 4.5:1。
-    "glass-bg": "color-mix(in srgb, #fafafc 56%, transparent)",
+    // 内容层：纯白 36%，不掺强调色。系统瞬态背景已经提供磨砂、亮度和噪点；再铺 56% 近白
+    // 加上覆盖上半窗的乳状渐变，浅色主窗上会合成一块均匀约 234 的灰卡，背景色相透不出来。
+    // 36% 让模糊后的内容能隐约透出。次要文字在系统浅色亚克力底（约 214–234）上仍 ≥ 4.5:1。
+    "glass-bg": "color-mix(in srgb, #ffffff 36%, transparent)",
     // 输入框 / 不支持系统背景时的干净实底（约 92%），仍是明亮近白，不是灰泥。
-    "glass-bg-strong": "color-mix(in srgb, #fafafc 92%, transparent)",
+    "glass-bg-strong": "color-mix(in srgb, #ffffff 92%, transparent)",
     "glass-blur": "none",
     // 外沿一根干净的深色发丝（不再掺 border-medium 的灰），内沿一圈亮边 + 顶部 1px 镜面线：玻璃的边。
     "glass-border": "color-mix(in srgb, var(--text-primary) 20%, transparent)",
     // 顶部 1px 镜面线、底部 1px 暗沿（玻璃的厚度）、一圈 70% 亮内边；与外沿深色发丝组成「暗外亮内」的玻璃边。
     "glass-highlight": "inset 0 1px 0 color-mix(in srgb, #ffffff 95%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent), inset 0 0 0 1px color-mix(in srgb, #ffffff 70%, transparent)",
-    "glass-shadow": "0 1px 2px rgb(20 28 44 / 0.06), 0 10px 28px rgb(20 28 44 / 0.14), 0 28px 64px rgb(20 28 44 / 0.12)",
+    "glass-shadow": "0 1px 2px rgb(20 28 44 / 0.05), 0 8px 24px rgb(20 28 44 / 0.10), 0 22px 48px rgb(20 28 44 / 0.09)",
     "glass-accent-bar": "3px",
   },
   dark: {

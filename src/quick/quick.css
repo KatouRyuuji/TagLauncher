@@ -31,18 +31,28 @@ html[data-acrylic] .quick-shell::before,
 html[data-acrylic] .pin-shell::before {
   background-color: var(--glass-bg);
 }
-/* 浅色镜面：上沿到中段一层由亮渐透的镜面渐变、底部一点回光，读成有厚度的玻璃，而不是一张平的磨砂卡片。
+/* 浅色镜面：只在上沿做一道很快收掉的高光、底部一点回光，读成有厚度的玻璃。
+   不再用玻璃实底铺上半窗——那层会把系统亚克力的透色盖成灰卡。有系统背景时也不再叠深色颗粒（合成器自带噪点）。
    只是静态渐变层，不进滤镜、不随查询重绘。 */
 html[data-scheme="light"][data-acrylic] .quick-shell::before,
 html[data-scheme="light"][data-acrylic] .pin-shell::before {
   background-image:
     linear-gradient(180deg,
-      color-mix(in srgb, var(--glass-bg-strong) 60%, transparent) 0,
-      color-mix(in srgb, var(--glass-bg-strong) 34%, transparent) 18%,
-      color-mix(in srgb, var(--glass-bg-strong) 12%, transparent) 42%,
-      transparent 64%,
-      transparent 86%,
-      color-mix(in srgb, var(--glass-bg-strong) 10%, transparent) 100%),
+      color-mix(in srgb, var(--glass-bg-strong) 36%, transparent) 0,
+      color-mix(in srgb, var(--glass-bg-strong) 12%, transparent) 9%,
+      transparent 26%,
+      transparent 88%,
+      color-mix(in srgb, var(--glass-bg-strong) 8%, transparent) 100%);
+  background-size: 100% 100%;
+}
+/* 深色镜面：一道很淡的上沿高光，和浅色同一套「镜面」语言，不改 tint、不影响已有的透色。 */
+html[data-scheme="dark"][data-acrylic] .quick-shell::before,
+html[data-scheme="dark"][data-acrylic] .pin-shell::before {
+  background-image:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--text-primary) 10%, transparent) 0,
+      transparent 16%,
+      transparent 100%),
     radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-primary) 3.5%, transparent) 0.7px, transparent 0);
   background-size: 100% 100%, 4px 4px;
 }
@@ -61,14 +71,29 @@ html[data-scheme="light"][data-acrylic] .pin-shell::before {
   background: var(--glass-bg-strong); }
 .quick-input-small { height: 2.35em; font-size: 1em;
   border-color: var(--border-subtle); background: var(--glass-bg-strong); }
+/* 浅色 + 系统背景：搜索框和预览条也走半透明玻璃，不再垫近乎不透明的实底把整窗读成卡片。 */
+html[data-scheme="light"][data-acrylic] .quick-input {
+  background: color-mix(in srgb, var(--glass-bg-strong) 36%, transparent);
+  border-color: color-mix(in srgb, var(--text-primary) 12%, transparent); }
+html[data-scheme="light"][data-acrylic] .quick-input:focus {
+  border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--glass-bg-strong) 56%, transparent); }
+html[data-scheme="light"][data-acrylic] .quick-input-small {
+  background: color-mix(in srgb, var(--glass-bg-strong) 40%, transparent); }
+html[data-scheme="light"][data-acrylic] .pin-preview,
+html[data-scheme="light"][data-acrylic] .collect-card,
+html[data-scheme="light"][data-acrylic] .quick-collect-paths .collect-chip {
+  background: color-mix(in srgb, var(--glass-bg-strong) 44%, transparent); }
+html[data-scheme="light"][data-acrylic] .collect-card-rec {
+  background: color-mix(in srgb, var(--accent-primary) 14%, color-mix(in srgb, var(--glass-bg-strong) 44%, transparent)); }
 .quick-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none;
   contain: content;
   /* 细滚动条跟主题走：深色下不再是一根白色系统滚动条。 */
   scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
-/* 玻璃上的次要文字：主题 muted 向正文色收三成。实测浅色玻璃底约 232–235、选中行约 221，
-   原 #626e7c 只有约 3.9–4.4:1；收后 ≥ 5:1。深色同理（向浅色正文收，更亮）。 */
+/* 玻璃上的次要文字：主题 muted 向正文色收一半。浅色更透后，有色背景会降低对比；
+   选中行再向正文收到七成，保证在较透的有色玻璃上仍 ≥ 4.5:1。深色同理（向浅色正文收，更亮）。 */
 .quick-group { padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs);
-  color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); font-size: calc(var(--font-size-xs) * var(--ui-font-scale, 1));
+  color: color-mix(in srgb, var(--text-muted) 50%, var(--text-primary)); font-size: calc(var(--font-size-xs) * var(--ui-font-scale, 1));
   font-weight: var(--font-weight-semibold); letter-spacing: 0.04em; }
 /* 只标每行首次：把衬底从 28% 提到 42%，单处标记仍清楚。 */
 .quick-mark { background: color-mix(in srgb, var(--accent-primary) 42%, transparent); color: inherit;
@@ -89,7 +114,7 @@ html[data-scheme="light"][data-acrylic] .pin-shell::before {
 }
 html[data-scheme="dark"] .quick-row:hover { background: color-mix(in srgb, var(--accent-primary) 8%, transparent); }
 html[data-scheme="dark"] .quick-row[aria-selected="true"] { background: color-mix(in srgb, var(--accent-primary) 18%, transparent); }
-.quick-row[aria-selected="true"] .quick-tags, .quick-row[aria-selected="true"] .quick-path { color: color-mix(in srgb, var(--text-muted) 62%, var(--text-primary)); }
+.quick-row[aria-selected="true"] .quick-tags, .quick-row[aria-selected="true"] .quick-path { color: color-mix(in srgb, var(--text-muted) 30%, var(--text-primary)); }
 .quick-row[aria-selected="true"]::before {
   content: ""; position: absolute; left: 0; top: 18%; bottom: 18%;
   width: var(--glass-accent-bar); border-radius: var(--radius-full);
@@ -97,12 +122,12 @@ html[data-scheme="dark"] .quick-row[aria-selected="true"] { background: color-mi
 .quick-icon { grid-row: span 2; display: flex; align-items: center; justify-content: center; font-size: 1.3em; }
 .quick-icon-img { width: 1.25em; height: 1.25em; object-fit: contain; border-radius: calc(var(--radius-sm) / 2); }
 .quick-name { font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.quick-tags { color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); font-size: 0.8em; justify-self: end; align-self: center;
+.quick-tags { color: color-mix(in srgb, var(--text-muted) 50%, var(--text-primary)); font-size: 0.8em; justify-self: end; align-self: center;
   min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quick-path { grid-column: 2 / -1; color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); font-size: 0.78em;
+.quick-path { grid-column: 2 / -1; color: color-mix(in srgb, var(--text-muted) 50%, var(--text-primary)); font-size: 0.78em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .quick-missing .quick-name { text-decoration: line-through; opacity: 0.7; }
-.quick-empty { padding: var(--spacing-lg) var(--spacing-sm); color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); text-align: center; }
+.quick-empty { padding: var(--spacing-lg) var(--spacing-sm); color: color-mix(in srgb, var(--text-muted) 50%, var(--text-primary)); text-align: center; }
 .quick-footer {
   flex-shrink: 0;
   display: flex; flex-wrap: wrap; align-items: center;
@@ -138,7 +163,7 @@ html[data-scheme="dark"] .quick-row[aria-selected="true"] { background: color-mi
 }
 .quick-error { color: var(--color-danger-ink); }
 .quick-picker { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) * 1.5); flex: 1; min-height: 8em; }
-.quick-picker-title { color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); font-size: 0.9em; }
+.quick-picker-title { color: color-mix(in srgb, var(--text-muted) 50%, var(--text-primary)); font-size: 0.9em; }
 .quick-picker .quick-row { grid-template-columns: 1.2em 0.8em minmax(0, 1fr); align-items: center; }
 .quick-check { color: var(--accent-primary); }
 .quick-tag-dot { width: 0.7em; height: 0.7em; border-radius: 50%; flex-shrink: 0; }
@@ -146,7 +171,7 @@ html[data-scheme="dark"] .quick-row[aria-selected="true"] { background: color-mi
 .quick-collect-title { font-weight: var(--font-weight-semibold); display: flex; gap: var(--spacing-sm); align-items: baseline; flex-shrink: 0; }
 /* 中间可滚动：shell overflow:hidden 时不把页脚 / 标签选项裁到窗口外（Playwright 视为不可见）。 */
 .quick-collect-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--spacing-md); }
-.quick-collect-note { color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); font-size: 0.85em; font-weight: var(--font-weight-normal); }
+.quick-collect-note { color: color-mix(in srgb, var(--text-muted) 50%, var(--text-primary)); font-size: 0.85em; font-weight: var(--font-weight-normal); }
 /* 文件芯片：只露文件名，路径放 title。两条不再撑出滚动条。 */
 .quick-collect-paths { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: var(--spacing-xs); max-height: none;
   list-style: none; margin: 0; padding: 0; overflow: visible; }
@@ -158,7 +183,7 @@ html[data-scheme="dark"] .quick-row[aria-selected="true"] { background: color-mi
   background: var(--accent-primary); opacity: 0.75; }
 .quick-collect-paths .quick-name { font-weight: var(--font-weight-medium); font-size: 0.9em; }
 .quick-collect-paths .quick-path { display: none; }
-.quick-collect-more { color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); font-size: 0.85em; align-self: center; padding: 0 var(--spacing-xs); }
+.quick-collect-more { color: color-mix(in srgb, var(--text-muted) 50%, var(--text-primary)); font-size: 0.85em; align-self: center; padding: 0 var(--spacing-xs); }
 .quick-collect-modes { display: flex; flex-wrap: wrap; gap: var(--spacing-xs) var(--spacing-md); font-size: 0.9em; }
 .quick-collect-actions { display: flex; flex-direction: column; gap: var(--spacing-sm); flex: 0 0 auto; }
 .collect-card { display: grid; grid-template-columns: 2.1em minmax(0, 1fr) auto; column-gap: var(--spacing-sm);
@@ -188,7 +213,7 @@ html[data-scheme="dark"] .quick-row[aria-selected="true"] { background: color-mi
   border-radius: var(--radius-full); background: var(--accent-primary); color: var(--text-invert);
   font-size: 0.72em; font-weight: var(--font-weight-semibold); letter-spacing: 0.04em; line-height: 1.4;
   grid-column: 3; grid-row: 1; }
-.quick-collect-remember { font-size: 0.85em; color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); display: flex; gap: calc(var(--spacing-xs) * 1.5);
+.quick-collect-remember { font-size: 0.85em; color: color-mix(in srgb, var(--text-muted) 50%, var(--text-primary)); display: flex; gap: calc(var(--spacing-xs) * 1.5);
   align-items: center; margin-top: auto; padding-top: var(--spacing-xs); }
 .quick-button { min-height: 2.45em; padding: 0 var(--spacing-md); border-radius: var(--radius-md); border: var(--border-width, 1px) solid var(--border-default);
   background: var(--glass-bg-strong); color: inherit; font: inherit; cursor: pointer; transition: background-color var(--transition-fast), border-color var(--transition-fast); }
@@ -229,7 +254,7 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
 .pin-header { display: flex; align-items: baseline; gap: var(--spacing-xs); min-height: 2em; cursor: move; user-select: none;
   padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs); }
 .pin-title { flex: 0 1 auto; min-width: 0; font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pin-count { flex: 0 0 auto; color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); font-size: 0.85em; font-weight: var(--font-weight-medium); }
+.pin-count { flex: 0 0 auto; color: color-mix(in srgb, var(--text-muted) 50%, var(--text-primary)); font-size: 0.85em; font-weight: var(--font-weight-medium); }
 .pin-row { grid-template-columns: 1.6em minmax(0, 1fr); padding: var(--spacing-xs) var(--spacing-sm); }
 .pin-row .quick-icon { grid-row: auto; font-size: 1.15em; color: var(--text-secondary); }
 .pin-preview { flex-shrink: 0; display: grid; grid-template-columns: 1.8em minmax(0, 1fr) auto; column-gap: var(--spacing-sm);
@@ -240,7 +265,7 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
 .pin-preview .quick-icon { font-size: 1.2em; }
 .pin-preview-meta { min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
 .pin-preview-name { font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.pin-preview-path { font-size: 0.78em; color: color-mix(in srgb, var(--text-muted) 70%, var(--text-primary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.pin-preview-path { font-size: 0.78em; color: color-mix(in srgb, var(--text-muted) 50%, var(--text-primary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: var(--font-family-mono); min-width: 0; }
 .pin-preview .quick-button { flex-shrink: 0; min-width: 3.6em; padding: 0 var(--spacing-sm); }
 @media (prefers-reduced-motion: reduce) {
