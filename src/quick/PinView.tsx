@@ -132,7 +132,7 @@ export function PinView({ view }: { view: PinViewState }) {
       style={isDrawer ? { width: "var(--pin-drawer-width)" } : undefined}
     >
       <div className="pin-header" data-tauri-drag-region data-testid="pin-header">
-        <span className="pin-title" data-tauri-drag-region data-testid="pin-title">
+        <span className="pin-title" data-tauri-drag-region data-testid="pin-title" title={missing ? "来源已删除" : (data?.title ?? undefined)}>
           {missing ? "来源已删除" : data?.title ?? "正在加载…"}
         </span>
         {data && !missing && <span className="pin-count" data-tauri-drag-region data-testid="pin-count">{data.total}</span>}
@@ -176,7 +176,7 @@ export function PinView({ view }: { view: PinViewState }) {
                     ? <ItemVisualIcon item={item} emojiClass="" imageClass="quick-icon-img" />
                     : <ItemTypeIcon item={item} emojiClass="" />}
                 </span>
-                <span className="quick-name">{itemDisplayName(item)}</span>
+                <span className="quick-name" title={itemDisplayName(item)}>{itemDisplayName(item)}</span>
               </li>
             ))}
           </ul>

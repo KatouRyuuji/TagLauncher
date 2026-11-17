@@ -92,10 +92,20 @@ pub const VIDEO_EXTS: &[&str] = &[
 ];
 
 /// 文本扩展名（文档、配置与日志类纯文本；单一来源，供 detect_type 与 v020 迁移共用）。
-/// 不收源代码扩展名。
+/// 不收源代码扩展名。csv / json 留在文本，不归入 document。
 pub const TEXT_EXTS: &[&str] = &[
     "txt", "md", "markdown", "json", "jsonc", "yaml", "yml", "toml", "ini", "cfg", "conf", "log",
     "csv", "tsv", "xml", "info", "nfo",
+];
+
+/// 办公/版式文档扩展名（单一来源，供 detect_type 与 v024 迁移共用）。
+/// 与 TEXT_EXTS 互斥：纯文本不算文档。
+pub const DOCUMENT_EXTS: &[&str] = &[
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "odt", "ods", "odp", "rtf", "epub",
+    "pages", "numbers", "key",
+    "vsdx", "pub",
+    "wps", "et", "dps",
 ];
 
 /// 按（已小写的）扩展名归类为对象类型。不含目录判断——目录由调用方先行处理。
@@ -103,7 +113,7 @@ pub const TEXT_EXTS: &[&str] = &[
 /// 未知扩展名归为 `"exe"`：启动统一走 ShellExecuteW("open")、**不依据 type 分支**，
 /// 故这里 `"exe"` 的语义是「当作可用关联程序 shell 打开的通用文件」，而非"必为可执行程序"。
 /// 该归类仅影响前端图标/分类展示，不影响启动正确性；新增类型需同步放宽 items.type
-/// 的 CHECK 约束（见 v020 迁移）。
+/// 的 CHECK 约束（见 v020、v024 迁移）。
 pub fn classify_by_extension(ext: Option<&str>) -> &'static str {
     match ext {
         Some(e) if IMAGE_EXTS.contains(&e) => "image",
@@ -113,6 +123,7 @@ pub fn classify_by_extension(ext: Option<&str>) -> &'static str {
         Some("bat") | Some("cmd") => "bat",
         Some("ps1") => "ps1",
         Some(e) if TEXT_EXTS.contains(&e) => "text",
+        Some(e) if DOCUMENT_EXTS.contains(&e) => "document",
         _ => "exe",
     }
 }
@@ -1757,7 +1768,11 @@ mod tests {
         assert_eq!(detect_type(r"D:\Conf\app.json"), "text");
         assert_eq!(detect_type(r"D:\Game\mod.info"), "text");
         assert_eq!(detect_type(r"D:\Src\main.py"), "exe");
-        assert_eq!(detect_type(r"D:\Docs\report.docx"), "exe");
+        assert_eq!(detect_type(r"D:\Docs\report.docx"), "document");
+        assert_eq!(detect_type(r"D:\Docs\REPORT.PDF"), "document");
+        assert_eq!(detect_type(r"D:\Docs\sheet.xlsx"), "document");
+        assert_eq!(detect_type(r"D:\Docs\slides.pptx"), "document");
+        assert_eq!(detect_type(r"D:\Misc\data.xyz"), "exe");
     }
 
     #[test]

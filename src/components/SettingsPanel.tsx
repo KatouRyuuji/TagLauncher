@@ -23,6 +23,7 @@ import { showToast } from "../lib/toast";
 import { SETTINGS_SECTIONS, settingsSectionDomId } from "../lib/settingsSections";
 import { DEFAULT_FAMILY, findFamilyByThemeId, resolveFamilyThemeId } from "../themes";
 import type { ColorMode } from "../lib/colorMode";
+import { truncatePathMiddle } from "../lib/itemUtils";
 import type { ThemeDefinition, ThemeVariant } from "../types/theme";
 import { AiSettingsSection } from "./AiSettingsSection";
 import { DataSettingsSection } from "./DataSettingsSection";
@@ -280,8 +281,8 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                       当前使用 <span className="font-semibold text-[var(--text-primary)]">{currentTheme.name}</span>
                     </p>
                     {themeDirectoryInfo?.themes_dir && (
-                      <p className="data-readout mt-1 truncate text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]" title={`自定义主题目录：${themeDirectoryInfo.themes_dir}`}>
-                        主题目录 {themeDirectoryInfo.themes_dir}
+                      <p className="data-readout mt-1 text-[length:calc(13px*var(--ui-font-scale,1))] text-[var(--text-faint)]" title={`自定义主题目录：${themeDirectoryInfo.themes_dir}`}>
+                        主题目录 {truncatePathMiddle(themeDirectoryInfo.themes_dir, 48)}
                       </p>
                     )}
                   </div>
@@ -315,15 +316,17 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   </div>
                 </div>
 
-                <div className="mt-5 flex flex-wrap items-start gap-4">
+                <div className="mt-5 space-y-4">
                   <ThemeFamilyGallery
                     themes={availableThemes}
                     currentThemeId={currentTheme.id}
                     effectiveMode={effectiveMode}
                     onSelect={setTheme}
                   />
-                  <ColorModeSelect colorMode={colorMode} onSelect={changeColorMode} disabled={!findFamilyByThemeId(currentTheme.id)} />
-                  <UiFontScaleSelect />
+                  <div className="flex flex-wrap items-start gap-4">
+                    <ColorModeSelect colorMode={colorMode} onSelect={changeColorMode} disabled={!findFamilyByThemeId(currentTheme.id)} />
+                    <UiFontScaleSelect />
+                  </div>
                 </div>
 
                 {currentTheme.variants && Object.keys(currentTheme.variants).length > 0 && (
