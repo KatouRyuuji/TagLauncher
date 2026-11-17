@@ -75,6 +75,20 @@ pub fn classify_privilege(elevation_type: i32, is_admin: bool) -> Privilege {
     }
 }
 
+
+/// 菜单宿主只能是程序目录下的 `tag-launcher.exe`（安装与 portable 同一布局）。
+pub(crate) fn canonical_menu_host_exe(program_dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let exe = program_dir.join("tag-launcher.exe");
+    let name = exe.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if !name.eq_ignore_ascii_case("tag-launcher.exe") {
+        return Err("宿主可执行文件名必须是 tag-launcher.exe".into());
+    }
+    if !exe.is_file() {
+        return Err("程序目录下找不到 tag-launcher.exe，无法写入菜单宿主指针".into());
+    }
+    Ok(exe)
+}
+
 pub const STANDARD_USER_HINT: &str =
     "当前是标准用户账户：Windows 只允许管理员安装含代码的未签名组件，请用管理员账户开启";
 
@@ -363,14 +377,28 @@ pub mod platform {
         };
         result.map_err(|e| register_error(privilege, &e))?;
         if let Err(e) = write_host_file(&dir) {
-            log::warn!("[win11-menu] 写入 {} 失败：{e}", super::HOST_FILE);
+            let unreg = unregister();
+            return Err(match unreg {
+                Ok(()) => format!(
+                    "写入 {} 失败，已回滚菜单注册：{e}",
+                    super::HOST_FILE
+                ),
+                Err(u) => format!(
+                    "写入 {} 失败（{e}），且回滚菜单注册失败：{u}",
+                    super::HOST_FILE
+                ),
+            });
         }
         Ok(())
     }
 
+    /// 只写入程序目录下真实存在的 `tag-launcher.exe`（portable/安装布局的 canonical 宿主）。
     fn write_host_file(dir: &std::path::Path) -> Result<(), String> {
-        let exe = dir.join("tag-launcher.exe");
+        let exe = super::canonical_menu_host_exe(dir)?;
         let dest = dir.join(super::RESOURCE_DIR).join(super::HOST_FILE);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
         std::fs::write(&dest, exe.to_string_lossy().as_bytes()).map_err(|e| e.to_string())
     }
 
@@ -613,4 +641,20 @@ mod tests {
         );
         assert_eq!(summarize_ps_error(""), "PowerShell 执行失败");
     }
+
+    #[test]
+    fn canonical_host_requires_existing_tag_launcher_exe() {
+        let dir = std::env::temp_dir().join(format!("tl-host-ok-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(canonical_menu_host_exe(&dir).is_err(), "目录内无 exe 应拒绝");
+        let decoy = dir.join("other.exe");
+        std::fs::write(&decoy, b"x").unwrap();
+        assert!(canonical_menu_host_exe(&dir).is_err(), "任意存在文件不能当宿主");
+        let exe = dir.join("tag-launcher.exe");
+        std::fs::write(&exe, b"x").unwrap();
+        let got = canonical_menu_host_exe(&dir).expect("同名真实文件应接受");
+        assert_eq!(got, exe);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
 }

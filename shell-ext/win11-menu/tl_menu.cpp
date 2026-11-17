@@ -31,6 +31,43 @@ static bool ExeExists(const std::wstring& path) {
     return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
+static bool CanonicalizePath(const std::wstring& in, std::wstring& out) {
+    wchar_t buf[MAX_PATH * 4] = {};
+    DWORD n = GetFullPathNameW(in.c_str(), ARRAYSIZE(buf), buf, nullptr);
+    if (n == 0 || n >= ARRAYSIZE(buf)) return false;
+    out.assign(buf, n);
+    return true;
+}
+
+// 仅允许模块同级或上一级目录中的 tag-launcher.exe（安装：program_dir\tag-launcher.exe，
+// 探针：模块与 exe 同级）。tl_menu.host 也必须规范化后等于这两个候选之一，不能靠改名绕过。
+static bool IsCanonicalHost(const std::wstring& candidate, std::wstring& resolved) {
+    if (candidate.empty()) return false;
+    const wchar_t* name = PathFindFileNameW(candidate.c_str());
+    if (!name || lstrcmpiW(name, L"tag-launcher.exe") != 0) return false;
+    std::wstring full;
+    if (!CanonicalizePath(candidate, full) || !ExeExists(full)) return false;
+    if (lstrcmpiW(PathFindFileNameW(full.c_str()), L"tag-launcher.exe") != 0) return false;
+
+    std::wstring dir = ModuleDir();
+    std::wstring same = dir + L"\\tag-launcher.exe";
+    wchar_t parent[MAX_PATH * 4] = {};
+    lstrcpynW(parent, dir.c_str(), ARRAYSIZE(parent));
+    PathRemoveFileSpecW(parent);
+    std::wstring up = std::wstring(parent) + L"\\tag-launcher.exe";
+
+    std::wstring sameFull, upFull;
+    if (CanonicalizePath(same, sameFull) && lstrcmpiW(full.c_str(), sameFull.c_str()) == 0) {
+        resolved = full;
+        return true;
+    }
+    if (parent[0] != 0 && CanonicalizePath(up, upFull) && lstrcmpiW(full.c_str(), upFull.c_str()) == 0) {
+        resolved = full;
+        return true;
+    }
+    return false;
+}
+
 static std::wstring ReadHostExe(const std::wstring& dir) {
     std::wstring file = dir + L"\\tl_menu.host";
     HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -55,14 +92,15 @@ static std::wstring ReadHostExe(const std::wstring& dir) {
 static std::wstring FindExe() {
     std::wstring dir = ModuleDir();
     std::wstring same = dir + L"\\tag-launcher.exe";
-    if (ExeExists(same)) return same;
+    std::wstring resolved;
+    if (IsCanonicalHost(same, resolved)) return resolved;
     wchar_t parent[MAX_PATH * 4] = {};
     lstrcpynW(parent, dir.c_str(), ARRAYSIZE(parent));
     PathRemoveFileSpecW(parent);
     std::wstring up = std::wstring(parent) + L"\\tag-launcher.exe";
-    if (ExeExists(up)) return up;
+    if (IsCanonicalHost(up, resolved)) return resolved;
     std::wstring hosted = ReadHostExe(dir);
-    if (!hosted.empty() && ExeExists(hosted)) return hosted;
+    if (IsCanonicalHost(hosted, resolved)) return resolved;
     return std::wstring();
 }
 
