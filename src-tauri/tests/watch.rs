@@ -327,3 +327,155 @@ fn removal_outside_watch_roots_is_not_ignored() {
     item_service::remove_items(&conn, &[folder.id]).unwrap();
     assert!(watch_service::list_ignored_paths(&conn, None).unwrap().is_empty());
 }
+
+fn hide_flag(db: &tag_launcher_lib::db::Database, name: &str) -> bool {
+    let conn = db.get_conn();
+    conn.query_row(
+        "SELECT hide_from_all FROM items WHERE name = ?1",
+        [name],
+        |r| Ok(r.get::<_, i64>(0)? != 0),
+    )
+    .unwrap_or_else(|e| panic!("hide_from_all for {name}: {e}"))
+}
+
+/// 文件夹对象监视：补扫与变更通知把夹内文件藏出 All，根文件夹保持可见。
+#[test]
+fn item_watch_hides_nested_files_but_not_the_root() {
+    use tag_launcher_lib::view::{run_view, ViewEntry, ViewParams, ViewPlan};
+
+    let t = common::temp_db();
+    let root = common::make_dir(&t.dir, "lib");
+    common::write_file(&t.dir, "lib/a.txt", b"a");
+    common::write_file(&t.dir, "lib/sub/b.txt", b"b");
+    let folder = {
+        let conn = t.db.get_conn();
+        let item = item_service::add_item(&conn, &root).unwrap();
+        watch_service::set_item_watch(&conn, item.id, true).unwrap();
+        item
+    };
+    let first = watch_service::scan_root(&t.db, RootKey::Item(folder.id)).unwrap();
+    assert_eq!(first.created_count, 2);
+    assert!(!hide_flag(&t.db, &folder.name), "根文件夹应保持可见");
+    assert!(hide_flag(&t.db, "a.txt"));
+    assert!(hide_flag(&t.db, "b.txt"));
+
+    common::write_file(&t.dir, "lib/later.txt", b"l");
+    let ev = watch_service::import_event_paths(
+        &t.db,
+        RootKey::Item(folder.id),
+        &[PathBuf::from(t.dir.path.join("lib/later.txt"))],
+    )
+    .unwrap();
+    assert_eq!(ev.created_count, 1);
+    assert!(hide_flag(&t.db, "later.txt"));
+    assert!(!hide_flag(&t.db, &folder.name));
+
+    let entries: Vec<ViewEntry> = {
+        let conn = t.db.get_conn();
+        let mut stmt = conn
+            .prepare("SELECT id, type, hide_from_all FROM items")
+            .unwrap();
+        stmt.query_map([], |r| {
+            Ok(ViewEntry {
+                id: r.get(0)?,
+                item_type: r.get(1)?,
+                hide_from_all: r.get::<_, i64>(2)? != 0,
+                created_at: "2026-01-01".into(),
+                ..ViewEntry::default()
+            })
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+    };
+    let ids = |show: bool| -> Vec<i64> {
+        let mut params = ViewParams::default();
+        params.show_nested_contents = show;
+        params.sort_mode = "name".into();
+        match run_view(&entries, &params, None).plan {
+            ViewPlan::Browse(ids) => ids,
+            other => panic!("expected browse, got {other:?}"),
+        }
+    };
+    assert_eq!(ids(false), vec![folder.id], "关上开关只剩监视根");
+    assert_eq!(ids(true).len(), 4, "打开开关列出根与全部夹内文件");
+}
+
+/// 关联柜监视：补扫与文件夹移入通知把文件和子文件夹藏出 All。
+#[test]
+fn cabinet_watch_hides_imported_files_and_subfolders() {
+    use tag_launcher_lib::services::cabinet_service;
+    let t = common::temp_db();
+    let root = common::make_dir(&t.dir, "shelf");
+    common::write_file(&t.dir, "shelf/a.txt", b"a");
+    let cab = {
+        let conn = t.db.get_conn();
+        let cab = cabinet_service::add_cabinet(&conn, "Shelf", "#fff").unwrap();
+        cabinet_service::set_cabinet_folder(&conn, cab.id, Some(&root)).unwrap();
+        cab
+    };
+    let first = watch_service::scan_root(&t.db, RootKey::Cabinet(cab.id)).unwrap();
+    assert_eq!(first.created_count, 1);
+    assert!(hide_flag(&t.db, "a.txt"));
+
+    let moved = common::make_dir(&t.dir, "shelf/pack");
+    common::write_file(&t.dir, "shelf/pack/deep/b.txt", b"b");
+    let added =
+        watch_service::import_event_paths(&t.db, RootKey::Cabinet(cab.id), &[PathBuf::from(&moved)])
+            .unwrap();
+    assert_eq!(added.created_count, 3, "pack、deep、b.txt");
+    assert!(hide_flag(&t.db, "pack"));
+    assert!(hide_flag(&t.db, "deep"));
+    assert!(hide_flag(&t.db, "b.txt"));
+
+    // 根目录若已作为文件夹对象入库，补扫不得把它藏起来
+    let _root_item = {
+        let conn = t.db.get_conn();
+        item_service::add_item(&conn, &root).unwrap()
+    };
+    let again = watch_service::scan_root(&t.db, RootKey::Cabinet(cab.id)).unwrap();
+    assert_eq!(again.created_count, 0);
+    assert!(!hide_flag(&t.db, "shelf"), "关联根保持可见");
+}
+
+/// 重复导入不得覆盖用户已有的可见性：先散加入库的文件保持可见，新监视到的文件仍藏出 All。
+#[test]
+fn watch_import_does_not_override_existing_visibility() {
+    let t = common::temp_db();
+    let root = common::make_dir(&t.dir, "keep");
+    let visible = common::write_file(&t.dir, "keep/visible.txt", b"v");
+    let folder = {
+        let conn = t.db.get_conn();
+        let folder = item_service::add_item(&conn, &root).unwrap();
+        drop(conn);
+        let added = item_service::add_items(&t.db, vec![visible.clone()]);
+        assert_eq!(added.created_count, 1);
+        assert!(!added.items[0].hide_from_all);
+        let conn = t.db.get_conn();
+        watch_service::set_item_watch(&conn, folder.id, true).unwrap();
+        folder
+    };
+    let scan = watch_service::scan_root(&t.db, RootKey::Item(folder.id)).unwrap();
+    assert_eq!(scan.created_count, 0, "已在库的散文件不得被补扫成新行");
+    assert!(!hide_flag(&t.db, "visible.txt"));
+
+    let ev = watch_service::import_event_paths(
+        &t.db,
+        RootKey::Item(folder.id),
+        &[PathBuf::from(&visible)],
+    )
+    .unwrap();
+    assert_eq!(ev.created_count, 0);
+    assert!(!hide_flag(&t.db, "visible.txt"), "事件入库也不得覆盖已有可见性");
+
+    let fresh = common::write_file(&t.dir, "keep/fresh.txt", b"f");
+    let added = watch_service::import_event_paths(
+        &t.db,
+        RootKey::Item(folder.id),
+        &[PathBuf::from(&fresh)],
+    )
+    .unwrap();
+    assert_eq!(added.created_count, 1);
+    assert!(hide_flag(&t.db, "fresh.txt"));
+    assert!(!hide_flag(&t.db, "visible.txt"));
+}

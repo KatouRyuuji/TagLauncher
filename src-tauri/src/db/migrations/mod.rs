@@ -22,6 +22,7 @@ mod v021_hide_from_all;
 mod v022_item_alias;
 mod v023_cabinet_parent;
 mod v024_document_type;
+mod v025_hide_from_all_watch;
 
 use rusqlite::Connection;
 use std::collections::HashSet;
@@ -200,6 +201,7 @@ fn all_migrations() -> Vec<Box<dyn Migration>> {
         Box::new(v022_item_alias::V022ItemAlias),
         Box::new(v023_cabinet_parent::V023CabinetParent),
         Box::new(v024_document_type::V024DocumentType),
+        Box::new(v025_hide_from_all_watch::V025HideFromAllWatch),
     ]
 }
 
@@ -437,10 +439,11 @@ mod tests {
     #[test]
     fn registered_migrations_are_unique_strictly_increasing_and_consecutive() {
         let migrations = all_migrations();
-        validate_migration_registry(&migrations).expect("registry must be unique and increasing");
+        validate_migration_registry(&migrations).expect("registry must be unique, increasing, and consecutive");
         let versions: Vec<u32> = migrations.iter().map(|m| m.version()).collect();
         let expect: Vec<u32> = (1..=latest_schema_version()).collect();
-        assert_eq!(versions, expect, "本分支已包含全部中间迁移，版本应自 1 连续");
+        assert_eq!(versions, expect, "必须纳入 v024 document type，版本自 1 连续到 latest（含 v025）");
+        assert_eq!(latest_schema_version(), 25);
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::path::Path;
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::services::item_service::{AddItemFailure, AddItemsResult};
+use crate::services::item_service::{AddItemFailure, AddItemsContext, AddItemsResult};
 use crate::services::settings_service;
 
 pub const MASTER_KEY: &str = "folder_watch_master";
@@ -167,6 +167,25 @@ fn empty_add_result() -> AddItemsResult {
         items: Vec::new(),
         failed: Vec::<AddItemFailure>::new(),
         created_count: 0,
+    }
+}
+
+/// 与 item_service 的 hide_from_all 路径键同一口径（分隔符统一、去掉末尾 \、不区分大小写）。
+fn same_item_path(a: &str, b: &str) -> bool {
+    let key = |p: &str| p.replace('/', "\\").trim_end_matches('\\').to_lowercase();
+    key(a) == key(b)
+}
+
+/// 监视/关联根之下新入库的路径默认藏出 All；根文件夹对象本身保持可见。
+fn hide_from_all_context(root: &str, paths: &[String]) -> AddItemsContext {
+    AddItemsContext {
+        hide_from_all_paths: paths
+            .iter()
+            .filter(|path| !same_item_path(path, root))
+            .cloned()
+            .collect(),
+        cabinet_id: None,
+        tag_ids: Vec::new(),
     }
 }
 
@@ -380,7 +399,11 @@ pub fn scan_root(db: &crate::db::Database, key: RootKey) -> Result<AddItemsResul
     // 分批入库：首次绑定大目录时避免单个事务长时间独占数据库锁
     let mut result = empty_add_result();
     for chunk in fresh.chunks(SCAN_ADD_CHUNK) {
-        let part = crate::services::item_service::add_items(db, chunk.to_vec());
+        let part = crate::services::item_service::add_items_with_context(
+            db,
+            chunk.to_vec(),
+            hide_from_all_context(&root, chunk),
+        );
         result.created_count += part.created_count;
         result.items.extend(part.items);
         result.failed.extend(part.failed);
@@ -465,7 +488,11 @@ pub fn import_event_paths(
     if files.is_empty() {
         return Ok(empty_add_result());
     }
-    Ok(crate::services::item_service::add_items(db, files))
+    Ok(crate::services::item_service::add_items_with_context(
+        db,
+        files.clone(),
+        hide_from_all_context(&root, &files),
+    ))
 }
 
 #[cfg(test)]
