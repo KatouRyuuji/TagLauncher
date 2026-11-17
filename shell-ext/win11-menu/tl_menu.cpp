@@ -39,8 +39,9 @@ static bool CanonicalizePath(const std::wstring& in, std::wstring& out) {
     return true;
 }
 
-// 仅允许模块同级或上一级目录中的 tag-launcher.exe（安装：program_dir\tag-launcher.exe，
-// 探针：模块与 exe 同级）。tl_menu.host 也必须规范化后等于这两个候选之一，不能靠改名绕过。
+// 仅允许真实存在的 tag-launcher.exe，且必须是：模块同级、模块上一级，
+// 或宿主目录符合安装/探针布局（含 win11-menu\tl_menu.dll 或 exe 旁的 tl_menu.dll）。
+// 禁止把任意同名 exe 当宿主。
 static bool IsCanonicalHost(const std::wstring& candidate, std::wstring& resolved) {
     if (candidate.empty()) return false;
     const wchar_t* name = PathFindFileNameW(candidate.c_str());
@@ -65,13 +66,21 @@ static bool IsCanonicalHost(const std::wstring& candidate, std::wstring& resolve
         resolved = full;
         return true;
     }
+    // 当 DLL 从包缓存加载、ModuleDir 不是程序目录时，仍接受符合安装/探针布局的宿主：
+    // 程序目录下有 win11-menu\tl_menu.dll，或 exe 旁有 tl_menu.dll。
+    wchar_t exeDir[MAX_PATH * 4] = {};
+    lstrcpynW(exeDir, full.c_str(), ARRAYSIZE(exeDir));
+    PathRemoveFileSpecW(exeDir);
+    std::wstring bundled = std::wstring(exeDir) + L"\\win11-menu\\tl_menu.dll";
+    std::wstring probeDll = std::wstring(exeDir) + L"\\tl_menu.dll";
+    if (ExeExists(bundled) || ExeExists(probeDll)) {
+        resolved = full;
+        return true;
+    }
     return false;
 }
 
-static std::wstring ReadHostExe(const std::wstring& dir) {
-    std::wstring file = dir + L"\\tl_menu.host";
-    HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE) return {};
+static std::wstring DecodeHostContents(HANDLE h) {
     char buf[4096];
     DWORD n = 0;
     BOOL ok = ReadFile(h, buf, sizeof(buf) - 1, &n, nullptr);
@@ -87,6 +96,20 @@ static std::wstring ReadHostExe(const std::wstring& dir) {
     std::wstring out((size_t)wlen, L'\0');
     MultiByteToWideChar(CP_UTF8, 0, buf, n, out.data(), wlen);
     return out;
+}
+
+static std::wstring ReadHostExe(const std::wstring& dir) {
+    std::wstring file = dir + L"\\tl_menu.host";
+    HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE) return DecodeHostContents(h);
+    // DLL 模块目录可能是包缓存：回退读注册时同步写入的 LocalAppData 指针（与 status 日志同目录）。
+    PWSTR base = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &base))) return {};
+    std::wstring fallback = std::wstring(base) + L"\\TagLauncher\\tl_menu.host";
+    CoTaskMemFree(base);
+    h = CreateFileW(fallback.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return {};
+    return DecodeHostContents(h);
 }
 
 static std::wstring FindExe() {

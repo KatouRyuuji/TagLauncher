@@ -392,20 +392,37 @@ pub mod platform {
         Ok(())
     }
 
+    fn host_pointer_paths(program_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut paths = vec![program_dir.join(super::RESOURCE_DIR).join(super::HOST_FILE)];
+        if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
+            paths.push(
+                std::path::PathBuf::from(appdata)
+                    .join("TagLauncher")
+                    .join(super::HOST_FILE),
+            );
+        }
+        paths
+    }
+
     /// 只写入程序目录下真实存在的 `tag-launcher.exe`（portable/安装布局的 canonical 宿主）。
+    /// 同时写一份到 %LOCALAPPDATA%\TagLauncher，供 DLL 从包缓存加载时读取。
     fn write_host_file(dir: &std::path::Path) -> Result<(), String> {
         let exe = super::canonical_menu_host_exe(dir)?;
-        let dest = dir.join(super::RESOURCE_DIR).join(super::HOST_FILE);
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let bytes = exe.to_string_lossy().as_bytes();
+        for dest in host_pointer_paths(dir) {
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            std::fs::write(&dest, bytes).map_err(|e| e.to_string())?;
         }
-        std::fs::write(&dest, exe.to_string_lossy().as_bytes()).map_err(|e| e.to_string())
+        Ok(())
     }
 
     fn remove_host_file() {
         if let Ok(dir) = program_dir() {
-            let dest = dir.join(super::RESOURCE_DIR).join(super::HOST_FILE);
-            let _ = std::fs::remove_file(dest);
+            for dest in host_pointer_paths(&dir) {
+                let _ = std::fs::remove_file(dest);
+            }
         }
     }
 

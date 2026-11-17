@@ -236,11 +236,14 @@ pub fn set_dark(hwnd: isize, dark: bool) {
 }
 
 /// 隐藏时关掉系统背景，避免 DWM 在不可见窗口上继续合成（空闲 CPU）。
+/// 回退路径也走这里：必须同时清掉 `WS_EX_LAYERED`，否则透明 WebView 在
+/// `DWMSBT_NONE` 上会以约 180Hz 持续合成（钉住空闲 7% CPU / 合成唤醒过万）。
 pub fn clear(hwnd: isize) {
     if hwnd == 0 || !supported() {
         return;
     }
     let h = hwnd as HWND;
+    clear_layered(h);
     let _ = set_attr(h, DWMWA_SYSTEMBACKDROP_TYPE, &DWMSBT_NONE);
     let _ = extend_frame(
         h,
