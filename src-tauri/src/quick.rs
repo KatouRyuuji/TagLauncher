@@ -199,6 +199,10 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     crate::pin::install_caption_drag(&window);
     // 页面默认带 data-quick-hidden。此处不调用 clear_glass_effect：它的 with_webview
     // 与紧接着的首次 show/apply 竞态，可能把刚 SetIsVisible(true) 又打回 false。
+    // 但仍须暂停默认可见的 controller：HWND 已 hidden，页面加载后否则可能在不可见
+    // 窗口上以刷新率合成（两窗隐藏空闲门禁，约 180Hz）。回调内复核 INTENDED_VISIBLE，
+    // 已发起的 show()/native_show 会再设回 true。
+    pause_quick_controller_if_unintended(&window);
     Ok(window)
 }
 
@@ -313,7 +317,10 @@ pub(crate) fn set_controller_visible(window: &WebviewWindow, visible: bool) {
     #[cfg(windows)]
     {
         let _ = window.with_webview(move |webview| {
-            // SAFETY：with_webview 回调在 WebView 所在线程，controller 在回调期间有效
+            // SAFETY：with_webview 回调在 runtime 主线程（即 Windows UI/WebView2 线程）执行，
+            // controller 在回调期间有效。wry 2.12：调用方已在主线程则同步跑完；否则
+            // send_event FIFO 排队。不再加非可重入锁：主线程上 with_webview 同步重入
+            // （例如 SetIsVisible 派发 Focused 再进 set_controller_visible）会自锁。
             let result = unsafe { webview.controller().SetIsVisible(visible.into()) };
             if let Err(e) = result {
                 log::warn!("[quick] SetIsVisible({visible}) 失败：{e}");
@@ -322,6 +329,33 @@ pub(crate) fn set_controller_visible(window: &WebviewWindow, visible: bool) {
     }
     #[cfg(not(windows))]
     let _ = (window, visible);
+}
+
+/// 预创建或尚未 intended 显示时暂停 controller。须在 WebView/UI 线程上按
+/// `INTENDED_VISIBLE` 的最终状态决定：若 show() 已把意图设为可见，则不要保持 false
+/// （排队中的 SetIsVisible(true) 仍会再跑一次，此处恢复是为了不让中间态把页面留空）。
+fn pause_quick_controller_if_unintended(window: &WebviewWindow) {
+    #[cfg(windows)]
+    {
+        let _ = window.with_webview(move |webview| {
+            if INTENDED_VISIBLE.load(Ordering::SeqCst) {
+                return;
+            }
+            // SAFETY：同 set_controller_visible
+            let result = unsafe { webview.controller().SetIsVisible(false.into()) };
+            if let Err(e) = result {
+                log::warn!("[quick] SetIsVisible(false) 失败：{e}");
+            }
+            if INTENDED_VISIBLE.load(Ordering::SeqCst) {
+                let result = unsafe { webview.controller().SetIsVisible(true.into()) };
+                if let Err(e) = result {
+                    log::warn!("[quick] SetIsVisible(true) 失败：{e}");
+                }
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = window;
 }
 
 pub fn destroy_window(app: &AppHandle) {

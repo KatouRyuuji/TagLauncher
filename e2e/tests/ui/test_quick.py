@@ -197,6 +197,32 @@ def stats(xs):
 
 
 # ---------------------------------------------------------------- 功能
+def test_precreated_quick_stays_hidden_until_show_and_survives_show_hide(app, sandbox):
+    """预创建后从未 show：HWND 保持隐藏，但隐藏页可脚本化；首次 show 可输入；快速 show/hide/show 可复用。"""
+    paths = [files.write(sandbox.files / "q" / n, n) for n in ("alpha.txt", "beta.txt", "gamma.txt")]
+    app.seed(paths)
+    time.sleep(1)
+    qp = enable_quick(app)
+    wait_until(lambda: perf(qp)["loads"], 20, lambda: f"预创建后隐藏页应完成加载：{perf(qp)}")
+    assert not is_visible(qp), "预创建后、首次唤出前，快速窗应保持隐藏"
+    assert qp.evaluate("() => document.readyState") == "complete"
+    first = summon(app, qp)
+    assert first and first.get("ms") is not None, first
+    assert is_visible(qp)
+    assert qp.evaluate("() => document.activeElement?.dataset?.testid") == "quick-input"
+    hide(app)
+    wait_until(lambda: not is_visible(qp), 3, "收起后应隐藏")
+    times = []
+    for _ in range(5):
+        s = summon(app, qp)
+        assert is_visible(qp), "再次唤出应显示"
+        assert qp.evaluate("() => document.activeElement?.dataset?.testid") == "quick-input"
+        times.append(s["ms"])
+        hide(app)
+        wait_until(lambda: not is_visible(qp), 3, "循环收起后应隐藏")
+    assert len(times) == 5 and all(t >= 0 for t in times), times
+
+
 @pytest.mark.case("E-QUICK-01")
 def test_quick_window_follows_hotkey_binding(app, sandbox):
     """默认不绑键 = 不建窗；绑定即预创建（隐藏）；重启后按设置预创建；清除即销毁。"""

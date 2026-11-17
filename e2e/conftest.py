@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from harness.integrity import RealDirGuard, foreign_instances
 from harness.paths import ROOT, TMP, default_cli, default_exe
 from harness.report import Reporter
 from harness.sandbox import Sandbox
+from harness import hangdiag
 
 LAYER_ORDER = {"cli": 0, "ui": 1, "visual": 2, "window": 3}
 _JS_ERRORS: list[tuple[str, list[str]]] = []
@@ -211,6 +213,33 @@ def pytest_runtest_makereport(item, call):
         item._tl_call_rep = rep
 
 
+@pytest.fixture(autouse=True)
+def hang_watch(request, sandbox):
+    """单测超过 HANG_AFTER_S 仍未结束：写出线程/进程快照并结束应用，避免卡到步骤总超时。
+    不改 45 分钟步骤上限，也不改产品门槛。"""
+    stop = threading.Event()
+
+    def _watch():
+        if stop.wait(hangdiag.HANG_AFTER_S):
+            return
+        if stop.is_set():
+            return
+        roots = hangdiag.find_app_roots(sandbox.root)
+        diag = hangdiag.snapshot(roots)
+        diag["source"] = "watchdog"
+        diag["nodeid"] = request.node.nodeid
+        diag["waited_s"] = hangdiag.HANG_AFTER_S
+        hangdiag.write(sandbox.artifacts / "hang-diag.json", diag)
+        if not stop.is_set() and roots:
+            diag["killed"] = hangdiag.kill_roots(roots)
+            hangdiag.write(sandbox.artifacts / "hang-diag.json", diag)
+
+    t = threading.Thread(target=_watch, name="tl-hang-watch", daemon=True)
+    t.start()
+    yield
+    stop.set()
+
+
 class AppFactory:
     def __init__(self, pw, sandbox, request):
         self.pw, self.sb, self.request = pw, sandbox, request
@@ -239,6 +268,17 @@ class AppFactory:
                         (self.sb.artifacts / "failure-ipc.json").write_text(
                             json_dumps(s.page.evaluate("window.__e2e && {calls: window.__e2e.calls.filter(c => c.cmd !== 'get_items').slice(-80), toasts: window.__e2e.toasts}")),
                             encoding="utf-8")
+                    except Exception:
+                        pass
+                    try:
+                        roots = []
+                        if s.proc is not None and s.proc.poll() is None:
+                            roots = [s.proc.pid]
+                        roots = roots or hangdiag.find_app_roots(self.sb.root)
+                        diag = hangdiag.snapshot(roots)
+                        diag["source"] = "teardown"
+                        diag["page"] = hangdiag.page_state(s)
+                        hangdiag.write(self.sb.artifacts / "hang-diag.json", diag)
                     except Exception:
                         pass
             try:
