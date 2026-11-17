@@ -1679,24 +1679,6 @@ class Walk:
         self.shot("09-main-light-f1-end")
 
 
-def _write_system_probe() -> None:
-    try:
-        from glass_diag import write_system_probe
-        path = write_system_probe(OUT)
-        log(f"glass-diag system {path}")
-    except Exception as e:
-        log(f"glass-diag system: {e}")
-
-
-def _record_glass_diag(walk, label: str, page=None) -> None:
-    try:
-        from glass_diag import record_snapshot
-        info = record_snapshot(OUT, walk.app, page=page, label=label, pid=walk.app.proc.pid)
-        log(f"glass-diag {label} acrylic={info.get('has_acrylic')} apply_n={info.get('apply_n')} path={info.get('path')}")
-    except Exception as e:
-        log(f"glass-diag {label}: {e}")
-
-
     def ch_glass(self):
         """最小原生截图：浅色快速窗/钉住浮窗叠在彩色大图标和白底柜上，以及深色快速窗。只用 gdigrab 桌面帧。"""
         pg = self.app.page
@@ -1800,6 +1782,24 @@ def _record_glass_diag(walk, label: str, page=None) -> None:
         large_all()
         self.shot("09-main-dark-f1-d1", page_too=False)
         summon_search("设计", "09-quick-dark-f1")
+
+
+def _write_system_probe() -> None:
+    try:
+        from glass_diag import write_system_probe
+        path = write_system_probe(OUT)
+        log(f"glass-diag system {path}")
+    except Exception as e:
+        log(f"glass-diag system: {e}")
+
+
+def _record_glass_diag(walk, label: str, page=None) -> None:
+    try:
+        from glass_diag import record_snapshot
+        info = record_snapshot(OUT, walk.app, page=page, label=label, pid=walk.app.proc.pid)
+        log(f"glass-diag {label} acrylic={info.get('has_acrylic')} apply_n={info.get('apply_n')} path={info.get('path')}")
+    except Exception as e:
+        log(f"glass-diag {label}: {e}")
 
 
 
