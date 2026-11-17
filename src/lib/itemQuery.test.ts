@@ -267,6 +267,7 @@ test("isSortMode / isTypeFilter 守卫", () => {
   assert.equal(isSortMode("nope"), false);
   assert.equal(isTypeFilter("script"), true);
   assert.equal(isTypeFilter("video"), true);
+  assert.equal(isTypeFilter("document"), true);
   assert.equal(isTypeFilter("bat"), false);
   assert.equal(isViewMode("icons"), true);
   assert.equal(isViewMode("tile"), false);

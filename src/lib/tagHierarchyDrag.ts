@@ -60,6 +60,6 @@ export function resolveHierarchyDrop(
 export function describeParentChange(change: TagParentChange, nameOf: (id: number) => string): string {
   const child = `「${nameOf(change.childId)}」`;
   if (change.toParentId === null) return `已把${child}移出「${nameOf(change.fromParentId!)}」`;
-  if (change.fromParentId === null) return `已把${child}加到「${nameOf(change.toParentId)}」下（保留原有父级）`;
+  if (change.fromParentId === null) return `已把${child}放到「${nameOf(change.toParentId)}」下（保留原来的上级）`;
   return `已把${child}从「${nameOf(change.fromParentId)}」移到「${nameOf(change.toParentId)}」下`;
 }

@@ -28,6 +28,7 @@ import {
 import type { Cabinet, Tag } from "../types";
 import { stepIndex } from "./quickModel";
 import { cabinetPathLabel } from "../lib/cabinetTree";
+import { truncatePathMiddle } from "../lib/itemUtils";
 
 type Step = "choose" | "tag" | "cabinet" | "running" | "done";
 
@@ -257,8 +258,8 @@ export function QuickCollect({ session, onClose }: { session: CollectSession; on
           <ul className="quick-list quick-collect-paths" aria-label="待收纳">
             {session.paths.slice(0, 8).map((p) => (
               <li key={p} className="quick-row" data-testid="collect-path">
-                <span className="quick-name">{pathName(p)}</span>
-                <span className="quick-path">{p}</span>
+                <span className="quick-name" title={pathName(p)}>{pathName(p)}</span>
+                <span className="quick-path" title={p}>{truncatePathMiddle(p)}</span>
               </li>
             ))}
             {count > 8 && <li className="quick-empty">…还有 {count - 8} 项</li>}
@@ -299,7 +300,12 @@ export function QuickCollect({ session, onClose }: { session: CollectSession; on
         ) : step === "running" ? (
           <span>正在收纳…</span>
         ) : (
-          <span>T 打标签 · C 放入文件柜 · I 仅导入 · Esc 取消</span>
+          <span className="quick-shortcuts" title="T 打标签 · C 放入文件柜 · I 仅导入 · Esc 取消">
+            <span className="quick-kbd"><kbd>T</kbd>打标签</span>
+            <span className="quick-kbd"><kbd>C</kbd>放入文件柜</span>
+            <span className="quick-kbd"><kbd>I</kbd>仅导入</span>
+            <span className="quick-kbd"><kbd>Esc</kbd>取消</span>
+          </span>
         )}
       </div>
     </div>

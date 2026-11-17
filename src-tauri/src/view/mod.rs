@@ -147,9 +147,10 @@ fn type_order(t: &str) -> i32 {
         "audio" => 2,
         "video" => 3,
         "text" => 4,
-        "exe" => 5,
-        "bat" => 6,
-        "ps1" => 7,
+        "document" => 5,
+        "exe" => 6,
+        "bat" => 7,
+        "ps1" => 8,
         _ => 9,
     }
 }

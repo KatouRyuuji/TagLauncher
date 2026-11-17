@@ -25,7 +25,7 @@ enum Cmd {
     /// 搜索对象（数据库全文搜索）
     Search {
         query: String,
-        /// 类型过滤：folder / image / audio / video / exe / bat / ps1 / text
+        /// 类型过滤：folder / image / audio / video / text / document / exe / bat / ps1
         #[arg(long = "type")]
         type_filter: Option<String>,
         #[arg(long, default_value = "50")]

@@ -76,14 +76,14 @@ export function ThemeFamilyGallery({
   };
 
   return (
-    <section className="min-w-0 flex-1">
+    <section className="w-full min-w-0">
       <h4 className="text-sm font-medium text-[var(--text-primary)]">官方配色</h4>
       <p className="mt-1 text-xs text-[var(--text-secondary)]">点选立即应用。缩略用该族当前亮暗的真实纸色。</p>
       <div
         role="radiogroup"
         aria-label="官方配色"
         data-theme-family-gallery=""
-        className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4"
+        className="mt-3 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(148px,1fr))]"
       >
         {THEME_FAMILIES.map((family, index) => {
           const theme = familyTheme(themes, family, effectiveMode);
@@ -145,7 +145,7 @@ export function ThemeFamilyGallery({
                 </span>
               </span>
               <span className="mt-2 flex items-center justify-between gap-1 px-0.5 text-[length:calc(13px*var(--ui-font-scale,1))] font-medium">
-                <span className="truncate">{family.name}</span>
+                <span className="whitespace-nowrap">{family.name}</span>
                 {selected && <Check size={14} strokeWidth={2} aria-hidden="true" />}
               </span>
             </button>

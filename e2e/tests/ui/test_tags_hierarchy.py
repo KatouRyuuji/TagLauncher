@@ -59,7 +59,7 @@ def test_drag_edits_hierarchy_add_move_detach_and_rejects_cycles(app, sandbox):
     drag_to(app, row(app, C, None), row(app, A, None))
     wait_edges(sandbox, [(A, C)])
     row(app, C, A).wait_for(timeout=5000)
-    app.page.get_by_text("已把「丙」加到「甲」下（保留原有父级）").first.wait_for(timeout=3000)
+    app.page.get_by_text("已把「丙」放到「甲」下（保留原来的上级）").first.wait_for(timeout=3000)
     drag_to(app, row(app, D, None), row(app, C, A))
     wait_edges(sandbox, [(A, C), (C, D)])
 

@@ -3,6 +3,7 @@ import {
   intermediateDirs,
   LINKED_CABINET_IMPORT_NOTICE,
   planNestedImport,
+  importPlacementBanner,
   snapshotImportPlacement,
   toAddItemsContext,
 } from "./importContext";
@@ -184,6 +185,46 @@ test("快照与隐藏路径一并交给后端，切换筛选不应改写已拍�
   assert.notEqual(later.cabinetId, placement.cabinetId);
   const context = toAddItemsContext(placement, ["D:\\Work\\Docs\\a.txt"]);
   assert.deepEqual(context, { cabinetId: 3, tagIds: [4], hideFromAllPaths: ["D:\\Work\\Docs\\a.txt"] });
+});
+
+
+test("导入上下文条：普通柜与标签说清楚落点", () => {
+  const placement = snapshotImportPlacement({
+    selectedCabinetId: 2,
+    cabinets: [{ id: 2, folder_path: null }],
+    selectedTagIds: [8],
+    excludedTagIds: [],
+    searchQuery: "",
+  });
+  assert.equal(
+    importPlacementBanner({ placement, cabinetName: "春季活动", tagNames: ["紧急"] }),
+    "将加入文件柜「春季活动」，并打上标签「紧急」。",
+  );
+  assert.equal(
+    importPlacementBanner({ placement: { ...placement, tagIds: [] }, cabinetName: "春季活动", tagNames: [] }),
+    "将加入文件柜「春季活动」。",
+  );
+  assert.equal(
+    importPlacementBanner({ placement: { cabinetId: null, tagIds: [1], linkedCabinetBlocked: false }, cabinetName: null, tagNames: ["工作"] }),
+    "将打上标签「工作」。",
+  );
+  assert.equal(
+    importPlacementBanner({ placement: { cabinetId: null, tagIds: [], linkedCabinetBlocked: false }, cabinetName: null, tagNames: [] }),
+    null,
+  );
+});
+
+test("导入上下文条：关联柜说明不会自动入柜", () => {
+  const placement = snapshotImportPlacement({
+    selectedCabinetId: 3,
+    cabinets: [{ id: 3, folder_path: "D:\\Photos" }],
+    selectedTagIds: [],
+    excludedTagIds: [],
+    searchQuery: "",
+  });
+  const text = importPlacementBanner({ placement, cabinetName: "相册", tagNames: [] });
+  assert.ok(text && text.includes("关联文件夹「相册」"));
+  assert.ok(text && text.includes("不会自动加入该柜"));
 });
 
 await run("importContext");

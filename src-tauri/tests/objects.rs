@@ -85,6 +85,9 @@ fn detect_type_classifies_real_filesystem_objects() {
     let md = common::write_file(&t.dir, "notes.md", b"a");
     // 视频：空文件即可（分类只看扩展名，不解码）
     let mp4 = common::write_file(&t.dir, "clip.MP4", b"mock-mp4");
+    let pdf = common::write_file(&t.dir, "report.PDF", b"a");
+    let docx = common::write_file(&t.dir, "brief.docx", b"a");
+    let xlsx = common::write_file(&t.dir, "sheet.xlsx", b"a");
 
     assert_eq!(item_service::detect_type(&dir), "folder");
     assert_eq!(item_service::detect_type(&mp3), "audio");
@@ -96,6 +99,9 @@ fn detect_type_classifies_real_filesystem_objects() {
     assert_eq!(item_service::detect_type(&unknown), "exe");
     assert_eq!(item_service::detect_type(&md), "text");
     assert_eq!(item_service::detect_type(&mp4), "video");
+    assert_eq!(item_service::detect_type(&pdf), "document");
+    assert_eq!(item_service::detect_type(&docx), "document");
+    assert_eq!(item_service::detect_type(&xlsx), "document");
 
     // 经 add_item 落库后类型一致（走完整入库管线）。
     let conn = t.db.get_conn();
@@ -105,6 +111,8 @@ fn detect_type_classifies_real_filesystem_objects() {
     assert_eq!(folder.item_type, "folder");
     let video = item_service::add_item(&conn, &mp4).expect("add mp4");
     assert_eq!(video.item_type, "video");
+    let doc = item_service::add_item(&conn, &pdf).expect("add pdf");
+    assert_eq!(doc.item_type, "document");
 }
 
 /// get_items 返回全部对象，默认排序：收藏优先。

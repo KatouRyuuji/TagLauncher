@@ -85,4 +85,22 @@ test("关联柜空目录不提示拖入", () => {
   assert.ok(copy.description.includes("Backspace"));
 });
 
+test("仅本柜空态优先于普通柜空态，主操作是切回含子柜", () => {
+  assert.equal(resolveEmptyStateVariant("filter", "", { cabinet: true, cabinetOnlySelf: true }), "cabinetOnlySelf");
+  // 有搜索词仍走搜索空态
+  assert.equal(resolveEmptyStateVariant("filter", "报告", { cabinet: true, cabinetOnlySelf: true }), "search");
+  const copy = emptyStateCopy("cabinetOnlySelf", "");
+  assert.equal(copy.title, "本柜没有直接收纳的项目");
+  assert.ok(copy.description.includes("含子柜"));
+  assert.ok(!copy.description.includes("清空所有筛选"));
+  // 「当前」作为完整词出现在退出操作上，不在会中断的描述里拆开
+  assert.equal(copy.showClearFilters, false);
+  assert.equal(copy.showSwitchToWithChildren, true);
+  assert.equal(copy.showExitCabinet, true);
+  // 普通柜空态不被仅本柜文案冒充
+  const plain = emptyStateCopy("cabinet", "");
+  assert.equal(plain.showSwitchToWithChildren, undefined);
+  assert.ok(plain.description.includes("当前文件柜"));
+});
+
 await run("emptyStateCopy");
