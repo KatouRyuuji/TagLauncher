@@ -408,12 +408,12 @@ pub mod platform {
     /// 同时写一份到 %LOCALAPPDATA%\TagLauncher，供 DLL 从包缓存加载时读取。
     fn write_host_file(dir: &std::path::Path) -> Result<(), String> {
         let exe = super::canonical_menu_host_exe(dir)?;
-        let bytes = exe.to_string_lossy().as_bytes();
+        let host_text = exe.to_string_lossy().into_owned();
         for dest in host_pointer_paths(dir) {
             if let Some(parent) = dest.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
-            std::fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+            std::fs::write(&dest, host_text.as_bytes()).map_err(|e| e.to_string())?;
         }
         Ok(())
     }
