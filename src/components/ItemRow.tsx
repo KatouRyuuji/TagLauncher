@@ -8,7 +8,7 @@ import { ItemDragHandle } from "./ItemDragHandle";
 import { ItemTagsEditor } from "./ItemTagsEditor";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 import { useItemDragStart } from "./useItemDragStart";
-import { getFileSuffix, getTypeLabel, getTypeDetail, splitPathTail, formatRelativeTime } from "../lib/itemUtils";
+import { getFileSuffix, getTypeLabel, getTypeDetail, truncatePathMiddle, formatRelativeTime } from "../lib/itemUtils";
 import { useInternalDragStore } from "../stores/internalDragStore";
 import { useAppStore } from "../stores/appStore";
 import { useModItemSlots } from "../hooks/useModItemSlots";
@@ -18,8 +18,8 @@ import { ItemNoteIcon } from "./ItemNoteIcon";
 import type { ItemCardProps } from "./ItemCard";
 
 /** 表头、数据行与骨架共同消费同一列模板，避免列宽漂移。
- *  名称列下限 120px、标签列下限 96px：保证最小窗口（800px）下名称可读、表头不竖排。 */
-export const ITEM_LIST_GRID_TEMPLATE = "28px minmax(180px,1.2fr) minmax(140px,1fr) 100px";
+ *  名称列下限 160px、标签列下限 180px：长路径用中段折叠，不把标签列挤成只剩「+」。 */
+export const ITEM_LIST_GRID_TEMPLATE = "28px minmax(160px,1.1fr) minmax(180px,0.9fr) 100px";
 /** 普通行的稳定基准高度；Mod footer 与多行标签仍由虚拟化器动态测量。 */
 export const ITEM_LIST_BASE_ROW_HEIGHT = 64;
 /** 紧凑档行高：一屏行数约 +21%（11 行 → 13+ 行），信息结构不变只收留白 */
@@ -153,12 +153,10 @@ function ItemRowComponent({
               )}
             </h3>
             <p
-              className={`mt-0.5 flex min-w-0 text-[length:calc(13px*var(--ui-font-scale,1))] leading-4 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
+              className={`mt-0.5 min-w-0 truncate text-[length:calc(13px*var(--ui-font-scale,1))] leading-4 ${item.is_missing ? "text-[var(--text-faint)] line-through" : "text-[var(--text-muted)]"}`}
               title={item.is_missing ? `最近已知位置：${item.path}` : item.path}
             >
-              {/* 目录段先行截断，末段名保底可见；末段自身超长时从头部省略，扩展名始终完整 */}
-              <span className="min-w-0 truncate">{splitPathTail(item.path).dir}</span>
-              <span dir="rtl" className="max-w-[60%] shrink-0 truncate text-left" style={{ unicodeBidi: "plaintext" }}>{splitPathTail(item.path).tail}</span>
+              {truncatePathMiddle(item.path, 56)}
             </p>
             {/* 元行高度对齐：失效且从未启动时也要占住这一行，不比邻居「矮一截」 */}
             {(lastUsedText !== "" || item.is_missing) && (

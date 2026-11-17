@@ -117,6 +117,9 @@ def type_zoo(root: Path) -> dict[str, Path]:
         "ps1": write(root / "脚本.ps1", "Write-Output 'noop'\n"),
         "txt": write(root / "笔记.txt", "hello\n"),
         "md": write(root / "说明.md", "# title\n"),
+        "pdf": write(root / "报告.pdf", b"%PDF-1.4\n"),
+        "docx": write(root / "简报.docx", "PK"),
+        "xlsx": write(root / "表格.xlsx", "PK"),
         "noext": write(root / "LICENSE", "MIT\n"),
     }
 

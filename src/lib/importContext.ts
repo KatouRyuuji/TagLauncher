@@ -80,6 +80,30 @@ export function snapshotImportPlacement(input: {
 export const LINKED_CABINET_IMPORT_NOTICE =
   "关联目录柜的成员由磁盘文件夹决定，外部文件不会被移入该目录，也不会自动加入该柜。已加入对象库。";
 
+/** 导入对话框顶部的上下文说明：把「会进哪个柜 / 打哪些标签」说清楚。无落点时返回 null。 */
+export function importPlacementBanner(input: {
+  placement: ImportPlacement;
+  cabinetName: string | null;
+  tagNames: string[];
+}): string | null {
+  if (input.placement.linkedCabinetBlocked) {
+    const name = input.cabinetName ? `「${input.cabinetName}」` : "";
+    return `当前正在看关联文件夹${name}。外部文件会加入对象库，但不会自动加入该柜，也不会被移动。`;
+  }
+  const cabinet =
+    input.placement.cabinetId != null && input.cabinetName
+      ? `文件柜「${input.cabinetName}」`
+      : null;
+  const tags =
+    input.placement.tagIds.length > 0 && input.tagNames.length > 0
+      ? `标签「${input.tagNames.join("、")}」`
+      : null;
+  if (cabinet && tags) return `将加入${cabinet}，并打上${tags}。`;
+  if (cabinet) return `将加入${cabinet}。`;
+  if (tags) return `将打上${tags}。`;
+  return null;
+}
+
 export interface NestedImportPlan {
   paths: string[];
   hideFromAllPaths: string[];

@@ -46,7 +46,7 @@ describe("tagHierarchyDrag", () => {
 
   it("提示文案", () => {
     const n = (id: number) => names[id];
-    expect(describeParentChange({ childId: 3, fromParentId: null, toParentId: 5 }, n)).toBe("已把「C」加到「E」下（保留原有父级）");
+    expect(describeParentChange({ childId: 3, fromParentId: null, toParentId: 5 }, n)).toBe("已把「C」放到「E」下（保留原来的上级）");
     expect(describeParentChange({ childId: 3, fromParentId: 1, toParentId: 5 }, n)).toBe("已把「C」从「A」移到「E」下");
     expect(describeParentChange({ childId: 3, fromParentId: 2, toParentId: null }, n)).toBe("已把「C」移出「B」");
   });

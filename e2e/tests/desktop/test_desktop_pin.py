@@ -29,7 +29,9 @@ def handle_hwnd(app) -> int:
 
 
 def collapsed(app, strip: int, quick: int) -> bool:
-    return win32.is_visible(strip) and width(strip) <= round(6 * scale(strip)) and not win32.is_visible(quick)
+    # 设计：把手 8 逻辑像素（取整允许 ±2）
+    s = scale(strip)
+    return win32.is_visible(strip) and 6 <= width(strip) <= round(8 * s) + 2 and not win32.is_visible(quick)
 
 
 def expanded(app, quick: int) -> bool:

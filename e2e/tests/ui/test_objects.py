@@ -93,10 +93,12 @@ def test_type_detection(app, sandbox, zoo):
     app.seed(zoo.values())
     want = {"示例文件夹": "folder", "图片.png": "image", "照片.jpg": "image", "音乐.mp3": "audio",
             "声音.wav": "audio", "视频.mp4": "video", "工具.exe": "exe", "脚本.bat": "bat",
-            "脚本.ps1": "ps1", "笔记.txt": "text", "说明.md": "text", "LICENSE": "exe"}
+            "脚本.ps1": "ps1", "笔记.txt": "text", "说明.md": "text",
+            "报告.pdf": "document", "简报.docx": "document", "表格.xlsx": "document",
+            "LICENSE": "exe"}
     assert dict(dbh.query(sandbox.db_path, "SELECT name, type FROM items")) == want
     labels = {"folder": "文件夹", "image": "图片", "audio": "音频", "video": "视频", "text": "文本",
-              "exe": "程序", "bat": "脚本", "ps1": "脚本"}
+              "document": "文档", "exe": "程序", "bat": "脚本", "ps1": "脚本"}
     for name, t in want.items():
         card = app.card(name)
         card.scroll_into_view_if_needed()

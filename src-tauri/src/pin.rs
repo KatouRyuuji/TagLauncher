@@ -23,7 +23,9 @@ pub const PIN_SURFACE_EVENT: &str = "pin-surface";
 pub const PIN_ITEMS_LIMIT: usize = 500;
 /// 抽屉面板逻辑宽度、把手逻辑宽度
 pub const DRAWER_WIDTH: f64 = 320.0;
-pub const HANDLE_WIDTH: f64 = 4.0;
+pub const HANDLE_WIDTH: f64 = 8.0;
+/// 把手中间握柄的逻辑高度（物理像素 = 此值 × DPI 缩放）。
+pub const HANDLE_PILL_LENGTH: f64 = 56.0;
 /// 抽屉面板高度：工作区的 70%，不超过 640 逻辑像素
 const DRAWER_HEIGHT_FRACTION: f64 = 0.7;
 const DRAWER_MAX_HEIGHT: f64 = 640.0;
@@ -1575,9 +1577,9 @@ mod tests {
         assert_eq!((w1, h1), (320, 640));
         let (w2, h2) = drawer_size((0, 0, 2880, 1560), 1.5);
         assert_eq!((w2, h2), (480, 960));
-        assert_eq!(handle_width(1.0), 4);
-        assert_eq!(handle_width(1.5), 6);
-        assert_eq!(handle_width(0.5), 3, "至少 3 物理像素，鼠标碰得到");
+        assert_eq!(handle_width(1.0), 8);
+        assert_eq!(handle_width(1.5), 12);
+        assert_eq!(handle_width(0.5), 4, "缩小显示时仍看得见、点得到");
     }
 
     #[test]

@@ -48,7 +48,7 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 flex flex-col gap-2 pointer-events-none" style={{ zIndex: "var(--z-toast)" }}>
+    <div className="fixed bottom-16 right-4 flex flex-col gap-2 pointer-events-none" style={{ zIndex: "var(--z-toast)" }}>
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
       ))}
@@ -93,7 +93,7 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
 
   return (
     <div
-      className="toast-enter pointer-events-auto flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3 text-sm max-w-sm"
+      className="toast-enter pointer-events-auto flex max-w-[360px] items-start gap-3 rounded-[var(--radius-lg)] border px-4 py-3 text-sm"
       onMouseEnter={pause}
       onMouseLeave={resume}
       role={toast.type === "error" || toast.type === "warning" ? "alert" : "status"}
@@ -107,7 +107,7 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
       <span aria-hidden="true" style={{ color: toastIconColor(toast.type), flexShrink: 0 }}>
         {toastIcon(toast.type)}
       </span>
-      <span className={`flex-1 break-words ${toast.type === "error" || toast.type === "warning" ? "" : "line-clamp-2"}`}>{toast.message}</span>
+      <span className={`flex-1 break-keep ${toast.type === "error" || toast.type === "warning" ? "" : "line-clamp-3"}`}>{toast.message}</span>
       <button
         onClick={() => onDismiss(toast.id)}
         className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-full)] opacity-50 transition-opacity hover:bg-[var(--bg-hover)] hover:opacity-100"

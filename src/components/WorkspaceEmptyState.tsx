@@ -1,4 +1,4 @@
-import { CircleAlert, FilePlus2, FilterX, FolderInput, FolderPlus, LibraryBig, RefreshCw, Search, SearchX, Tag } from "lucide-react";
+import { CircleAlert, FilePlus2, FilterX, FolderInput, FolderPlus, Layers, LibraryBig, RefreshCw, Search, SearchX, Tag } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { emptyStateCopy, resolveEmptyStateVariant } from "../lib/emptyStateCopy";
 import { pickFilesToAdd, pickFoldersToAdd } from "../lib/importDialogs";
@@ -54,9 +54,13 @@ export function WorkspaceEmptyState({
   const excludedTagIds = useAppStore((state) => state.excludedTagIds);
   const tags = useAppStore((state) => state.tags);
   const cabinets = useAppStore((state) => state.cabinets);
+  const cabinetOnlySelf = useAppStore((state) => state.cabinetOnlySelf);
+  const setCabinetOnlySelf = useAppStore((state) => state.setCabinetOnlySelf);
+  const setSelectedCabinetId = useAppStore((state) => state.setSelectedCabinetId);
   const variant = resolveEmptyStateVariant(kind, searchQuery, {
     // 文件柜与标签筛选可叠加：有标签条件时无命中按筛选文案说明
     cabinet: selectedCabinetId !== null && selectedTagIds.length === 0 && excludedTagIds.length === 0,
+    cabinetOnlySelf,
     favorites: showFavorites,
     recent: showRecent,
   });
@@ -65,7 +69,7 @@ export function WorkspaceEmptyState({
     hasCabinets: cabinets.length > 0,
     linkedCabinet: cabinets.some((cabinet) => cabinet.id === selectedCabinetId && cabinet.folder_path !== null),
   });
-  const EmptyIcon = variant === "library" ? LibraryBig : variant === "search" ? SearchX : FilterX;
+  const EmptyIcon = variant === "library" ? LibraryBig : variant === "search" ? SearchX : variant === "cabinetOnlySelf" ? Layers : FilterX;
 
   const handleClearSearch = () => {
     setSearchQuery("");
@@ -99,7 +103,9 @@ export function WorkspaceEmptyState({
     showRecent ||
     libraryBrowseRoot !== null;
   const showClearFilters = copy.showClearFilters && Boolean(onClearFilters) && hasActiveFilters;
-  const showActions = showAddCta || copy.showClearSearch || showClearFilters;
+  const showSwitchToWithChildren = Boolean(copy.showSwitchToWithChildren);
+  const showExitCabinet = Boolean(copy.showExitCabinet);
+  const showActions = showAddCta || copy.showClearSearch || showClearFilters || showSwitchToWithChildren || showExitCabinet;
 
   return (
     <div className="flex min-h-full items-center overflow-auto">
@@ -115,10 +121,10 @@ export function WorkspaceEmptyState({
           <EmptyIcon className="h-8 w-8" strokeWidth={1.55} aria-hidden="true" />
         </div>
         <div className="max-w-[460px]">
-          <h2 id="workspace-empty-title" className="break-words text-base font-semibold text-[var(--text-primary)]">
+          <h2 id="workspace-empty-title" className="break-keep text-base font-semibold text-[var(--text-primary)]">
             {copy.title}
           </h2>
-          <p className="mx-auto mt-2 max-w-[420px] font-body text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">
+          <p className="mx-auto mt-2 max-w-[420px] break-keep font-body text-[length:calc(13px*var(--ui-font-scale,1))] leading-5 text-[var(--text-muted)]">
             {copy.description}
           </p>
           {variant === "library" && (
@@ -168,6 +174,25 @@ export function WorkspaceEmptyState({
                 >
                   <FilterX className="h-4 w-4" aria-hidden="true" />
                   清空所有筛选
+                </button>
+              )}
+              {showSwitchToWithChildren && (
+                <button
+                  type="button"
+                  className="action-button action-button-primary"
+                  onClick={() => setCabinetOnlySelf(false)}
+                >
+                  <Layers className="h-4 w-4" aria-hidden="true" />
+                  含子柜
+                </button>
+              )}
+              {showExitCabinet && (
+                <button
+                  type="button"
+                  className="action-button"
+                  onClick={() => setSelectedCabinetId(null)}
+                >
+                  退出当前文件柜
                 </button>
               )}
             </div>
