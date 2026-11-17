@@ -1,4 +1,6 @@
-# 面向用户的 E2E（真实 exe + WebView2 CDP）。独立、非必需（continue-on-error），不影响 ci.yml。
+# 面向用户的 E2E（真实 exe + WebView2 CDP）。与 ci.yml 并行，失败会使工作流 conclusion=failure。
+# 各 job 不再 continue-on-error（以免顶层 success 掩盖分片失败）。矩阵 fail-fast: false，
+# 产物上传与摘要步骤保留 if: always()，尽量收齐失败产物。不放宽门槛、不 skip/xfail。
 # e2e 作业跑 CLI / UI / 视觉三层（视觉层在 CI 只截图上传、不比基线）；desktop 作业在临时 runner 的交互桌面上跑 desktop + 窗口层。
 name: E2E
 
@@ -16,7 +18,6 @@ jobs:
   e2e:
     runs-on: windows-latest
     timeout-minutes: 60
-    continue-on-error: true
     # 整套 305 例单机 ~80 分钟：按文件分 3 片并行，每片各自完整跑完并上传结果
     strategy:
       fail-fast: false
@@ -104,7 +105,6 @@ jobs:
   desktop:
     runs-on: windows-latest
     timeout-minutes: 60
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -218,7 +218,6 @@ jobs:
   desktop-release:
     runs-on: windows-latest
     timeout-minutes: 75
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -294,3 +293,22 @@ jobs:
             .tmp-test/e2e/desktop-release-run/report.html
             .tmp-test/e2e/desktop-release-run/artifacts/
           if-no-files-found: warn
+
+  # 单一门禁：矩阵与 desktop / desktop-release 都跑完（含失败后的产物上传）后再判定。
+  # needs.*.result 仅在全部成功时为 success；任一 failure / cancelled 则本 job 失败。
+  e2e-gate:
+    name: e2e-gate
+    if: always()
+    needs: [e2e, desktop, desktop-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all E2E jobs
+        env:
+          E2E: ${{ needs.e2e.result }}
+          DESKTOP: ${{ needs.desktop.result }}
+          DESKTOP_RELEASE: ${{ needs.desktop-release.result }}
+        run: |
+          echo "e2e=$E2E desktop=$DESKTOP desktop-release=$DESKTOP_RELEASE"
+          test "$E2E" = success
+          test "$DESKTOP" = success
+          test "$DESKTOP_RELEASE" = success

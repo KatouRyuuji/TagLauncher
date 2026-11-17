@@ -16,12 +16,14 @@ from harness import files
 from harness import procmem
 from harness.app import wait_until
 from tests.cli.conftest import Tl
-from tests.ui.test_quick import (HIDDEN_MEM_MB, IDLE_CPU_PCT, build_library, enable_quick, is_visible,
+from tests.ui.test_quick import (HIDDEN_MEM_MB, IDLE_CPU_PCT, build_library, enable_quick, is_visible, measure_idle,
                                  quick_page, quick_pages, summon)
 
 # 钉住视图开启（浮动窗显示一个 300 项的柜）且快速搜索未开：常驻私有内存增量沿用快速窗隐藏常驻同档阈值
 PIN_MEM_MB = {5000: HIDDEN_MEM_MB[5000]}
 PIN_IDLE_WINDOW_S = 120
+# 收起抽屉 120s 内渲染 Compositor / GPU VizCompositorThread 各自的唤醒上限（健康基线约 1000 的 5 倍）
+DRAWER_COMPOSITOR_WAKEUPS = 5000
 OFF = {"enabled": False, "source": None, "mode": "float", "edge": "right", "topmost": True}
 
 
@@ -153,8 +155,8 @@ def test_pin_shares_window_with_quick_search(app, sandbox):
 @pytest.mark.case("E-PIN-04")
 @pytest.mark.visible_window  # 抽屉按设计贴在屏幕边、展开动画在屏幕内：放到允许可见窗口的 desktop 作业跑（后台分片的隐身守护会判违规）
 def test_drawer_handle_expand_collapse_sizes(app, sandbox):
-    """边缘抽屉：收起时 quick 窗口隐藏、只留原生把手（8 逻辑像素宽，中间有握柄，贴工作区边）；展开到面板宽 320；
-    收起后不计为可见（不提高检测频率）。"""
+    """边缘抽屉：收起时 quick 窗口隐藏、只留原生探头（68 逻辑像素宽 × 148 高，贴工作区边）；展开到面板宽 320；
+    收起后不计为可见（不提高检测频率）。有意设计变更：宽度 8→68。"""
     _, parent, _ = seed(app, sandbox)
     pin_settings(app, enabled=True, source={"kind": "cabinet", "id": parent}, mode="drawer", edge="right")
     qp = quick_page(app, timeout=20)
@@ -164,7 +166,10 @@ def test_drawer_handle_expand_collapse_sizes(app, sandbox):
     assert d["view"]["drawer"] == "collapsed" and d["countsAsVisible"] is False, d
     assert d["hookInstalled"] is True, "抽屉模式应装前台切换事件钩子"
     scale = qp.evaluate("() => devicePixelRatio")
-    assert 6 <= d["handleRect"][2] <= round(8 * scale) + 2, d
+    rest = round(68 * scale)
+    assert rest - 4 <= d["handleRect"][2] <= rest + 4, d
+    peek_h = round(148 * scale)
+    assert peek_h - 4 <= d["handleRect"][3] <= peek_h + 4, d
     qp.get_by_test_id("pin-panel").wait_for(state="attached", timeout=3000)
     assert app.invoke("pin_expand") is True
     wait_until(lambda: is_visible(qp) and qp.evaluate("() => innerWidth") == 320, 3,
@@ -219,14 +224,7 @@ def test_pin_resident_memory_and_idle_cpu(sandbox, app_factory):
 
     def idle(label: str) -> dict:
         time.sleep(10)
-        t0, c0 = time.time(), procmem.tree_cpu(pid)
-        time.sleep(PIN_IDLE_WINDOW_S)
-        t1, c1 = time.time(), procmem.tree_cpu(pid)
-        rows = [{"pid": p, "exe": exe, "cpu_s": round(s - c0[p][1], 3)} for p, (exe, s) in c1.items() if p in c0]
-        total = sum(r["cpu_s"] for r in rows)
-        return {"state": label, "window_s": round(t1 - t0, 1), "cpu_s": round(total, 3),
-                "avg_pct_one_core": round(total / (t1 - t0) * 100, 3),
-                "processes": sorted(rows, key=lambda r: -r["cpu_s"])[:6]}
+        return {"state": label, **measure_idle(app, PIN_IDLE_WINDOW_S)}
 
     idle_float = idle("float-visible")
     pin_settings(app, mode="drawer")
@@ -244,4 +242,8 @@ def test_pin_resident_memory_and_idle_cpu(sandbox, app_factory):
     for r in (idle_float, idle_drawer):
         if r["avg_pct_one_core"] > IDLE_CPU_PCT:
             problems.append(f"{r['state']} 空闲 CPU {r['avg_pct_one_core']}% > {IDLE_CPU_PCT}%")
+    # 收起的抽屉不渲染：120s 内合成线程唤醒（健康约 ≤1000）超过 5000 说明隐藏的钉住页面又在持续出帧（DESIGN §19）
+    for k, n in idle_drawer["compositor_wakeups"].items():
+        if n > DRAWER_COMPOSITOR_WAKEUPS:
+            problems.append(f"drawer-collapsed {k} 合成线程唤醒 {n} > {DRAWER_COMPOSITOR_WAKEUPS}（收起的抽屉仍在出帧）")
     assert not problems, "；".join(problems) + "（详见 pin-perf.json）"

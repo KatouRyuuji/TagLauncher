@@ -5,7 +5,7 @@
 //! - 只读连接的 data_version 在任何连接提交后变化 → 写连接变了而外部没变 = 本应用写入。
 //!
 //! 检测线程：主窗可见时每 [`VISIBLE_INTERVAL`] 查一次（两次 PRAGMA，微秒级、不读表），
-//! 隐藏/最小化时降到 [`HIDDEN_INTERVAL`]；窗口获焦、托盘/热键唤出时立即查（[`poke`]）。
+//! 只有钉住视图在屏幕上时 [`PIN_INTERVAL`]，隐藏/最小化时降到 [`HIDDEN_INTERVAL`]；窗口获焦、托盘/热键唤出时立即查（[`poke`]）。
 //! 不读文件、不扫表、不持写锁等待（写连接被长事务占用时跳过本轮）。
 //!
 //! 事件 `data-changed` 只在提交成功后发出（data_version 只反映已提交事务），发给所有窗口。
@@ -23,10 +23,14 @@ pub const DATA_CHANGED_EVENT: &str = "data-changed";
 /// 主窗可见时的检测间隔：外部写入到主窗反映的目标是 0.3 秒（检测 ≤100ms + 合并 16ms + 重载）。
 /// 每轮只有两次 PRAGMA data_version（读共享内存里的计数，不读表），每秒 10 次的开销可忽略。
 pub const VISIBLE_INTERVAL: Duration = Duration::from_millis(100);
-/// 主窗可见时每多少轮重新查询一次可见性（5 × 100ms = 0.5 秒）。
+/// 可见时每多少轮重新查询一次可见性（主窗 5 × 100ms = 0.5 秒；仅钉住视图 5 × 500ms = 2.5 秒）。
 const VISIBILITY_EVERY: u32 = 5;
 /// 主窗隐藏/最小化时的检测间隔；唤出时会立即检测一次，不依赖这个间隔。
 pub const HIDDEN_INTERVAL: Duration = Duration::from_secs(2);
+/// 只有钉住视图（浮动窗 / 展开的抽屉）在屏幕上时的检测间隔。钉住视图可以整天常驻，
+/// 按主窗的 100ms 轮询等于永远不降频（E2E 线程快照：浮动窗可见时 tl-data-sync 每 120s 约 2200 次唤醒）。
+/// 0.5 秒对「旁边一列文件」足够及时；获焦时仍立即检测。
+pub const PIN_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -91,15 +95,25 @@ fn now_ms() -> u64 {
 }
 
 /// 主窗或快速搜索窗（含浮动钉住视图、展开的抽屉）有一个在显示，就按可见间隔检测
-fn any_window_visible(app: &AppHandle) -> bool {
-    ["main", crate::quick::QUICK_LABEL].iter().any(|label| {
-        app.get_webview_window(label).is_some_and(|w| {
-            w.is_visible().unwrap_or(false)
-                && !w.is_minimized().unwrap_or(false)
-                // 收起的抽屉把手常驻可见，但不因此提高检测频率
-                && (*label != crate::quick::QUICK_LABEL || crate::pin::counts_as_visible())
-        })
-    })
+/// 按当前在屏幕上的窗口选检测间隔：主窗或快速搜索可见 → 100ms；只有钉住视图 → 500ms；否则 2s。
+/// 收起的抽屉把手常驻可见，但不因此提高检测频率。
+fn poll_interval(app: &AppHandle) -> Duration {
+    let shown = |label: &str| {
+        app.get_webview_window(label)
+            .is_some_and(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
+    };
+    if shown("main") {
+        return VISIBLE_INTERVAL;
+    }
+    if shown(crate::quick::QUICK_LABEL) {
+        if !crate::pin::is_pin_surface() {
+            return VISIBLE_INTERVAL;
+        }
+        if crate::pin::counts_as_visible() {
+            return PIN_INTERVAL;
+        }
+    }
+    HIDDEN_INTERVAL
 }
 
 /// 检测一轮：有变化时广播并返回来源。
@@ -147,14 +161,9 @@ pub fn start(app: &AppHandle) {
             // 建立基线：启动前已发生的写入由首屏加载覆盖
             check_once(&app, &mut tracker);
             // 可见性查询要跨线程到主线程，按 VISIBILITY_EVERY 轮刷新一次；唤醒（获焦/唤出）时立即刷新
-            let mut visible = any_window_visible(&app);
+            let mut interval = poll_interval(&app);
             let mut ticks: u32 = 0;
             loop {
-                let interval = if visible {
-                    VISIBLE_INTERVAL
-                } else {
-                    HIDDEN_INTERVAL
-                };
                 let woken = match rx.recv_timeout(interval) {
                     Ok(()) => {
                         // 合并短时间内的多次唤醒
@@ -166,8 +175,8 @@ pub fn start(app: &AppHandle) {
                 };
                 check_once(&app, &mut tracker);
                 ticks = ticks.wrapping_add(1);
-                if woken || !visible || ticks % VISIBILITY_EVERY == 0 {
-                    visible = any_window_visible(&app);
+                if woken || interval == HIDDEN_INTERVAL || ticks % VISIBILITY_EVERY == 0 {
+                    interval = poll_interval(&app);
                 }
             }
         });

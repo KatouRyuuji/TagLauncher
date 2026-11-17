@@ -24,6 +24,7 @@ mod v023_cabinet_parent;
 mod v024_document_type;
 
 use rusqlite::Connection;
+use std::collections::HashSet;
 
 /// 迁移 trait：每个版本升级实现此接口
 pub trait Migration {
@@ -202,6 +203,45 @@ fn all_migrations() -> Vec<Box<dyn Migration>> {
     ]
 }
 
+
+/// 运行时防护：注册表必须从 1 起唯一且连续（v == prev+1）。
+/// 空号会让 `version() <= current` 永久跳过中间迁移（例如 23→25 后再合入 v024）。
+pub fn validate_migration_registry(migrations: &[Box<dyn Migration>]) -> Result<(), rusqlite::Error> {
+    let fail = |msg: String| {
+        rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR), Some(msg))
+    };
+    let mut seen = HashSet::new();
+    let mut prev: Option<u32> = None;
+    for migration in migrations {
+        let v = migration.version();
+        if !seen.insert(v) {
+            return Err(fail(format!(
+                "迁移注册表存在重复版本 {v}（{}），拒绝启动以免静默跳过",
+                migration.description()
+            )));
+        }
+        match prev {
+            None if v != 1 => {
+                return Err(fail(format!(
+                    "迁移注册表必须以版本 1 开头，实际是 {v}（{}）",
+                    migration.description()
+                )));
+            }
+            Some(p) if v != p + 1 => {
+                return Err(fail(format!(
+                    "迁移版本必须从 1 起连续（{} 之后应为 {}，实际是 {v}，{}），拒绝空号以免跳过中间迁移",
+                    p,
+                    p + 1,
+                    migration.description()
+                )));
+            }
+            _ => {}
+        }
+        prev = Some(v);
+    }
+    Ok(())
+}
+
 /// 注册表中的最高 schema 版本——测试与运行库以此为准，不再各自硬编码版本号。
 pub fn latest_schema_version() -> u32 {
     all_migrations().iter().map(|m| m.version()).max().unwrap_or(0)
@@ -209,6 +249,7 @@ pub fn latest_schema_version() -> u32 {
 
 pub fn run_pending(conn: &Connection) -> Result<(), rusqlite::Error> {
     let migrations = all_migrations();
+    validate_migration_registry(&migrations)?;
 
     let current_version = get_schema_version(conn);
     let latest = latest_schema_version();
@@ -379,4 +420,56 @@ mod tests {
             "unexpected error: {msg}"
         );
     }
+
+    struct Fake(u32, &'static str);
+    impl Migration for Fake {
+        fn version(&self) -> u32 {
+            self.0
+        }
+        fn description(&self) -> &str {
+            self.1
+        }
+        fn up(&self, _conn: &Connection) -> Result<(), rusqlite::Error> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn registered_migrations_are_unique_strictly_increasing_and_consecutive() {
+        let migrations = all_migrations();
+        validate_migration_registry(&migrations).expect("registry must be unique and increasing");
+        let versions: Vec<u32> = migrations.iter().map(|m| m.version()).collect();
+        let expect: Vec<u32> = (1..=latest_schema_version()).collect();
+        assert_eq!(versions, expect, "本分支已包含全部中间迁移，版本应自 1 连续");
+    }
+
+    #[test]
+    fn registry_validation_rejects_duplicate_versions() {
+        let list: Vec<Box<dyn Migration>> = vec![
+            Box::new(Fake(1, "a")),
+            Box::new(Fake(2, "b")),
+            Box::new(Fake(2, "dup")),
+        ];
+        let err = validate_migration_registry(&list).expect_err("duplicate version must fail");
+        let msg = err.to_string();
+        assert!(msg.contains("重复版本 2") && msg.contains("静默跳过"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn registry_validation_rejects_non_increasing_versions() {
+        let list: Vec<Box<dyn Migration>> = vec![Box::new(Fake(1, "a")), Box::new(Fake(0, "back"))];
+        let err = validate_migration_registry(&list).expect_err("decreasing versions must fail");
+        let msg = err.to_string();
+        assert!(msg.contains("必须从 1 起连续") && msg.contains("实际是 0"), "unexpected: {msg}");
+    }
+
+
+    #[test]
+    fn registry_validation_rejects_version_holes() {
+        let list: Vec<Box<dyn Migration>> = vec![Box::new(Fake(1, "a")), Box::new(Fake(2, "b")), Box::new(Fake(4, "skip3"))];
+        let err = validate_migration_registry(&list).expect_err("23-to-25 style hole must fail");
+        let msg = err.to_string();
+        assert!(msg.contains("必须从 1 起连续") && msg.contains("实际是 4"), "unexpected: {msg}");
+    }
+
 }

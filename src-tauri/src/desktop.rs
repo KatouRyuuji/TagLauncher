@@ -436,7 +436,7 @@ pub fn toggle_main_window(app: &AppHandle) {
             .is_some_and(|s| s.close_to_tray())
             || app.tray_by_id(TRAY_ID).is_some();
         if to_tray {
-            let _ = window.hide();
+            hide_main_to_tray(&window);
         } else {
             let _ = window.minimize();
         }
@@ -445,8 +445,18 @@ pub fn toggle_main_window(app: &AppHandle) {
     }
 }
 
+/// 主窗收到托盘：隐藏 HWND，并把 WebView2 controller 设为不可见。
+/// Tauri 的 `hide` 只隐藏窗口，WebView2 仍以为自己可见，页面里的无限动画（缩略图占位脉冲、
+/// 加载转圈）和光标闪烁会继续合成，只能靠 Chromium 的遮挡推断才停。显式 `SetIsVisible(false)`
+/// 让页面进入 hidden：rAF 与 CSS 动画停止、渲染降频（WebView2 文档推荐的隐藏 / 最小化做法）。
+pub fn hide_main_to_tray(window: &tauri::WebviewWindow) {
+    let _ = window.hide();
+    crate::quick::set_controller_visible(window, false);
+}
+
 pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        crate::quick::set_controller_visible(&window, true);
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();

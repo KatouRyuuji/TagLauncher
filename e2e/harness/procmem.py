@@ -143,3 +143,113 @@ def tree_cpu(root_pid: int) -> dict[int, tuple[str, float]]:
         if s is not None:
             out[pid] = (exe, s)
     return out
+
+
+def roles(pids: list[int]) -> dict[int, str]:
+    """进程角色（诊断用，在采样窗口之后调用，不影响测量）：WebView2 子进程按命令行 --type=
+    （browser / renderer / gpu-process / utility:<sub-type> / crashpad-handler）区分。一次 CIM 查询。"""
+    if not pids:
+        return {}
+    import re
+    import subprocess
+    flt = " OR ".join(f"ProcessId={int(p)}" for p in pids)
+    cmd = ["powershell", "-NoProfile", "-Command",
+           f"Get-CimInstance Win32_Process -Filter '{flt}' | ForEach-Object {{ \"$($_.ProcessId)`t$($_.CommandLine)\" }}"]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace").stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    res: dict[int, str] = {}
+    for line in out.splitlines():
+        pid_s, _, cl = line.partition("\t")
+        if not pid_s.strip().isdigit():
+            continue
+        t = re.search(r"--type=([\w-]+)", cl)
+        sub = re.search(r"--utility-sub-type=([\w.-]+)", cl)
+        role = t.group(1) if t else ("browser" if "msedgewebview2" in cl.lower() else "host")
+        if sub:
+            role += ":" + sub.group(1).rsplit(".", 1)[-1]
+        res[int(pid_s)] = role
+    return res
+
+
+# ---------------------------------------------------------------- 线程级空闲诊断
+# 只读快照（NtQuerySystemInformation(SystemProcessInformation)），在采样窗口两端各取一次：
+# 每个线程的 CPU 时间、上下文切换次数（≈唤醒次数）和线程描述（Chromium / Rust 线程名）。
+# 不注入、不附加调试器，不影响被测进程。
+
+_ntdll = ctypes.WinDLL("ntdll")
+_ntdll.NtQuerySystemInformation.argtypes = [wintypes.ULONG, ctypes.c_void_p, wintypes.ULONG,
+                                            ctypes.POINTER(wintypes.ULONG)]
+k32.OpenThread.restype = wintypes.HANDLE
+k32.OpenThread.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+_SPI_SIZE, _STI_SIZE = 0x100, 0x50  # x64 SYSTEM_PROCESS_INFORMATION / SYSTEM_THREAD_INFORMATION
+
+
+def _thread_name(tid: int) -> str:
+    h = k32.OpenThread(0x0800, False, tid)  # THREAD_QUERY_LIMITED_INFORMATION
+    if not h:
+        return ""
+    try:
+        p = ctypes.c_void_p()
+        fn = getattr(k32, "GetThreadDescription", None)
+        if fn is None or fn(h, ctypes.byref(p)) < 0 or not p.value:
+            return ""
+        name = ctypes.wstring_at(p.value)
+        k32.LocalFree(p)
+        return name
+    finally:
+        k32.CloseHandle(h)
+
+
+def threads(pids) -> dict[int, dict]:
+    """{tid: {pid, cpu_s, cs, name}}：给定进程的全部线程。"""
+    want = {int(p) for p in pids}
+    size = 1 << 20
+    while True:
+        buf = ctypes.create_string_buffer(size)
+        ret = wintypes.ULONG()
+        st = _ntdll.NtQuerySystemInformation(5, buf, size, ctypes.byref(ret)) & 0xFFFFFFFF
+        if st == 0xC0000004:  # STATUS_INFO_LENGTH_MISMATCH
+            size = max(size * 2, ret.value + 65536)
+            continue
+        if st != 0:
+            return {}
+        break
+    raw = buf.raw
+    out: dict[int, dict] = {}
+    off = 0
+    u32 = lambda o: int.from_bytes(raw[o:o + 4], "little")  # noqa: E731
+    u64 = lambda o: int.from_bytes(raw[o:o + 8], "little")  # noqa: E731
+    while True:
+        nxt, n = u32(off), u32(off + 4)
+        pid = u64(off + 0x50)
+        if pid in want:
+            for i in range(n):
+                t = off + _SPI_SIZE + i * _STI_SIZE
+                tid = u64(t + 0x30)
+                cpu = (u64(t) + u64(t + 8)) / 1e7
+                out[tid] = {"pid": pid, "cpu_s": cpu, "cs": u32(t + 0x40), "name": ""}
+        if nxt == 0:
+            break
+        off += nxt
+    for tid, r in out.items():
+        r["name"] = _thread_name(tid)
+    return out
+
+
+def thread_delta(before: dict[int, dict], after: dict[int, dict], roles_by_pid: dict[int, str] | None = None,
+                 top: int = 15) -> list[dict]:
+    """窗口内 CPU 或唤醒最多的线程：[{pid, role, tid, name, cpu_ms, wakeups}]。"""
+    rows = []
+    for tid, a in after.items():
+        b = before.get(tid)
+        if not b or b["pid"] != a["pid"]:
+            continue
+        cpu_ms, cs = round((a["cpu_s"] - b["cpu_s"]) * 1000, 1), a["cs"] - b["cs"]
+        if cpu_ms <= 0 and cs <= 0:
+            continue
+        rows.append({"pid": a["pid"], "role": (roles_by_pid or {}).get(a["pid"], "?"), "tid": tid,
+                     "name": a["name"] or b["name"], "cpu_ms": cpu_ms, "wakeups": cs})
+    rows.sort(key=lambda r: (-r["cpu_ms"], -r["wakeups"]))
+    return rows[:top]
