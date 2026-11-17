@@ -1027,7 +1027,7 @@
 "module": "文件夹监视",
 "scenario": "右键监视此文件夹",
 "steps": "对文件夹对象“监视此文件夹”→在该目录新建文件",
-"expect": "≈1–3s 内新文件入库；状态栏“正在监视 1 个文件夹”",
+"expect": "≈1–3s 内新文件入库且 hide_from_all=1；「全部」默认仍 1 项，打开「显示目录内文件」后为 2 项；状态栏“正在监视 1 个文件夹”",
 "layer": "UI",
 "automation": "文件操作 + 轮询",
 "priority": "P0",
@@ -1098,6 +1098,17 @@
 "automation": "生成器",
 "priority": "P2",
 "coverage": "watch.rs"
+},
+{
+"id": "E-WAT-08",
+"module": "文件夹监视",
+"scenario": "关联柜入库不铺满总览",
+"steps": "关联文件夹到文件柜→等待同步→在「全部」开关显示/隐藏目录内文件→再打开该柜",
+"expect": "夹内文件 hide_from_all=1；「全部」默认 0 项，打开开关后列出；柜内仍按目录浏览可见",
+"layer": "UI",
+"automation": "CDP + 文件",
+"priority": "P0",
+"coverage": "watch.rs cabinet_root；v024_hide_from_all_watch.rs"
 },
 {
 "id": "E-TAG-01",
