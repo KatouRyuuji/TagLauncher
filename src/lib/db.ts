@@ -284,6 +284,10 @@ export interface QuickSearchResult {
   /** 索引中的对象总数 */
   indexed: number;
   items: ItemWithTags[];
+  /** 后端本命令耗时（毫秒，始终采集；演示桩可缺省） */
+  rustMs?: number;
+  rustSearchMs?: number;
+  rustAssembleMs?: number;
 }
 
 /** 快速窗搜索：只取前 limit（默认 50）条；空查询 = 默认排序（收藏 → 最近使用 → 名称）的前若干项 */
@@ -831,6 +835,15 @@ export async function pinCollapse(fromLeave = false): Promise<boolean> {
 /** 告知后端主题强调色：边缘抽屉的原生把手用它着色 */
 export async function pinHandleColor(color: string): Promise<void> {
   return invokeCmd("pin_handle_color", { color });
+}
+
+export async function pinHandleChrome(bg: string, fg: string, muted: string, dark: boolean): Promise<void> {
+  return invokeCmd("pin_handle_chrome", { bg, fg, muted, dark });
+}
+
+/** 告知后端当前主题是否深色：Win11 系统瞬态背景跟随沉浸式深色模式。 */
+export async function setGlassDark(dark: boolean): Promise<void> {
+  return invokeCmd("set_glass_dark", { dark });
 }
 
 export async function getSetting(key: string): Promise<string | null> {

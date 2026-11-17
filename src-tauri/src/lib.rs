@@ -8,7 +8,13 @@ mod explorer_selection;
 /// 钉住视图 / 边缘抽屉（复用快速窗 WebView）
 mod pin;
 mod pin_strip;
+/// 探头文字（DirectWrite 灰度 AA → 预乘缓冲）
+#[cfg(windows)]
+mod handle_text;
 mod quick;
+/// Win11 系统瞬态背景（DWMWA_SYSTEMBACKDROP_TYPE）
+#[cfg(windows)]
+mod dwm_backdrop;
 pub mod search;
 /// 资源管理器右键菜单 / 发送到（阶段③）
 mod shell_clipboard;
@@ -31,10 +37,10 @@ pub use db::Database;
 use desktop::*;
 // 快速搜索窗命令（阶段②）
 use pin::{
-    get_pin_settings, pin_collapse, pin_diag, pin_expand, pin_handle_color, pin_items, pin_state,
+    get_pin_settings, pin_collapse, pin_diag, pin_expand, pin_handle_chrome, pin_handle_color, pin_items, pin_state,
     set_pin_settings,
 };
-use quick::{quick_hide, quick_locate_in_main, quick_open};
+use quick::{quick_hide, quick_locate_in_main, quick_open, set_glass_dark};
 // 收纳会话与右键菜单（阶段③）
 use collect::{
     collect_finish, collect_session, collect_submit, get_collect_preference, set_collect_preference,
@@ -241,6 +247,12 @@ pub fn run() {
                 if window.label() == "main" || window.label() == quick::QUICK_LABEL {
                     data_sync::poke();
                 }
+                // 主窗经任何路径重新显示并获焦（含前端 show）：确保 WebView2 恢复可见（幂等）
+                if window.label() == "main" {
+                    if let Some(w) = window.app_handle().get_webview_window("main") {
+                        quick::set_controller_visible(&w, true);
+                    }
+                }
             }
             // 快速搜索窗不会真正关闭（Alt+F4 也只是收起），下次唤出复用
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -267,7 +279,11 @@ pub fn run() {
                         .is_some_and(|s| s.close_to_tray())
                 {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if let Some(w) = window.app_handle().get_webview_window("main") {
+                        desktop::hide_main_to_tray(&w);
+                    } else {
+                        let _ = window.hide();
+                    }
                 }
             }
         })
@@ -489,6 +505,7 @@ pub fn run() {
             // 快速搜索窗（阶段②）
             quick_open,
             quick_hide,
+            set_glass_dark,
             quick_locate_in_main,
             // 收纳与右键菜单（阶段③）
             collect_session,
@@ -515,6 +532,7 @@ pub fn run() {
             pin_expand,
             pin_collapse,
             pin_handle_color,
+            pin_handle_chrome,
             // 项目 CRUD
             add_item,
             add_items,

@@ -8,9 +8,22 @@
 // 只保留最近 200 条，常驻开销可忽略。
 // ============================================================================
 
+/** 单次「输入到出结果」采样；拆分字段始终填写（后端缺省时省略），不作行为开关。 */
+export interface QuickQuerySample {
+  q: string;
+  results: number;
+  ms: number;
+  items: number;
+  rustMs?: number;
+  rustSearchMs?: number;
+  rustAssembleMs?: number;
+  /** invoke 返回墙钟（含 IPC 与反序列化） */
+  invokeMs?: number;
+}
+
 export interface QuickPerf {
   summons: Array<{ t0Ms: number; readyAtMs: number; ms: number; focused: boolean }>;
-  queries: Array<{ q: string; results: number; ms: number; items: number }>;
+  queries: QuickQuerySample[];
   loads: Array<{ items: number; ms: number }>;
   memory: Array<{ level: string; atMs: number }>;
 }
@@ -32,8 +45,14 @@ export function recordQuickSummon(t0Ms: number, readyAtMs: number, focused: bool
   push(perf().summons, { t0Ms, readyAtMs, ms: readyAtMs - t0Ms, focused });
 }
 
-export function recordQuickQuery(q: string, results: number, ms: number, items: number) {
-  push(perf().queries, { q, results, ms, items });
+export function recordQuickQuery(
+  q: string,
+  results: number,
+  ms: number,
+  items: number,
+  breakdown?: Pick<QuickQuerySample, "rustMs" | "rustSearchMs" | "rustAssembleMs" | "invokeMs">,
+) {
+  push(perf().queries, { q, results, ms, items, ...breakdown });
 }
 
 export function recordQuickLoad(items: number, ms: number) {
