@@ -151,22 +151,36 @@ pub fn get_name(path: &str) -> String {
         .to_string()
 }
 
-/// 用户可见的普通文件系统路径形态（按路径字符串判定，不依赖本机 Path::is_absolute）。
+/// 领域边界规范化：先剥扩展前缀再做形态判别。
+/// `\\?\C:\x` → `C:\x`，`\\?\UNC\srv\s` → `\\srv\s`（大小写不敏感），与 file_identity 口径一致。
+pub fn normalize_user_path(path: &str) -> String {
+    let p = path.trim();
+    if let Some(rest) = strip_prefix_ci(p, r#"\\?\UNC\"#) {
+        format!(r"\\{}", rest)
+    } else if let Some(rest) = strip_prefix_ci(p, r#"\\?\"#) {
+        rest.to_string()
+    } else {
+        p.to_string()
+    }
+}
+
+fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
+    let plen = prefix.len();
+    (s.len() >= plen && s.as_bytes()[..plen].eq_ignore_ascii_case(prefix.as_bytes())).then(|| &s[plen..])
+}
+
+/// 用户可见的普通文件系统路径形态（先规范化再判定，不依赖本机 Path::is_absolute）。
 /// 拒绝 NT 设备路径、卷 GUID、回收站位置，避免把内部定位结果的 basename 写成显示名。
 pub fn has_user_path_form(path: &str) -> bool {
-    let p = path.trim();
+    let p = normalize_user_path(path);
     if p.is_empty() || p.contains('\0') {
         return false;
     }
     let lower = p.to_ascii_lowercase();
-    if lower.starts_with(r#"\device\"#)
-        || lower.starts_with(r#"\\.\"#)
-        || lower.contains(r#"\??\unc\"#)
-    {
+    if lower.starts_with(r#"\device\"#) || lower.starts_with(r#"\\.\"#) {
         return false;
     }
-    let stripped = p.strip_prefix(r#"\\?\"#).unwrap_or(p);
-    let sl = stripped.replace('/', "\\");
+    let sl = p.replace('/', "\\");
     let sl_lower = sl.to_ascii_lowercase();
     if sl_lower.starts_with("volume{") {
         return false;
@@ -189,25 +203,71 @@ pub fn has_user_path_form(path: &str) -> bool {
     // 非 Windows 单测用的 POSIX 绝对路径
     #[cfg(not(windows))]
     {
-        if stripped.starts_with('/') && !stripped.starts_with("/proc/") {
+        if p.starts_with('/') && !p.starts_with("/proc/") {
             return true;
         }
     }
     false
 }
 
-/// 可持久化的重定位目标：形态合法且当前确实存在（文件或目录）。
-pub fn accepted_relocate_path(path: &str) -> bool {
-    has_user_path_form(path) && Path::new(path).exists()
+/// 可持久化的重定位目标：规范化后形态合法且当前确实存在。返回应写入库的规范化路径。
+pub fn accepted_relocate_path(path: &str) -> Option<String> {
+    if !has_user_path_form(path) {
+        return None;
+    }
+    let norm = normalize_user_path(path);
+    if path_presence(&norm) == PathPresence::Present || path_presence(path) == PathPresence::Present {
+        Some(norm)
+    } else {
+        None
+    }
+}
+
+fn presence_of_candidate(path: &str) -> PathPresence {
+    let a = path_presence(path);
+    if a != PathPresence::Absent {
+        return a;
+    }
+    let norm = normalize_user_path(path);
+    if norm != path {
+        path_presence(&norm)
+    } else {
+        a
+    }
 }
 
 fn path_key_eq(a: &str, b: &str) -> bool {
     let n = |s: &str| {
-        s.replace('/', "\\")
+        normalize_user_path(s)
+            .replace('/', "\\")
             .trim_end_matches('\\')
             .to_ascii_lowercase()
     };
     n(a) == n(b)
+}
+
+/// 路径是否确定存在。`exists()` 会把权限/IO 错误也当成 false，不能用来标丢失。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathPresence {
+    Present,
+    Absent,
+    Indeterminate,
+}
+
+pub fn path_presence(path: &str) -> PathPresence {
+    match std::fs::metadata(path).or_else(|_| std::fs::metadata(&normalize_user_path(path))) {
+        Ok(_) => PathPresence::Present,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => PathPresence::Absent,
+        Err(_) => PathPresence::Indeterminate,
+    }
+}
+
+pub fn path_presence_from_io_kind(kind: std::io::ErrorKind) -> PathPresence {
+    match kind {
+        std::io::ErrorKind::NotFound => PathPresence::Absent,
+        std::io::ErrorKind::PermissionDenied => PathPresence::Indeterminate,
+        _ => PathPresence::Indeterminate,
+    }
 }
 
 /// 单文件元数据（锁外预采集）：get_identity(FFI) / compute_signature(读文件) /
@@ -1150,32 +1210,34 @@ pub fn plan_reconcile(rows: Vec<ReconcileRow>) -> Vec<ReconcileWrite> {
             }
         } else if let Some(idn) = identity {
             match resolver.resolve(idn, &row.path) {
-                Some(new_path) if accepted_relocate_path(&new_path) => {
-                    let new_name = get_name(&new_path);
-                    // 重定位后扩展名可能已变，锁外预计算 type（detect_type 含 FS IO，不进锁内回写段）
-                    let new_type = detect_type(&new_path);
-                    // 内容可能在移动前后被编辑：签名随路径一并刷新（与 add_one 冲突路径口径一致）
-                    let new_sig = file_identity::compute_signature(&new_path)
-                        .map(|s| (s.size as i64, s.head_hash as i64, s.tail_hash as i64));
-                    let new_times = path_file_times(&new_path);
-                    writes.push(ReconcileWrite::Relocate {
-                        id: row.id,
-                        new_path,
-                        new_name,
-                        new_type,
-                        new_sig,
-                        new_times,
-                        expected: expected(),
-                    });
+                Some(raw_path) => {
+                    if let Some(new_path) = accepted_relocate_path(&raw_path) {
+                        let new_name = get_name(&new_path);
+                        // 重定位后扩展名可能已变，锁外预计算 type（detect_type 含 FS IO，不进锁内回写段）
+                        let new_type = detect_type(&new_path);
+                        // 内容可能在移动前后被编辑：签名随路径一并刷新（与 add_one 冲突路径口径一致）
+                        let new_sig = file_identity::compute_signature(&new_path)
+                            .map(|s| (s.size as i64, s.head_hash as i64, s.tail_hash as i64));
+                        let new_times = path_file_times(&new_path);
+                        writes.push(ReconcileWrite::Relocate {
+                            id: row.id,
+                            new_path,
+                            new_name,
+                            new_type,
+                            new_sig,
+                            new_times,
+                            expected: expected(),
+                        });
+                    } else if presence_of_candidate(&raw_path) == PathPresence::Indeterminate {
+                        // 权限或其它 IO 不确定：不标丢失、也不覆盖路径/显示名
+                    } else if row.is_missing == 0 {
+                        // OpenFileById 给出异常/已不存在路径：当作没找到，避免用内部 basename 覆盖显示名
+                        writes.push(ReconcileWrite::MarkMissing {
+                            id: row.id,
+                            expected: expected(),
+                        });
+                    }
                 }
-                // OpenFileById 给出异常/已不存在路径：当作没找到，避免用内部 basename 覆盖显示名
-                Some(_) if row.is_missing == 0 => {
-                    writes.push(ReconcileWrite::MarkMissing {
-                        id: row.id,
-                        expected: expected(),
-                    });
-                }
-                Some(_) => {}
                 None if row.is_missing == 0 => {
                     writes.push(ReconcileWrite::MarkMissing {
                         id: row.id,
@@ -1230,15 +1292,16 @@ pub fn apply_reconcile(conn: &Connection, writes: &[ReconcileWrite]) -> Result<(
             }
             ReconcileWrite::Relocate { id, new_path, new_name, new_type, new_sig, new_times, expected } => {
                 // 回写时再校验一次：计划生成后目标可能已消失或形态不可用，避免覆盖原名
-                if !accepted_relocate_path(new_path) {
-                    if expected.is_missing == 0 {
+                let Some(accepted) = accepted_relocate_path(new_path) else {
+                    if expected.is_missing == 0 && presence_of_candidate(new_path) != PathPresence::Indeterminate {
                         let _ = tx.execute(
                             "UPDATE items SET is_missing = 1 WHERE id = ?1 AND path = ?2 AND is_missing = ?3",
                             params![id, expected.path, expected.is_missing],
                         );
                     }
                     continue;
-                }
+                };
+                let new_path = &accepted;
                 // 重定位时若已采到内容签名则一并刷新（见 plan_reconcile）；文件时间随新路径更新
                 let (created, modified) = new_times;
                 let _ = match new_sig {
@@ -1316,7 +1379,7 @@ pub fn resolve_current_path(conn: &Connection, id: i64) -> Result<String, String
 
     if let Some(idn) = identity {
         if let Some(new_path) = file_identity::resolve_path(idn, &path) {
-            if accepted_relocate_path(&new_path) {
+            if let Some(new_path) = accepted_relocate_path(&new_path) {
                 conn.execute(
                     "UPDATE items SET path = ?1, name = ?2, is_missing = 0 WHERE id = ?3",
                     params![new_path, get_name(&new_path), id],
@@ -1341,16 +1404,21 @@ pub fn revert_launch_if_target_gone(
     old_name: &str,
     launched_path: &str,
 ) -> Result<(), String> {
-    if Path::new(launched_path).exists() {
+    // 仅「确定不存在」才标丢失；权限拒绝或其它 IO 错误视为不确定，不得当成丢失。
+    if path_presence(launched_path) != PathPresence::Absent {
         return Ok(());
     }
     crate::db::ensure_writes_allowed()?;
+    // CAS：只在当前 path 仍是本次启动所用路径时回写，避免跨进程覆盖已经完成的新重定位。
     if path_key_eq(launched_path, old_path) {
-        let _ = conn.execute("UPDATE items SET is_missing = 1 WHERE id = ?1", [id]);
+        let _ = conn.execute(
+            "UPDATE items SET is_missing = 1 WHERE id = ?1 AND path = ?2",
+            params![id, launched_path],
+        );
     } else {
         conn.execute(
-            "UPDATE items SET path = ?1, name = ?2, is_missing = 1 WHERE id = ?3",
-            params![old_path, old_name, id],
+            "UPDATE items SET path = ?1, name = ?2, is_missing = 1 WHERE id = ?3 AND path = ?4",
+            params![old_path, old_name, id, launched_path],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -2201,6 +2269,10 @@ mod tests {
         assert!(has_user_path_form(r"C:\Users\a\将删除.exe"));
         assert!(has_user_path_form(r"D:\dir\file"));
         assert!(has_user_path_form(r"\\server\share\file.exe"));
+        assert!(has_user_path_form(r"\\?\UNC\server\share\file.exe"), "扩展 UNC 规范化后应接受");
+        assert!(has_user_path_form(r"\\?\C:\Users\a\x.exe"));
+        assert_eq!(normalize_user_path(r"\\?\UNC\server\share\file.exe"), r"\\server\share\file.exe");
+        assert_eq!(normalize_user_path(r"\\?\C:\Users\a\x.exe"), r"C:\Users\a\x.exe");
         assert!(!has_user_path_form(""));
         assert!(!has_user_path_form("relative.exe"));
         assert!(!has_user_path_form(r"\Device\HarddiskVolume1\x"));
@@ -2218,12 +2290,12 @@ mod tests {
         let f = dir.join("keep-name.exe");
         std::fs::write(&f, b"x").unwrap();
         let p = f.to_str().unwrap();
-        assert!(accepted_relocate_path(p), "真实存在的绝对路径应可持久化");
+        assert!(accepted_relocate_path(p).is_some(), "真实存在的绝对路径应可持久化");
         std::fs::remove_file(&f).unwrap();
-        assert!(!accepted_relocate_path(p), "刚删除的路径不得持久化");
+        assert!(accepted_relocate_path(p).is_none(), "刚删除的路径不得持久化");
         std::fs::remove_dir_all(&dir).unwrap();
-        assert!(!accepted_relocate_path(r"C:\__tl_no_such__\a.exe"));
-        assert!(!accepted_relocate_path(r"\Device\HarddiskVolume1\x"));
+        assert!(accepted_relocate_path(r"C:\__tl_no_such__\a.exe").is_none());
+        assert!(accepted_relocate_path(r"\Device\HarddiskVolume1\x").is_none());
     }
 
     #[test]
@@ -2322,5 +2394,60 @@ mod tests {
         assert_eq!(path, r"D:\old\将删除.exe");
         assert_eq!(missing, 1);
     }
+
+
+    #[test]
+    fn revert_launch_cas_does_not_overwrite_newer_path() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO items (name, path, type, is_missing) VALUES ('将删除.exe', 'D:\\old\\将删除.exe', 'exe', 0)",
+            [],
+        )
+        .unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM items WHERE name = '将删除.exe'", [], |r| r.get(0))
+            .unwrap();
+        // 模拟启动用的幽灵路径已写入，但回写前其它进程已重定位到新路径
+        conn.execute(
+            "UPDATE items SET path = 'D:\\alive\\将删除.exe', name = '将删除.exe', is_missing = 0 WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+        revert_launch_if_target_gone(
+            &conn,
+            id,
+            r"D:\old\将删除.exe",
+            "将删除.exe",
+            r"D:\ghost\00490000000062D879F2CF6D",
+        )
+        .unwrap();
+        let (name, path, missing): (String, String, i64) = conn
+            .query_row(
+                "SELECT name, path, is_missing FROM items WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(path, r"D:\alive\将删除.exe", "CAS 未命中时不得打回 old_path");
+        assert_eq!(name, "将删除.exe");
+        assert_eq!(missing, 0);
+    }
+
+    #[test]
+    fn path_presence_treats_permission_as_indeterminate_not_absent() {
+        assert_eq!(
+            path_presence_from_io_kind(std::io::ErrorKind::NotFound),
+            PathPresence::Absent
+        );
+        assert_eq!(
+            path_presence_from_io_kind(std::io::ErrorKind::PermissionDenied),
+            PathPresence::Indeterminate
+        );
+        assert_eq!(
+            path_presence_from_io_kind(std::io::ErrorKind::Other),
+            PathPresence::Indeterminate
+        );
+    }
+
 
 }

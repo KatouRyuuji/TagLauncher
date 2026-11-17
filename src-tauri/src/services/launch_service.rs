@@ -68,9 +68,17 @@ pub fn open_path(path: &str) -> Result<(), String> {
     }
 }
 
-/// 启动项目
-pub fn launch_item(conn: &Connection, id: i64) -> Result<(), String> {
-    // 记住启动前的 path/name：resolve 可能先持久化重定位；若随后打开失败且目标已不存在，要能恢复。
+/// 启动准备结果：在 DB 锁内完成快照与重定位后交给调用方，锁释放后再做 ShellExecute。
+pub struct LaunchPrep {
+    pub id: i64,
+    pub old_path: String,
+    pub old_name: String,
+    pub path: String,
+}
+
+/// 记住启动前的 path/name，并按文件 ID 重定位到当前真实路径（可能持久化）。
+/// 调用方应在持锁时调用本函数，释放锁后再 `open_prepared`。
+pub fn prepare_launch(conn: &Connection, id: i64) -> Result<LaunchPrep, String> {
     let (old_path, old_name): (String, String) = conn
         .query_row(
             "SELECT path, name FROM items WHERE id = ?1",
@@ -81,35 +89,58 @@ pub fn launch_item(conn: &Connection, id: i64) -> Result<(), String> {
             rusqlite::Error::QueryReturnedNoRows => format!("对象不存在（id {id}），可能已被删除"),
             other => other.to_string(),
         })?;
-
-    // 路径可能已因重命名/移动失效：先按文件ID重定位到当前真实路径（并持久化）。
     let path = item_service::resolve_current_path(conn, id)?;
+    Ok(LaunchPrep {
+        id,
+        old_path,
+        old_name,
+        path,
+    })
+}
 
-    // 经 ShellExecuteW 用关联程序打开。与旧的 cmd/start 不同，这里能拿到成功/失败信号：
-    // 打开失败（如路径无效）直接返回 Err，从而不更新 last_used_at、不污染"最近使用"排序。
+/// 经 ShellExecuteW 用关联程序打开。失败不更新 last_used_at。
+/// 非 Windows 没有打开动作，直接报错。
+pub fn open_prepared(path: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        if let Err(e) = shell_open(&path) {
-            // 仅当目标已不存在才标 missing / 回滚异常重定位；权限或无关联不等于丢失。
-            let _ = item_service::revert_launch_if_target_gone(conn, id, &old_path, &old_name, &path);
-            return Err(e);
-        }
+        shell_open(path)
     }
-
-    // 非 Windows 平台没有打开动作：直接报错，而不是什么都不做却更新 last_used_at
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (&path, &old_path, &old_name);
-        return Err("当前平台暂不支持启动对象".to_string());
+        let _ = path;
+        Err("当前平台暂不支持启动对象".to_string())
     }
+}
 
+pub fn record_launch_success(conn: &Connection, id: i64) -> Result<(), String> {
     conn.execute(
         "UPDATE items SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?1",
         [id],
     )
     .map_err(|e| e.to_string())?;
-
     Ok(())
+}
+
+/// 仅当目标确定不存在才标 missing / 回滚异常重定位；权限或无关联不等于丢失。
+pub fn on_launch_open_failed(conn: &Connection, prep: &LaunchPrep, err: String) -> Result<(), String> {
+    let _ = item_service::revert_launch_if_target_gone(
+        conn,
+        prep.id,
+        &prep.old_path,
+        &prep.old_name,
+        &prep.path,
+    );
+    Err(err)
+}
+
+/// 启动项目。已持有独立连接（CLI/TUI）时可直接调用；GUI 命令路径须拆成
+/// prepare → 释放 DB 锁 → open_prepared → 再取锁收尾，避免在 ShellExecute 期间占锁。
+pub fn launch_item(conn: &Connection, id: i64) -> Result<(), String> {
+    let prep = prepare_launch(conn, id)?;
+    match open_prepared(&prep.path) {
+        Ok(()) => record_launch_success(conn, id),
+        Err(e) => on_launch_open_failed(conn, &prep, e),
+    }
 }
 
 /// 在资源管理器中打开（按 id）：先按文件ID重定位到当前真实路径，再打开。
