@@ -106,6 +106,8 @@ pub fn set_options(options: QuickOptions) {
 
 /// 每次隐藏 / 唤出自增：过期的降内存计时器据此作废
 static VISIBILITY_GEN: AtomicU64 = AtomicU64::new(0);
+/// 预创建任务代数：关闭/销毁时递增，过期的延迟创建不得再建窗。
+static PRECREATE_GEN: AtomicU64 = AtomicU64::new(0);
 /// 产品意图上窗口是否该显示。不信任 tao is_visible()：原生 ShowWindow 后标志可能反了，
 /// 既会让暂停早退（亚克力留在查询上），也会让恢复把亚克力打到已隐藏的窗口（空闲 CPU）。
 static INTENDED_VISIBLE: AtomicBool = AtomicBool::new(false);
@@ -387,21 +389,71 @@ pub fn destroy_window(app: &AppHandle) {
 /// 功能开启时延迟预创建（后台线程，不阻塞启动）；关闭时销毁。
 pub fn sync_window(app: &AppHandle, enabled: bool) {
     if !enabled {
+        PRECREATE_GEN.fetch_add(1, Ordering::SeqCst);
         destroy_window(app);
         return;
     }
     if quick_window(app).is_some() {
         return;
     }
+    let scheduled = PRECREATE_GEN.load(Ordering::SeqCst);
     let app = app.clone();
     let _ = std::thread::Builder::new()
         .name("tl-quick-precreate".into())
         .spawn(move || {
-            std::thread::sleep(PRECREATE_DELAY);
-            if let Err(e) = ensure_window(&app) {
-                log::warn!("[quick] {e}");
-            }
+            run_scheduled_precreate(scheduled, &PRECREATE_GEN, wait_precreate_delay, || {
+                if let Err(e) = ensure_window(&app) {
+                    log::warn!("[quick] {e}");
+                }
+                // 创建过程中被关闭：不在这里 destroy，以免误伤已由收纳会话合法创建的窗口。
+                // 关闭路径已递增代数并调用 destroy_window；此处只需放弃后续工作。
+                let _ = PRECREATE_GEN.load(Ordering::SeqCst);
+            });
         });
+}
+
+fn wait_precreate_delay() {
+    #[cfg(test)]
+    if let Some(hook) = TEST_PRECREATE_DELAY.with(|h| h.get()) {
+        hook();
+        return;
+    }
+    std::thread::sleep(PRECREATE_DELAY);
+}
+
+/// 延迟结束后若代数已变（关闭或新一轮 sync），不再创建窗口。
+fn run_scheduled_precreate(
+    scheduled: u64,
+    gen: &std::sync::atomic::AtomicU64,
+    delay: impl FnOnce(),
+    create: impl FnOnce(),
+) {
+    delay();
+    if gen.load(Ordering::SeqCst) != scheduled {
+        return;
+    }
+    create();
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_PRECREATE_DELAY: std::cell::Cell<Option<fn()>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn with_precreate_delay<F, R>(hook: fn(), f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            TEST_PRECREATE_DELAY.with(|h| h.set(None));
+        }
+    }
+    TEST_PRECREATE_DELAY.with(|h| h.set(Some(hook)));
+    let _g = Guard;
+    f()
 }
 
 /// 把快速窗放到选项指定的显示器（鼠标所在 / 主窗所在；取不到则退到另一个）的工作区。
@@ -687,6 +739,52 @@ mod tests {
         for f in [p.clone(), format!("{p}-wal"), format!("{p}-shm")] {
             let _ = std::fs::remove_file(&f);
         }
+    }
+
+    #[test]
+    fn expired_precreate_does_not_create_after_cancel() {
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+        use std::sync::{Arc, Barrier};
+        use std::time::Duration;
+
+        let gen = AtomicU64::new(7);
+        let created = Arc::new(AtomicBool::new(false));
+        let start = Arc::new(Barrier::new(2));
+        let finish = Arc::new(Barrier::new(2));
+        let created_flag = created.clone();
+        let start_d = start.clone();
+        let finish_d = finish.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let job = std::thread::spawn(move || {
+            run_scheduled_precreate(
+                7,
+                &gen,
+                || {
+                    start_d.wait();
+                    finish_d.wait();
+                },
+                || created_flag.store(true, Ordering::SeqCst),
+            );
+            let _ = tx.send(created_flag.load(Ordering::SeqCst));
+        });
+        start.wait();
+        gen.fetch_add(1, Ordering::SeqCst); // 关闭 / 新一轮 sync
+        finish.wait();
+        let created_after = rx.recv_timeout(Duration::from_secs(2)).expect("预创建任务未结束");
+        assert!(!created_after, "过期预创建不得再建窗");
+        job.join().unwrap();
+        assert!(!created.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn current_precreate_still_runs_and_does_not_drop_a_live_generation() {
+        use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+        let gen = AtomicU64::new(3);
+        let created = AtomicUsize::new(0);
+        run_scheduled_precreate(3, &gen, || {}, || {
+            created.fetch_add(1, Ordering::SeqCst);
+        });
+        assert_eq!(created.load(Ordering::SeqCst), 1);
     }
 }
 
