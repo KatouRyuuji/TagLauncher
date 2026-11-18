@@ -191,7 +191,12 @@ jobs:
           TL_E2E_ALLOW_VISIBLE: '1'
           TL_E2E_DESKTOP: '1'
           PYTHONIOENCODING: utf-8
-        run: python -m pytest -c e2e/pytest.ini e2e/tests/desktop e2e/tests/window e2e/tests/ui/test_pin.py::test_drawer_handle_expand_collapse_sizes e2e/tests/visual/test_visual_new_ui.py::test_quick_and_pin_windows_new_ui --allow-physical-input --window-countdown 0 -s --junitxml=.tmp-test/e2e/desktop-run/junit.xml
+        run: python -m pytest -c e2e/pytest.ini e2e/tests/desktop e2e/tests/window e2e/tests/ui/test_pin.py::test_drawer_handle_expand_collapse_sizes e2e/tests/visual/test_visual_new_ui.py::test_quick_and_pin_windows_new_ui e2e/tests/ui/test_launch.py::test_double_click_bat e2e/tests/ui/test_launch.py::test_command_injection_name e2e/tests/ui/test_titlebar_keyboard.py::test_titlebar_buttons_keyboard --allow-physical-input --window-countdown 0 -s --junitxml=.tmp-test/e2e/desktop-run/junit.xml
+
+      - name: Run data migration matrix
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python scripts/e2e-data-migration.py --exe src-tauri/target/debug/tag-launcher.exe --sandbox ${{ runner.temp }}/tl-migrate --wait 7
 
       - name: Desktop summary
         if: always()

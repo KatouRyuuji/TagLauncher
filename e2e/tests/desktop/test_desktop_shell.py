@@ -311,6 +311,7 @@ def test_win11_top_level_menu_register_invoke_cleanup(app_factory, sandbox):
         assert win11menu.packaged_com_registered()
 
         d = files.write(sandbox.files / "w11" / "probe.txt", "x").parent
+        delivery_before_click = win11menu.delivery_jsonl_lines()
         ui = win11menu.explorer_menu(d, "probe.txt", sandbox.artifacts / "win11-menu-on.png", "on", click=True)
         delivery_after_click = win11menu.delivery_log_text()
         print(f"WIN11_MENU_DELIVERY {delivery_after_click}")
@@ -329,6 +330,10 @@ def test_win11_top_level_menu_register_invoke_cleanup(app_factory, sandbox):
             s = app.invoke("collect_session")
             assert s is not None, "主实例未收到收纳会话"
             assert [os.path.basename(p) for p in s["paths"]] == ["probe.txt"], s
+            receipt = win11menu.assert_same_nonce_merge_committed(
+                delivery_before_click, win11menu.delivery_jsonl_lines()
+            )
+            print(f"WIN11_MENU_RECEIPT {win11menu.sanitize_delivery_record(receipt)}")
         except Exception:
             print(
                 f"WIN11_MENU_DELIVERY_ON_FAIL ui={ui} after_click={delivery_after_click} "

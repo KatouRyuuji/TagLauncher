@@ -3,3 +3,4 @@ pytest-asyncio>=0.23
 playwright>=1.45
 Pillow>=10
 numpy>=1.26
+pywinpty>=2.0.4,<3

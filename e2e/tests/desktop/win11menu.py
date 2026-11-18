@@ -2,6 +2,7 @@
 资源管理器 UIA 右键探针（shell-ext/win11-menu/ui_probe.ps1）、让 dllhost 加载 DLL。只在临时 runner 上用。"""
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -131,6 +132,83 @@ def delivery_log_text(limit: int = 40) -> str:
         else:
             chunks.append(f"{name} tail_lines={len(lines)} tail=" + " | ".join(lines))
     return " ; ".join(chunks)
+
+
+
+_SAFE_DELIVERY_KEYS = (
+    "event",
+    "req",
+    "merge_committed",
+    "pending",
+    "path_count",
+    "session_id",
+    "invalid",
+    "arrival",
+    "receiver_pid",
+    "error",
+)
+
+
+def delivery_jsonl_lines(limit: int = 80) -> list[str]:
+    """读取交付 jsonl 尾部原始行，失败时返回空列表。"""
+    base = known_local_appdata()
+    if not base:
+        return []
+    path = base / "TagLauncher" / "win11-menu-delivery.jsonl"
+    status, lines = _tail_lines(path, limit)
+    return lines if status == "ok" else []
+
+
+def sanitize_delivery_record(obj: dict) -> dict:
+    """失败输出只用安全字段，不含路径原文或其他用户数据。"""
+    return {key: obj.get(key) for key in _SAFE_DELIVERY_KEYS}
+
+
+def new_delivery_records(before: list[str], after: list[str]) -> list[dict]:
+    seen = set(before)
+    records = []
+    for line in after:
+        if line in seen or not line.lstrip().startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            records.append(obj)
+    return records
+
+
+def format_delivery_failure(records: list[dict], limit: int = 12) -> str:
+    shown = [sanitize_delivery_record(obj) for obj in records[-limit:]]
+    return json.dumps(shown, ensure_ascii=False, separators=(",", ":"))
+
+
+def assert_same_nonce_merge_committed(before: list[str], after: list[str]) -> dict:
+    """断言本次点击新增记录里，同一 nonce 有 merge_committed=true，且未混入点击前的旧日志。"""
+    new = new_delivery_records(before, after)
+    launches = [obj for obj in new if obj.get("event") == "launch" and obj.get("req")]
+    merges = [obj for obj in new if obj.get("event") == "merge_committed"]
+    if not launches:
+        raise AssertionError(
+            f"本次点击的新增交付记录里没有 launch/req，不能绑定 nonce。new={format_delivery_failure(new)}"
+        )
+    req = str(launches[-1]["req"]).lower()
+    matched = [
+        obj
+        for obj in merges
+        if str(obj.get("req") or "").lower() == req and obj.get("merge_committed") is True
+    ]
+    if not matched:
+        raise AssertionError(
+            f"未找到 req={req} 的 merge_committed=true 回执。new={format_delivery_failure(new)}"
+        )
+    receipt = matched[-1]
+    if receipt.get("path_count") != 1:
+        raise AssertionError(
+            f"req={req} 的 merge_committed path_count 应为 1，实际 {receipt.get('path_count')}。new={format_delivery_failure(new)}"
+        )
+    return receipt
 
 
 def file_unlocked(path: Path) -> bool:
