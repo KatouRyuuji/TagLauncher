@@ -111,6 +111,8 @@ def snapshot_drag(app, hwnd: int, x: int, y: int) -> dict:
     """按下或松手前的现场：游标、原生命中、WM_NCHITTEST、caption/MOVE 钩子、双路 size-move 计数。"""
     root = win32.root_at(x, y)
     return {
+        "targetPid": app.proc.pid,
+        "targetHwnd": hwnd,
         "cursor": win32.cursor_pos(),
         "aim": (x, y),
         "ht": win32.hit_test(hwnd, x, y),
@@ -128,7 +130,8 @@ def snapshot_drag(app, hwnd: int, x: int, y: int) -> dict:
 def physical_caption_drag(app, hwnd: int, x0: int, y0: int, x1: int, y1: int) -> dict:
     """真实 SendInput 拖动顶栏；不调用 pin_expand / set_pin_settings 代替。"""
     before = snapshot_drag(app, hwnd, x0, y0)
-    win32.drag(x0, y0, x1, y1, steps=30)
+    input_trace: list[dict] = []
+    win32.drag(x0, y0, x1, y1, steps=30, input_trace=input_trace)
     after = snapshot_drag(app, hwnd, x1, y1)
     ev0 = before["diag"].get("dragEvents") or [0] * 7
     ev1 = after["diag"].get("dragEvents") or [0] * 7
@@ -147,7 +150,7 @@ def physical_caption_drag(app, hwnd: int, x0: int, y0: int, x1: int, y1: int) ->
         after["startKind"] = "wndproc-missed-entersizemove"
     else:
         after["startKind"] = "os-drag-and-hook"
-    trace = {"before": before, "after": after}
+    trace = {"before": before, "after": after, "input": input_trace}
     print("PIN_DRAG_TRACE " + json.dumps(trace, ensure_ascii=False, default=str), flush=True)
     return trace
 

@@ -25,6 +25,17 @@ MIB_TCP_STATE_ESTAB = 5
 ERROR_INSUFFICIENT_BUFFER = 122
 
 
+def attached_pages_after_turn(browser: Any, main_page: Any) -> list[Any]:
+    """Service pending target-created/closed events before reading sync API caches.
+
+    Browser.contexts, context.pages and page.is_closed are local getters. A
+    time.sleep polling loop never services their transport; an existing main
+    page read does, without opening a connection or changing window state.
+    """
+    main_page.evaluate("() => null")
+    return [page for context in browser.contexts for page in context.pages if not page.is_closed()]
+
+
 class CdpLease:
     __slots__ = ("id", "reason", "browser", "endpoint", "close_error")
 

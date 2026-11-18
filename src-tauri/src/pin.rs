@@ -393,6 +393,9 @@ static MOVE_GEN: AtomicU64 = AtomicU64::new(0);
 static LEAVE_GEN: AtomicU64 = AtomicU64::new(0);
 /// 钉住表面时顶栏走原生 HTCAPTION（热路径只读此原子，不锁 Runtime）。
 static CAPTION_DRAG: AtomicBool = AtomicBool::new(false);
+// Bounded native-input evidence. Synthetic WM_NCHITTEST diagnostics do not count.
+static CAPTION_INPUT_EVENTS: [std::sync::atomic::AtomicU32; 5] =
+    [const { std::sync::atomic::AtomicU32::new(0) }; 5];
 /// 诊断计数（pin_diag.dragEvents）：[拖动开始, 拖动结束, 抽屉 Moved, 抽屉吸附, 失焦收回, 轮询收回, 前端离开收回]
 /// 0/1 来自 EVENT_SYSTEM_MOVESIZESTART/END（MOVE_HOOK），与窗口 WM_ENTER/EXITSIZEMOVE 分开计数。
 static DRAG_EVENTS: [std::sync::atomic::AtomicU32; 7] = [
@@ -1379,7 +1382,9 @@ mod caption {
     use windows_sys::Win32::Graphics::Gdi::{GetDC, GetDeviceCaps, ReleaseDC, ScreenToClient, LOGPIXELSX};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallWindowProcW, DefWindowProcW, GetClientRect, GetWindowLongPtrW, SetWindowLongPtrW,
-        GWLP_WNDPROC, HTCAPTION, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCHITTEST,
+        GWLP_WNDPROC, HTCAPTION, SC_MOVE, WM_CAPTURECHANGED, WM_ENTERSIZEMOVE,
+        WM_EXITSIZEMOVE, WM_LBUTTONDOWN, WM_MOUSEACTIVATE, WM_NCHITTEST,
+        WM_NCLBUTTONDOWN, WM_SYSCOMMAND,
     };
 
     static PREV_PROC: AtomicIsize = AtomicIsize::new(0);
@@ -1441,6 +1446,17 @@ mod caption {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
+        let input_index = match msg {
+            WM_MOUSEACTIVATE => Some(0),
+            WM_NCLBUTTONDOWN => Some(1),
+            WM_LBUTTONDOWN => Some(2),
+            WM_SYSCOMMAND if (wparam & 0xfff0) == SC_MOVE as usize => Some(3),
+            WM_CAPTURECHANGED => Some(4),
+            _ => None,
+        };
+        if let Some(index) = input_index {
+            CAPTION_INPUT_EVENTS[index].fetch_add(1, Ordering::Relaxed);
+        }
         if msg == WM_ENTERSIZEMOVE {
             SIZE_MOVE_EVENTS[0].fetch_add(1, Ordering::Relaxed);
         } else if msg == WM_EXITSIZEMOVE {
@@ -1695,6 +1711,8 @@ pub struct PinDiag {
     pub move_hook: bool,
     /// [WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE]
     pub size_move_events: [u32; 2],
+    /// [WM_MOUSEACTIVATE, WM_NCLBUTTONDOWN, WM_LBUTTONDOWN, SC_MOVE, WM_CAPTURECHANGED]
+    pub caption_input_events: [u32; 5],
 }
 
 fn quick_geometry(app: &AppHandle) -> [i64; 6] {
@@ -1772,6 +1790,7 @@ pub fn pin_diag(app: AppHandle) -> PinDiag {
             SIZE_MOVE_EVENTS[0].load(Ordering::Relaxed),
             SIZE_MOVE_EVENTS[1].load(Ordering::Relaxed),
         ],
+        caption_input_events: std::array::from_fn(|i| CAPTION_INPUT_EVENTS[i].load(Ordering::Relaxed)),
     }
 }
 

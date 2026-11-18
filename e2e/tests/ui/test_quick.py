@@ -18,6 +18,7 @@ import time
 import pytest
 
 from harness import db as dbh
+from harness.cdpconn import attached_pages_after_turn
 from harness import files
 from harness import procmem
 from harness.app import wait_until
@@ -34,7 +35,7 @@ HIDDEN_MEM_MB = {5000: 60, 50000: 120}
 
 # ---------------------------------------------------------------- helpers
 def quick_pages(app):
-    return [p for ctx in app.browser.contexts for p in ctx.pages if "quick.html" in (p.url or "") and not p.is_closed()]
+    return [p for p in attached_pages_after_turn(app.browser, app.page) if "quick.html" in (p.url or "")]
 
 
 def _cdp_targets(app) -> list[dict]:
