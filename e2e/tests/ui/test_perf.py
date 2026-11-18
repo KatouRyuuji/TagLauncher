@@ -78,7 +78,7 @@ def test_view_switch(big_app, run_dir):
 
 def _wait_scope_count(page, pred_js: str, arg, timeout_ms: int = 10_000) -> None:
     """在页面里用 rAF 等到 scope-header 满足谓词（用户可见计数），不依赖生产代码识别测试。"""
-    page.wait_for_function(pred_js, arg, timeout=timeout_ms, polling="raf")
+    page.wait_for_function(pred_js, arg=arg, timeout=timeout_ms, polling="raf")
 
 
 # 150ms 防抖（useSearch）是给真实逐键输入合并查询、并覆盖拼音分片首次加载的产品取舍；

@@ -529,12 +529,16 @@ def _flush_idle_report(app, name: str, payload: dict) -> None:
 
 
 def _native_idle_snap(app, tag: str) -> dict:
-    """CDP 已断开后经 HWND 采集 FrameId 关联快照；失败记入报告，不重建 CDP。"""
+    """CDP 已断开后经 HWND 采集 FrameId 关联快照；失败记入报告，不重建 CDP。
+
+    落盘目录固定为沙箱 Temp，不用 pytest 进程的 TEMP。
+    """
+    from harness import idle_diag
     try:
-        from harness import idle_diag
-        snap = idle_diag.capture(app.proc.pid, tag)
+        snap = idle_diag.capture(app.proc.pid, tag, out_dir=app.sb.root / "Temp")
     except Exception as e:  # noqa: BLE001
         snap = {"ok": False, "tag": tag, "error": f"{type(e).__name__}: {e}"}
+    snap["assessment"] = idle_diag.assess_snapshot(snap)
     src = snap.get("path")
     if src:
         try:
@@ -545,6 +549,21 @@ def _native_idle_snap(app, tag: str) -> dict:
         except OSError:
             pass
     return snap
+
+
+def _require_native_diag(out: dict, key: str) -> None:
+    """取证先决：捕获失败则测量无效；映射 UNKNOWN 必须带明确原因，不能当身份证明。"""
+    snap = out.get(key) or {}
+    assess = snap.get("assessment") or {}
+    if assess.get("capture_ok"):
+        out.setdefault("native_identity", {})[key] = assess
+        return
+    out.setdefault("errors", {})[key] = assess.get("reason") or "native diag capture failed"
+    raise AssertionError(
+        "空闲测量无效：原生诊断取证失败（先决条件，不是产品 CPU 超标；不 skip、不放宽门槛；"
+        "未知映射必须写明原因，不能把失败当成身份证明）："
+        f"{key}={assess} snap_error={snap.get('error')}"
+    )
 
 
 def measure_idle(app, window_s: float, *, persist_as: str = "idle-measure.json") -> dict:
@@ -596,6 +615,8 @@ def measure_idle(app, window_s: float, *, persist_as: str = "idle-measure.json")
         # COM 异步采样必须在 CPU 窗口之外；结束快照在 reattach 之前。
         out["native_diag_before"] = _native_idle_snap(app, "before")
         flush()
+        _require_native_diag(out, "native_diag_before")
+        flush()
 
     measure_exc: BaseException | None = None
     try:
@@ -610,6 +631,7 @@ def measure_idle(app, window_s: float, *, persist_as: str = "idle-measure.json")
         tcp_after = None
         if not attached:
             out["native_diag_after"] = _native_idle_snap(app, "after")
+            flush()
             try:
                 tcp_after = app.survey_target_listeners()
             except Exception as e:  # noqa: BLE001
@@ -643,6 +665,8 @@ def measure_idle(app, window_s: float, *, persist_as: str = "idle-measure.json")
             "threads": procmem.thread_delta(th0, th1, role, top=20),
         })
         flush()
+        if not attached:
+            _require_native_diag(out, "native_diag_after")
         if not attached and tcp_after is not None and (not tcp_after.get("ok") or tcp_after.get("n")):
             out["errors"]["tcp_after"] = (
                 "采样结束后目标监听元组连接普查不完整或非零（零快照不是整段窗口证明，"

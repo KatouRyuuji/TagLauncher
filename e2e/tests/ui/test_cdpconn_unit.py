@@ -133,3 +133,51 @@ def test_empty_registry_is_not_disconnect_evidence_without_survey():
     reg = cdpconn.CdpRegistry()
     assert reg.snapshot() == []
     assert reg.listeners() == []
+
+
+def test_assess_snapshot_rejects_capture_failure_without_proof():
+    from harness.idle_diag import assess_snapshot
+    failed = assess_snapshot({"ok": False, "error": "native idle diag window not found (FindWindowExW HWND_MESSAGE)"})
+    assert failed["capture_ok"] is False
+    assert failed["identity"] == "failed"
+    silent = assess_snapshot({"ok": False, "windows": [], "generation": 1})
+    assert silent["capture_ok"] is False
+    assert "explicit" in silent["reason"] or "without explicit" in silent["reason"]
+
+
+def test_assess_snapshot_allows_explicit_unknown_and_known():
+    from harness.idle_diag import assess_snapshot
+    unknown = assess_snapshot({
+        "ok": False,
+        "generation": 2,
+        "processes_status": "UNKNOWN",
+        "processes_reason": "interface-missing ICoreWebView2Environment13",
+        "windows": [{
+            "label": "main",
+            "frame_id_status": "UNKNOWN: interface-missing ICoreWebView2_20",
+            "mapping": {"status": "UNKNOWN", "reason": "interface-missing ICoreWebView2_20"},
+        }],
+    })
+    assert unknown["capture_ok"] is True
+    assert unknown["identity"] == "UNKNOWN"
+    assert "interface-missing" in unknown["reason"]
+    known = assess_snapshot({
+        "ok": True,
+        "generation": 3,
+        "processes_status": "ok",
+        "windows": [{
+            "label": "main",
+            "frame_id_status": "ok",
+            "mapping": {"status": "ok", "frame_id": 5, "process": {"pid": 1, "kind": "Renderer"}},
+        }],
+    })
+    assert known["capture_ok"] is True
+    assert known["identity"] == "known"
+
+
+def test_snapshot_path_uses_explicit_dir_not_process_temp(tmp_path, monkeypatch):
+    from harness.idle_diag import snapshot_path
+    monkeypatch.setenv("TEMP", str(tmp_path / "pytest-temp"))
+    dest = snapshot_path(tmp_path / "sandbox-Temp", 123, 4)
+    assert dest == tmp_path / "sandbox-Temp" / "TagLauncher-idle-diag-123-4.json"
+    assert "pytest-temp" not in str(dest)

@@ -7,11 +7,14 @@
 //! - 接口缺失、FrameId=0、快照与导航/销毁不同步时映射为 UNKNOWN，不按 URL 或创建顺序猜测；
 //! - 一个 renderer 可以对应多个 frame/window；
 //! - 结束快照必须在重新挂上 CDP 之前由调用方触发；本模块不重建 CDP。
+//! - 默认关闭：仅当 TL_IDLE_DIAG=1 且 TL_IDLE_DIAG_DIR 指向合法绝对目录时才安装窗口。
+//!   这是诊断开关，不改变产品可见性 / DWM / focus，也不是为讨好测量改行为。
 
 #![cfg(windows)]
 
 use serde_json::{json, Value};
-use std::sync::atomic::{AtomicIsize, AtomicU64, Ordering};
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -43,13 +46,34 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 pub const CLASS_NAME: &str = "TagLauncherIdleDiag";
 pub const TITLE: &str = "TagLauncher IdleDiag";
-/// COPYDATASTRUCT.dwData 魔数 'TLID'
+/// COPYDATASTRUCT.dwData 魔数 'TLID'（窗口仅在显式开关打开时存在）
 pub const COPYDATA_MAGIC: usize = 0x544C4944;
+const ENV_ENABLE: &str = "TL_IDLE_DIAG";
+const ENV_DIR: &str = "TL_IDLE_DIAG_DIR";
+const MAX_COPYDATA: usize = 512;
+const KEEP_SNAPSHOTS: usize = 4;
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static HWND_ATOMIC: AtomicIsize = AtomicIsize::new(0);
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+static INFLIGHT: AtomicBool = AtomicBool::new(false);
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+fn diag_enabled() -> bool {
+    matches!(std::env::var(ENV_ENABLE), Ok(v) if v == "1")
+}
+
+fn diag_dir() -> Option<PathBuf> {
+    let raw = std::env::var(ENV_DIR).ok()?;
+    let p = PathBuf::from(raw);
+    if !p.is_absolute() {
+        return None;
+    }
+    if p.components().any(|c| matches!(c, Component::ParentDir)) {
+        return None;
+    }
+    Some(p)
+}
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -166,22 +190,58 @@ fn collect_associated_frames(fc: &ICoreWebView2FrameInfoCollection) -> Vec<Value
     frames
 }
 
-fn snapshot_path(generation: u64) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
+fn snapshot_path(dir: &Path, generation: u64) -> PathBuf {
+    dir.join(format!(
         "TagLauncher-idle-diag-{}-{}.json",
         std::process::id(),
         generation
     ))
 }
 
-fn write_snapshot(generation: u64, value: Value) {
-    let path = snapshot_path(generation);
-    let tmp = path.with_extension("json.tmp");
-    let body = serde_json::to_vec_pretty(&value).unwrap_or_else(|_| b"{\"ok\":false}".to_vec());
-    let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    if std::fs::write(&tmp, body).is_ok() {
-        let _ = std::fs::rename(&tmp, &path);
+fn cleanup_snapshots(dir: &Path, pid: u32, keep: usize) {
+    let prefix = format!("TagLauncher-idle-diag-{pid}-");
+    let mut files: Vec<(u64, PathBuf)> = std::fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !name.starts_with(&prefix) || !name.ends_with(".json") {
+                return None;
+            }
+            let gen = name
+                .trim_start_matches(&prefix)
+                .trim_end_matches(".json")
+                .parse::<u64>()
+                .ok()?;
+            Some((gen, e.path()))
+        })
+        .collect();
+    files.sort_by_key(|(g, _)| *g);
+    let drop_n = files.len().saturating_sub(keep);
+    for (_, path) in files.into_iter().take(drop_n) {
+        let _ = std::fs::remove_file(path);
     }
+}
+
+fn end_inflight() {
+    INFLIGHT.store(false, Ordering::SeqCst);
+}
+
+fn write_snapshot(generation: u64, value: Value) {
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(dir) = diag_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        let path = snapshot_path(&dir, generation);
+        let tmp = path.with_extension("json.tmp");
+        let body = serde_json::to_vec_pretty(&value).unwrap_or_else(|_| b"{\"ok\":false}".to_vec());
+        if std::fs::write(&tmp, body).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+        cleanup_snapshots(&dir, std::process::id(), KEEP_SNAPSHOTS);
+    }
+    end_inflight();
 }
 
 fn parse_tag(lparam: LPARAM) -> String {
@@ -192,7 +252,8 @@ fn parse_tag(lparam: LPARAM) -> String {
     if cds.lpData.is_null() || cds.cbData == 0 {
         return String::new();
     }
-    let bytes = unsafe { std::slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize) };
+    let n = (cds.cbData as usize).min(MAX_COPYDATA);
+    let bytes = unsafe { std::slice::from_raw_parts(cds.lpData as *const u8, n) };
     let text = String::from_utf8_lossy(bytes).trim().to_string();
     if let Ok(v) = serde_json::from_str::<Value>(&text) {
         v.get("tag")
@@ -573,20 +634,22 @@ fn start_snapshot(tag: String) -> u64 {
         .iter()
         .find_map(|c| c.env13_error.clone());
     let Some(env13) = env else {
+        let reason = env13_error.unwrap_or_else(|| {
+            "interface-missing ICoreWebView2Environment13 or no WebView yet".into()
+        });
         finish_snapshot(
             generation,
             tag,
             start_ms,
             controllers,
-            Err(env13_error.unwrap_or_else(|| {
-                "interface-missing ICoreWebView2Environment13 or no WebView yet".into()
-            })),
+            Err(reason.clone()),
             "UNKNOWN",
-            env13_error,
+            Some(reason),
         );
         return generation;
     };
     let handler_controllers = controllers.clone();
+    let tag_for_start_err = tag.clone();
     let handler = GetProcessExtendedInfosCompletedHandler::create(Box::new(move |hr, collection| {
         // create() 要 CompletedClosure = Box<dyn FnOnce(Result<()>, Option<Collection>)>.
         let outcome = match hr {
@@ -616,7 +679,7 @@ fn start_snapshot(tag: String) -> u64 {
     if let Err(e) = unsafe { env13.GetProcessExtendedInfos(&handler) } {
         finish_snapshot(
             generation,
-            tag,
+            tag_for_start_err,
             start_ms,
             controllers,
             Err(format!("GetProcessExtendedInfos start failed: {e}")),
@@ -630,14 +693,23 @@ fn start_snapshot(tag: String) -> u64 {
 unsafe extern "system" fn wnd_proc(hwnd: windows_sys::Win32::Foundation::HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_COPYDATA => {
+            if !diag_enabled() {
+                return 0;
+            }
             let cds_ok = if lparam == 0 {
                 false
             } else {
                 let cds = &*(lparam as *const COPYDATASTRUCT);
-                cds.dwData == COPYDATA_MAGIC
+                cds.dwData == COPYDATA_MAGIC && (cds.cbData as usize) <= MAX_COPYDATA
             };
             if !cds_ok {
-                return DefWindowProcW(hwnd, msg, wparam, lparam);
+                return 0;
+            }
+            if INFLIGHT
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+            {
+                return 0; // 单 inflight：拒绝重叠请求
             }
             let tag = parse_tag(lparam);
             // 立即排队异步 COM，立刻返回 generation；不在 UI 线程等待完成。
@@ -649,7 +721,16 @@ unsafe extern "system" fn wnd_proc(hwnd: windows_sys::Win32::Foundation::HWND, m
 }
 
 /// 在 UI 线程安装 message-only 隐藏窗口。不显示、不抢焦点、不改既有窗口。
+/// 默认不安装；仅 TL_IDLE_DIAG=1 且目录合法时启用。
 pub fn install(app: AppHandle) {
+    if !diag_enabled() {
+        log::info!("[idle_diag] disabled (TL_IDLE_DIAG!=1); window not installed");
+        return;
+    }
+    if diag_dir().is_none() {
+        log::warn!("[idle_diag] TL_IDLE_DIAG_DIR missing or unsafe; window not installed");
+        return;
+    }
     let _ = APP.set(app);
     if HWND_ATOMIC.load(Ordering::SeqCst) != 0 {
         return;
