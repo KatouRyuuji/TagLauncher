@@ -379,6 +379,8 @@ fn create_quick_window_owned(app: &AppHandle) -> Result<WebviewWindow, String> {
             .inner_size(QUICK_WIDTH, QUICK_HEIGHT)
             .decorations(false)
             .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
             .always_on_top(true)
             .skip_taskbar(true)
             .shadow(true)

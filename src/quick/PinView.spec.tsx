@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ItemWithTags } from "../types";
 import type { PinViewState } from "../lib/desktopShortcut";
 import * as db from "../lib/db";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const bus = vi.hoisted(() => ({ handlers: new Map<string, Set<(e: { payload: unknown }) => void>>() }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -61,6 +63,21 @@ describe("pinModel", () => {
 });
 
 describe("PinView", () => {
+  it("仅标题声明原生拖动区，筛选和条目不在此区域", async () => {
+    const css = readFileSync(join(process.cwd(), "src", "quick", "quick.css"), "utf-8")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    render(<PinView view={view({ mode: "drawer" }, "expanded")} />);
+    await screen.findAllByTestId("pin-item");
+    const header = screen.getByTestId("pin-header");
+    expect(header).toHaveClass("pin-chrome");
+    expect(css).toMatch(/\.pin-chrome\s*\{[^}]*\bapp-region\s*:\s*drag\s*;/);
+    expect(css.match(/\bapp-region\s*:\s*drag\b/g)).toHaveLength(1);
+    expect(header.querySelector("input, button, [role=option]")).toBeNull();
+    for (const control of [screen.getByTestId("pin-filter"), ...screen.getAllByTestId("pin-item")]) {
+      expect(header.contains(control)).toBe(false);
+      expect(control.closest(".pin-chrome")).toBeNull();
+    }
+  });
   it("浮动窗：标题、数量、双击打开；数据变化事件触发重取", async () => {
     render(<PinView view={view()} />);
     await waitFor(() => expect(screen.getByTestId("pin-title")).toHaveTextContent("资料 / 项目"));
