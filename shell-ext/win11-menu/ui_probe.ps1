@@ -8,15 +8,35 @@ function NormalizePath([string]$p) {
     if ([string]::IsNullOrWhiteSpace($p)) { return '' }
     try { return [IO.Path]::GetFullPath($p).TrimEnd('\','/').ToLowerInvariant() } catch { return $p.TrimEnd('\','/').ToLowerInvariant() }
 }
-# Win11 XAML 菜单常在同一 CabinetWClass 下暴露两份相同 Name/矩形的 UIA 节点。
-# 按视觉矩形去重后再判断唯一；不同位置的同名项仍视为不唯一，不放宽点击条件。
+# Win11 XAML 菜单常在同一窗口下暴露两份相同 Name/矩形的 UIA 节点。
+# 去重键为 PID + 绑定 HWND（自身或向上找到的所有者）+ 视觉矩形；
+# 只在三者都相同才合并，避免把不同进程/窗口的同名矩形误当成同一项。
 function VisualRect($el) {
     $b = $el.Current.BoundingRectangle
     return [pscustomobject]@{ X = [int][Math]::Round($b.X); Y = [int][Math]::Round($b.Y); W = [int][Math]::Round($b.Width); H = [int][Math]::Round($b.Height) }
 }
-function SameVisualRect($a, $b) {
+function OwnerHwnd($el) {
+    $cur = $el
+    while ($null -ne $cur) {
+        try {
+            $h = [int]$cur.Current.NativeWindowHandle
+            if ($h -ne 0) { return $h }
+        } catch {}
+        try { $cur = [System.Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($cur) } catch { break }
+    }
+    return 0
+}
+function NodeIdentity($el) {
+    $pid = 0
+    try { $pid = [int]$el.Current.ProcessId } catch {}
+    return [pscustomobject]@{ Pid = $pid; Hwnd = (OwnerHwnd $el); Rect = (VisualRect $el) }
+}
+function SameIdentity($a, $b) {
     if ($null -eq $a -or $null -eq $b) { return $false }
-    return ([Math]::Abs($a.X - $b.X) -le 2 -and [Math]::Abs($a.Y - $b.Y) -le 2 -and [Math]::Abs($a.W - $b.W) -le 2 -and [Math]::Abs($a.H - $b.H) -le 2)
+    if ($a.Pid -ne $b.Pid) { return $false }
+    if ($a.Hwnd -ne $b.Hwnd) { return $false }
+    $ra = $a.Rect; $rb = $b.Rect
+    return ([Math]::Abs($ra.X - $rb.X) -le 2 -and [Math]::Abs($ra.Y - $rb.Y) -le 2 -and [Math]::Abs($ra.W - $rb.W) -le 2 -and [Math]::Abs($ra.H - $rb.H) -le 2)
 }
 function FolderPathOf([int]$hwnd) {
     $shell = New-Object -ComObject Shell.Application
@@ -97,10 +117,10 @@ foreach ($top in $A::RootElement.FindAll($T::Children, $C)) {
         if ($cls -eq 'CabinetWClass' -and $ct -ne [System.Windows.Automation.ControlType]::MenuItem -and $ct -ne [System.Windows.Automation.ControlType]::Button) { continue }
         $names.Add("$cls|$($mi.Current.ControlType.ProgrammaticName -replace 'ControlType.', '')|$n")
         if ($n -eq $Title) {
-            $vr = VisualRect $mi
+            $ident = NodeIdentity $mi
             $dup = $false
             foreach ($existing in $ours) {
-                if (SameVisualRect (VisualRect $existing) $vr) { $dup = $true; break }
+                if (SameIdentity (NodeIdentity $existing) $ident) { $dup = $true; break }
             }
             if (-not $dup) { $ours.Add($mi) } else { $script:oursRawDup++ }
             $script:oursRaw++
