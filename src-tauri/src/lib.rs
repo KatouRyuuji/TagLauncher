@@ -1,5 +1,6 @@
 mod collect;
 mod collect_forward;
+mod menu_delivery;
 mod commands;
 mod data_sync;
 /// F18 托盘 / 全局快捷键 / 关闭行为（仅 GUI 使用）
@@ -15,6 +16,9 @@ mod quick;
 /// Win11 系统瞬态背景（DWMWA_SYSTEMBACKDROP_TYPE）
 #[cfg(windows)]
 mod dwm_backdrop;
+/// 只读空闲诊断：HWND/WM_COPYDATA 触发 FrameId 关联快照（不重建 CDP、不改可见性）
+#[cfg(windows)]
+mod idle_diag;
 pub mod search;
 /// 资源管理器右键菜单 / 发送到（阶段③）
 mod shell_clipboard;
@@ -199,10 +203,24 @@ pub fn run() {
     // Windows 前台锁拦下（只放行下一次 SetForegroundWindow，不常驻）。
     desktop::allow_foreground_handoff();
     // 右键多选每项一个进程：已有实例时在建运行时之前直接转发并退出（见 collect_forward.rs）
-    if collect_forward::try_forward(&std::env::args().skip(1).collect::<Vec<_>>()) {
-        std::process::exit(0);
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if collect_forward::is_collect_launch(&args) {
+            menu_delivery::record_child_start(&args);
+            match collect_forward::try_forward(&args) {
+                // 窗口过程返回 1 只是 transport_ack（插件 callback 后无条件返回 1，dwData 不匹配也是 1）。
+                // 发送失败不再退回插件（2.5.3 失败仍 exit 0）。merge_committed 另记，不改 tag/回执常量。
+                collect_forward::ForwardOutcome::TransportAck => std::process::exit(0),
+                collect_forward::ForwardOutcome::Undelivered => std::process::exit(2),
+                collect_forward::ForwardOutcome::Skipped => {}
+            }
+        }
     }
     tauri::Builder::default()
+        // 须在单实例插件之前注册。tauri 2.12.3 `Builder::build` 先把 `self.state`
+        // 交给 AppManager（app.rs:2425），再 `initialize_plugins`（app.rs:2607）。
+        // 插件 initialize 里建接收窗时，try_state::<CollectState>() 已可取。
+        .manage(collect::CollectState::default())
         // 须为首个插件：第二个实例在初始化其余部分前即退出，只把已有主窗口唤到前台
         // 第二个实例转发的参数按参数路由处理（--show 默认唤主窗，--background 不打扰）
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -288,6 +306,8 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(windows)]
+            crate::idle_diag::install(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.restore_state(StateFlags::SIZE | StateFlags::POSITION);
                 clamp_window_to_work_area(&window);
@@ -456,13 +476,16 @@ pub fn run() {
             app.manage(services::search_index::SearchIndex::default());
             data_sync::start(app.handle());
             app.manage(registry);
-            app.manage(collect::CollectState::default());
+            collect::flush_pending(app.handle());
             desktop::init(app.handle(), desktop::parse_launch_args(std::env::args().skip(1)));
             // 设置里开了 Win11 一级菜单：升级/挪目录后后台补注册（关着时不做任何事）
             win11_menu::reconcile_on_startup(app.handle().clone());
             // 由右键菜单/发送到启动的首个实例：后台启动（不显示主窗），只弹快速窗收纳
             if let Some(paths) = collect::collect_args(std::env::args().skip(1)) {
-                collect::submit(app.handle(), paths);
+                let argv: Vec<String> = std::env::args().skip(1).collect();
+                let req = menu_delivery::request_id_from_args(&argv);
+                let receipt = collect::submit(app.handle(), paths, req.as_deref());
+                menu_delivery::record_merge(req.as_deref(), &receipt);
             }
             app.manage(services::watch_runtime::FolderWatchHub::new());
             app.manage(services::reconcile_runtime::ReconcileScheduler::new());

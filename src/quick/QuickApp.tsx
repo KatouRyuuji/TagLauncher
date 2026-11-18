@@ -162,23 +162,43 @@ export function setSurface(surface: "search" | "pin"): void {
   document.documentElement.dataset.surface = surface;
 }
 
-/** 钉住视图状态：挂载时先拉一次（窗口创建时可能错过事件），之后跟 pin-surface 事件 */
+/** 钉住视图状态：先订完 pin-surface 再拉 pinState，避免创建窗口时错过事件；用世代号丢弃过期快照，避免陈旧 fetch 覆盖后来的事件。 */
 function usePinView(): PinViewState | null {
   const [view, setView] = useState<PinViewState | null>(null);
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | undefined;
+    let seq = 0;
     const apply = (v: PinViewState) => {
+      if (disposed) return;
       setSurface(v.surface);
       setView(v);
     };
-    void listen<PinViewState>(PIN_SURFACE_EVENT, (event) => apply(event.payload))
+    void listen<PinViewState>(PIN_SURFACE_EVENT, (event) => {
+      seq += 1;
+      apply(event.payload);
+    })
       .then((fn) => {
-        if (disposed) fn();
-        else stop = fn;
+        if (disposed) {
+          fn();
+          return;
+        }
+        stop = fn;
+        const fetchSeq = seq;
+        void db.pinState().then((v) => {
+          if (disposed || seq !== fetchSeq) return;
+          apply(v);
+        }).catch(() => {});
       })
-      .catch(() => {});
-    void db.pinState().then((v) => { if (!disposed) apply(v); }).catch(() => {});
+      .catch(() => {
+        // 订阅读取失败时仍拉当前状态，避免表面停在未初始化
+        if (disposed) return;
+        const fetchSeq = seq;
+        void db.pinState().then((v) => {
+          if (disposed || seq !== fetchSeq) return;
+          apply(v);
+        }).catch(() => {});
+      });
     return () => {
       disposed = true;
       stop?.();

@@ -107,6 +107,10 @@ class Sandbox:
         put("ProgramFiles(x86)", str(self.root / "ProgramFilesX86"))
         put("TEMP", str(self.root / "Temp"))
         put("TMP", str(self.root / "Temp"))
+        # 只读空闲诊断：显式打开隐藏窗口与落盘目录。仅诊断、不改产品可见性/DWM/focus，
+        # 不是为讨好测量做的行为开关。生产默认不设，因此不会安装该窗口。
+        put("TL_IDLE_DIAG", "1")
+        put("TL_IDLE_DIAG_DIR", str(self.root / "Temp"))
         put("WEBVIEW2_USER_DATA_FOLDER", str(self.root / "WebView2"))
         if cdp_port:
             put("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", webview2_args(cdp_port))

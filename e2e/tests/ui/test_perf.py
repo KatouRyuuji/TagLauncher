@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from harness.app import wait_until
+from harness.app import wait_until, wait_until_fine
 
 N = 5000
 RESULTS: dict = {}
@@ -76,20 +76,63 @@ def test_view_switch(big_app, run_dir):
     assert max(times.values()) <= 300, times
 
 
+def _wait_scope_count(page, pred_js: str, arg, timeout_ms: int = 10_000) -> None:
+    """在页面里用 rAF 等到 scope-header 满足谓词（用户可见计数），不依赖生产代码识别测试。"""
+    page.wait_for_function(pred_js, arg=arg, timeout=timeout_ms, polling="raf")
+
+
+# 150ms 防抖（useSearch）是给真实逐键输入合并查询、并覆盖拼音分片首次加载的产品取舍；
+# Playwright fill 一次写入仍会走这段延迟。验收保持 fill→可见结果的端到端墙钟（含防抖），
+# 不把 150ms 改短来讨好测量，也不把门槛换成仅 IPC/applyMs。
+
+
+@pytest.mark.case("E-PERF-WAIT")
+def test_wait_until_fine_known_delay():
+    """harness 自检：已知 50ms 延迟被高精度等待看到的开销应远小于旧 100ms 量子。
+
+    不启动应用、不改 250ms 搜索门槛。若仍用 interval=0.1，测得值常落在 100–150ms。
+    """
+    import threading
+
+    delay_s = 0.050
+    ready = threading.Event()
+    threading.Timer(delay_s, ready.set).start()
+    t0 = time.perf_counter()
+    wait_until_fine(lambda: ready.is_set(), 2, "已知 50ms 定时器未到")
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    # 50ms 触发 + 调度；必须明显低于 50+100 的粗轮询，也不得在触发前返回。
+    assert elapsed_ms >= 45, f"等待在固定延迟前返回：{elapsed_ms:.1f}ms"
+    assert elapsed_ms < 80, f"等待开销过大（疑似仍按 100ms 量子）：{elapsed_ms:.1f}ms"
+
+
 @pytest.mark.case("E-PERF-03")
 def test_search_cold_hot(big_app, run_dir):
     pg = big_app.page
     big_app.close_welcome(3000)
     box = pg.locator("#workspace-search")
+    lt_n = r"""(n) => {
+      const t = document.querySelector('[data-region="scope-header"]')?.innerText || '';
+      const m = t.match(/(\d+)\s*项/);
+      return m != null && Number(m[1]) < n;
+    }"""
+    eq_n = r"""(n) => {
+      const t = document.querySelector('[data-region="scope-header"]')?.innerText || '';
+      const m = t.match(/(\d+)\s*项/);
+      return m != null && Number(m[1]) === n;
+    }"""
 
     def search(q):
         box.fill(q)
-        wait_until(lambda: big_app.scope_count() is not None and big_app.scope_count() < N, 10, lambda: big_app.scope_count())
+        _wait_scope_count(pg, lt_n, N)
+
     cold = _ms(lambda: search("对象-0123"))
     box.fill("")
-    wait_until(lambda: big_app.scope_count() == N, 10, lambda: big_app.scope_count())
+    _wait_scope_count(pg, eq_n, N)
     hot = _ms(lambda: search("对象-0123"))
-    _record(run_dir, "search_ms", {"cold": cold, "hot": hot})
+    # applyMs 只作分解辅助（词生效→结果下一帧，不含 150ms 防抖与 fill），不替代墙钟验收。
+    perf = pg.evaluate("() => (window.__tlMainSearchPerf && window.__tlMainSearchPerf.records) || []")
+    _record(run_dir, "search_ms", {"cold": cold, "hot": hot, "tlMainSearchPerf": perf})
+    print("SEARCH_MS", {"cold": cold, "hot": hot, "tlMainSearchPerf": perf})
     assert cold <= 800 and hot <= 250, (cold, hot)
 
 

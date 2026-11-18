@@ -249,7 +249,7 @@ def test_pin_resident_memory_and_idle_cpu(sandbox, app_factory):
 
     def idle(label: str) -> dict:
         time.sleep(10)
-        return {"state": label, **measure_idle(app, PIN_IDLE_WINDOW_S)}
+        return {"state": label, **measure_idle(app, PIN_IDLE_WINDOW_S, persist_as=f"pin-idle-{label}.json")}
 
     idle_float = idle("float-visible")
     pin_settings(app, mode="drawer")

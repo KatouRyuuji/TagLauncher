@@ -144,4 +144,26 @@ describe("外部改名后的界面刷新", () => {
     expect(fullAgain).toBe(full);
     await act(async () => { releaseFull(0); await full; });
   });
+
+  it("可视页和邻页取页传 warm=true（只放行卡片路径）；load 不传", async () => {
+    // 视图大于缓存上限：不会空闲补齐，跳到未缓存区间必须取页——与 50k 滚动同一条件
+    const n = MAX_CACHED + 200;
+    const jump = MAX_CACHED + 50;
+    fake.items = Array.from({ length: n }, (_, i) => ({ ...before, id: i + 1, name: `对象${i + 1}`, path: `D:/o${i + 1}`, type: "text" as const }));
+    const { result } = renderHook(useItems);
+    await waitFor(() => expect(result.current.view.ids.length).toBe(n));
+    vi.mocked(db.getItemsPage).mockClear();
+    await act(async () => { result.current.view.ensureRange(jump, jump + 50); await Promise.resolve(); });
+    await waitFor(() => expect(result.current.view.get(jump + 1)?.name).toBe(`对象${jump + 1}`));
+    const pageCalls = vi.mocked(db.getItemsPage).mock.calls;
+    expect(pageCalls.length).toBeGreaterThan(0);
+    expect(pageCalls.every(([, warm]) => warm === true)).toBe(true);
+    expect(pageCalls.some(([ids]) => ids.includes(jump + 1))).toBe(true);
+    vi.mocked(db.getItemsPage).mockClear();
+    await act(async () => { await result.current.view.load([n]); });
+    const loadCalls = vi.mocked(db.getItemsPage).mock.calls;
+    expect(loadCalls.length).toBe(1);
+    expect(loadCalls[0][0]).toEqual([n]);
+    expect(loadCalls[0][1]).toBe(false);
+  });
 });

@@ -1,5 +1,5 @@
 import { assert, test, run } from "./__testutil";
-import { ItemStore, MAX_CACHED, PAGE_SIZE, WARM_BATCH, orderByView } from "./itemView";
+import { ItemStore, MAX_CACHED, PAGE_SIZE, WARM_BATCH, orderByView, pageUsesCardAssetScope } from "./itemView";
 import type { ItemWithTags } from "../types";
 
 const make = (id: number, name = `o${id}`): ItemWithTags =>
@@ -196,6 +196,14 @@ test("orderByView 按视图顺序排列并去掉不在视图里的 ID", () => {
   const store = new ItemStore(b.fetch);
   store.setIds([5, 3, 1]);
   assert.deepEqual(orderByView(store.getSnapshot(), [1, 9, 5]), [5, 1]);
+});
+
+
+test("列表取页（可视/邻页/空闲补齐）走卡片资产范围，批量 load 不走", () => {
+  assert.equal(pageUsesCardAssetScope("visible"), true);
+  assert.equal(pageUsesCardAssetScope("ahead"), true);
+  assert.equal(pageUsesCardAssetScope("warm"), true);
+  assert.equal(pageUsesCardAssetScope("load"), false);
 });
 
 await run("itemView");

@@ -100,6 +100,58 @@ def hit_edge(h: int) -> tuple[int, int]:
     return x, y
 
 
+def caption_aim(hwnd: int) -> tuple[int, int]:
+    """客户区顶栏中点（物理像素）。不用 GetWindowRect：有阴影时 HWND 顶不等于客户区顶。"""
+    cx, cy = win32.client_origin(hwnd)
+    cw, _ = win32.client_size(hwnd)
+    return cx + cw // 2, cy + round(16 * scale(hwnd))
+
+
+def snapshot_drag(app, hwnd: int, x: int, y: int) -> dict:
+    """按下或松手前的现场：游标、原生命中、WM_NCHITTEST、caption/MOVE 钩子、双路 size-move 计数。"""
+    root = win32.root_at(x, y)
+    return {
+        "cursor": win32.cursor_pos(),
+        "aim": (x, y),
+        "ht": win32.hit_test(hwnd, x, y),
+        "root": root,
+        "rootTitle": win32.title(root) if root else "",
+        "rootClass": win32.class_name(root) if root else "",
+        "rootIsTarget": root == hwnd,
+        "clientOrigin": win32.client_origin(hwnd),
+        "clientSize": win32.client_size(hwnd),
+        "windowRect": win32.rect(hwnd),
+        "diag": app.invoke("pin_diag"),
+    }
+
+
+def physical_caption_drag(app, hwnd: int, x0: int, y0: int, x1: int, y1: int) -> dict:
+    """真实 SendInput 拖动顶栏；不调用 pin_expand / set_pin_settings 代替。"""
+    before = snapshot_drag(app, hwnd, x0, y0)
+    win32.drag(x0, y0, x1, y1, steps=30)
+    after = snapshot_drag(app, hwnd, x1, y1)
+    ev0 = before["diag"].get("dragEvents") or [0] * 7
+    ev1 = after["diag"].get("dragEvents") or [0] * 7
+    sm0 = before["diag"].get("sizeMoveEvents") or [0, 0]
+    sm1 = after["diag"].get("sizeMoveEvents") or [0, 0]
+    d_enter, d_exit = sm1[0] - sm0[0], sm1[1] - sm0[1]
+    d_start, d_end = ev1[0] - ev0[0], ev1[1] - ev0[1]
+    after["sizeMoveDelta"] = [d_enter, d_exit]
+    after["wineventDelta"] = [d_start, d_end]
+    # 双路对照：窗口过程 ENTER/EXITSIZEMOVE vs MOVE_HOOK 的 winevent 起止
+    if d_enter == 0 and d_start == 0:
+        after["startKind"] = "os-no-drag"
+    elif d_enter > 0 and d_start == 0:
+        after["startKind"] = "hook-missed-winevent"
+    elif d_enter == 0 and d_start > 0:
+        after["startKind"] = "wndproc-missed-entersizemove"
+    else:
+        after["startKind"] = "os-drag-and-hook"
+    trace = {"before": before, "after": after}
+    print("PIN_DRAG_TRACE " + json.dumps(trace, ensure_ascii=False, default=str), flush=True)
+    return trace
+
+
 @pytest.mark.case("D-PIN-01")
 def test_drawer_slides_out_on_edge_hover_and_collapses_on_leave(app, sandbox):
     """探头贴在工作区右边缘；鼠标碰边停留 → 滑出到面板宽；划过（不停留）不弹；离开面板 → 收回。"""
@@ -175,13 +227,20 @@ def test_drawer_drag_switches_edge_and_position_survives_restart(app, sandbox):
     park_mouse(h)
     hit_edge(h)
     wait_until(lambda: drawer(app) == "expanded" and expanded(app, q), 3)
-    l, t, r, b = win32.rect(q)
-    hx, hy = (l + r) // 2, t + round(16 * scale(q))  # 标题栏（拖动区）
-    tx, ty = work[0] + 200, work[1] + 60 + (hy - t)
-    win32.drag(hx, hy, tx, ty, steps=30)
+    hx, hy = caption_aim(q)
+    tx, ty = work[0] + 200, work[1] + 60 + (hy - win32.client_origin(q)[1])
+    ht_err = None
+    try:
+        wait_until(lambda: win32.hit_test(q, hx, hy) == "CAPTION", 3,
+                   lambda: f"顶栏瞄准点应为 HTCAPTION：{snapshot_drag(app, q, hx, hy)}")
+    except AssertionError as e:
+        ht_err = e
+    trace = physical_caption_drag(app, q, hx, hy, tx, ty)
+    if ht_err is not None:
+        raise AssertionError(f"{ht_err}；已完成物理拖动（未改用产品接口）trace={trace}") from ht_err
     wait_until(lambda: app.invoke("get_pin_settings")["edge"] == "left", 5,
                lambda: f"松手应吸附到左边：rect={win32.rect(q)} settings={app.invoke('get_pin_settings')} "
-                          f"diag={app.invoke('pin_diag')}")
+                          f"trace={trace} diag={app.invoke('pin_diag')}")
     wait_until(lambda: win32.rect(q)[0] == work[0], 3, lambda: f"应贴左边：rect={win32.rect(q)} work={work}")
     offset = float(dbh.meta(sandbox.db_path, "pin.drawer_offset"))
     assert offset < 0.3, f"上下比例应偏上：{offset}"
@@ -216,8 +275,11 @@ def test_float_drag_remembered_and_tray_toggle(app, sandbox):
     wait_until(lambda: win32.is_visible(h), 8)
     assert oswin.is_topmost(h), "浮动窗默认置顶"
     l, t, r, b = win32.rect(h)
-    hx, hy = (l + r) // 2, t + round(16 * scale(h))
-    win32.drag(hx, hy, hx - 300, hy + 80, steps=30)
+    hx, hy = caption_aim(h)
+    # 浮动窗有阴影：位移仍按窗口左上，瞄准点改客户区
+    trace = physical_caption_drag(app, h, hx, hy, hx - 300, hy + 80)
+    if trace["before"]["ht"] != "CAPTION":
+        raise AssertionError(f"浮动窗顶栏瞄准点应为 HTCAPTION，已完成物理拖动（未改用产品接口）trace={trace}")
     wait_until(lambda: dbh.meta(sandbox.db_path, "pin.float_rect"), 5, "拖动后应保存位置")
     moved = win32.rect(h)
     assert abs(moved[0] - (l - 300)) <= 3 and abs(moved[1] - (t + 80)) <= 3, (moved, (l, t))

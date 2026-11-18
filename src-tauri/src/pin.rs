@@ -394,12 +394,18 @@ static LEAVE_GEN: AtomicU64 = AtomicU64::new(0);
 /// 钉住表面时顶栏走原生 HTCAPTION（热路径只读此原子，不锁 Runtime）。
 static CAPTION_DRAG: AtomicBool = AtomicBool::new(false);
 /// 诊断计数（pin_diag.dragEvents）：[拖动开始, 拖动结束, 抽屉 Moved, 抽屉吸附, 失焦收回, 轮询收回, 前端离开收回]
+/// 0/1 来自 EVENT_SYSTEM_MOVESIZESTART/END（MOVE_HOOK），与窗口 WM_ENTER/EXITSIZEMOVE 分开计数。
 static DRAG_EVENTS: [std::sync::atomic::AtomicU32; 7] = [
     std::sync::atomic::AtomicU32::new(0),
     std::sync::atomic::AtomicU32::new(0),
     std::sync::atomic::AtomicU32::new(0),
     std::sync::atomic::AtomicU32::new(0),
     std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0),
+];
+/// 诊断计数（pin_diag.sizeMoveEvents）：[WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE]（窗口过程，非 winevent）
+static SIZE_MOVE_EVENTS: [std::sync::atomic::AtomicU32; 2] = [
     std::sync::atomic::AtomicU32::new(0),
     std::sync::atomic::AtomicU32::new(0),
 ];
@@ -1362,8 +1368,8 @@ mod caption {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{GetDC, GetDeviceCaps, ReleaseDC, ScreenToClient, LOGPIXELSX};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallWindowProcW, DefWindowProcW, GetClientRect, SetWindowLongPtrW, GWLP_WNDPROC, HTCAPTION,
-        WM_NCHITTEST,
+        CallWindowProcW, DefWindowProcW, GetClientRect, GetWindowLongPtrW, SetWindowLongPtrW,
+        GWLP_WNDPROC, HTCAPTION, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCHITTEST,
     };
 
     static PREV_PROC: AtomicIsize = AtomicIsize::new(0);
@@ -1404,12 +1410,32 @@ mod caption {
         pt.x >= rc.left && pt.x < rc.right && caption_hit(pt.y, dpi_scale(hwnd))
     }
 
+    pub struct HookStatus {
+        pub proc_ours: bool,
+        pub proc_replaced: bool,
+    }
+
+    pub fn status(hwnd: HWND) -> HookStatus {
+        let installed = INSTALLED.load(Ordering::SeqCst);
+        // SAFETY：只读查询本进程窗口当前 WndProc
+        let cur = unsafe { GetWindowLongPtrW(hwnd, GWLP_WNDPROC) };
+        HookStatus {
+            proc_ours: installed == hwnd as isize && cur == wnd_proc as isize,
+            proc_replaced: installed == hwnd as isize && cur != 0 && cur != wnd_proc as isize,
+        }
+    }
+
     unsafe extern "system" fn wnd_proc(
         hwnd: HWND,
         msg: u32,
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
+        if msg == WM_ENTERSIZEMOVE {
+            SIZE_MOVE_EVENTS[0].fetch_add(1, Ordering::Relaxed);
+        } else if msg == WM_EXITSIZEMOVE {
+            SIZE_MOVE_EVENTS[1].fetch_add(1, Ordering::Relaxed);
+        }
         if msg == WM_NCHITTEST && in_caption(hwnd, lparam) {
             return HTCAPTION as LRESULT;
         }
@@ -1431,6 +1457,9 @@ mod caption {
         let app = window.app_handle().clone();
         let _ = app.run_on_main_thread(move || {
             let hwnd = hwnd as HWND;
+            // 已装在同一 HWND 上则不再 SetWindowLongPtr：无证据时每次重装会把
+            // 后来的子类链拆掉或把自己接到自己后面（PREV_PROC 成环、指针失效）。
+            // 若 WndProc 被别人换掉，status().proc_replaced 会为 true，再决定是否重装。
             if INSTALLED.load(Ordering::SeqCst) == hwnd as isize {
                 return;
             }
@@ -1659,6 +1688,14 @@ pub struct PinDiag {
     pub drag_events: [u32; 7],
     /// quick 窗口 [窗口宽, 窗口高, 客户区宽, 客户区高, GWL_STYLE, GWL_EXSTYLE]
     pub quick_geometry: [i64; 6],
+    /// 顶栏 WndProc 仍是本模块过程（未丢失）
+    pub caption_installed: bool,
+    /// 曾安装，但当前 GWLP_WNDPROC 已不是本模块过程（被重设）；无证据时不自动重装
+    pub caption_replaced: bool,
+    /// EVENT_SYSTEM_MOVESIZE* 钩子（MOVE_HOOK）是否已装
+    pub move_hook: bool,
+    /// [WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE]
+    pub size_move_events: [u32; 2],
 }
 
 fn quick_geometry(app: &AppHandle) -> [i64; 6] {
@@ -1697,9 +1734,30 @@ fn quick_geometry(app: &AppHandle) -> [i64; 6] {
     }
 }
 
+fn caption_diag(app: &AppHandle) -> (bool, bool, bool) {
+    #[cfg(windows)]
+    {
+        let move_hook = MOVE_HOOK.load(Ordering::SeqCst) != 0;
+        let Some(h) = app
+            .get_webview_window(crate::quick::QUICK_LABEL)
+            .and_then(|w| w.hwnd().ok())
+        else {
+            return (false, false, move_hook);
+        };
+        let st = caption::status(h.0 as _);
+        (st.proc_ours, st.proc_replaced, move_hook)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        (false, false, false)
+    }
+}
+
 #[tauri::command]
 pub fn pin_diag(app: AppHandle) -> PinDiag {
     let (handle_visible, r) = crate::pin_strip::state();
+    let cap = caption_diag(&app);
     PinDiag {
         view: view(),
         hook_installed: hook_installed(),
@@ -1708,6 +1766,13 @@ pub fn pin_diag(app: AppHandle) -> PinDiag {
         handle_rect: [r.0 as i64, r.1 as i64, r.2 as i64, r.3 as i64],
         drag_events: std::array::from_fn(|i| DRAG_EVENTS[i].load(Ordering::Relaxed)),
         quick_geometry: quick_geometry(&app),
+        caption_installed: cap.0,
+        caption_replaced: cap.1,
+        move_hook: cap.2,
+        size_move_events: [
+            SIZE_MOVE_EVENTS[0].load(Ordering::Relaxed),
+            SIZE_MOVE_EVENTS[1].load(Ordering::Relaxed),
+        ],
     }
 }
 

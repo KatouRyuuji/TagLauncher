@@ -106,8 +106,8 @@ class QuickPageFinder:
             self.close()
         if self.extra is None:
             try:
-                self.extra = self.app.pw.chromium.connect_over_cdp(
-                    f"http://127.0.0.1:{self.app.port}", timeout=self.CONNECT_TIMEOUT_MS)
+                self.extra = self.app.connect_cdp(
+                    "quick-finder-extra", timeout=self.CONNECT_TIMEOUT_MS)
             except Exception:  # noqa: BLE001  下轮重试
                 return []
             self.extra_at = time.monotonic()
@@ -127,8 +127,17 @@ class QuickPageFinder:
         return None
 
     def close(self):
-        # 不调用 browser.close()：CDP 连接上 close 可能连带关闭 WebView（同 harness/app.py）；旧连接随进程结束释放
+        """断开备用连接（只断 websocket）。页面若已交给会话使用，调用方应走 release() 而不是 close()。"""
+        if self.extra is not None:
+            self.app.disconnect_cdp(self.extra, reason="quick-finder-close")
         self.extra = None
+
+    def release(self):
+        """find 结束后的所有权：备用连接上找到的 page 留在 AppSession 注册表，其余断开。"""
+        if self.via == "extra":
+            self.extra = None
+            return
+        self.close()
 
 
 def quick_page(app, timeout: float = 20):
@@ -137,15 +146,18 @@ def quick_page(app, timeout: float = 20):
     find = finder.find
 
     try:
-        page = wait_until(find, timeout, "快速搜索窗页面未出现")
-    except AssertionError as e:
-        raise AssertionError(f"{e}；{_quick_diag(app)}") from None
-    page.wait_for_function("() => !!document.querySelector('[data-testid=quick-input]')", timeout=15000)
-    # 桩（不真正启动程序/打开资源管理器、剪贴板只记录）随 context init script 注入；保险起见补一次
-    if not page.evaluate("() => !!window.__e2e"):
-        from harness.app import STUB_JS
-        page.evaluate(STUB_JS)
-    return page
+        try:
+            page = wait_until(find, timeout, "快速搜索窗页面未出现")
+        except AssertionError as e:
+            raise AssertionError(f"{e}；{_quick_diag(app)}") from None
+        page.wait_for_function("() => !!document.querySelector('[data-testid=quick-input]')", timeout=15000)
+        # 桩（不真正启动程序/打开资源管理器、剪贴板只记录）随 context init script 注入；保险起见补一次
+        if not page.evaluate("() => !!window.__e2e"):
+            from harness.app import STUB_JS
+            page.evaluate(STUB_JS)
+        return page
+    finally:
+        finder.release()
 
 
 def enable_quick(app):
@@ -510,55 +522,195 @@ IDLE_WINDOW_S = 120
 IDLE_CPU_PCT = 1.0  # §3.3「两窗都隐藏时平均 ≈ 0%」：按单核 1% 计（120 s 内整棵进程树 CPU ≤ 1.2 s）
 
 
-@pytest.mark.case("E-PERF-IDLE")
-def measure_idle(app, window_s: float) -> dict:
+def _flush_idle_report(app, name: str, payload: dict) -> None:
+    """先落盘再抛错，避免先决条件或 reattach 失败时没有 idle JSON。"""
+    path = app.sb.artifacts / name
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def _native_idle_snap(app, tag: str) -> dict:
+    """CDP 已断开后经 HWND 采集 FrameId 关联快照；失败记入报告，不重建 CDP。
+
+    落盘目录固定为沙箱 Temp，不用 pytest 进程的 TEMP。
+    """
+    from harness import idle_diag
+    try:
+        snap = idle_diag.capture(app.proc.pid, tag, out_dir=app.sb.root / "Temp")
+    except Exception as e:  # noqa: BLE001
+        snap = {"ok": False, "tag": tag, "error": f"{type(e).__name__}: {e}"}
+    snap["assessment"] = idle_diag.assess_snapshot(snap)
+    src = snap.get("path")
+    if src:
+        try:
+            import shutil
+            dest = app.sb.artifacts / f"idle-native-{tag}.json"
+            shutil.copy(src, dest)
+            snap["artifact"] = dest.name
+        except OSError:
+            pass
+    return snap
+
+
+def _require_native_diag(out: dict, key: str) -> None:
+    """取证先决：捕获失败则测量无效；映射 UNKNOWN 必须带明确原因，不能当身份证明。"""
+    snap = out.get(key) or {}
+    assess = snap.get("assessment") or {}
+    if assess.get("capture_ok"):
+        out.setdefault("native_identity", {})[key] = assess
+        return
+    out.setdefault("errors", {})[key] = assess.get("reason") or "native diag capture failed"
+    raise AssertionError(
+        "空闲测量无效：原生诊断取证失败（先决条件，不是产品 CPU 超标；不 skip、不放宽门槛；"
+        "未知映射必须写明原因，不能把失败当成身份证明）："
+        f"{key}={assess} snap_error={snap.get('error')}"
+    )
+
+
+def measure_idle(app, window_s: float, *, persist_as: str = "idle-measure.json") -> dict:
     """空闲窗口：进程树 CPU（判定口径：单核 ≤ IDLE_CPU_PCT，不变）+ 线程级诊断（窗口两端各一次只读快照：
     每线程 CPU 毫秒、上下文切换≈唤醒次数、线程名）。
 
     测量窗口内断开 Playwright 的 CDP 连接，结束后重连：用户机器上没有调试会话。对照实验（同一构建）里
     CDP 挂着时，隐藏的快速窗渲染进程仍以约 19 Hz 合成（renderer Compositor ≈2200 次、
     GPU VizCompositorThread ≈2700 次唤醒 / 120s），浏览器主线程也多约 150ms；断开后这两项消失。
-    见 DESIGN_ASSERTION_CHANGES.md §17。TL_E2E_IDLE_ATTACHED=1 保持连接（复现 / 对照用）。"""
+    见 DESIGN_ASSERTION_CHANGES.md §17。TL_E2E_IDLE_ATTACHED=1 保持连接（复现 / 对照用）。
+
+    阶段：detach-precondition → idle-measurement → reattach。先写断连报告再采样。
+    目标端口连接的零快照只是采样前后两点，不是整段 window_s 无连接的证明。
+    reattach 失败不得掩盖已采集的 CPU；阈值与窗口长度不变。
+    """
     attached = os.environ.get("TL_E2E_IDLE_ATTACHED") == "1"
     pid = app.proc.pid
+    out = {
+        "phase": None,
+        "cdp_attached": attached,
+        "window_s_requested": window_s,
+        "errors": {},
+        "tcp_zero_is_snapshot_only": True,
+    }
+
+    def flush() -> None:
+        _flush_idle_report(app, persist_as, out)
+
     if not attached:
-        app.detach_cdp()
+        out["phase"] = "detach-precondition"
+        flush()
+        try:
+            detach = app.detach_cdp()
+        except Exception as e:  # noqa: BLE001
+            out["errors"]["detach-precondition"] = f"{type(e).__name__}: {e}"
+            flush()
+            raise AssertionError(
+                "空闲测量无效：断连先决条件异常（不是产品 CPU 超标；不 skip、不放宽门槛）："
+                f"{out['errors']}"
+            ) from e
+        out["cdp_detach"] = detach
+        out["tcp_before"] = detach.get("survey")
+        flush()
+        if not detach.get("ok"):
+            raise AssertionError(
+                "空闲测量无效：CDP 未完全断开（先决条件失败，不是产品 CPU 超标；不 skip、不放宽门槛）："
+                f"{detach}"
+            )
+        # COM 异步采样必须在 CPU 窗口之外；结束快照在 reattach 之前。
+        out["native_diag_before"] = _native_idle_snap(app, "before")
+        flush()
+        _require_native_diag(out, "native_diag_before")
+        flush()
+
+    measure_exc: BaseException | None = None
     try:
+        out["phase"] = "idle-measurement"
+        flush()
         pids0 = [p for p, _ in procmem.tree(pid)]
         th0 = procmem.threads(pids0)
         t0, c0 = time.time(), procmem.tree_cpu(pid)
         time.sleep(window_s)
         t1, c1 = time.time(), procmem.tree_cpu(pid)
         th1 = procmem.threads(pids0)
-    finally:
+        tcp_after = None
         if not attached:
-            app.reattach_cdp()
-    rows = [{"pid": p, "exe": exe, "cpu_s": round(s - c0[p][1], 3)} for p, (exe, s) in c1.items() if p in c0]
-    total = sum(r["cpu_s"] for r in rows)
-    role = procmem.roles([r["pid"] for r in rows])  # 采样窗口之后：定位落在哪个 WebView2 子进程
-    for r in rows:
-        r["role"] = role.get(r["pid"], "?")
-    wake: dict[str, int] = {}
-    # 合成线程唤醒：渲染进程 Compositor + GPU 进程 VizCompositorThread（页面在出帧时两者同步飙升）
-    comp = {"renderer": 0, "gpu": 0}
-    for tid, a in th1.items():
-        b = th0.get(tid)
-        if b and b["pid"] == a["pid"]:
-            r = role.get(a["pid"], "?")
-            k = f"{r}:{a['pid']}"
-            wake[k] = wake.get(k, 0) + a["cs"] - b["cs"]
-            if r == "renderer" and a["name"] == "Compositor":
-                comp["renderer"] += a["cs"] - b["cs"]
-            elif r == "gpu-process" and a["name"] == "VizCompositorThread":
-                comp["gpu"] += a["cs"] - b["cs"]
-    return {"window_s": round(t1 - t0, 1), "cpu_s": round(total, 3),
-            "avg_pct_one_core": round(total / (t1 - t0) * 100, 3), "cdp_attached": attached,
+            out["native_diag_after"] = _native_idle_snap(app, "after")
+            flush()
+            try:
+                tcp_after = app.survey_target_listeners()
+            except Exception as e:  # noqa: BLE001
+                tcp_after = {"ok": False, "error": f"{type(e).__name__}: {e}", "n": None}
+            out["tcp_after"] = tcp_after
+        rows = [{"pid": p, "exe": exe, "cpu_s": round(s - c0[p][1], 3)} for p, (exe, s) in c1.items() if p in c0]
+        total = sum(r["cpu_s"] for r in rows)
+        role = procmem.roles([r["pid"] for r in rows])  # 采样窗口之后：定位落在哪个 WebView2 子进程
+        for r in rows:
+            r["role"] = role.get(r["pid"], "?")
+        wake: dict[str, int] = {}
+        # 合成线程唤醒：渲染进程 Compositor + GPU 进程 VizCompositorThread（页面在出帧时两者同步飙升）
+        comp = {"renderer": 0, "gpu": 0}
+        for tid, a in th1.items():
+            b = th0.get(tid)
+            if b and b["pid"] == a["pid"]:
+                r = role.get(a["pid"], "?")
+                k = f"{r}:{a['pid']}"
+                wake[k] = wake.get(k, 0) + a["cs"] - b["cs"]
+                if r == "renderer" and a["name"] == "Compositor":
+                    comp["renderer"] += a["cs"] - b["cs"]
+                elif r == "gpu-process" and a["name"] == "VizCompositorThread":
+                    comp["gpu"] += a["cs"] - b["cs"]
+        out.update({
+            "window_s": round(t1 - t0, 1),
+            "cpu_s": round(total, 3),
+            "avg_pct_one_core": round(total / (t1 - t0) * 100, 3),
             "processes": sorted(rows, key=lambda r: -r["cpu_s"]),
             "wakeups_by_process": dict(sorted(wake.items(), key=lambda kv: -kv[1])),
             "compositor_wakeups": comp,
-            "threads": procmem.thread_delta(th0, th1, role, top=20)}
+            "threads": procmem.thread_delta(th0, th1, role, top=20),
+        })
+        flush()
+        if not attached:
+            _require_native_diag(out, "native_diag_after")
+        if not attached and tcp_after is not None and (not tcp_after.get("ok") or tcp_after.get("n")):
+            out["errors"]["tcp_after"] = (
+                "采样结束后目标监听元组连接普查不完整或非零（零快照不是整段窗口证明，"
+                "但结束点非零则不能宣称测量窗口内已全部断开）"
+            )
+            flush()
+            raise AssertionError(
+                "空闲测量无效：采样结束后目标端口仍有连接或普查不完整（先决条件，不是单凭 CPU 定罪；"
+                f"已采 CPU 保留在报告中）：{tcp_after} cpu={out.get('avg_pct_one_core')}"
+            )
+    except Exception as e:  # noqa: BLE001
+        measure_exc = e
+        if "idle-measurement" not in out["errors"] and not isinstance(e, AssertionError):
+            out["errors"]["idle-measurement"] = f"{type(e).__name__}: {e}"
+            flush()
+    finally:
+        # 禁止在 finally 里抛错，以免掩盖已采集的 CPU 或先决条件错误
+        if not attached:
+            out["phase"] = "reattach"
+            flush()
+            try:
+                app.reattach_cdp()
+            except Exception as e:  # noqa: BLE001
+                out["errors"]["reattach"] = f"{type(e).__name__}: {e}"
+                flush()
+
+    if measure_exc is not None and not isinstance(measure_exc, AssertionError):
+        raise AssertionError(
+            f"空闲测量阶段失败（已落盘，reattach 错误保留在报告中）：{out['errors']}"
+        ) from measure_exc
+    if measure_exc is not None:
+        raise measure_exc
+    if out["errors"].get("reattach"):
+        raise AssertionError(
+            "空闲测量已完成，但 reattach 失败（不掩盖已采 CPU；不 skip、不放宽门槛）："
+            f"avg_pct_one_core={out.get('avg_pct_one_core')} errors={out['errors']}"
+        )
+    out["phase"] = "complete"
+    flush()
+    return out
 
 
+
+@pytest.mark.case("E-PERF-IDLE")
 def test_idle_cpu_with_both_windows_hidden(app_factory, sandbox):
     """关闭到托盘 + 快速搜索开启（预创建隐藏）：主窗、快速窗都隐藏后，进程树（含 WebView2）
     120 s 平均 CPU ≤ 单核 1%。进程级明细写入 idle-cpu.json。"""
@@ -575,7 +727,7 @@ def test_idle_cpu_with_both_windows_hidden(app_factory, sandbox):
     wait_until(lambda: not win32.is_visible(h), 8, "关闭到托盘应隐藏主窗")
     assert not is_visible(qp)
     time.sleep(10)  # 隐藏后的收尾（GC、索引、data_sync 降频）
-    out = measure_idle(app, IDLE_WINDOW_S)
+    out = measure_idle(app, IDLE_WINDOW_S, persist_as="idle-cpu.json")
     out["target_pct"] = IDLE_CPU_PCT
     pct = out["avg_pct_one_core"]
     (sandbox.artifacts / "idle-cpu.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
