@@ -228,7 +228,12 @@ pub fn process_exe_sha256(_pid: u32) -> Option<String> {
 
 #[cfg(windows)]
 fn session_id(pid: u32) -> Option<u32> {
-    use windows_sys::Win32::System::Threading::ProcessIdToSessionId;
+    // windows-sys 0.59 的 Threading 未导出此符号（b74a448 desktop-release E0432）。
+    // kernel32 的 ProcessIdToSessionId 本身存在（同 SHA 的 tl_menu.cpp 已链过）。
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn ProcessIdToSessionId(dw_process_id: u32, session_id: *mut u32) -> i32;
+    }
     let mut s = 0u32;
     unsafe {
         if ProcessIdToSessionId(pid, &mut s) != 0 {
