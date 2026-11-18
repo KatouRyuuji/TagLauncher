@@ -190,7 +190,15 @@ function usePinView(): PinViewState | null {
           apply(v);
         }).catch(() => {});
       })
-      .catch(() => {});
+      .catch(() => {
+        // 订阅读取失败时仍拉当前状态，避免表面停在未初始化
+        if (disposed) return;
+        const fetchSeq = seq;
+        void db.pinState().then((v) => {
+          if (disposed || seq !== fetchSeq) return;
+          apply(v);
+        }).catch(() => {});
+      });
     return () => {
       disposed = true;
       stop?.();

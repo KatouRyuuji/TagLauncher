@@ -7,13 +7,22 @@ import * as db from "../lib/db";
 const bus = vi.hoisted(() => ({
   handlers: new Map<string, Set<(e: { payload: unknown }) => void>>(),
   emitted: [] as Array<{ name: string; payload: unknown }>,
+  /** 非空时 listen Promise 被挂起，调用返回的 resume 才注册 handler 并完成订阅 */
+  holdListen: null as null | { resume: () => void },
+  unlistened: 0,
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (name: string, handler: (e: { payload: unknown }) => void) => {
+    if (bus.holdListen) {
+      await new Promise<void>((resolve) => { bus.holdListen = { resume: resolve }; });
+    }
     if (!bus.handlers.has(name)) bus.handlers.set(name, new Set());
     bus.handlers.get(name)!.add(handler);
-    return () => bus.handlers.get(name)!.delete(handler);
+    return () => {
+      bus.handlers.get(name)?.delete(handler);
+      bus.unlistened += 1;
+    };
   }),
   emit: vi.fn(async (name: string, payload: unknown) => { bus.emitted.push({ name, payload }); }),
 }));
@@ -103,6 +112,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   bus.handlers.clear();
   bus.emitted = [];
+  bus.holdListen = null;
+  bus.unlistened = 0;
   localStorage.clear();
   collect.pending = null;
   collect.pref = null;
@@ -390,5 +401,46 @@ describe("QuickApp 收纳入口：剪贴板与拖入", () => {
     });
     expect(document.documentElement.dataset.surface).toBe("pin");
     expect(await screen.findByTestId("pin-panel")).toBeInTheDocument();
+  });
+
+  it("卸载发生在 listen 完成前：必须 unlisten，且迟到的 pinState 不得改最终 surface", async () => {
+    let resolveState: (v: unknown) => void = () => {};
+    vi.mocked(db.pinState).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveState = resolve; }),
+    );
+    bus.holdListen = { resume: () => {} };
+    const { unmount } = render(<QuickApp />);
+    expect(document.documentElement.dataset.surface).toBeUndefined();
+    unmount();
+    await act(async () => { bus.holdListen?.resume(); });
+    await act(async () => {
+      resolveState({
+        surface: "pin",
+        settings: { enabled: true, source: { kind: "cabinet", id: 10 }, mode: "float", edge: "right", topmost: true },
+        drawer: "collapsed",
+      });
+    });
+    expect(bus.unlistened).toBe(1);
+    expect(document.documentElement.dataset.surface).toBeUndefined();
+    expect(screen.queryByTestId("pin-panel")).not.toBeInTheDocument();
+  });
+
+  it("pin / search 快切后最终表面跟最后一次事件，过期 pinState 不得改回去", async () => {
+    let resolveState: (v: unknown) => void = () => {};
+    vi.mocked(db.pinState).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveState = resolve; }),
+    );
+    render(<QuickApp />);
+    await waitFor(() => expect(bus.handlers.has("pin-surface")).toBe(true));
+    const settingsOn = { enabled: true, source: { kind: "cabinet", id: 10 }, mode: "float", edge: "right", topmost: true };
+    fire("pin-surface", { surface: "pin", settings: settingsOn, drawer: "collapsed" });
+    fire("pin-surface", { surface: "search", settings: settingsOn, drawer: "collapsed" });
+    // 共用窗口切搜索时组件不卸载，用户可见口径是 html[data-surface]（与 E2E surface() 相同）
+    await waitFor(() => expect(document.documentElement.dataset.surface).toBe("search"));
+    expect(screen.getByTestId("quick-input")).toBeInTheDocument();
+    await act(async () => {
+      resolveState({ surface: "pin", settings: settingsOn, drawer: "collapsed" });
+    });
+    expect(document.documentElement.dataset.surface).toBe("search");
   });
 });
