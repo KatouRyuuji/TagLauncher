@@ -366,4 +366,29 @@ describe("QuickApp 收纳入口：剪贴板与拖入", () => {
     fire("pin-surface", { surface: "search", settings: { enabled: false, source: null, mode: "float", edge: "right", topmost: true }, drawer: "collapsed" });
     expect(screen.queryByTestId("pin-panel")).not.toBeInTheDocument();
   });
+
+  it("订阅完成后才拉 pinState；过期快照不能覆盖之后的 pin-surface", async () => {
+    let resolveState: (v: unknown) => void = () => {};
+    vi.mocked(db.pinState).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveState = resolve; }),
+    );
+    render(<QuickApp />);
+    await waitFor(() => expect(bus.handlers.has("pin-surface")).toBe(true));
+    const pinView = {
+      surface: "pin",
+      settings: { enabled: true, source: { kind: "cabinet", id: 10 }, mode: "float", edge: "right", topmost: true },
+      drawer: "collapsed",
+    };
+    fire("pin-surface", pinView);
+    await waitFor(() => expect(document.documentElement.dataset.surface).toBe("pin"));
+    await act(async () => {
+      resolveState({
+        surface: "search",
+        settings: { enabled: false, source: null, mode: "float", edge: "right", topmost: true },
+        drawer: "collapsed",
+      });
+    });
+    expect(document.documentElement.dataset.surface).toBe("pin");
+    expect(await screen.findByTestId("pin-panel")).toBeInTheDocument();
+  });
 });
