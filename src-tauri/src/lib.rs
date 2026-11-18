@@ -15,6 +15,9 @@ mod quick;
 /// Win11 系统瞬态背景（DWMWA_SYSTEMBACKDROP_TYPE）
 #[cfg(windows)]
 mod dwm_backdrop;
+/// 只读空闲诊断：HWND/WM_COPYDATA 触发 FrameId 关联快照（不重建 CDP、不改可见性）
+#[cfg(windows)]
+mod idle_diag;
 pub mod search;
 /// 资源管理器右键菜单 / 发送到（阶段③）
 mod shell_clipboard;
@@ -288,6 +291,8 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(windows)]
+            crate::idle_diag::install(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.restore_state(StateFlags::SIZE | StateFlags::POSITION);
                 clamp_window_to_work_area(&window);
