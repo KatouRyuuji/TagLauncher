@@ -658,7 +658,7 @@ fn start_snapshot(tag: String) -> u64 {
             Some("webview window disappeared before GetProcessExtendedInfos".into()),
         );
         return generation;
-    }
+    };
     let snaps_handler = controllers.clone();
     let snaps_err = controllers;
     let tag_handler = tag.clone();
