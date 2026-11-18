@@ -17,7 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2_2, ICoreWebView2_20, ICoreWebView2Environment13, ICoreWebView2FrameInfo,
-    ICoreWebView2FrameInfo2, ICoreWebView2ProcessExtendedInfo,
+    ICoreWebView2FrameInfo2, ICoreWebView2FrameInfoCollection, ICoreWebView2ProcessExtendedInfo,
     ICoreWebView2ProcessExtendedInfoCollection, COREWEBVIEW2_FRAME_KIND,
     COREWEBVIEW2_FRAME_KIND_EMBED, COREWEBVIEW2_FRAME_KIND_IFRAME,
     COREWEBVIEW2_FRAME_KIND_MAIN_FRAME, COREWEBVIEW2_FRAME_KIND_OBJECT,
@@ -28,8 +28,8 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
     COREWEBVIEW2_PROCESS_KIND_UTILITY,
 };
 use webview2_com::{take_pwstr, GetProcessExtendedInfosCompletedHandler};
-use windows::core::{Interface, PWSTR};
-use windows::Win32::Foundation::{BOOL, HWND};
+use windows::core::{Interface, BOOL as CoreBool, PWSTR};
+use windows::Win32::Foundation::HWND;
 use windows_sys::Win32::Foundation::{CloseHandle, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -130,6 +130,42 @@ where
     f(&mut v).ok().map(|_| v)
 }
 
+fn read_i32<F>(f: F) -> Option<i32>
+where
+    F: FnOnce(*mut i32) -> windows::core::Result<()>,
+{
+    let mut v = 0i32;
+    f(&mut v).ok().map(|_| v)
+}
+
+fn collect_associated_frames(fc: &ICoreWebView2FrameInfoCollection) -> Vec<Value> {
+    // FrameInfoCollection 只有 GetIterator，没有 Count/GetValueAtIndex。
+    let iter = match unsafe { fc.GetIterator() } {
+        Ok(it) => it,
+        Err(e) => {
+            return vec![json!({
+                "frame_id_status": "UNKNOWN",
+                "reason": format!("GetIterator failed: {e}"),
+            })];
+        }
+    };
+    let mut frames = Vec::new();
+    loop {
+        let mut has = CoreBool::default();
+        if unsafe { iter.HasCurrent(&mut has) }.is_err() || !has.as_bool() {
+            break;
+        }
+        if let Ok(fi) = unsafe { iter.GetCurrent() } {
+            frames.push(collect_frame_info(&fi));
+        }
+        let mut moved = CoreBool::default();
+        if unsafe { iter.MoveNext(&mut moved) }.is_err() || !moved.as_bool() {
+            break;
+        }
+    }
+    frames
+}
+
 fn snapshot_path(generation: u64) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "TagLauncher-idle-diag-{}-{}.json",
@@ -228,7 +264,7 @@ fn collect_controllers(app: &AppHandle) -> Vec<ControllerSnap> {
                 if controller.ParentWindow(&mut parent).is_ok() {
                     cur.parent_window = Some(parent.0 as isize);
                 }
-                let mut vis = BOOL::default();
+                let mut vis = CoreBool::default();
                 if controller.IsVisible(&mut vis).is_ok() {
                     cur.controller_is_visible = Some(vis.as_bool());
                 }
@@ -361,7 +397,8 @@ fn collect_extended_infos(
         };
         let (pid, kind_name) = match unsafe { ext.ProcessInfo() } {
             Ok(info) => {
-                let pid = read_u32(|p| unsafe { info.ProcessId(p) });
+                // ICoreWebView2ProcessInfo::ProcessId 是 *mut i32，不是 u32。
+                let pid = read_i32(|p| unsafe { info.ProcessId(p) }).map(|v| v as u32);
                 let mut kind = COREWEBVIEW2_PROCESS_KIND::default();
                 let kn = if unsafe { info.Kind(&mut kind) }.is_ok() {
                     process_kind_name(kind)
@@ -380,16 +417,7 @@ fn collect_extended_infos(
         };
         let mut frames = Vec::new();
         match unsafe { ext.AssociatedFrameInfos() } {
-            Ok(fc) => {
-                let mut fn_ = 0u32;
-                if unsafe { fc.Count(&mut fn_) }.is_ok() {
-                    for j in 0..fn_ {
-                        if let Ok(fi) = unsafe { fc.GetValueAtIndex(j) } {
-                            frames.push(collect_frame_info(&fi));
-                        }
-                    }
-                }
-            }
+            Ok(fc) => frames.extend(collect_associated_frames(&fc)),
             Err(e) => frames.push(json!({
                 "frame_id_status": "UNKNOWN",
                 "reason": format!("AssociatedFrameInfos failed: {e}"),
@@ -559,8 +587,8 @@ fn start_snapshot(tag: String) -> u64 {
         return generation;
     };
     let handler_controllers = controllers.clone();
-    let handler = GetProcessExtendedInfosCompletedHandler::create(move |hr, collection| {
-        // CompletedClosure<HRESULT, Option<Collection>>：第一个参数已是 Result<()>。
+    let handler = GetProcessExtendedInfosCompletedHandler::create(Box::new(move |hr, collection| {
+        // create() 要 CompletedClosure = Box<dyn FnOnce(Result<()>, Option<Collection>)>.
         let outcome = match hr {
             Ok(()) => match collection {
                 Some(col) => collect_extended_infos(&col),
@@ -584,7 +612,7 @@ fn start_snapshot(tag: String) -> u64 {
             preason,
         );
         Ok(())
-    });
+    }));
     if let Err(e) = unsafe { env13.GetProcessExtendedInfos(&handler) } {
         finish_snapshot(
             generation,
