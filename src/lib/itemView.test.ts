@@ -206,4 +206,51 @@ test("列表取页（可视/邻页/空闲补齐）走卡片资产范围，批量
   assert.equal(pageUsesCardAssetScope("load"), false);
 });
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+async function drainMicrotasks(times = 16) {
+  for (let i = 0; i < times; i++) await Promise.resolve();
+}
+
+test("旧分页不得覆盖更新后的对象；全量刷新后重取可见对象", async () => {
+  const db = new Map<number, ItemWithTags>([[1, make(1, "old")], [2, make(2)]]);
+  const first = deferred<void>();
+  let calls = 0;
+  const fetch = async (ids: number[]) => {
+    calls += 1;
+    if (calls === 1) await first.promise;
+    return ids.flatMap((id) => db.get(id) ?? []);
+  };
+  const store = new ItemStore(fetch);
+  store.setIds([1, 2]);
+  store.ensureRange(0, 2);
+  store.upsert([make(1, "local")]);
+  assert.equal(store.getSnapshot().get(1)?.name, "local");
+  db.set(1, make(1, "stale-from-server"));
+  first.resolve();
+  await drainMicrotasks();
+  assert.equal(store.getSnapshot().get(1)?.name, "local", "rev 前进后旧分页不得覆盖");
+
+  const gate = deferred<void>();
+  let round = 0;
+  const fetch2 = async (ids: number[]) => {
+    round += 1;
+    if (round === 1) await gate.promise;
+    return ids.map((id) => make(id, `v${round}-${id}`));
+  };
+  const s2 = new ItemStore(fetch2);
+  s2.setIds([1]);
+  s2.ensureRange(0, 1);
+  s2.invalidateAll();
+  gate.resolve();
+  await drainMicrotasks();
+  assert.equal(s2.getSnapshot().get(1)?.name, "v2-1", "epoch 前进后应重取可见对象");
+});
+
 await run("itemView");
