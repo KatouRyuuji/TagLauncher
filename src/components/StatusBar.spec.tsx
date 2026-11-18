@@ -34,6 +34,8 @@ const missingItems: ItemWithTags[] = [
   },
 ];
 
+const noCandidates = { candidates: [] as const };
+
 function renderStatusBar() {
   return render(
     <StatusBar
@@ -41,7 +43,8 @@ function renderStatusBar() {
       libraryCount={10}
       missingCount={0}
       missingItems={[]}
-      onRelocateMissing={async () => 0}
+      onRelocateMissing={async () => noCandidates}
+      onConfirmRelocations={async () => 0}
       onRemoveMissing={async () => {}}
     />,
   );
@@ -102,7 +105,8 @@ describe("StatusBar 失效对象找回", () => {
           libraryCount={10}
         missingCount={missingItems.length}
         missingItems={missingItems}
-        onRelocateMissing={async () => 0}
+        onRelocateMissing={async () => noCandidates}
+        onConfirmRelocations={async () => 0}
         onRemoveMissing={async () => {}}
       />,
     );
@@ -120,12 +124,24 @@ describe("StatusBar 失效对象找回", () => {
           libraryCount={10}
         missingCount={missingItems.length}
         missingItems={missingItems}
-        onRelocateMissing={async () => 2}
+        onRelocateMissing={async () => ({
+          candidates: [
+            { id: 1, missingPath: missingItems[0].path, paths: ["D:\\found\\gone.mp4"] },
+            { id: 2, missingPath: missingItems[1].path, paths: ["D:\\found\\gone.exe"] },
+          ],
+        })}
+        onConfirmRelocations={async () => 2}
         onRemoveMissing={async () => {}}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /失效项目/ }));
     fireEvent.click(screen.getByRole("button", { name: /尝试找回全部失效项/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId("relocate-candidates")).toBeInTheDocument();
+      expect(screen.getByText(/找到 2 项候选/)).toBeInTheDocument();
+      expect(screen.queryByText("已找回 2 项")).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /确认找回所选/ }));
     await waitFor(() => {
       expect(screen.getByText("已找回 2 项")).toBeInTheDocument();
     });
@@ -147,6 +163,7 @@ describe("StatusBar 失效对象找回", () => {
           onRelocateMissing={async () => {
             throw new Error("磁盘不可读");
           }}
+          onConfirmRelocations={async () => 0}
           onRemoveMissing={async () => {}}
         />,
       );

@@ -97,8 +97,8 @@ export function StatusBar({
     try {
       const result = await onRelocateMissing(roots);
       setRelocateCandidates(result.candidates);
-      setLastRelocateResult(result.candidates.length);
-      // 候选说明写在对话框横幅上；未自动回写。
+      // 扫描不再自动回写：有候选时只展示待确认列表；无候选才显示「没有找回」。
+      setLastRelocateResult(result.candidates.length === 0 ? 0 : null);
     } catch (err) {
       if (isScanCancelled(err)) {
         setRelocateNote({ kind: "info", text: scanErrorMessage(err) });
