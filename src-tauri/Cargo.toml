@@ -58,6 +58,7 @@ webview2-com = "0.39"
 winreg = "0.56"
 # 热键 B 读取资源管理器选中项（IShellWindows → IFolderView2::GetSelection）；
 # 探头文字用 Direct2D + DirectWrite + WIC（灰度 AA 画进分层窗口的预乘缓冲）
+windows-core = "0.62"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Direct2D", "Win32_Graphics_Direct2D_Common", "Win32_Graphics_DirectWrite", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Imaging"] }
 # 用于按 NTFS 文件ID重定位对象当前路径（OpenFileById / GetFinalPathNameByHandleW），
 # 用关联程序打开对象（ShellExecuteW，替代经 cmd.exe 的启动，杜绝命令注入），

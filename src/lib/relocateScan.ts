@@ -37,6 +37,17 @@ export function scanErrorMessage(err: unknown): string {
   return errorText(err).replace(/^\[[a-z_]+\]\s*/, "");
 }
 
+/** 开始一次新扫描：代数递增，旧扫描结果不得再写入候选列表。 */
+export function nextRelocateScanGen(current: number): number {
+  return current + 1;
+}
+
+/** 只有结果代数与当前扫描代数一致才接受，避免自动扫描覆盖更新的手动结果。 */
+export function shouldApplyRelocateScanResult(currentGen: number, resultGen: number): boolean {
+  return resultGen === currentGen;
+}
+
+
 /**
  * 自动触发的全盘找回（发现对象丢失后）没有成功时给用户的提示。自动扫描同样受 5 分钟上限约束：
  * 停止 → info（用户主动）；超时 → warning（未完成核验，引导到限定文件夹）；其余 → error。

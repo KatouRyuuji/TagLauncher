@@ -253,4 +253,50 @@ test("旧分页不得覆盖更新后的对象；全量刷新后重取可见对�
   assert.equal(s2.getSnapshot().get(1)?.name, "v2-1", "epoch 前进后应重取可见对象");
 });
 
+test("load 不得把被拒的过期对象交给写入方，应再取新鲜数据", async () => {
+  const first = deferred<void>();
+  let round = 0;
+  const fetch = async (ids: number[]) => {
+    round += 1;
+    if (round === 1) await first.promise;
+    return ids.map((id) => make(id, `r${round}-${id}`));
+  };
+  const store = new ItemStore(fetch);
+  store.setIds([1, 2]);
+  const pending = store.load([1]);
+  store.invalidateAll();
+  first.resolve();
+  const loaded = await pending;
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0]?.name, "r2-1", "load 必须等到刷新后的对象，不能返回第一轮过期数据");
+  assert.ok(round >= 2, `应再取一次，实际 round=${round}`);
+});
+
+test("颜色 patch 不得把过期槽抬成新鲜，load 仍会重取", async () => {
+  let round = 0;
+  const fetch = async (ids: number[]) => {
+    round += 1;
+    return ids.map((id) => {
+      const item = make(id, `r${round}-${id}`);
+      return { ...item, tags: [{ id: 7, name: "色", color: "#111111" }] };
+    });
+  };
+  const store = new ItemStore(fetch);
+  store.setIds([1]);
+  store.ensureRange(0, 1);
+  await drainMicrotasks();
+  assert.equal(store.getSnapshot().get(1)?.name, "r1-1");
+  store.invalidateAll();
+  store.patch((item) => (
+    item.id === 1
+      ? { ...item, tags: item.tags.map((tag) => ({ ...tag, color: "#abcdef" })) }
+      : item
+  ));
+  const patched = store.getSnapshot().get(1);
+  assert.equal(patched?.tags[0]?.color, "#abcdef", "本地换色应先可见");
+  const loaded = await store.load([1]);
+  assert.equal(loaded[0]?.name, "r2-1", "过期槽换色后仍须重取，不能靠抬升 epoch 跳过");
+  assert.ok(round >= 2, `应重取，实际 round=${round}`);
+});
+
 await run("itemView");

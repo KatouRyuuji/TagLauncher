@@ -41,9 +41,10 @@ export function StatusBar({
   const listDensity = useAppStore((state) => state.listDensity);
   const setListDensity = useAppStore((state) => state.setListDensity);
   const persistWorkspacePrefsNow = useAppStore((state) => state.persistWorkspacePrefsNow);
+  const relocateCandidates = useAppStore((state) => state.relocateCandidates);
+  const removeRelocateCandidates = useAppStore((state) => state.removeRelocateCandidates);
   const [relocating, setRelocating] = useState(false);
   const [lastRelocateResult, setLastRelocateResult] = useState<number | null>(null);
-  const [relocateCandidates, setRelocateCandidates] = useState<db.RelocateCandidate[]>([]);
   // 停止 / 超时 / 失败的说明（显示在失效对话框横幅里）
   const [relocateNote, setRelocateNote] = useState<{ kind: "info" | "warning"; text: string } | null>(null);
   const scan = useRelocateScan();
@@ -91,12 +92,11 @@ export function StatusBar({
   const handleRelocate = async (roots?: string[]) => {
     if (relocating) return;
     setLastRelocateResult(null);
-    setRelocateCandidates([]);
     setRelocateNote(null);
     setRelocating(true);
     try {
       const result = await onRelocateMissing(roots);
-      setRelocateCandidates(result.candidates);
+      // 候选只由持有开始代数的 hook 写入。这里不得用当前代数给旧结果盖章。
       // 扫描不再自动回写：有候选时只展示待确认列表；无候选才显示「没有找回」。
       setLastRelocateResult(result.candidates.length === 0 ? 0 : null);
     } catch (err) {
@@ -117,10 +117,7 @@ export function StatusBar({
     const recovered = await onConfirmRelocations(choices);
     if (recovered > 0) {
       setLastRelocateResult(recovered);
-      setRelocateCandidates((current) => {
-        const confirmed = new Set(choices.map((choice) => choice.id));
-        return current.filter((candidate) => !confirmed.has(candidate.id));
-      });
+      removeRelocateCandidates(choices.map((choice) => choice.id));
     }
     return recovered;
   };

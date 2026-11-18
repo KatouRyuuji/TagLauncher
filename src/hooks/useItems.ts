@@ -124,7 +124,9 @@ export function useItems() {
     // 小范围扫描，不能被在途的全盘扫描吞掉（否则要等全盘扫完、且不是用户要的范围），独立执行。
     if (!scoped && relocatingRef.current) return relocatingRef.current;
     const task = (async () => {
+      const gen = useAppStore.getState().beginRelocateScan();
       const result = await db.relocateMissing(scoped ? roots : undefined);
+      useAppStore.getState().applyRelocateScanResult(gen, result.candidates);
       if (result.candidates.length > 0) {
         showToast(
           scoped

@@ -210,7 +210,8 @@ export class ItemStore {
     this.emit();
   }
 
-  /** 就地改写已缓存对象（如标签换色），不向后端取。 */
+  /** 就地改写已缓存对象（如标签换色），不向后端取。
+   *  提高 rev 以免在途旧分页覆盖本地补丁，但不抬升 epoch：过期槽仍须重取，不能因换色被当成新鲜。 */
   patch(fn: (item: ItemWithTags) => ItemWithTags) {
     let changed = false;
     for (const slot of this.slots.values()) {
@@ -218,7 +219,6 @@ export class ItemStore {
       if (next !== slot.item) {
         slot.item = next;
         slot.rev = this.bumpRev(slot.item.id);
-        slot.epoch = this.epoch;
         changed = true;
       }
     }
@@ -322,7 +322,12 @@ export class ItemStore {
     }
     if (missing.length > 0) {
       const items = await this.fetch(missing, missing.length <= PAGE_SIZE * 2, "load");
-      for (const item of items) got.set(item.id, item);
+      for (const item of items) {
+        const slot = this.slots.get(item.id);
+        // fetch 已按当前 epoch/rev 解析；若槽已新鲜，以其为准，绝不回退到被拒的旧对象。
+        if (slot && slot.epoch >= this.epoch) got.set(item.id, slot.item);
+        else got.set(item.id, item);
+      }
     }
     const out: ItemWithTags[] = [];
     for (const id of want) {
@@ -332,7 +337,7 @@ export class ItemStore {
     return out;
   }
 
-  private async fetch(ids: number[], cache: boolean, kind: FetchKind): Promise<ItemWithTags[]> {
+  private async fetch(ids: number[], cache: boolean, kind: FetchKind, retried = false): Promise<ItemWithTags[]> {
     if (cache) for (const id of ids) this.inflight.add(id);
     const epoch = this.epoch;
     const revAtStart = new Map(ids.map((id) => [id, this.revs.get(id) ?? 0]));
@@ -347,13 +352,15 @@ export class ItemStore {
         if (this.recentFetches.length > 8) this.recentFetches.shift();
       }
       epochMoved = this.epoch !== epoch;
-      const got = new Set(items.map((item) => item.id));
+      const got = new Map(items.map((item) => [item.id, item] as const));
       const accept = (id: number) => (this.revs.get(id) ?? 0) <= (revAtStart.get(id) ?? 0) && this.epoch === epoch;
+      const accepted = new Map<number, ItemWithTags>();
       if (cache) {
         for (const item of items) {
           if (!accept(item.id)) continue;
           this.slots.delete(item.id);
           this.slots.set(item.id, { item, epoch, rev: this.revs.get(item.id) ?? 0 });
+          accepted.set(item.id, item);
         }
         this.trim();
       } else {
@@ -362,13 +369,39 @@ export class ItemStore {
           if (!accept(item.id)) continue;
           const slot = this.slots.get(item.id);
           if (slot) this.slots.set(item.id, { item, epoch, rev: this.revs.get(item.id) ?? 0 });
+          accepted.set(item.id, item);
         }
       }
       // 取回时已被删除的对象：去掉旧缓存，避免显示幽灵数据（本地已 bump 的删除除外）
       for (const id of ids) {
         if (!got.has(id) && accept(id)) this.slots.delete(id);
       }
-      return items;
+      const unresolved = ids.filter((id) => {
+        const slot = this.slots.get(id);
+        const fresh = slot && slot.epoch >= this.epoch;
+        return !fresh && !accepted.has(id) && got.has(id);
+      });
+      // 仍缺可接受的新鲜数据（epoch/rev 已变）时再取一次，避免把被拒旧对象交给 load。
+      if (!retried && unresolved.length > 0) {
+        const more = await this.fetch(unresolved, cache, kind, true);
+        for (const item of more) accepted.set(item.id, item);
+      }
+      const resolved: ItemWithTags[] = [];
+      const seen = new Set<number>();
+      const push = (item: ItemWithTags) => {
+        if (seen.has(item.id)) return;
+        seen.add(item.id);
+        resolved.push(item);
+      };
+      for (const id of ids) {
+        const slot = this.slots.get(id);
+        if (slot && slot.epoch >= this.epoch) push(slot.item);
+        else {
+          const item = accepted.get(id);
+          if (item) push(item);
+        }
+      }
+      return resolved;
     } finally {
       if (cache) for (const id of ids) this.inflight.delete(id);
       // 预取的页不在可视区间内：数据已进缓存，滚到那里时的渲染自然读到，不必现在重渲染列表

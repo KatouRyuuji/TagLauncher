@@ -2192,8 +2192,6 @@ mod tests {
     }
 
     #[test]
-
-    #[test]
     fn unique_weak_signature_stays_missing_until_confirmed() {
         let base = std::env::temp_dir().join(format!(
             "tl_sig_confirm_{}_{}",
@@ -2270,6 +2268,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    #[test]
     fn unreadable_root_does_not_accept_a_single_candidate() {
         let base = std::env::temp_dir().join(format!("tl_unreadable_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);

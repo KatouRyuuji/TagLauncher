@@ -667,6 +667,13 @@ fn apply_registered(inner: &mut DesktopInner, action: HotkeyAction, entry: Optio
     }
 }
 
+fn rollback_kept_message(restored: &Option<(String, u32)>) -> String {
+    match restored {
+        Some((p, _)) => format!("，已保留原快捷键「{p}」"),
+        None => "，该快捷键保持未启用".to_string(),
+    }
+}
+
 fn rollback_hotkey_registration(
     previous: &Option<(String, u32)>,
     register: &mut impl FnMut(&str) -> Result<u32, String>,
@@ -699,10 +706,7 @@ fn swap_hotkey_registration(
             Ok(id) => new_entry = Some((text.to_string(), id)),
             Err(e) => {
                 let restored = rollback_hotkey_registration(previous, &mut register);
-                let kept = previous
-                    .as_ref()
-                    .map(|(p, _)| format!("，已保留原快捷键「{p}」"))
-                    .unwrap_or_else(|| "，该快捷键保持未启用".to_string());
+                let kept = rollback_kept_message(&restored);
                 return Err((format!("{e}{kept}"), restored));
             }
         }

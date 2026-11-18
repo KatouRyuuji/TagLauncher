@@ -4152,6 +4152,7 @@ dependencies = [
  "ureq",
  "webview2-com",
  "windows",
+ "windows-core",
  "windows-sys 0.59.0",
  "winreg",
 ]

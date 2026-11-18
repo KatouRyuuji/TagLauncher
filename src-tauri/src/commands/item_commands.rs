@@ -453,9 +453,13 @@ pub fn confirm_signature_relocations(
     if choices.is_empty() {
         return Ok(0);
     }
-    let conn = db.get_conn();
-    let rows = item_service::read_missing_signatures(&conn)?;
     let found: Vec<(i64, String)> = choices.into_iter().map(|c| (c.id, c.path)).collect();
+    // 计划阶段含路径 metadata 与签名 IO：先放下 DB 连接，完成后再取连接做条件式回写。
+    let rows = {
+        let conn = db.get_conn();
+        item_service::read_missing_signatures(&conn)?
+    };
     let writes = item_service::plan_signature_relocations(&rows, &found);
+    let conn = db.get_conn();
     item_service::apply_signature_relocations(&conn, &writes)
 }

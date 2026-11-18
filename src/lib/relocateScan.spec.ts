@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoRelocateFailureNotice, formatScanProgress, isScanCancelled, isScanTimedOut, scanErrorMessage, SCAN_CANCELLED_MSG, SCAN_TIMED_OUT_PREFIX } from "./relocateScan";
+import { autoRelocateFailureNotice, formatScanProgress, isScanCancelled, isScanTimedOut, nextRelocateScanGen, scanErrorMessage, shouldApplyRelocateScanResult, SCAN_CANCELLED_MSG, SCAN_TIMED_OUT_PREFIX } from "./relocateScan";
 
 describe("relocateScan", () => {
   it("进度文案：万项、当前盘、用时/上限", () => {
@@ -35,5 +35,17 @@ describe("autoRelocateFailureNotice（自动触发的全盘扫描同样受 5 分
       message: "跨盘找回失败：磁盘不可读",
       tone: "error",
     });
+  });
+});
+
+describe("relocate scan generation", () => {
+  it("旧的自动扫描结果不得覆盖更新的手动扫描", () => {
+    let gen = 0;
+    gen = nextRelocateScanGen(gen);
+    const autoGen = gen;
+    gen = nextRelocateScanGen(gen);
+    const manualGen = gen;
+    expect(shouldApplyRelocateScanResult(manualGen, autoGen)).toBe(false);
+    expect(shouldApplyRelocateScanResult(manualGen, manualGen)).toBe(true);
   });
 });

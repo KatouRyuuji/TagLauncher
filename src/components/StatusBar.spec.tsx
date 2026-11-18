@@ -36,6 +36,15 @@ const missingItems: ItemWithTags[] = [
 
 const noCandidates = { candidates: [] as const };
 
+/** 与真实 hook 相同：开始时取代数，结束后按该代数写入，不得让组件再盖章。 */
+function hookLikeRelocate(result: { candidates: ReadonlyArray<{ id: number; missingPath: string; paths: string[] }> }) {
+  return async () => {
+    const gen = useAppStore.getState().beginRelocateScan();
+    useAppStore.getState().applyRelocateScanResult(gen, result.candidates.map((c) => ({ ...c, paths: [...c.paths] })));
+    return { candidates: result.candidates.map((c) => ({ ...c, paths: [...c.paths] })) };
+  };
+}
+
 function renderStatusBar() {
   return render(
     <StatusBar
@@ -61,6 +70,8 @@ describe("StatusBar 搜索指示", () => {
       showRecent: false,
       selectedTagIds: [],
       selectedCabinetId: null,
+      relocateScanGen: 0,
+      relocateCandidates: [],
     });
   });
 
@@ -95,6 +106,8 @@ describe("StatusBar 失效对象找回", () => {
       selectedTagIds: [],
       selectedCabinetId: null,
       missingReviewOpen: false,
+      relocateScanGen: 0,
+      relocateCandidates: [],
     });
   });
 
@@ -105,7 +118,7 @@ describe("StatusBar 失效对象找回", () => {
           libraryCount={10}
         missingCount={missingItems.length}
         missingItems={missingItems}
-        onRelocateMissing={async () => noCandidates}
+        onRelocateMissing={hookLikeRelocate(noCandidates)}
         onConfirmRelocations={async () => 0}
         onRemoveMissing={async () => {}}
       />,
@@ -124,7 +137,7 @@ describe("StatusBar 失效对象找回", () => {
           libraryCount={10}
         missingCount={missingItems.length}
         missingItems={missingItems}
-        onRelocateMissing={async () => ({
+        onRelocateMissing={hookLikeRelocate({
           candidates: [
             { id: 1, missingPath: missingItems[0].path, paths: ["D:\\found\\gone.mp4"] },
             { id: 2, missingPath: missingItems[1].path, paths: ["D:\\found\\gone.exe"] },
@@ -145,6 +158,36 @@ describe("StatusBar 失效对象找回", () => {
     await waitFor(() => {
       expect(screen.getByText("已找回 2 项")).toBeInTheDocument();
     });
+  });
+
+  it("组件不得把过期扫描结果盖章为当前代数", async () => {
+    const autoGen = useAppStore.getState().beginRelocateScan();
+    useAppStore.getState().applyRelocateScanResult(autoGen, [
+      { id: 9, missingPath: "D:\\auto\\old.mp4", paths: ["D:\\auto\\found.mp4"] },
+    ]);
+    render(
+      <StatusBar
+        visibleCount={3}
+        libraryCount={10}
+        missingCount={missingItems.length}
+        missingItems={missingItems}
+        onRelocateMissing={async () => ({
+          candidates: [
+            { id: 1, missingPath: missingItems[0].path, paths: ["D:\\stale\\gone.mp4"] },
+          ],
+        })}
+        onConfirmRelocations={async () => 0}
+        onRemoveMissing={async () => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /失效项目/ }));
+    fireEvent.click(screen.getByRole("button", { name: /尝试找回全部失效项/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/找到 1 项候选/)).toBeInTheDocument();
+    });
+    expect(useAppStore.getState().relocateCandidates).toEqual([
+      { id: 9, missingPath: "D:\\auto\\old.mp4", paths: ["D:\\auto\\found.mp4"] },
+    ]);
   });
 
   it("找回失败时弹出错误 toast 并恢复按钮可用", async () => {

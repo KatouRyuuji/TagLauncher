@@ -1,6 +1,6 @@
 # 在资源管理器里右键文件，用 UIA 读取 Win11 一级菜单（XAML 弹层）里的条目；可选点击我们的条目。
 # 资源管理器窗口按 Folder.Self.Path 绑定本例目录，不靠标题包含叶子名。clicked 只在实际尝试点击后为 True。
-param([string]$Folder, [string]$FileName, [string]$Title, [string]$Shot, [string]$Marker = '', [switch]$Click, [string]$Tag = 'registered')
+param([string]$Folder, [string]$FileName, [string]$Title, [string]$Shot, [string]$Marker = '', [switch]$Click, [string]$Tag = 'registered', [switch]$SelfTest)
 $ErrorActionPreference = 'Continue'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 function Log($k, $v) { Write-Host "W11MENU ui_$($Tag)_$k=$v" }
@@ -26,17 +26,42 @@ function OwnerHwnd($el) {
     }
     return 0
 }
+function ReadNodeProcessId($el) {
+    # 不得对只读自动变量 $PID / $pid 赋值。读取失败必须返回 $null，不能冒充当前 PowerShell 进程。
+    if ($null -eq $el) { return $null }
+    try {
+        $raw = $el.Current.ProcessId
+        if ($null -eq $raw) { return $null }
+        return [int]$raw
+    } catch {
+        return $null
+    }
+}
 function NodeIdentity($el) {
-    $pid = 0
-    try { $pid = [int]$el.Current.ProcessId } catch {}
-    return [pscustomobject]@{ Pid = $pid; Hwnd = (OwnerHwnd $el); Rect = (VisualRect $el) }
+    $nodeProcessId = ReadNodeProcessId $el
+    return [pscustomobject]@{ Pid = $nodeProcessId; Hwnd = (OwnerHwnd $el); Rect = (VisualRect $el) }
 }
 function SameIdentity($a, $b) {
     if ($null -eq $a -or $null -eq $b) { return $false }
+    if ($null -eq $a.Pid -or $null -eq $b.Pid) { return $false }
     if ($a.Pid -ne $b.Pid) { return $false }
     if ($a.Hwnd -ne $b.Hwnd) { return $false }
     $ra = $a.Rect; $rb = $b.Rect
     return ([Math]::Abs($ra.X - $rb.X) -le 2 -and [Math]::Abs($ra.Y - $rb.Y) -le 2 -and [Math]::Abs($ra.W - $rb.W) -le 2 -and [Math]::Abs($ra.H - $rb.H) -le 2)
+}
+if ($SelfTest) {
+    $rect = [pscustomobject]@{ X = 10; Y = 20; W = 30; H = 40 }
+    $left = [pscustomobject]@{ Pid = 111; Hwnd = 200; Rect = $rect }
+    $right = [pscustomobject]@{ Pid = 222; Hwnd = 200; Rect = $rect }
+    if (SameIdentity $left $right) { Write-Error 'different ProcessId must not merge'; exit 1 }
+    $same = [pscustomobject]@{ Pid = 111; Hwnd = 200; Rect = $rect }
+    if (-not (SameIdentity $left $same)) { Write-Error 'identical identity must merge'; exit 1 }
+    $missing = [pscustomobject]@{ Pid = $null; Hwnd = 200; Rect = $rect }
+    $shell = [pscustomobject]@{ Pid = $PID; Hwnd = 200; Rect = $rect }
+    if (SameIdentity $missing $shell) { Write-Error 'failed ProcessId must not impersonate $PID'; exit 1 }
+    if (SameIdentity $missing $missing) { Write-Error 'unknown ProcessId must not merge with itself'; exit 1 }
+    Write-Host 'W11MENU ui_selftest=ok'
+    exit 0
 }
 function FolderPathOf([int]$hwnd) {
     $shell = New-Object -ComObject Shell.Application

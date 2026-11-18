@@ -222,16 +222,28 @@ fn pending_path_count(q: &[(Option<String>, Vec<String>)]) -> usize {
     q.iter().map(|(_, p)| p.len()).sum()
 }
 
-fn push_pending(req: Option<String>, raw: Vec<String>) -> Result<(), String> {
-    let mut q = pending_queue().lock().unwrap_or_else(|e| e.into_inner());
+fn pending_overflow_error() -> String {
+    format!(
+        "收纳队列已满（最多 {PENDING_MAX_BATCHES} 批或 {MAX_COLLECT} 条路径），新的一批已被拒绝，已有队列未丢弃"
+    )
+}
+
+fn try_push_pending(
+    q: &mut Vec<(Option<String>, Vec<String>)>,
+    req: Option<String>,
+    raw: Vec<String>,
+) -> Result<(), String> {
     // 有限容量：批次数与路径总数都封顶。满时拒绝新批并返回明确错误，不丢弃已有队列。
-    if q.len() >= PENDING_MAX_BATCHES || pending_path_count(&q) + raw.len() > MAX_COLLECT {
-        return Err(format!(
-            "收纳队列已满（最多 {PENDING_MAX_BATCHES} 批或 {MAX_COLLECT} 条路径），新的一批已被拒绝，已有队列未丢弃"
-        ));
+    if q.len() >= PENDING_MAX_BATCHES || pending_path_count(q) + raw.len() > MAX_COLLECT {
+        return Err(pending_overflow_error());
     }
     q.push((req, raw));
     Ok(())
+}
+
+fn push_pending(req: Option<String>, raw: Vec<String>) -> Result<(), String> {
+    let mut q = pending_queue().lock().unwrap_or_else(|e| e.into_inner());
+    try_push_pending(&mut q, req, raw)
 }
 
 /// 冲刷暂存。正常启动里插件 init 时 state 已可 merge，队列应为空。
@@ -402,18 +414,17 @@ pub fn collect_finish(app: AppHandle, state: State<CollectState>, id: u64, handl
         std::thread::spawn(move || {
             // 等本次 invoke 回包送达后再销毁
             std::thread::sleep(Duration::from_millis(300));
-            if app.state::<CollectState>().snapshot().is_none()
-                && !crate::desktop::quick_window_needed(&app)
-            {
-                // 与关闭快速搜索同一路径：在主线程销毁
-                let handle = app.clone();
-                let destroy = move || crate::quick::destroy_window(&handle);
-                if let Err(e) = app.run_on_main_thread(destroy) {
-                    log::warn!("[collect] 销毁快速窗失败：{e}");
-                }
-            }
+            crate::quick::cleanup_collect_window(&app);
         });
     }
+}
+
+/// The callback only publishes the lifecycle decision; it must not do platform IO.
+pub(crate) fn commit_idle_cleanup<T>(
+    state: &CollectState,
+    commit: impl FnOnce() -> T,
+) -> Option<T> {
+    crate::quick_executor::commit_if_idle(&state.inner, |inner| inner.session.id == 0, commit)
 }
 
 /// 快速窗发起的收纳（拖入文件、收纳剪贴板）：路径只当数据处理，与右键参数同一套校验。
@@ -460,6 +471,57 @@ mod tests {
             })
             .collect();
         (dir, files)
+    }
+
+    #[test]
+    fn cleanup_checks_live_session_at_commit_not_when_scheduled() {
+        use std::sync::{Arc, Barrier};
+        let state = Arc::new(CollectState::default());
+        let scheduled = Arc::new(Barrier::new(2));
+        let merged = Arc::new(Barrier::new(2));
+        let worker_state = state.clone();
+        let a = scheduled.clone();
+        let b = merged.clone();
+        let cleanup = std::thread::spawn(move || {
+            assert!(worker_state.snapshot().is_none());
+            a.wait();
+            b.wait();
+            commit_idle_cleanup(&worker_state, || {
+                panic!("new collect must invalidate old cleanup")
+            })
+        });
+        scheduled.wait();
+        state.lock().merge(&[], 1);
+        merged.wait();
+        assert!(cleanup.join().unwrap().is_none());
+        assert!(state.snapshot().is_some());
+    }
+
+    #[test]
+    fn cleanup_publishes_destroy_before_allowing_a_new_merge() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc, Barrier,
+        };
+        let state = Arc::new(CollectState::default());
+        let queued = Arc::new(AtomicBool::new(false));
+        let attempt = Arc::new(Barrier::new(2));
+        let worker_state = state.clone();
+        let worker_queued = queued.clone();
+        let a = attempt.clone();
+        let merge = std::thread::spawn(move || {
+            a.wait();
+            let mut guard = worker_state.lock();
+            assert!(worker_queued.load(Ordering::SeqCst));
+            guard.merge(&[], 1);
+        });
+        assert!(commit_idle_cleanup(&state, || {
+            attempt.wait();
+            queued.store(true, Ordering::SeqCst);
+        })
+        .is_some());
+        merge.join().unwrap();
+        assert!(state.snapshot().is_some());
     }
 
     #[test]
@@ -557,21 +619,17 @@ mod tests {
         );
     }
 
-    fn clear_pending() {
-        pending_queue().lock().unwrap_or_else(|e| e.into_inner()).clear();
-    }
-
     #[test]
     fn pending_overflow_rejects_new_batch_and_keeps_existing() {
-        clear_pending();
+        let mut q = Vec::new();
         for i in 0..PENDING_MAX_BATCHES {
-            push_pending(Some(format!("r{i}")), vec![format!(r"D:\a{i}.txt")])
+            try_push_pending(&mut q, Some(format!("r{i}")), vec![format!(r"D:\a{i}.txt")])
                 .expect("under cap");
         }
-        let err = push_pending(Some("new".into()), vec![r"D:\new.txt".into()]).unwrap_err();
+        let err =
+            try_push_pending(&mut q, Some("new".into()), vec![r"D:\new.txt".into()]).unwrap_err();
         assert!(err.contains("已满"), "{err}");
         assert!(err.contains("已被拒绝"), "{err}");
-        let q = pending_queue().lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(q.len(), PENDING_MAX_BATCHES, "不得丢弃最旧批次");
         assert_eq!(q[0].0.as_deref(), Some("r0"));
         let last_req = format!("r{}", PENDING_MAX_BATCHES - 1);
@@ -579,26 +637,21 @@ mod tests {
             q[PENDING_MAX_BATCHES - 1].0.as_deref(),
             Some(last_req.as_str())
         );
-        drop(q);
         let receipt = MergeReceipt::rejected(err);
         assert!(!receipt.merge_committed && !receipt.pending);
         assert!(receipt.error.as_ref().unwrap().contains("已被拒绝"));
-        clear_pending();
     }
 
     #[test]
     fn pending_path_cap_rejects_without_dropping_queued_paths() {
-        clear_pending();
+        let mut q = Vec::new();
         let first = vec![r"D:\keep.txt".to_string(); 10];
-        push_pending(Some("keep".into()), first.clone()).unwrap();
+        try_push_pending(&mut q, Some("keep".into()), first).unwrap();
         let too_many = vec![r"D:\x.txt".to_string(); MAX_COLLECT];
-        let err = push_pending(Some("overflow".into()), too_many).unwrap_err();
+        let err = try_push_pending(&mut q, Some("overflow".into()), too_many).unwrap_err();
         assert!(err.contains("已满"), "{err}");
-        let q = pending_queue().lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(q.len(), 1);
         assert_eq!(q[0].0.as_deref(), Some("keep"));
         assert_eq!(q[0].1.len(), 10);
-        drop(q);
-        clear_pending();
     }
 }

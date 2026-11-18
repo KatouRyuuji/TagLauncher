@@ -37,6 +37,8 @@ describe("appStore", () => {
       shortcutsHelpOpen: false,
       previewItemId: null,
       missingReviewOpen: false,
+      relocateScanGen: 0,
+      relocateCandidates: [],
       tagFilterMode: "descendants",
       tagEditorItemId: null,
       batchAddTagOpen: false,
@@ -329,5 +331,26 @@ describe("appStore", () => {
     expect(useAppStore.getState().cabinets).toBe(before);
     useAppStore.getState().setCabinets([{ ...base, parent_id: 1 }]);
     expect(useAppStore.getState().cabinets[0].parent_id).toBe(1);
+  });
+});
+
+describe("relocate candidate generations", () => {
+  beforeEach(() => {
+    useAppStore.setState({ relocateScanGen: 0, relocateCandidates: [] });
+  });
+
+  it("自动扫描的过期结果不能覆盖更新的手动扫描", () => {
+    const autoGen = useAppStore.getState().beginRelocateScan();
+    const manualGen = useAppStore.getState().beginRelocateScan();
+    useAppStore.getState().applyRelocateScanResult(autoGen, [
+      { id: 1, missingPath: "D:\\old", paths: ["D:\\auto"] },
+    ]);
+    expect(useAppStore.getState().relocateCandidates).toEqual([]);
+    useAppStore.getState().applyRelocateScanResult(manualGen, [
+      { id: 2, missingPath: "D:\\new", paths: ["D:\\manual"] },
+    ]);
+    expect(useAppStore.getState().relocateCandidates).toEqual([
+      { id: 2, missingPath: "D:\\new", paths: ["D:\\manual"] },
+    ]);
   });
 });
