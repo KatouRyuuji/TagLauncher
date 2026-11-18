@@ -169,6 +169,8 @@ pub struct MergeReceipt {
     pub path_count: usize,
     pub invalid: u32,
     pub arrival: u64,
+    /// 新批次因队列已满被拒绝时的说明；成功/暂存时为 None。
+    pub error: Option<String>,
 }
 
 impl MergeReceipt {
@@ -180,6 +182,7 @@ impl MergeReceipt {
             path_count: inner.session.paths.len(),
             invalid: inner.session.invalid,
             arrival,
+            error: None,
         }
     }
 
@@ -191,6 +194,19 @@ impl MergeReceipt {
             path_count: 0,
             invalid: 0,
             arrival: 0,
+            error: None,
+        }
+    }
+
+    fn rejected(error: String) -> Self {
+        Self {
+            merge_committed: false,
+            pending: false,
+            session_id: 0,
+            path_count: 0,
+            invalid: 0,
+            arrival: 0,
+            error: Some(error),
         }
     }
 }
@@ -206,16 +222,16 @@ fn pending_path_count(q: &[(Option<String>, Vec<String>)]) -> usize {
     q.iter().map(|(_, p)| p.len()).sum()
 }
 
-fn push_pending(req: Option<String>, raw: Vec<String>) {
+fn push_pending(req: Option<String>, raw: Vec<String>) -> Result<(), String> {
     let mut q = pending_queue().lock().unwrap_or_else(|e| e.into_inner());
-    // 有限容量：批次数与路径总数都封顶。Builder.manage 后正常路径不应进队；
-    // 这是 state 尚未可取时的安全暂存，不是第二条交付通道。
-    while !q.is_empty()
-        && (q.len() >= PENDING_MAX_BATCHES || pending_path_count(&q) + raw.len() > MAX_COLLECT)
-    {
-        q.remove(0);
+    // 有限容量：批次数与路径总数都封顶。满时拒绝新批并返回明确错误，不丢弃已有队列。
+    if q.len() >= PENDING_MAX_BATCHES || pending_path_count(&q) + raw.len() > MAX_COLLECT {
+        return Err(format!(
+            "收纳队列已满（最多 {PENDING_MAX_BATCHES} 批或 {MAX_COLLECT} 条路径），新的一批已被拒绝，已有队列未丢弃"
+        ));
     }
     q.push((req, raw));
+    Ok(())
 }
 
 /// 冲刷暂存。正常启动里插件 init 时 state 已可 merge，队列应为空。
@@ -240,8 +256,10 @@ fn activate_on_show() -> bool {
 /// 返回本次 merge 的 receipt；CollectState 尚未注册时不丢弃，暂存待 flush。
 pub fn submit(app: &AppHandle, raw: Vec<String>, req: Option<&str>) -> MergeReceipt {
     let Some(state) = app.try_state::<CollectState>() else {
-        push_pending(req.map(str::to_string), raw);
-        return MergeReceipt::pending();
+        return match push_pending(req.map(str::to_string), raw) {
+            Ok(()) => MergeReceipt::pending(),
+            Err(error) => MergeReceipt::rejected(error),
+        };
     };
     let (arrival, receipt) = {
         let mut inner = state.lock();
@@ -537,5 +555,49 @@ mod tests {
             json,
             r#"{"action":"cabinet","tagIds":[],"cabinetId":3,"folderMode":null}"#
         );
+    }
+
+    fn clear_pending() {
+        pending_queue().lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+
+    #[test]
+    fn pending_overflow_rejects_new_batch_and_keeps_existing() {
+        clear_pending();
+        for i in 0..PENDING_MAX_BATCHES {
+            push_pending(Some(format!("r{i}")), vec![format!(r"D:\a{i}.txt")])
+                .expect("under cap");
+        }
+        let err = push_pending(Some("new".into()), vec![r"D:\new.txt".into()]).unwrap_err();
+        assert!(err.contains("已满"), "{err}");
+        assert!(err.contains("已被拒绝"), "{err}");
+        let q = pending_queue().lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(q.len(), PENDING_MAX_BATCHES, "不得丢弃最旧批次");
+        assert_eq!(q[0].0.as_deref(), Some("r0"));
+        assert_eq!(
+            q[PENDING_MAX_BATCHES - 1].0.as_deref(),
+            Some(&format!("r{}", PENDING_MAX_BATCHES - 1))
+        );
+        drop(q);
+        let receipt = MergeReceipt::rejected(err);
+        assert!(!receipt.merge_committed && !receipt.pending);
+        assert!(receipt.error.as_ref().unwrap().contains("已被拒绝"));
+        clear_pending();
+    }
+
+    #[test]
+    fn pending_path_cap_rejects_without_dropping_queued_paths() {
+        clear_pending();
+        let first = vec!["D:\keep.txt".to_string(); 10];
+        push_pending(Some("keep".into()), first.clone()).unwrap();
+        let too_many = vec!["D:\x.txt".to_string(); MAX_COLLECT];
+        let err = push_pending(Some("overflow".into()), too_many).unwrap_err();
+        assert!(err.contains("已满"), "{err}");
+        let q = pending_queue().lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(q.len(), 1);
+        assert_eq!(q[0].0.as_deref(), Some("keep"));
+        assert_eq!(q[0].1.len(), 10);
+        drop(q);
+        clear_pending();
     }
 }

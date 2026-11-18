@@ -175,6 +175,8 @@ pub fn record_merge(req: Option<&str>, receipt: &MergeReceipt) {
         "merge_committed"
     } else if receipt.pending {
         "merge_pending"
+    } else if receipt.error.is_some() {
+        "merge_rejected"
     } else {
         "submit_skipped"
     };
@@ -190,6 +192,7 @@ pub fn record_merge(req: Option<&str>, receipt: &MergeReceipt) {
         "path_count": receipt.path_count,
         "invalid": receipt.invalid,
         "arrival": receipt.arrival,
+        "error": receipt.error,
     }));
 }
 
