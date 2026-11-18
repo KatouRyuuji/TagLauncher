@@ -84,7 +84,8 @@ export async function getItemsByIds(ids: number[], includeVisuals = true): Promi
   return invokeCmd("get_items_by_ids", { ids, includeVisuals });
 }
 
-/** 主窗取页：后端从内存索引按 ID 组装（不含自动图标），按请求顺序返回，已不存在的略去 */
+/** 主窗取页：后端从内存索引按 ID 组装（不含自动图标），按请求顺序返回，已不存在的略去。
+ *  warm=true：只放行卡片直接显示的路径（可视页、邻页预取、空闲补齐都应传 true）。 */
 export async function getItemsPage(ids: number[], warm = false): Promise<ItemWithTags[]> {
   return invokeCmd("get_items_page", { ids, warm });
 }

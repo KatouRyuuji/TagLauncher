@@ -63,14 +63,46 @@ def explorer_menu(folder: Path, name: str, shot: Path, tag: str, click: bool = F
         args.append("-Click")
     r = subprocess.run(args, capture_output=True, timeout=180)
     out = r.stdout.decode("utf-8", "replace")
+    err = r.stderr.decode("utf-8", "replace")
     prefix = f"W11MENU ui_{tag}_"
-    res = {}
+    res = {"returncode": str(r.returncode)}
     for line in out.splitlines():
         if line.startswith(prefix):
             k, _, v = line[len(prefix):].partition("=")
             res[k] = v
+    if err.strip():
+        res["stderr"] = err.strip().replace("\n", " ")[:500]
+        print(f"WIN11_MENU_UI_STDERR {tag} rc={r.returncode} {res['stderr']}")
     print(f"WIN11_MENU_UI {tag} " + " ".join(f"{k}={v[:300]}" for k, v in res.items()))
     return res
+
+
+def known_local_appdata() -> Path | None:
+    """SHGetKnownFolderPath 的 LocalAppData，不用进程环境 LOCALAPPDATA（沙箱可能不同）。"""
+    r = ps("[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)")
+    p = r.stdout.decode("utf-8", "replace").strip()
+    return Path(p) if p else None
+
+
+def delivery_log_text(limit: int = 40) -> str:
+    """只读交付 jsonl / 状态行（内容为哈希与 PID，不含用户路径原文）。"""
+    base = known_local_appdata()
+    if not base:
+        return "known_local_appdata=missing"
+    chunks = []
+    for name in ("win11-menu-delivery.jsonl", "win11-menu-status.txt"):
+        path = base / "TagLauncher" / name
+        if not path.is_file():
+            chunks.append(f"{name}=missing")
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as e:
+            chunks.append(f"{name}=err:{e}")
+            continue
+        tail = lines[-limit:]
+        chunks.append(f"{name} count={len(lines)} tail=" + " | ".join(tail))
+    return " ; ".join(chunks)
 
 
 def file_unlocked(path: Path) -> bool:

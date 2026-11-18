@@ -103,8 +103,9 @@ pub fn allow_items(app: &AppHandle, items: &[ItemWithTags]) {
 }
 
 /// 卡片直接显示的路径：自定义图标、图片对象本身（缩略图）。其余（文件夹递归、普通文件）
-/// 留给预览命令按需放行——小视图空闲补齐（get_items_page warm）一次取上千条，
-/// 每条一个 glob（约 2 KB 起，另有规范化副本）会让主进程常驻多出几十 MB。
+/// 留给预览命令按需放行。列表取页（get_items_page warm=true：可视 / 邻页 / 空闲补齐）都走这里：
+/// 空闲补齐一次可取上千条，每条一个 glob（约 2 KB 起，另有规范化副本）会让主进程常驻多出几十 MB；
+/// 大视图跳转每次缺页也会对几十条新路径 is_dir 并编译 glob，加在滚动取页往返上。
 pub fn entries_for_card(
     path: &str,
     is_missing: bool,

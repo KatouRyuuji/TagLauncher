@@ -1,5 +1,6 @@
 mod collect;
 mod collect_forward;
+mod menu_delivery;
 mod commands;
 mod data_sync;
 /// F18 托盘 / 全局快捷键 / 关闭行为（仅 GUI 使用）
@@ -202,8 +203,17 @@ pub fn run() {
     // Windows 前台锁拦下（只放行下一次 SetForegroundWindow，不常驻）。
     desktop::allow_foreground_handoff();
     // 右键多选每项一个进程：已有实例时在建运行时之前直接转发并退出（见 collect_forward.rs）
-    if collect_forward::try_forward(&std::env::args().skip(1).collect::<Vec<_>>()) {
-        std::process::exit(0);
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if collect_forward::is_collect_launch(&args) {
+            menu_delivery::record_child_start(&args);
+            match collect_forward::try_forward(&args) {
+                // 窗口过程返回 1 才是 ACK。发送失败不再退回插件（2.5.3 失败仍 exit 0，会冒充成功）。
+                collect_forward::ForwardOutcome::Delivered => std::process::exit(0),
+                collect_forward::ForwardOutcome::Undelivered => std::process::exit(2),
+                collect_forward::ForwardOutcome::Skipped => {}
+            }
+        }
     }
     tauri::Builder::default()
         // 须为首个插件：第二个实例在初始化其余部分前即退出，只把已有主窗口唤到前台
@@ -467,7 +477,16 @@ pub fn run() {
             win11_menu::reconcile_on_startup(app.handle().clone());
             // 由右键菜单/发送到启动的首个实例：后台启动（不显示主窗），只弹快速窗收纳
             if let Some(paths) = collect::collect_args(std::env::args().skip(1)) {
+                let argv: Vec<String> = std::env::args().skip(1).collect();
+                let req = menu_delivery::request_id_from_args(&argv);
                 collect::submit(app.handle(), paths);
+                let snap = app.handle().try_state::<collect::CollectState>().and_then(|s| s.snapshot());
+                menu_delivery::record_after_submit(
+                    req.as_deref(),
+                    snap.is_some(),
+                    snap.as_ref().map(|s| s.id).unwrap_or(0),
+                    snap.as_ref().map(|s| s.paths.len()).unwrap_or(0),
+                );
             }
             app.manage(services::watch_runtime::FolderWatchHub::new());
             app.manage(services::reconcile_runtime::ReconcileScheduler::new());

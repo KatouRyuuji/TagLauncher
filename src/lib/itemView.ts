@@ -19,10 +19,15 @@ export const MAX_CACHED = 10000;
 /** 空闲补齐每批条数 */
 export const WARM_BATCH = 500;
 
-/** kind 让取数方区分空闲补齐（warm 只放行卡片直接显示的 asset 路径，见 get_items_page） */
+/** kind 让取数方区分取页用途：visible/ahead/warm 只放行卡片直接显示的 asset 路径，load 走完整放行（见 get_items_page）。 */
 export type FetchItems = (ids: number[], kind: FetchKind) => Promise<ItemWithTags[]>;
-/** visible：可视区间缺页；ahead：相邻页预取；load：按 ID 取（批量操作等） */
+/** visible：可视区间缺页；ahead：相邻页预取；warm：小视图空闲补齐；load：按 ID 取（批量操作等） */
 export type FetchKind = "visible" | "ahead" | "warm" | "load";
+
+/** 列表跳转/预取/空闲补齐的取页只放行卡片要显示的路径。完整目录/文件放行留给预览命令按需做，避免每次缺页都对几十条路径做 is_dir 并编译 asset glob（这发生在滚动跳转的取页往返里）。 */
+export function pageUsesCardAssetScope(kind: FetchKind): boolean {
+  return kind !== "load";
+}
 
 export interface ItemStoreOptions {
   maxCached?: number;

@@ -48,7 +48,7 @@ $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
 Log 'arch' $arch
 $vcvars = Join-Path $vs $(if ($arch -eq 'arm64') { 'VC\Auxiliary\Build\vcvarsarm64.bat' } else { 'VC\Auxiliary\Build\vcvars64.bat' })
 Push-Location $Work
-cmd /c "`"$vcvars`" >nul && cl /nologo /LD /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE /DTL_MENU_PROBE `"$Here\tl_menu.cpp`" /Fe:tl_menu.dll /link /DEF:`"$Here\tl_menu.def`" shlwapi.lib shell32.lib ole32.lib oleaut32.lib user32.lib && cl /nologo /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE `"$Here\child_probe.cpp`" /Fe:child_probe.exe /link shell32.lib ole32.lib kernel32.lib" | Out-Host
+cmd /c "`"$vcvars`" >nul && cl /nologo /LD /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE /DTL_MENU_PROBE `"$Here\tl_menu.cpp`" /Fe:tl_menu.dll /link /DEF:`"$Here\tl_menu.def`" shlwapi.lib shell32.lib ole32.lib oleaut32.lib user32.lib bcrypt.lib advapi32.lib && cl /nologo /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE `"$Here\child_probe.cpp`" /Fe:child_probe.exe /link shell32.lib ole32.lib kernel32.lib" | Out-Host
 Pop-Location
 Log 'dll_built' (Test-Path (Join-Path $Work 'tl_menu.dll'))
 $res = Join-Path $ext 'win11-menu'

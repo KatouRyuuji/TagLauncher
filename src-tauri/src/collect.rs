@@ -377,6 +377,11 @@ mod tests {
             Some(vec!["D:\\a b.txt".to_string(), "--show".to_string()])
         );
         assert_eq!(collect_args(["--collect"]), Some(vec![]));
+        // --tl-menu-req 必须在 --collect 之前；之后的全部参数仍只是路径数据
+        assert_eq!(
+            collect_args(["--tl-menu-req", "abc123", "--collect", r"D:\a.txt"]),
+            Some(vec![r"D:\a.txt".to_string()])
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 // TagLauncher Win11 一级右键菜单：IExplorerCommand 进程外（dllhost 代理）COM 服务器。
 // 由未签名稀疏包（Publisher 含 Unsigned OID）注册，不需要任何证书。
-// Invoke：把选中路径交给 tag-launcher.exe（--collect <paths>），与经典菜单/发送到同一入口。
+// Invoke：把选中路径交给 tag-launcher.exe（--tl-menu-req <id> --collect <paths>），与经典菜单/发送到同一入口。
 // TL_MENU_PROBE 构建（CI 探针）额外把路径写入 %LOCALAPPDATA%\TagLauncher\win11-menu-invoked.txt 与公共目录。
 #include <windows.h>
 #include <shobjidl_core.h>
@@ -10,6 +10,9 @@
 #include <shldisp.h>
 #include <new>
 #include <string>
+#include <bcrypt.h>
+#pragma comment(lib, "bcrypt.lib")
+#pragma comment(lib, "advapi32.lib")
 
 // {6F3B7A51-2C1E-4E8B-9A57-3D8E1B4C9F21}
 static const CLSID CLSID_TagLauncherMenu = {0x6f3b7a51, 0x2c1e, 0x4e8b, {0x9a, 0x57, 0x3d, 0x8e, 0x1b, 0x4c, 0x9f, 0x21}};
@@ -98,74 +101,173 @@ static std::wstring DecodeHostContents(HANDLE h) {
     return out;
 }
 
-static std::wstring ReadHostExe(const std::wstring& dir) {
-    std::wstring file = dir + L"\\tl_menu.host";
-    HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h != INVALID_HANDLE_VALUE) return DecodeHostContents(h);
-    // DLL 模块目录可能是包缓存：回退读注册时同步写入的 LocalAppData 指针（与 status 日志同目录）。
+
+static std::wstring KnownTagLauncherDir() {
     PWSTR base = nullptr;
     if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &base))) return {};
-    std::wstring fallback = std::wstring(base) + L"\\TagLauncher\\tl_menu.host";
+    std::wstring dir = std::wstring(base) + L"\\TagLauncher";
     CoTaskMemFree(base);
-    h = CreateFileW(fallback.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (!dir.empty()) CreateDirectoryW(dir.c_str(), nullptr);
+    return dir;
+}
+
+static std::wstring ReadHostFile(const std::wstring& file) {
+    HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) return {};
     return DecodeHostContents(h);
 }
 
-static std::wstring FindExe() {
-    std::wstring dir = ModuleDir();
-    std::wstring same = dir + L"\\tag-launcher.exe";
-    std::wstring resolved;
-    if (IsCanonicalHost(same, resolved)) return resolved;
-    wchar_t parent[MAX_PATH * 4] = {};
-    lstrcpynW(parent, dir.c_str(), ARRAYSIZE(parent));
-    PathRemoveFileSpecW(parent);
-    std::wstring up = std::wstring(parent) + L"\\tag-launcher.exe";
-    if (IsCanonicalHost(up, resolved)) return resolved;
-    std::wstring hosted = ReadHostExe(dir);
-    if (IsCanonicalHost(hosted, resolved)) return resolved;
-    return std::wstring();
+static DWORD IntegrityRid(HANDLE process) {
+    HANDLE tok = nullptr;
+    if (!OpenProcessToken(process, TOKEN_QUERY, &tok)) return 0;
+    DWORD n = 0;
+    GetTokenInformation(tok, TokenIntegrityLevel, nullptr, 0, &n);
+    if (n == 0 || n > 256) { CloseHandle(tok); return 0; }
+    BYTE buf[256];
+    if (!GetTokenInformation(tok, TokenIntegrityLevel, buf, n, &n)) { CloseHandle(tok); return 0; }
+    CloseHandle(tok);
+    auto* til = reinterpret_cast<TOKEN_MANDATORY_LABEL*>(buf);
+    if (!til->Label.Sid) return 0;
+    UCHAR count = *GetSidSubAuthorityCount(til->Label.Sid);
+    if (count == 0) return 0;
+    return *GetSidSubAuthority(til->Label.Sid, count - 1);
 }
 
-// 只写结果码，不写路径，避免泄漏用户文件位置。
+static std::string Sha256Raw(const void* data, ULONG len) {
+    BCRYPT_ALG_HANDLE alg = nullptr;
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    std::string hex;
+    if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0) != 0) return {};
+    if (BCryptCreateHash(alg, &hash, nullptr, 0, nullptr, 0, 0) == 0) {
+        if (BCryptHashData(hash, (PUCHAR)data, len, 0) == 0) {
+            UCHAR dig[32];
+            if (BCryptFinishHash(hash, dig, 32, 0) == 0) {
+                hex.resize(64);
+                static const char* k = "0123456789abcdef";
+                for (int i = 0; i < 32; i++) {
+                    hex[i * 2] = k[dig[i] >> 4];
+                    hex[i * 2 + 1] = k[dig[i] & 0xf];
+                }
+            }
+        }
+        BCryptDestroyHash(hash);
+    }
+    BCryptCloseAlgorithmProvider(alg, 0);
+    return hex;
+}
+
+static std::string FileSha256(const std::wstring& path) {
+    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return {};
+    std::string all;
+    char buf[8192];
+    DWORD n = 0;
+    while (ReadFile(h, buf, sizeof(buf), &n, nullptr) && n) all.append(buf, buf + n);
+    CloseHandle(h);
+    return Sha256Raw(all.data(), (ULONG)all.size());
+}
+
+static std::string SaltedPathHash(const std::wstring& req, const std::wstring& path) {
+    std::wstring key = path;
+    for (auto& c : key) if (c == L'/') c = L'\\';
+    while (key.size() > 1 && (key.back() == L'\\' )) key.pop_back();
+    for (auto& c : key) if (c >= L'A' && c <= L'Z') c = (wchar_t)(c - L'A' + L'a');
+    std::wstring src = req + L":" + key;
+    int n = WideCharToMultiByte(CP_UTF8, 0, src.c_str(), (int)src.size(), nullptr, 0, nullptr, nullptr);
+    if (n <= 0) return {};
+    std::string utf8((size_t)n, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, src.c_str(), (int)src.size(), utf8.data(), n, nullptr, nullptr);
+    return Sha256Raw(utf8.data(), (ULONG)utf8.size());
+}
+
+static std::wstring NewRequestId() {
+    GUID g{};
+    if (FAILED(CoCreateGuid(&g))) {
+        wchar_t b[48];
+        wsprintfW(b, L"%08X%08X", GetCurrentProcessId(), GetTickCount());
+        return b;
+    }
+    wchar_t b[33];
+    wsprintfW(b, L"%08X%04X%04X%02X%02X%02X%02X%02X%02X%02X%02X",
+        g.Data1, g.Data2, g.Data3, g.Data4[0], g.Data4[1], g.Data4[2], g.Data4[3],
+        g.Data4[4], g.Data4[5], g.Data4[6], g.Data4[7]);
+    return b;
+}
+
+// 只用显式宽字符数转换（不含 NUL）。WideCharToMultiByte(..., -1, ...) 的字节数含末尾 NUL，
+// 若按 n-1 分配却仍传 -1，转换因容量不足失败，写出的便是预填的 NUL。
+static bool WideToUtf8(const wchar_t* line, std::string& utf8) {
+    int wlen = lstrlenW(line);
+    if (wlen <= 0) return false;
+    int nbytes = WideCharToMultiByte(CP_UTF8, 0, line, wlen, nullptr, 0, nullptr, nullptr);
+    if (nbytes <= 0) return false;
+    utf8.assign((size_t)nbytes, '\0');
+    int written = WideCharToMultiByte(CP_UTF8, 0, line, wlen, utf8.data(), nbytes, nullptr, nullptr);
+    if (written <= 0) { utf8.clear(); return false; }
+    utf8.resize((size_t)written);
+    return true;
+}
+
+// 只写结果码与哈希，不写路径，避免泄漏用户文件位置。
 static void AppendStatus(const wchar_t* line) {
-    PWSTR base = nullptr;
-    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &base))) return;
-    std::wstring dir = std::wstring(base) + L"\\TagLauncher";
-    CoTaskMemFree(base);
-    CreateDirectoryW(dir.c_str(), nullptr);
+    std::wstring dir = KnownTagLauncherDir();
+    if (dir.empty()) return;
     std::wstring file = dir + L"\\win11-menu-status.txt";
     HANDLE h = CreateFileW(file.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) return;
-    int n = WideCharToMultiByte(CP_UTF8, 0, line, -1, nullptr, 0, nullptr, nullptr);
-    if (n <= 1) { CloseHandle(h); return; }
-    std::string utf8((size_t)n - 1, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, line, -1, utf8.data(), n - 1, nullptr, nullptr);
+    std::string utf8;
+    if (!WideToUtf8(line, utf8)) { CloseHandle(h); return; }
     DWORD written = 0;
     WriteFile(h, utf8.data(), (DWORD)utf8.size(), &written, nullptr);
     CloseHandle(h);
 }
 
-static void AppendMarker(const std::wstring& text) {
-    PWSTR base = nullptr;
-    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &base))) return;
-    std::wstring dir = std::wstring(base) + L"\\TagLauncher";
-    CoTaskMemFree(base);
-    CreateDirectoryW(dir.c_str(), nullptr);
-    std::wstring file = dir + L"\\win11-menu-invoked.txt";
+static void AppendDelivery(const std::wstring& line) {
+    std::wstring dir = KnownTagLauncherDir();
+    if (dir.empty()) return;
+    std::wstring file = dir + L"\\win11-menu-delivery.jsonl";
     HANDLE h = CreateFileW(file.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) return;
-    int n = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.size(), nullptr, 0, nullptr, nullptr);
-    std::string utf8(n, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.size(), utf8.data(), n, nullptr, nullptr);
-    DWORD written = 0;
-    WriteFile(h, utf8.data(), (DWORD)utf8.size(), &written, nullptr);
+    std::string utf8;
+    if (WideToUtf8((line + L"\n").c_str(), utf8)) {
+        DWORD written = 0;
+        WriteFile(h, utf8.data(), (DWORD)utf8.size(), &written, nullptr);
+    }
     CloseHandle(h);
-#ifdef TL_MENU_PROBE
-    // 探针构建：额外写到不受 AppData 虚拟化影响的公共目录，用来判定 dllhost 是否被虚拟化
-    HANDLE p = CreateFileW(L"C:\\Users\\Public\\tl-menu-invoked.txt", FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (p != INVALID_HANDLE_VALUE) { WriteFile(p, utf8.data(), (DWORD)utf8.size(), &written, nullptr); CloseHandle(p); }
-#endif
+}
+
+static std::wstring FindExe(const wchar_t** source = nullptr, std::wstring* trace = nullptr) {
+    std::wstring dir = ModuleDir();
+    struct Cand { std::wstring path; const wchar_t* src; };
+    Cand cands[4];
+    int n = 0;
+    cands[n++] = { dir + L"\\tag-launcher.exe", L"module_same" };
+    wchar_t parent[MAX_PATH * 4] = {};
+    lstrcpynW(parent, dir.c_str(), ARRAYSIZE(parent));
+    PathRemoveFileSpecW(parent);
+    if (parent[0] != 0) cands[n++] = { std::wstring(parent) + L"\\tag-launcher.exe", L"module_parent" };
+    std::wstring hostMod = ReadHostFile(dir + L"\\tl_menu.host");
+    if (!hostMod.empty()) cands[n++] = { hostMod, L"host_module" };
+    std::wstring known = KnownTagLauncherDir();
+    if (!known.empty()) {
+        std::wstring hostKnown = ReadHostFile(known + L"\\tl_menu.host");
+        if (!hostKnown.empty()) cands[n++] = { hostKnown, L"host_knownfolder" };
+    }
+    std::wstring picked;
+    const wchar_t* pickedSrc = L"";
+    std::wstring tr;
+    for (int i = 0; i < n; i++) {
+        std::wstring resolved;
+        bool exists = ExeExists(cands[i].path);
+        bool ok = IsCanonicalHost(cands[i].path, resolved);
+        if (!tr.empty()) tr += L" ";
+        tr += cands[i].src;
+        tr += ok ? L"=ok" : (exists ? L"=bad" : L"=missing");
+        if (ok && picked.empty()) { picked = resolved; pickedSrc = cands[i].src; }
+    }
+    if (source) *source = pickedSrc;
+    if (trace) *trace = tr;
+    return picked;
 }
 
 // 经桌面 explorer 启动：子进程挂在 explorer 下，不继承本 dllhost 的包标识与 AppData 虚拟化。
@@ -252,14 +354,31 @@ public:
     IFACEMETHODIMP GetFlags(EXPCMDFLAGS* flags) override { *flags = ECF_DEFAULT; return S_OK; }
     IFACEMETHODIMP EnumSubCommands(IEnumExplorerCommand** e) override { *e = nullptr; return E_NOTIMPL; }
     IFACEMETHODIMP Invoke(IShellItemArray* items, IBindCtx*) override {
-        if (!items) return S_OK;
+        std::wstring req = NewRequestId();
+        DWORD il = IntegrityRid(GetCurrentProcess());
+        DWORD session = 0;
+        ProcessIdToSessionId(GetCurrentProcessId(), &session);
+        if (!items) {
+            AppendStatus((L"req=" + req + L" event=invoke items=null\n").c_str());
+            AppendDelivery(L"{\"req\":\"" + req + L"\",\"event\":\"invoke\",\"items\":\"null\"}");
+            return S_OK;
+        }
         DWORD count = 0;
-        items->GetCount(&count);
-        std::wstring args = L"--collect";
+        HRESULT countHr = items->GetCount(&count);
+        if (FAILED(countHr)) {
+            wchar_t line[256];
+            wsprintfW(line, L"req=%s event=invoke items_hr=0x%08X\n", req.c_str(), (unsigned)countHr);
+            AppendStatus(line);
+            return countHr;
+        }
+        std::wstring args = L"--tl-menu-req " + req + L" --collect";
         std::wstring marker;
+        DWORD named = 0;
+        std::wstring pathHashes;
         for (DWORD i = 0; i < count; ++i) {
             IShellItem* item = nullptr;
-            if (FAILED(items->GetItemAt(i, &item))) continue;
+            HRESULT ihr = items->GetItemAt(i, &item);
+            if (FAILED(ihr) || !item) continue;
             PWSTR path = nullptr;
             if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
                 args += L" \"";
@@ -267,6 +386,10 @@ public:
                 args += L"\"";
                 marker += path;
                 marker += L"\n";
+                std::string h = SaltedPathHash(req, path);
+                if (!pathHashes.empty()) pathHashes += L",";
+                for (char c : h) pathHashes += (wchar_t)(unsigned char)c;
+                named++;
                 CoTaskMemFree(path);
             }
             item->Release();
@@ -274,22 +397,44 @@ public:
 #ifdef TL_MENU_PROBE
         AppendMarker(marker);
 #endif
-        std::wstring exe = FindExe();
+        const wchar_t* src = L"";
+        std::wstring trace;
+        std::wstring exe = FindExe(&src, &trace);
+        wchar_t head[1024];
+        wsprintfW(head, L"req=%s event=invoke dllhost_pid=%u il=%u session=%u count=%u named=%u items_hr=0x%08X",
+            req.c_str(), GetCurrentProcessId(), il, session, count, named, (unsigned)countHr);
         if (exe.empty()) {
-            AppendStatus(L"find_exe=0\n");
+            AppendStatus((std::wstring(head) + L" find_exe=0 find_trace=" + trace + L"\n").c_str());
+            AppendDelivery(L"{\"req\":\"" + req + L"\",\"event\":\"invoke\",\"find_exe\":0}");
 #ifdef TL_MENU_PROBE
             AppendMarker(L"find_exe=0\n");
 #endif
             return E_FAIL;
         }
-        AppendStatus(L"find_exe=1\n");
+        std::string exeHash = FileSha256(exe);
+        std::wstring exeHashW;
+        for (char c : exeHash) exeHashW += (wchar_t)(unsigned char)c;
+        AppendStatus((std::wstring(head) + L" find_exe=1 find_src=" + src + L" find_trace=" + trace
+            + L" exe_hash=" + exeHashW + L"\n").c_str());
         // 探针与产品同一条启动路径（先经 explorer，失败再直接启动），避免双启打到不同实例。
         HRESULT viaHr = ShellExecuteViaExplorer(exe, args);
+        HRESULT launchHr = viaHr;
+        const wchar_t* via = L"explorer";
+        INT_PTR shell = 0;
         if (FAILED(viaHr)) {
-            ShellExecuteW(nullptr, L"open", exe.c_str(), args.c_str(), nullptr, SW_SHOWNORMAL);
+            SetLastError(0);
+            HINSTANCE r = ShellExecuteW(nullptr, L"open", exe.c_str(), args.c_str(), nullptr, SW_SHOWNORMAL);
+            shell = (INT_PTR)r;
+            via = L"direct_fallback";
+            if (shell <= 32) {
+                DWORD err = shell == 0 ? GetLastError() : (DWORD)shell;
+                launchHr = HRESULT_FROM_WIN32(err ? err : (DWORD)shell);
+            } else {
+                launchHr = S_OK;
+            }
 #ifdef TL_MENU_PROBE
             wchar_t note[80];
-            wsprintfW(note, L"via=direct_fallback hr=0x%08X\n", (unsigned)viaHr);
+            wsprintfW(note, L"via=direct_fallback hr=0x%08X shell=%d\n", (unsigned)viaHr, (int)shell);
             AppendMarker(note);
 #endif
         } else {
@@ -297,7 +442,17 @@ public:
             AppendMarker(L"via=explorer\n");
 #endif
         }
-        return S_OK;
+        wchar_t tail[256];
+        wsprintfW(tail, L"req=%s event=launch via=%s via_hr=0x%08X shell=%d launch_hr=0x%08X\n",
+            req.c_str(), via, (unsigned)viaHr, (int)shell, (unsigned)launchHr);
+        AppendStatus(tail);
+        AppendDelivery(L"{\"req\":\"" + req + L"\",\"event\":\"launch\",\"via\":\"" + via
+            + L"\",\"via_hr\":" + std::to_wstring((unsigned)viaHr)
+            + L",\"shell\":" + std::to_wstring((int)shell)
+            + L",\"launch_hr\":" + std::to_wstring((unsigned)launchHr)
+            + L",\"find_src\":\"" + src + L"\",\"exe_hash\":\"" + exeHashW + L"\"}");
+        // 启动已提交不是「本实例已收到」。direct fallback 失败必须把错误传回，不能仍报 S_OK。
+        return launchHr;
     }
 };
 

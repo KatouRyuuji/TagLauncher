@@ -7,6 +7,9 @@
 //! 走同一个 `handle_second_instance` 回调。找不到窗口（首个实例还没起来、或没有在运行）
 //! 时什么也不做，照常进入插件路径。
 //!
+//! 找到窗口但 SendMessageTimeout 未得到窗口过程返回 1 时，不再退回插件：2.5.3 发送失败
+//! 仍 exit 0，会把「子进程消失」冒充成已交付。调用方应以非 0 退出。不延长超时、不二次启动。
+//!
 //! 窗口类名 / 标题 / dwData / 数据格式与 tauri-plugin-single-instance 2.5（未开 semver 特性）一致，
 //! 由单元测试锁定 identifier 与 tauri.conf.json 相同；插件升级时需核对。
 
@@ -31,26 +34,37 @@ pub fn is_collect_launch(args: &[String]) -> bool {
     args.iter().any(|a| a == crate::collect::COLLECT_ARG)
 }
 
-/// 已有实例在运行时把本进程参数交给它并返回 true（调用方随即退出）。
-pub fn try_forward(args: &[String]) -> bool {
+/// 快速转发结果。只有窗口过程返回 1 才是 Delivered；找到窗口但没拿到 ACK 是 Undelivered，
+/// 调用方应以非 0 退出，不再退回单实例插件（2.5.3 发送失败仍 exit 0，不能当回执）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForwardOutcome {
+    Skipped,
+    Delivered,
+    Undelivered,
+}
+
+/// 已有实例在运行时把本进程参数交给它。无窗口则 Skipped（继续启动/插件路径）。
+pub fn try_forward(args: &[String]) -> ForwardOutcome {
     if !is_collect_launch(args) {
-        return false;
+        return ForwardOutcome::Skipped;
     }
     #[cfg(windows)]
     {
-        win::forward()
+        win::forward(args)
     }
     #[cfg(not(windows))]
     {
-        false
+        let _ = args;
+        ForwardOutcome::Skipped
     }
 }
 
 #[cfg(windows)]
 mod win {
+    use windows_sys::Win32::Foundation::{GetLastError, SetLastError, BOOL, HWND, LPARAM};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        AllowSetForegroundWindow, FindWindowW, GetWindowThreadProcessId, SendMessageTimeoutW,
-        SMTO_NORMAL, WM_COPYDATA,
+        AllowSetForegroundWindow, EnumWindows, GetClassNameW, GetWindowTextW,
+        GetWindowThreadProcessId, SendMessageTimeoutW, SMTO_NORMAL, WM_COPYDATA,
     };
 
     /// windows-sys 的 COPYDATASTRUCT 在 DataExchange 特性里；布局固定，这里就地声明
@@ -65,42 +79,111 @@ mod win {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
-    pub fn forward() -> bool {
+    fn wide_eq(buf: &[u16], expected: &[u16]) -> bool {
+        let e = expected.split(|&c| c == 0).next().unwrap_or(&[]);
+        let b = buf.split(|&c| c == 0).next().unwrap_or(&[]);
+        b == e
+    }
+
+    struct EnumCtx {
+        class: Vec<u16>,
+        title: Vec<u16>,
+        hwnds: Vec<HWND>,
+    }
+
+    unsafe extern "system" fn enum_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let ctx = &mut *(lparam as *mut EnumCtx);
+        let mut class = [0u16; 256];
+        let mut title = [0u16; 256];
+        GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32);
+        GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
+        if wide_eq(&class, &ctx.class) && wide_eq(&title, &ctx.title) {
+            ctx.hwnds.push(hwnd);
+        }
+        1
+    }
+
+    pub fn forward(args: &[String]) -> super::ForwardOutcome {
+        let req = crate::menu_delivery::request_id_from_args(args);
         let (class, title) = super::window_names(super::IDENTIFIER);
-        let (class, title) = (wide(&class), wide(&title));
-        // SAFETY：参数均为本函数内有效的以 0 结尾宽字符串 / 栈上结构；SendMessageTimeout 同步返回后才释放
+        let mut ctx = EnumCtx {
+            class: wide(&class),
+            title: wide(&title),
+            hwnds: Vec::new(),
+        };
+        // SAFETY：枚举回调只在 EnumWindows 返回前访问本栈上的 ctx。
         unsafe {
-            let hwnd = FindWindowW(class.as_ptr(), title.as_ptr());
-            if hwnd.is_null() {
-                return false;
+            EnumWindows(Some(enum_cb), &mut ctx as *mut EnumCtx as LPARAM);
+        }
+        if ctx.hwnds.is_empty() {
+            crate::menu_delivery::record(&serde_json::json!({
+                "event": "copydata",
+                "req": req,
+                "child_pid": std::process::id(),
+                "child_il": crate::menu_delivery::integrity_rid(std::process::id()),
+                "hwnds": 0,
+                "ack": false,
+            }));
+            return super::ForwardOutcome::Skipped;
+        }
+
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let argv: Vec<String> = std::env::args_os()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let data = super::payload(&cwd.to_string_lossy(), &argv);
+        let cds = CopyData {
+            dw_data: super::COPYDATA_TAG,
+            cb_data: data.len() as u32,
+            lp_data: data.as_ptr().cast(),
+        };
+
+        let mut delivered = false;
+        // SAFETY：参数均为本函数内有效的以 0 结尾宽字符串 / 栈上结构；SendMessageTimeout 同步返回后才释放。
+        // 超时仍为 10s，不二次启动。
+        unsafe {
+            for hwnd in ctx.hwnds {
+                let mut pid = 0;
+                GetWindowThreadProcessId(hwnd, &mut pid);
+                if pid != 0 {
+                    AllowSetForegroundWindow(pid);
+                }
+                let receiver_il = crate::menu_delivery::integrity_rid(pid);
+                let receiver_hash = crate::menu_delivery::process_exe_sha256(pid);
+                SetLastError(0);
+                let mut result = 0usize;
+                let sent = SendMessageTimeoutW(
+                    hwnd,
+                    WM_COPYDATA,
+                    0,
+                    &cds as *const CopyData as isize,
+                    SMTO_NORMAL,
+                    10_000,
+                    &mut result,
+                );
+                let err = if sent == 0 { GetLastError() } else { 0 };
+                let ack = sent != 0 && result == 1;
+                crate::menu_delivery::record_forward_attempt(
+                    req.as_deref(),
+                    hwnd as usize,
+                    pid,
+                    receiver_il,
+                    receiver_hash.as_deref(),
+                    sent as usize,
+                    result,
+                    err,
+                    ack,
+                );
+                if ack {
+                    delivered = true;
+                    break;
+                }
             }
-            let mut pid = 0;
-            GetWindowThreadProcessId(hwnd, &mut pid);
-            if pid != 0 {
-                AllowSetForegroundWindow(pid);
-            }
-            let cwd = std::env::current_dir().unwrap_or_default();
-            let argv: Vec<String> = std::env::args_os()
-                .map(|a| a.to_string_lossy().into_owned())
-                .collect();
-            let data = super::payload(&cwd.to_string_lossy(), &argv);
-            let cds = CopyData {
-                dw_data: super::COPYDATA_TAG,
-                cb_data: data.len() as u32,
-                lp_data: data.as_ptr().cast(),
-            };
-            let mut result = 0usize;
-            let sent = SendMessageTimeoutW(
-                hwnd,
-                WM_COPYDATA,
-                0,
-                &cds as *const CopyData as isize,
-                SMTO_NORMAL,
-                10_000,
-                &mut result,
-            );
-            // 首个实例的窗口过程收下即返回 1；发送失败时退回插件路径（它会再试一次）
-            sent != 0 && result == 1
+        }
+        if delivered {
+            super::ForwardOutcome::Delivered
+        } else {
+            super::ForwardOutcome::Undelivered
         }
     }
 }
@@ -127,12 +210,14 @@ mod tests {
         );
         let argv = vec![
             "C:\\TL\\tag-launcher.exe".to_string(),
+            "--tl-menu-req".to_string(),
+            "abc123".to_string(),
             "--collect".to_string(),
             "D:\\a b.txt".to_string(),
         ];
         assert_eq!(
             payload("C:\\Users\\me", &argv),
-            "C:\\Users\\me|C:\\TL\\tag-launcher.exe|--collect|D:\\a b.txt\0"
+            "C:\\Users\\me|C:\\TL\\tag-launcher.exe|--tl-menu-req|abc123|--collect|D:\\a b.txt\0"
         );
     }
 
@@ -140,8 +225,22 @@ mod tests {
     fn only_collect_launches_take_the_fast_path() {
         let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         assert!(is_collect_launch(&s(&["--collect", "D:\\a.txt"])));
+        assert!(is_collect_launch(&s(&[
+            "--tl-menu-req",
+            "abc",
+            "--collect",
+            "D:\\a.txt"
+        ])));
         assert!(!is_collect_launch(&s(&[])));
         assert!(!is_collect_launch(&s(&["--background"])));
         assert!(!is_collect_launch(&s(&["--show"])));
+        assert_eq!(
+            try_forward(&s(&["--background"])),
+            ForwardOutcome::Skipped
+        );
+        assert_eq!(
+            try_forward(&s(&["--tl-menu-req", "abc", "--collect", "D:\\a.txt"])),
+            ForwardOutcome::Skipped
+        );
     }
 }

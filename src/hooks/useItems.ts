@@ -5,7 +5,7 @@ import { useAppStore } from "../stores/appStore";
 import * as db from "../lib/db";
 import { expandForTagFilter } from "../lib/tagFilter";
 import { buildDescendantsMap } from "../lib/tagGraph";
-import { ItemStore } from "../lib/itemView";
+import { ItemStore, pageUsesCardAssetScope } from "../lib/itemView";
 import type { AddItemsContext } from "../lib/db";
 import { notifyItemLaunched, notifyItemsChanged, notifyCabinetItemsChanged } from "../lib/modApi";
 import { showToast } from "../lib/toast";
@@ -81,7 +81,7 @@ export function useItems() {
   const cabinetTreeKey = useAppStore((state) => state.cabinets.map((c) => `${c.id}:${c.parent_id ?? ""}`).join(","));
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
-  const [store] = useState(() => new ItemStore((ids, kind) => db.getItemsPage(ids, kind === "warm"), { warm: true }));
+  const [store] = useState(() => new ItemStore((ids, kind) => db.getItemsPage(ids, pageUsesCardAssetScope(kind)), { warm: true }));
   const view = useSyncExternalStore(store.subscribe, store.getSnapshot);
   // StrictMode 下 useState 初始化会跑两次：统计在挂载后登记，确保指向实际使用的那个实例
   useEffect(() => store.registerPerf(), [store]);

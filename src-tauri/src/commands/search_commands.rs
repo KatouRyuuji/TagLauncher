@@ -292,7 +292,8 @@ pub fn get_items_page(
         let ro = db.read_conn()?;
         index.items_page(ro.conn(), &ids, &synonyms_loader(&app))?
     };
-    // 空闲补齐（warm）只放行卡片直接显示的路径；预览命令读取前按需放行其余范围
+    // warm=true：只放行卡片直接显示的路径（可视页 / 邻页预取 / 空闲补齐）。
+    // 预览命令读取前按需放行其余范围，避免跳转取页在热路径上对每条对象 is_dir + 编译 asset glob。
     if warm.unwrap_or(false) {
         crate::services::asset_scope::allow_items_for_cards(&app, &items);
     } else {

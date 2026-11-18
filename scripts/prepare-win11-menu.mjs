@@ -60,7 +60,7 @@ try {
   const cl = [
     `"${vcvars}" >nul`,
     `cl /nologo /LD /EHsc /O2 /std:c++17 /utf-8 /DUNICODE /D_UNICODE "${join(srcDir, 'tl_menu.cpp')}" /Fe:"${join(work, 'tl_menu.dll')}" /Fo:"${work}\\\\"`
-      + ` /link /DEF:"${join(srcDir, 'tl_menu.def')}" shlwapi.lib shell32.lib ole32.lib oleaut32.lib user32.lib`,
+      + ` /link /DEF:"${join(srcDir, 'tl_menu.def')}" shlwapi.lib shell32.lib ole32.lib oleaut32.lib user32.lib bcrypt.lib advapi32.lib`,
   ].join(' && ');
   console.log(`[win11-menu] build tl_menu.dll (${arch})`);
   execFileSync('cmd.exe', ['/d', '/s', '/c', `"${cl}"`], { stdio: 'inherit', windowsVerbatimArguments: true });
