@@ -574,9 +574,10 @@ mod tests {
         let q = pending_queue().lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(q.len(), PENDING_MAX_BATCHES, "不得丢弃最旧批次");
         assert_eq!(q[0].0.as_deref(), Some("r0"));
+        let last_req = format!("r{}", PENDING_MAX_BATCHES - 1);
         assert_eq!(
             q[PENDING_MAX_BATCHES - 1].0.as_deref(),
-            Some(&format!("r{}", PENDING_MAX_BATCHES - 1))
+            Some(last_req.as_str())
         );
         drop(q);
         let receipt = MergeReceipt::rejected(err);
@@ -588,9 +589,9 @@ mod tests {
     #[test]
     fn pending_path_cap_rejects_without_dropping_queued_paths() {
         clear_pending();
-        let first = vec!["D:\keep.txt".to_string(); 10];
+        let first = vec![r"D:\keep.txt".to_string(); 10];
         push_pending(Some("keep".into()), first.clone()).unwrap();
-        let too_many = vec!["D:\x.txt".to_string(); MAX_COLLECT];
+        let too_many = vec![r"D:\x.txt".to_string(); MAX_COLLECT];
         let err = push_pending(Some("overflow".into()), too_many).unwrap_err();
         assert!(err.contains("已满"), "{err}");
         let q = pending_queue().lock().unwrap_or_else(|e| e.into_inner());

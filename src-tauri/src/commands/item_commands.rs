@@ -350,7 +350,7 @@ pub fn cancel_relocate() -> usize {
     active.len()
 }
 
-/// 对失效对象按内容签名做跨盘符兜底找回，返回成功找回数量。
+/// 对失效对象按内容签名做跨盘符兜底找回，只返回候选，不自动回写。
 /// `roots` 省略时扫描全部盘符；给定时只在这些文件夹内找回并核验唯一性。
 /// 扫描可被 `cancel_relocate` 停止，超过 [`item_service::SCAN_TIME_LIMIT`] 自动停止；两者都**不回写**，
 /// 以错误返回说明「未完成唯一性核验」（唯一性规则不变：只有完整扫完范围才可能回写）。
@@ -371,7 +371,7 @@ pub fn relocate_missing(
         item_service::read_missing_signatures(&conn)?
     };
     if rows.is_empty() {
-        return Ok(0);
+        return Ok(RelocateScanResult { candidates: Vec::new() });
     }
     let ticket = ScanTicket::register();
     let started = std::time::Instant::now();

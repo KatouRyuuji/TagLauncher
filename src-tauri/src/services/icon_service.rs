@@ -33,12 +33,11 @@ fn auto_visual_path(app: &AppHandle, item: &Item) -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        let cache_dir = AUTO_ICON_CACHE_DIR.get_or_init(|| {
-            crate::services::path_service::resolve_app_paths(app)
-                .ok()?
-                .save_dir
-                .join("item-icons")
-        });
+        let resolved = crate::services::path_service::resolve_app_paths(app)
+            .ok()?
+            .save_dir
+            .join("item-icons");
+        let cache_dir = AUTO_ICON_CACHE_DIR.get_or_init(|| resolved);
         std::fs::create_dir_all(cache_dir).ok()?;
 
         if item.item_type == "audio" {

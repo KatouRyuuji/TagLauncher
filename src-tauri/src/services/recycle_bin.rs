@@ -64,9 +64,13 @@ fn is_unc_or_network_path(lower: &str) -> bool {
 
 #[cfg(windows)]
 fn volume_allows_recycle(path: &Path) -> Result<(), String> {
-    use windows_sys::Win32::Storage::FileSystem::{
-        GetDriveTypeW, DRIVE_CDROM, DRIVE_NO_ROOT_DIR, DRIVE_REMOTE, DRIVE_UNKNOWN,
-    };
+    use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
+
+    // windows-sys 0.59 未再导出这些常量；取值与 Win32 GetDriveTypeW 一致。
+    const DRIVE_UNKNOWN: u32 = 0;
+    const DRIVE_NO_ROOT_DIR: u32 = 1;
+    const DRIVE_REMOTE: u32 = 4;
+    const DRIVE_CDROM: u32 = 5;
 
     let Some(root) = volume_root(path) else {
         return Err("无法确定文件所在卷，已取消删除以免永久丢失".to_string());
@@ -137,14 +141,19 @@ fn recycle_on_sta_thread(path: &Path) -> Result<(), String> {
 
 #[cfg(windows)]
 fn recycle_with_ifile_operation(path: &Path) -> Result<(), String> {
-    use windows::core::{Interface, HRESULT, HSTRING};
+    use windows::core::{GUID, HRESULT, HSTRING, Interface};
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
     };
     use windows::Win32::UI::Shell::{
-        IFileOperation, IShellItem, SHCreateItemFromParsingName, CLSID_FileOperation,
+        IFileOperation, IShellItem, SHCreateItemFromParsingName,
         FOFX_RECYCLEONDELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT,
     };
+
+    // windows 0.62 未再导出 CLSID_FileOperation；GUID 来自官方 IFileOperation 类标识。
+    const CLSID_FILE_OPERATION: GUID =
+        GUID::from_u128(0x3ad05575_8857_4850_9277_11b85bdb8e09);
+    const RPC_E_CHANGED_MODE: HRESULT = HRESULT(0x8001_0106u32 as i32);
 
     struct ComGuard {
         uninit: bool,
@@ -157,17 +166,18 @@ fn recycle_with_ifile_operation(path: &Path) -> Result<(), String> {
         }
     }
 
-    let init = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-    if let Err(e) = init {
-        if e.code() == HRESULT(0x80010106u32 as i32) {
-            return Err(format!("RPC_E_CHANGED_MODE：{e}"));
+    // CoInitializeEx 在 windows 0.62 返回 HRESULT（S_FALSE 表示本线程已初始化，不可再 Uninitialize）。
+    let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    if hr.is_err() {
+        if hr == RPC_E_CHANGED_MODE {
+            return Err(format!("RPC_E_CHANGED_MODE：{hr}"));
         }
-        return Err(format!("无法初始化回收站组件：{e}"));
+        return Err(format!("无法初始化回收站组件：{hr}"));
     }
-    let _com = ComGuard { uninit: true };
+    let _com = ComGuard { uninit: hr.0 == 0 };
 
     let ops: IFileOperation = unsafe {
-        CoCreateInstance(&CLSID_FileOperation, None, CLSCTX_ALL)
+        CoCreateInstance(&CLSID_FILE_OPERATION, None, CLSCTX_ALL)
             .map_err(|e| format!("无法创建回收站操作：{e}"))?
     };
     // FOFX_RECYCLEONDELETE：不能回收则失败，源文件保持原位。

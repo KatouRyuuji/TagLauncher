@@ -48,11 +48,11 @@ pub struct DataDirectoryInfo {
 }
 
 #[tauri::command]
-pub fn get_data_directory_info(app: tauri::AppHandle) -> DataDirectoryInfo {
+pub fn get_data_directory_info(app: tauri::AppHandle) -> Result<DataDirectoryInfo, String> {
     let paths = path_service::resolve_app_paths(&app)?;
     let default_dir = path_service::default_save_dir(&paths.root_dir);
     let db_path = paths.save_dir.join(DB_FILE_NAME);
-    DataDirectoryInfo {
+    Ok(DataDirectoryInfo {
         save_dir: paths.save_dir.to_string_lossy().to_string(),
         default_save_dir: default_dir.to_string_lossy().to_string(),
         is_custom: paths.save_dir != default_dir,
@@ -62,7 +62,7 @@ pub fn get_data_directory_info(app: tauri::AppHandle) -> DataDirectoryInfo {
             .join(BACKUPS_DIR_NAME)
             .to_string_lossy()
             .to_string(),
-    }
+    })
 }
 
 /// 切换数据目录。migrate=true 时把当前数据库快照到新目录；

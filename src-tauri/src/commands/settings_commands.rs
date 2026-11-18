@@ -62,7 +62,7 @@ pub fn set_current_theme(db: State<Database>, theme_id: String) -> Result<(), St
 
 /// 扫描 Plugins_Theme 目录，返回所有自定义主题（含加载错误）
 #[tauri::command]
-pub fn get_custom_themes(app: tauri::AppHandle) -> CustomThemesResult {
+pub fn get_custom_themes(app: tauri::AppHandle) -> Result<CustomThemesResult, String> {
     let themes_dir = get_themes_dir(&app)?;
     std::fs::create_dir_all(&themes_dir).ok();
     Ok(theme_loader::load_custom_themes(&themes_dir))

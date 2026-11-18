@@ -667,6 +667,20 @@ fn apply_registered(inner: &mut DesktopInner, action: HotkeyAction, entry: Optio
     }
 }
 
+fn rollback_hotkey_registration(
+    previous: &Option<(String, u32)>,
+    register: &mut impl FnMut(&str) -> Result<u32, String>,
+) -> Option<(String, u32)> {
+    let (old, _) = previous.as_ref()?;
+    match register(old) {
+        Ok(id) => Some((old.clone(), id)),
+        Err(e) => {
+            log::warn!("[desktop] 回滚旧快捷键失败：{e}");
+            None
+        }
+    }
+}
+
 /// 注销旧键、注册新键并持久化。失败时回滚旧键。
 /// 调用方不得在持有 `DesktopInner` 时进入：`register`/`unregister` 可能派发到 UI 线程并同步等待。
 fn swap_hotkey_registration(
@@ -676,16 +690,6 @@ fn swap_hotkey_registration(
     mut unregister: impl FnMut(&str),
     save: impl FnOnce(Option<&str>) -> Result<(), String>,
 ) -> Result<Option<(String, u32)>, (String, Option<(String, u32)>)> {
-    let mut rollback = || -> Option<(String, u32)> {
-        let (old, _) = previous.as_ref()?;
-        match register(old) {
-            Ok(id) => Some((old.clone(), id)),
-            Err(e) => {
-                log::warn!("[desktop] 回滚旧快捷键失败：{e}");
-                None
-            }
-        }
-    };
     if let Some((old, _)) = previous {
         unregister(old);
     }
@@ -694,7 +698,7 @@ fn swap_hotkey_registration(
         match register(text) {
             Ok(id) => new_entry = Some((text.to_string(), id)),
             Err(e) => {
-                let restored = rollback();
+                let restored = rollback_hotkey_registration(previous, &mut register);
                 let kept = previous
                     .as_ref()
                     .map(|(p, _)| format!("，已保留原快捷键「{p}」"))
@@ -707,7 +711,7 @@ fn swap_hotkey_registration(
         if let Some((text, _)) = &new_entry {
             unregister(text);
         }
-        let restored = rollback();
+        let restored = rollback_hotkey_registration(previous, &mut register);
         return Err((format!("保存快捷键失败：{e}"), restored));
     }
     Ok(new_entry)

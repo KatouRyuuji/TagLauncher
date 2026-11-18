@@ -747,18 +747,19 @@ mod tests {
         use std::sync::{Arc, Barrier};
         use std::time::Duration;
 
-        let gen = AtomicU64::new(7);
+        let gen = Arc::new(AtomicU64::new(7));
         let created = Arc::new(AtomicBool::new(false));
         let start = Arc::new(Barrier::new(2));
         let finish = Arc::new(Barrier::new(2));
         let created_flag = created.clone();
         let start_d = start.clone();
         let finish_d = finish.clone();
+        let gen_job = gen.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         let job = std::thread::spawn(move || {
             run_scheduled_precreate(
                 7,
-                &gen,
+                &gen_job,
                 || {
                     start_d.wait();
                     finish_d.wait();
