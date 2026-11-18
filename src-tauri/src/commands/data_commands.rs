@@ -285,18 +285,7 @@ pub fn import_data(
     ));
     // 暂存守卫先于一切写入建立：任一步失败（含主文件 copy 半截）都清理暂存
     let staged_guard = StagedFile(staged.clone());
-    std::fs::copy(&source, &staged).map_err(|e| format!("无法读取来源文件: {}", e))?;
-    let source_str = source.to_string_lossy().to_string();
-    let staged_str = staged.to_string_lossy().to_string();
-    for suffix in ["-wal", "-shm"] {
-        let side = format!("{}{}", source_str, suffix);
-        if Path::new(&side).exists()
-            && std::fs::copy(&side, format!("{}{}", staged_str, suffix)).is_err()
-        {
-            // WAL 暂存失败 = 来源最近提交可能缺失：留痕，不静默
-            log::warn!("[import] 来源旁文件 {:?} 暂存失败，导入内容可能缺少最近提交", side);
-        }
-    }
+    stage_import_source(&source, &staged)?;
     let source_version = validate_importable_db(&staged)?;
     let source = staged;
 
@@ -350,6 +339,69 @@ pub fn import_data(
     // 实库内容已被来源库覆盖：重启前的一切后续写入都会随重启丢失，冻结写入
     db.freeze_writes();
     Ok(safety_backup.to_string_lossy().to_string())
+}
+
+/// 把来源主库和旁文件拷到暂存。WAL 若存在或无法判断是否存在，必须成功复制，
+/// 否则报错并停止导入（尚未覆盖实库）。SHM 可重建：复制失败只记日志。
+pub(crate) fn stage_import_source(source: &Path, staged: &Path) -> Result<(), String> {
+    std::fs::copy(source, staged).map_err(|e| format!("无法读取来源文件: {}", e))?;
+    stage_wal_sidecar(source, staged)?;
+    stage_shm_sidecar(source, staged);
+    Ok(())
+}
+
+fn sidecar_path(base: &Path, suffix: &str) -> PathBuf {
+    PathBuf::from(format!("{}{}", base.to_string_lossy(), suffix))
+}
+
+/// 旁文件是否存在。`exists()` 会把权限/IO 错误当成「不存在」，WAL 必须闭门：查不到就失败。
+fn sidecar_present(path: &Path, label: &str) -> Result<bool, String> {
+    map_sidecar_presence(path, label, path.try_exists())
+}
+
+fn map_sidecar_presence(
+    path: &Path,
+    label: &str,
+    result: Result<bool, std::io::Error>,
+) -> Result<bool, String> {
+    result.map_err(|e| {
+        format!(
+            "无法确认来源{label} {:?} 是否存在，已取消导入以免丢失最近提交: {}",
+            path, e
+        )
+    })
+}
+
+pub(crate) fn stage_wal_sidecar(source: &Path, staged: &Path) -> Result<(), String> {
+    let wal = sidecar_path(source, "-wal");
+    if !sidecar_present(&wal, " WAL")? {
+        return Ok(());
+    }
+    let dest = sidecar_path(staged, "-wal");
+    std::fs::copy(&wal, &dest).map_err(|e| {
+        format!(
+            "无法复制来源 WAL（最近提交可能尚未写入主库），已取消导入以免覆盖当前库: {}",
+            e
+        )
+    })?;
+    Ok(())
+}
+
+fn stage_shm_sidecar(source: &Path, staged: &Path) {
+    let shm = sidecar_path(source, "-shm");
+    match sidecar_present(&shm, " SHM") {
+        Ok(true) => {
+            let dest = sidecar_path(staged, "-shm");
+            if let Err(e) = std::fs::copy(&shm, &dest) {
+                // SHM 是 WAL 索引，打开时可由 SQLite 重建，不阻断导入。
+                log::warn!("[import] 来源 SHM {:?} 暂存失败（可重建，继续导入）: {}", shm, e);
+            }
+        }
+        Ok(false) => {}
+        Err(e) => {
+            log::warn!("[import] 无法确认来源 SHM 是否存在（可重建，继续导入）: {}", e);
+        }
+    }
 }
 
 /// 暂存文件清理守卫：作用域结束即删（导入用的来源副本，含 WAL/SHM 旁文件）。
@@ -659,5 +711,88 @@ mod tests {
 
         drop(db);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    fn unique_import_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tl_{tag}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn marker_bytes(label: &str) -> Vec<u8> {
+        format!("WAL-MARKER:{label}:").into_bytes()
+    }
+
+    #[test]
+    fn stage_import_copies_wal_and_tolerates_shm_copy_failure() {
+        let dir = unique_import_dir("stage_ok");
+        let source = dir.join("source.db");
+        let staged = dir.join("staged.db");
+        std::fs::write(&source, b"main-db-bytes").unwrap();
+        let wal_bytes = marker_bytes("wal");
+        std::fs::write(PathBuf::from(format!("{}-wal", source.display())), &wal_bytes).unwrap();
+        std::fs::write(PathBuf::from(format!("{}-shm", source.display())), b"shm").unwrap();
+        // SHM 目标先占成目录，复制失败，不得阻断。
+        std::fs::create_dir(PathBuf::from(format!("{}-shm", staged.display()))).unwrap();
+
+        stage_import_source(&source, &staged).expect("SHM 失败仍应成功");
+        assert_eq!(std::fs::read(&staged).unwrap(), b"main-db-bytes");
+        assert_eq!(
+            std::fs::read(PathBuf::from(format!("{}-wal", staged.display()))).unwrap(),
+            wal_bytes
+        );
+        // 来源原件保持不变
+        assert_eq!(std::fs::read(&source).unwrap(), b"main-db-bytes");
+        assert_eq!(
+            std::fs::read(PathBuf::from(format!("{}-wal", source.display()))).unwrap(),
+            wal_bytes
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unreadable_or_uncopyable_wal_aborts_and_leaves_source_untouched() {
+        let dir = unique_import_dir("stage_wal_fail");
+        let source = dir.join("source.db");
+        let staged = dir.join("staged.db");
+        let original_main = b"live-or-source-main";
+        let original_wal = marker_bytes("must-keep");
+        std::fs::write(&source, original_main).unwrap();
+        let wal = PathBuf::from(format!("{}-wal", source.display()));
+        std::fs::write(&wal, &original_wal).unwrap();
+        // 把暂存 WAL 目标占成目录，强制 copy 失败。
+        std::fs::create_dir(PathBuf::from(format!("{}-wal", staged.display()))).unwrap();
+
+        let err = stage_import_source(&source, &staged).unwrap_err();
+        assert!(err.contains("WAL"), "{err}");
+        assert!(err.contains("取消导入") || err.contains("已取消"), "{err}");
+        assert_eq!(std::fs::read(&source).unwrap(), original_main, "来源主库不得改写");
+        assert_eq!(std::fs::read(&wal).unwrap(), original_wal, "来源 WAL 不得改写");
+        // 主文件可能已拷到暂存，调用方的 StagedFile 负责清理；来源必须原样。
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wal_presence_probe_failure_aborts_import_staging() {
+        let path = PathBuf::from("/locked/source.db-wal");
+        let err = map_sidecar_presence(
+            &path,
+            " WAL",
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+        )
+        .unwrap_err();
+        assert!(err.contains("WAL"), "{err}");
+        assert!(err.contains("是否存在"), "{err}");
+        assert!(err.contains("取消导入"), "{err}");
+        // 探测失败发生在覆盖实库之前：此错误必须阻断导入。
+        assert!(!err.contains("SHM"));
     }
 }
