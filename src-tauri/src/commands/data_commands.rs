@@ -49,7 +49,7 @@ pub struct DataDirectoryInfo {
 
 #[tauri::command]
 pub fn get_data_directory_info(app: tauri::AppHandle) -> DataDirectoryInfo {
-    let paths = path_service::resolve_app_paths(&app);
+    let paths = path_service::resolve_app_paths(&app)?;
     let default_dir = path_service::default_save_dir(&paths.root_dir);
     let db_path = paths.save_dir.join(DB_FILE_NAME);
     DataDirectoryInfo {
@@ -78,7 +78,7 @@ pub fn set_data_directory(
     migrate: bool,
 ) -> Result<(), String> {
     crate::db::ensure_writes_allowed()?;
-    let paths = path_service::resolve_app_paths(&app);
+    let paths = path_service::resolve_app_paths(&app)?;
     let raw_dir = PathBuf::from(new_dir.trim());
     if raw_dir.as_os_str().is_empty() {
         return Err("目标目录不能为空".to_string());
@@ -148,7 +148,7 @@ pub fn set_data_directory(
 #[tauri::command]
 pub fn reset_data_directory(app: tauri::AppHandle, db: State<Database>) -> Result<(), String> {
     crate::db::ensure_writes_allowed()?;
-    let paths = path_service::resolve_app_paths(&app);
+    let paths = path_service::resolve_app_paths(&app)?;
     path_service::write_data_dir_redirect(&paths.root_dir, None)?;
     // 与 set_data_directory 同理：重启前对当前库的写入都会随重启丢失，冻结写入
     db.freeze_writes();
@@ -161,7 +161,7 @@ pub fn reset_data_directory(app: tauri::AppHandle, db: State<Database>) -> Resul
 /// 真正的对外分享出口是 export_data，那里才剔除密钥。
 #[tauri::command(async)]
 pub fn backup_data(app: tauri::AppHandle, db: State<Database>) -> Result<String, String> {
-    let paths = path_service::resolve_app_paths(&app);
+    let paths = path_service::resolve_app_paths(&app)?;
     let backups_dir = paths.save_dir.join(BACKUPS_DIR_NAME);
     std::fs::create_dir_all(&backups_dir).map_err(|e| format!("无法创建备份目录: {}", e))?;
 
@@ -243,7 +243,7 @@ pub fn export_data(
         return Err("导出路径不能为空".to_string());
     }
     // 防御：目标就是实库自身时，Backup 自拷贝会静默"成功"（no-op），误导用户以为导出了数据。
-    let live_path = path_service::resolve_app_paths(&app).save_dir.join(DB_FILE_NAME);
+    let live_path = path_service::resolve_app_paths(&app)?.save_dir.join(DB_FILE_NAME);
     if target == live_path {
         return Err("导出目标不能是当前正在使用的数据库文件".to_string());
     }
@@ -269,7 +269,7 @@ pub fn import_data(
 
     // 防御：来源就是实库自身时，"先快照安全备份 → 再覆盖实库"会变成自己灌自己（no-op），
     // 用户以为导入了数据其实什么都没发生（与 export 侧的自身防御同理）。
-    let live_path = path_service::resolve_app_paths(&app).save_dir.join(DB_FILE_NAME);
+    let live_path = path_service::resolve_app_paths(&app)?.save_dir.join(DB_FILE_NAME);
     if source == live_path {
         return Err("导入来源不能是当前正在使用的数据库文件".to_string());
     }
@@ -300,7 +300,7 @@ pub fn import_data(
     }
 
     // 导入前自动备份当前库（可回退）
-    let paths = path_service::resolve_app_paths(&app);
+    let paths = path_service::resolve_app_paths(&app)?;
     let backups_dir = paths.save_dir.join(BACKUPS_DIR_NAME);
     std::fs::create_dir_all(&backups_dir).map_err(|e| format!("无法创建备份目录: {}", e))?;
     let safety_backup =

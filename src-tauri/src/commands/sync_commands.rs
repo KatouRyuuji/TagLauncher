@@ -234,7 +234,7 @@ pub fn sync_restore(
         }
 
         // 3. 本地安全备份（可回退）
-        let paths = crate::services::path_service::resolve_app_paths(&app);
+        let paths = crate::services::path_service::resolve_app_paths(&app)?;
         let backups_dir = paths.save_dir.join("Backups");
         std::fs::create_dir_all(&backups_dir).map_err(|e| format!("无法创建备份目录: {}", e))?;
         let safety = backups_dir.join(format!(

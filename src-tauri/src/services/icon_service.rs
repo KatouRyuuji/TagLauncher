@@ -35,6 +35,7 @@ fn auto_visual_path(app: &AppHandle, item: &Item) -> Option<String> {
     {
         let cache_dir = AUTO_ICON_CACHE_DIR.get_or_init(|| {
             crate::services::path_service::resolve_app_paths(app)
+                .ok()?
                 .save_dir
                 .join("item-icons")
         });
@@ -102,7 +103,7 @@ pub fn fill_item_visual(app: &AppHandle, item: &mut Item) {
 /// 覆盖 shell 图标 / 音频封面 / 视频缩略图三类标记（统一 .none 后缀）。
 #[cfg(target_os = "windows")]
 pub fn clear_none_markers(app: &AppHandle) -> Result<(), String> {
-    let cache_dir = crate::services::path_service::resolve_app_paths(app)
+    let cache_dir = crate::services::path_service::resolve_app_paths(app)?
         .save_dir
         .join("item-icons");
     let entries = match std::fs::read_dir(&cache_dir) {
