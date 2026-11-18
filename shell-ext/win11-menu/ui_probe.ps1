@@ -8,6 +8,16 @@ function NormalizePath([string]$p) {
     if ([string]::IsNullOrWhiteSpace($p)) { return '' }
     try { return [IO.Path]::GetFullPath($p).TrimEnd('\','/').ToLowerInvariant() } catch { return $p.TrimEnd('\','/').ToLowerInvariant() }
 }
+# Win11 XAML 菜单常在同一 CabinetWClass 下暴露两份相同 Name/矩形的 UIA 节点。
+# 按视觉矩形去重后再判断唯一；不同位置的同名项仍视为不唯一，不放宽点击条件。
+function VisualRect($el) {
+    $b = $el.Current.BoundingRectangle
+    return [pscustomobject]@{ X = [int][Math]::Round($b.X); Y = [int][Math]::Round($b.Y); W = [int][Math]::Round($b.Width); H = [int][Math]::Round($b.Height) }
+}
+function SameVisualRect($a, $b) {
+    if ($null -eq $a -or $null -eq $b) { return $false }
+    return ([Math]::Abs($a.X - $b.X) -le 2 -and [Math]::Abs($a.Y - $b.Y) -le 2 -and [Math]::Abs($a.W - $b.W) -le 2 -and [Math]::Abs($a.H - $b.H) -le 2)
+}
 function FolderPathOf([int]$hwnd) {
     $shell = New-Object -ComObject Shell.Application
     foreach ($w in @($shell.Windows())) {
@@ -74,6 +84,8 @@ Start-Sleep -Milliseconds 1500
 $names = New-Object System.Collections.Generic.List[string]
 $ours = New-Object System.Collections.Generic.List[object]
 $tops = New-Object System.Collections.Generic.List[string]
+$script:oursRaw = 0
+$script:oursRawDup = 0
 foreach ($top in $A::RootElement.FindAll($T::Children, $C)) {
     $cls = $top.Current.ClassName
     $tops.Add($cls)
@@ -84,13 +96,23 @@ foreach ($top in $A::RootElement.FindAll($T::Children, $C)) {
         $ct = $mi.Current.ControlType
         if ($cls -eq 'CabinetWClass' -and $ct -ne [System.Windows.Automation.ControlType]::MenuItem -and $ct -ne [System.Windows.Automation.ControlType]::Button) { continue }
         $names.Add("$cls|$($mi.Current.ControlType.ProgrammaticName -replace 'ControlType.', '')|$n")
-        if ($n -eq $Title) { $ours.Add($mi) }
+        if ($n -eq $Title) {
+            $vr = VisualRect $mi
+            $dup = $false
+            foreach ($existing in $ours) {
+                if (SameVisualRect (VisualRect $existing) $vr) { $dup = $true; break }
+            }
+            if (-not $dup) { $ours.Add($mi) } else { $script:oursRawDup++ }
+            $script:oursRaw++
+        }
     }
 }
 Log 'top_classes' (($tops | Select-Object -Unique) -join ',')
 Log 'menu_items' (($names | Select-Object -First 40) -join ' ; ')
 Log 'menu_modern' ([bool]($names | Where-Object { $_ -like '*Show more options*' -or $_ -like '*显示更多选项*' }))
 Log 'our_item_visible' ($ours.Count -ge 1)
+Log 'our_item_raw_count' $script:oursRaw
+Log 'our_item_dup_count' $script:oursRawDup
 Log 'our_item_count' $ours.Count
 $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height

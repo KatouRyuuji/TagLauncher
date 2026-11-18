@@ -156,17 +156,6 @@ static std::string Sha256Raw(const void* data, ULONG len) {
     return hex;
 }
 
-static std::string FileSha256(const std::wstring& path) {
-    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE) return {};
-    std::string all;
-    char buf[8192];
-    DWORD n = 0;
-    while (ReadFile(h, buf, sizeof(buf), &n, nullptr) && n) all.append(buf, buf + n);
-    CloseHandle(h);
-    return Sha256Raw(all.data(), (ULONG)all.size());
-}
-
 static std::string SaltedPathHash(const std::wstring& req, const std::wstring& path) {
     std::wstring key = path;
     for (auto& c : key) if (c == L'/') c = L'\\';
@@ -209,31 +198,112 @@ static bool WideToUtf8(const wchar_t* line, std::string& utf8) {
 }
 
 // 只写结果码与哈希，不写路径，避免泄漏用户文件位置。
+// 与 Rust 侧一致：READ+WRITE 共享，有界保留；写失败用错误码记录，不写路径。
+static const DWORD kLogMax = 256 * 1024;
+static const DWORD kLogKeep = 64 * 1024;
+
+static bool IsValidNonce(const std::wstring& s) {
+    size_t n = s.size();
+    if (n != 16 && n != 32) return false;
+    for (wchar_t c : s) {
+        bool ok = (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f') || (c >= L'A' && c <= L'F');
+        if (!ok) return false;
+    }
+    return true;
+}
+
+static std::wstring ReqForLog(const std::wstring& req) {
+    return IsValidNonce(req) ? req : L"invalid_req";
+}
+
+static DWORD AppendBounded(const std::wstring& file, const std::string& utf8) {
+    HANDLE h = CreateFileW(file.c_str(), GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return GetLastError() ? GetLastError() : ERROR_OPEN_FAILED;
+    if (!LockFile(h, 0, 0, 0xFFFFFFFF, 0xFFFFFFFF)) {
+        DWORD err = GetLastError();
+        CloseHandle(h);
+        return err ? err : ERROR_LOCK_VIOLATION;
+    }
+    DWORD err = 0;
+    LARGE_INTEGER sz{};
+    if (!GetFileSizeEx(h, &sz)) {
+        err = GetLastError() ? GetLastError() : ERROR_READ_FAULT;
+    } else {
+        auto trim = [&]() -> DWORD {
+            LARGE_INTEGER cur{};
+            if (!GetFileSizeEx(h, &cur)) return GetLastError() ? GetLastError() : ERROR_READ_FAULT;
+            if (cur.QuadPart <= (LONGLONG)kLogMax) return 0;
+            LARGE_INTEGER startPos;
+            startPos.QuadPart = cur.QuadPart > (LONGLONG)kLogKeep ? cur.QuadPart - (LONGLONG)kLogKeep : 0;
+            if (!SetFilePointerEx(h, startPos, nullptr, FILE_BEGIN)) {
+                return GetLastError() ? GetLastError() : ERROR_SEEK;
+            }
+            std::string buf;
+            buf.resize((size_t)(cur.QuadPart - startPos.QuadPart));
+            DWORD got = 0;
+            if (!ReadFile(h, buf.data(), (DWORD)buf.size(), &got, nullptr)) {
+                return GetLastError() ? GetLastError() : ERROR_READ_FAULT;
+            }
+            buf.resize(got);
+            size_t nl = buf.find('\n');
+            if (nl != std::string::npos) buf.erase(0, nl + 1);
+            if (SetFilePointer(h, 0, nullptr, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
+                return GetLastError();
+            }
+            if (!SetEndOfFile(h)) return GetLastError() ? GetLastError() : ERROR_WRITE_FAULT;
+            DWORD w = 0;
+            if (!WriteFile(h, buf.data(), (DWORD)buf.size(), &w, nullptr)) {
+                return GetLastError() ? GetLastError() : ERROR_WRITE_FAULT;
+            }
+            return 0;
+        };
+        err = trim();
+        if (!err) {
+            if (SetFilePointer(h, 0, nullptr, FILE_END) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
+                err = GetLastError();
+            } else {
+                DWORD written = 0;
+                if (!WriteFile(h, utf8.data(), (DWORD)utf8.size(), &written, nullptr) || written != (DWORD)utf8.size()) {
+                    err = GetLastError() ? GetLastError() : ERROR_WRITE_FAULT;
+                } else {
+                    err = trim();
+                }
+            }
+        }
+    }
+    UnlockFile(h, 0, 0, 0xFFFFFFFF, 0xFFFFFFFF);
+    CloseHandle(h);
+    return err;
+}
+
 static void AppendStatus(const wchar_t* line) {
     std::wstring dir = KnownTagLauncherDir();
     if (dir.empty()) return;
     std::wstring file = dir + L"\\win11-menu-status.txt";
-    HANDLE h = CreateFileW(file.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE) return;
     std::string utf8;
-    if (!WideToUtf8(line, utf8)) { CloseHandle(h); return; }
-    DWORD written = 0;
-    WriteFile(h, utf8.data(), (DWORD)utf8.size(), &written, nullptr);
-    CloseHandle(h);
+    if (!WideToUtf8(line, utf8)) return;
+    AppendBounded(file, utf8);
 }
 
 static void AppendDelivery(const std::wstring& line) {
     std::wstring dir = KnownTagLauncherDir();
-    if (dir.empty()) return;
-    std::wstring file = dir + L"\\win11-menu-delivery.jsonl";
-    HANDLE h = CreateFileW(file.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE) return;
-    std::string utf8;
-    if (WideToUtf8((line + L"\n").c_str(), utf8)) {
-        DWORD written = 0;
-        WriteFile(h, utf8.data(), (DWORD)utf8.size(), &written, nullptr);
+    if (dir.empty()) {
+        AppendStatus(L"delivery_write_err=known_folder\n");
+        return;
     }
-    CloseHandle(h);
+    std::wstring file = dir + L"\\win11-menu-delivery.jsonl";
+    std::string utf8;
+    if (!WideToUtf8((line + L"\n").c_str(), utf8)) {
+        AppendStatus(L"delivery_write_err=utf8\n");
+        return;
+    }
+    DWORD err = AppendBounded(file, utf8);
+    if (err) {
+        wchar_t msg[80];
+        wsprintfW(msg, L"delivery_write_err=%u\n", err);
+        AppendStatus(msg);
+    }
 }
 
 static std::wstring FindExe(const wchar_t** source = nullptr, std::wstring* trace = nullptr) {
@@ -354,7 +424,7 @@ public:
     IFACEMETHODIMP GetFlags(EXPCMDFLAGS* flags) override { *flags = ECF_DEFAULT; return S_OK; }
     IFACEMETHODIMP EnumSubCommands(IEnumExplorerCommand** e) override { *e = nullptr; return E_NOTIMPL; }
     IFACEMETHODIMP Invoke(IShellItemArray* items, IBindCtx*) override {
-        std::wstring req = NewRequestId();
+        std::wstring req = ReqForLog(NewRequestId());
         DWORD il = IntegrityRid(GetCurrentProcess());
         DWORD session = 0;
         ProcessIdToSessionId(GetCurrentProcessId(), &session);
@@ -411,30 +481,34 @@ public:
 #endif
             return E_FAIL;
         }
-        std::string exeHash = FileSha256(exe);
-        std::wstring exeHashW;
-        for (char c : exeHash) exeHashW += (wchar_t)(unsigned char)c;
+        std::string pathHash = SaltedPathHash(req, exe);
+        std::wstring pathHashW;
+        for (char c : pathHash) pathHashW += (wchar_t)(unsigned char)c;
         AppendStatus((std::wstring(head) + L" find_exe=1 find_src=" + src + L" find_trace=" + trace
-            + L" exe_hash=" + exeHashW + L"\n").c_str());
+            + L" exe_path_hash=" + pathHashW + L"\n").c_str());
         // 探针与产品同一条启动路径（先经 explorer，失败再直接启动），避免双启打到不同实例。
         HRESULT viaHr = ShellExecuteViaExplorer(exe, args);
         HRESULT launchHr = viaHr;
         const wchar_t* via = L"explorer";
         INT_PTR shell = 0;
+        DWORD lastErr = 0;
         if (FAILED(viaHr)) {
             SetLastError(0);
             HINSTANCE r = ShellExecuteW(nullptr, L"open", exe.c_str(), args.c_str(), nullptr, SW_SHOWNORMAL);
             shell = (INT_PTR)r;
+            lastErr = GetLastError();
             via = L"direct_fallback";
             if (shell <= 32) {
-                DWORD err = shell == 0 ? GetLastError() : (DWORD)shell;
-                launchHr = HRESULT_FROM_WIN32(err ? err : (DWORD)shell);
+                // shell==0 且 LastError==0 时 HRESULT_FROM_WIN32(0) 会变成 S_OK，必须回退到失败码。
+                if (lastErr != 0) launchHr = HRESULT_FROM_WIN32(lastErr);
+                else if (shell != 0) launchHr = HRESULT_FROM_WIN32((DWORD)shell);
+                else launchHr = HRESULT_FROM_WIN32(ERROR_GEN_FAILURE);
             } else {
                 launchHr = S_OK;
             }
 #ifdef TL_MENU_PROBE
             wchar_t note[80];
-            wsprintfW(note, L"via=direct_fallback hr=0x%08X shell=%d\n", (unsigned)viaHr, (int)shell);
+            wsprintfW(note, L"via=direct_fallback hr=0x%08X shell=%d last_err=%u\n", (unsigned)viaHr, (int)shell, lastErr);
             AppendMarker(note);
 #endif
         } else {
@@ -442,15 +516,16 @@ public:
             AppendMarker(L"via=explorer\n");
 #endif
         }
-        wchar_t tail[256];
-        wsprintfW(tail, L"req=%s event=launch via=%s via_hr=0x%08X shell=%d launch_hr=0x%08X\n",
-            req.c_str(), via, (unsigned)viaHr, (int)shell, (unsigned)launchHr);
+        wchar_t tail[320];
+        wsprintfW(tail, L"req=%s event=launch via=%s via_hr=0x%08X shell=%d last_err=%u launch_hr=0x%08X\n",
+            req.c_str(), via, (unsigned)viaHr, (int)shell, lastErr, (unsigned)launchHr);
         AppendStatus(tail);
         AppendDelivery(L"{\"req\":\"" + req + L"\",\"event\":\"launch\",\"via\":\"" + via
             + L"\",\"via_hr\":" + std::to_wstring((unsigned)viaHr)
             + L",\"shell\":" + std::to_wstring((int)shell)
+            + L",\"last_err\":" + std::to_wstring(lastErr)
             + L",\"launch_hr\":" + std::to_wstring((unsigned)launchHr)
-            + L",\"find_src\":\"" + src + L"\",\"exe_hash\":\"" + exeHashW + L"\"}");
+            + L",\"find_src\":\"" + src + L"\",\"exe_path_hash\":\"" + pathHashW + L"\"}");
         // 启动已提交不是「本实例已收到」。direct fallback 失败必须把错误传回，不能仍报 S_OK。
         return launchHr;
     }

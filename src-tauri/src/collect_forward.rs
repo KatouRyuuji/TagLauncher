@@ -9,6 +9,7 @@
 //!
 //! 找到窗口但 SendMessageTimeout 未得到窗口过程返回 1 时，不再退回插件：2.5.3 发送失败
 //! 仍 exit 0，会把「子进程消失」冒充成已交付。调用方应以非 0 退出。不延长超时、不二次启动。
+//! 返回 1 只记 transport_ack；merge_committed 由接收侧本次 merge receipt 另记。
 //!
 //! 窗口类名 / 标题 / dwData / 数据格式与 tauri-plugin-single-instance 2.5（未开 semver 特性）一致，
 //! 由单元测试锁定 identifier 与 tauri.conf.json 相同；插件升级时需核对。
@@ -34,12 +35,13 @@ pub fn is_collect_launch(args: &[String]) -> bool {
     args.iter().any(|a| a == crate::collect::COLLECT_ARG)
 }
 
-/// 快速转发结果。只有窗口过程返回 1 才是 Delivered；找到窗口但没拿到 ACK 是 Undelivered，
-/// 调用方应以非 0 退出，不再退回单实例插件（2.5.3 发送失败仍 exit 0，不能当回执）。
+/// 快速转发结果。窗口过程返回 1 只是 TransportAck（插件 2.5.3 在 dwData 不匹配时也返回 1），
+/// 不是 CollectState merge。找到窗口但没有运输回执是 Undelivered，调用方应以非 0 退出，
+/// 不再退回单实例插件（2.5.3 发送失败仍 exit 0）。不改 tag / 回执常量。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForwardOutcome {
     Skipped,
-    Delivered,
+    TransportAck,
     Undelivered,
 }
 
@@ -117,12 +119,12 @@ mod win {
         }
         if ctx.hwnds.is_empty() {
             crate::menu_delivery::record(&serde_json::json!({
-                "event": "copydata",
+                "event": "transport_ack",
                 "req": req,
                 "child_pid": std::process::id(),
                 "child_il": crate::menu_delivery::integrity_rid(std::process::id()),
                 "hwnds": 0,
-                "ack": false,
+                "transport_ack": false,
             }));
             return super::ForwardOutcome::Skipped;
         }
@@ -149,7 +151,7 @@ mod win {
                     AllowSetForegroundWindow(pid);
                 }
                 let receiver_il = crate::menu_delivery::integrity_rid(pid);
-                let receiver_hash = crate::menu_delivery::process_exe_sha256(pid);
+                let receiver_hash = crate::menu_delivery::process_exe_path_hash(pid, req.as_deref());
                 SetLastError(0);
                 let mut result = 0usize;
                 let sent = SendMessageTimeoutW(
@@ -162,7 +164,7 @@ mod win {
                     &mut result,
                 );
                 let err = if sent == 0 { GetLastError() } else { 0 };
-                let ack = sent != 0 && result == 1;
+                let transport_ack = sent != 0 && result == 1;
                 crate::menu_delivery::record_forward_attempt(
                     req.as_deref(),
                     hwnd as usize,
@@ -172,16 +174,16 @@ mod win {
                     sent as usize,
                     result,
                     err,
-                    ack,
+                    transport_ack,
                 );
-                if ack {
+                if transport_ack {
                     delivered = true;
                     break;
                 }
             }
         }
         if delivered {
-            super::ForwardOutcome::Delivered
+            super::ForwardOutcome::TransportAck
         } else {
             super::ForwardOutcome::Undelivered
         }

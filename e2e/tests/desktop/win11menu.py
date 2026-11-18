@@ -84,24 +84,52 @@ def known_local_appdata() -> Path | None:
     return Path(p) if p else None
 
 
+def _oserr_code(exc: OSError) -> str:
+    code = getattr(exc, "winerror", None)
+    if code is None:
+        code = getattr(exc, "errno", None)
+    return f"{type(exc).__name__}:{code if code is not None else 'unknown'}"
+
+
+def _tail_lines(path: Path, limit: int, tail_bytes: int = 65536) -> tuple[str, list[str]]:
+    """只读文件尾部有限字节，不先把全文件读进内存；错误只含类型/数值码，不含路径。"""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as f:
+            if size > tail_bytes:
+                f.seek(size - tail_bytes)
+            data = f.read()
+        if size > tail_bytes:
+            nl = data.find(b"\n")
+            if nl >= 0:
+                data = data[nl + 1:]
+        lines = data.decode("utf-8", "replace").splitlines()
+        return "ok", lines[-limit:]
+    except OSError as e:
+        return f"err:{_oserr_code(e)}", []
+
+
 def delivery_log_text(limit: int = 40) -> str:
-    """只读交付 jsonl / 状态行（内容为哈希与 PID，不含用户路径原文）。"""
+    """只读交付 jsonl / 状态行尾部（哈希与 PID，不含用户路径原文）。"""
     base = known_local_appdata()
     if not base:
         return "known_local_appdata=missing"
     chunks = []
     for name in ("win11-menu-delivery.jsonl", "win11-menu-status.txt"):
         path = base / "TagLauncher" / name
-        if not path.is_file():
+        try:
+            exists = path.is_file()
+        except OSError as e:
+            chunks.append(f"{name}=err:{_oserr_code(e)}")
+            continue
+        if not exists:
             chunks.append(f"{name}=missing")
             continue
-        try:
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError as e:
-            chunks.append(f"{name}=err:{e}")
-            continue
-        tail = lines[-limit:]
-        chunks.append(f"{name} count={len(lines)} tail=" + " | ".join(tail))
+        status, lines = _tail_lines(path, limit)
+        if status != "ok":
+            chunks.append(f"{name}={status}")
+        else:
+            chunks.append(f"{name} tail_lines={len(lines)} tail=" + " | ".join(lines))
     return " ; ".join(chunks)
 
 

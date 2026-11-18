@@ -312,24 +312,31 @@ def test_win11_top_level_menu_register_invoke_cleanup(app_factory, sandbox):
 
         d = files.write(sandbox.files / "w11" / "probe.txt", "x").parent
         ui = win11menu.explorer_menu(d, "probe.txt", sandbox.artifacts / "win11-menu-on.png", "on", click=True)
-        delivery = win11menu.delivery_log_text()
-        print(f"WIN11_MENU_DELIVERY {delivery}")
+        delivery_after_click = win11menu.delivery_log_text()
+        print(f"WIN11_MENU_DELIVERY {delivery_after_click}")
         assert ui.get("menu_modern") == "True", f"应是 Win11 新菜单（含「显示更多选项」）：{ui}"
         assert ui.get("our_item_visible") == "True", f"一级菜单里应有「{win11menu.TITLE}」：{ui}"
         assert ui.get("clicked") == "True", f"应实际尝试点击唯一菜单项：{ui}"
         assert ui.get("click_path") in ("uia_invoke", "physical_mouse"), f"点击路径应可区分：{ui}"
         assert ui.get("explorer_folder_bound") == "True" and ui.get("explorer_pid"), f"应绑定本例目录与 Explorer PID：{ui}"
         t1 = time.perf_counter()
-        qp = collect_page(app)
+        collect_ms = 0
+        s = None
         try:
+            qp = collect_page(app)
             wait_attr(qp.get_by_test_id("collect-summary"), "data-count", "1")
+            collect_ms = round((time.perf_counter() - t1) * 1000)
+            s = app.invoke("collect_session")
+            assert s is not None, "主实例未收到收纳会话"
+            assert [os.path.basename(p) for p in s["paths"]] == ["probe.txt"], s
         except Exception:
-            print(f"WIN11_MENU_DELIVERY_ON_FAIL ui={ui} delivery={delivery}")
+            print(
+                f"WIN11_MENU_DELIVERY_ON_FAIL ui={ui} after_click={delivery_after_click} "
+                f"end={win11menu.delivery_log_text()}"
+            )
             raise
-        collect_ms = round((time.perf_counter() - t1) * 1000)
-        s = app.invoke("collect_session")
-        assert s is not None, f"主实例未收到收纳会话 ui={ui} delivery={delivery}"
-        assert [os.path.basename(p) for p in s["paths"]] == ["probe.txt"], f"{s} delivery={delivery}"
+        finally:
+            print(f"WIN11_MENU_DELIVERY_END {win11menu.delivery_log_text()}")
         qp.get_by_test_id("collect-action-import").click()
         assert result(qp)["created"] == "1"
         wait_session_done(app)

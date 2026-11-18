@@ -13,7 +13,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -160,28 +160,102 @@ impl CollectState {
     }
 }
 
+/// 本次 submit 的 merge 结果。不是 COPYDATA 窗口过程的 transport ACK（插件在 callback 后无条件返回 1）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergeReceipt {
+    pub merge_committed: bool,
+    pub pending: bool,
+    pub session_id: u64,
+    pub path_count: usize,
+    pub invalid: u32,
+    pub arrival: u64,
+}
+
+impl MergeReceipt {
+    fn from_inner(inner: &Inner, arrival: u64) -> Self {
+        Self {
+            merge_committed: inner.session.id != 0,
+            pending: false,
+            session_id: inner.session.id,
+            path_count: inner.session.paths.len(),
+            invalid: inner.session.invalid,
+            arrival,
+        }
+    }
+
+    fn pending() -> Self {
+        Self {
+            merge_committed: false,
+            pending: true,
+            session_id: 0,
+            path_count: 0,
+            invalid: 0,
+            arrival: 0,
+        }
+    }
+}
+
+const PENDING_MAX_BATCHES: usize = 64;
+
+fn pending_queue() -> &'static Mutex<Vec<(Option<String>, Vec<String>)>> {
+    static Q: OnceLock<Mutex<Vec<(Option<String>, Vec<String>)>>> = OnceLock::new();
+    Q.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn pending_path_count(q: &[(Option<String>, Vec<String>)]) -> usize {
+    q.iter().map(|(_, p)| p.len()).sum()
+}
+
+fn push_pending(req: Option<String>, raw: Vec<String>) {
+    let mut q = pending_queue().lock().unwrap_or_else(|e| e.into_inner());
+    // 有限容量：批次数与路径总数都封顶。Builder.manage 后正常路径不应进队；
+    // 这是 state 尚未可取时的安全暂存，不是第二条交付通道。
+    while !q.is_empty()
+        && (q.len() >= PENDING_MAX_BATCHES || pending_path_count(&q) + raw.len() > MAX_COLLECT)
+    {
+        q.remove(0);
+    }
+    q.push((req, raw));
+}
+
+/// 冲刷暂存。正常启动里插件 init 时 state 已可 merge，队列应为空。
+/// take 后再 submit，同一批不会被二次入队；merge 仍按 path_key 去重，避免双层兜底叠路径。
+pub fn flush_pending(app: &AppHandle) {
+    let batch = {
+        let mut q = pending_queue().lock().unwrap_or_else(|e| e.into_inner());
+        std::mem::take(&mut *q)
+    };
+    for (req, raw) in batch {
+        let receipt = submit(app, raw, req.as_deref());
+        crate::menu_delivery::record_merge(req.as_deref(), &receipt);
+    }
+}
+
 /// E2E 用：debug 构建且设了 TAGLAUNCHER_E2E_NO_ACTIVATE 时弹快速窗不抢前台（测试机守护不允许）
 fn activate_on_show() -> bool {
     !(cfg!(debug_assertions) && std::env::var_os("TAGLAUNCHER_E2E_NO_ACTIVATE").is_some())
 }
 
 /// 收到一批路径（首个实例的启动参数，或单实例转发来的参数）。静默窗口后弹出。
-pub fn submit(app: &AppHandle, raw: Vec<String>) {
+/// 返回本次 merge 的 receipt；CollectState 尚未注册时不丢弃，暂存待 flush。
+pub fn submit(app: &AppHandle, raw: Vec<String>, req: Option<&str>) -> MergeReceipt {
     let Some(state) = app.try_state::<CollectState>() else {
-        return;
+        push_pending(req.map(str::to_string), raw);
+        return MergeReceipt::pending();
     };
-    let arrival = {
+    let (arrival, receipt) = {
         let mut inner = state.lock();
         let arrival = inner.merge(&raw, crate::quick::now_ms());
-        let session = &inner.session;
+        let receipt = MergeReceipt::from_inner(&inner, arrival);
         log::info!(
-            "[collect] submit arrival={arrival} session={} paths={} invalid={} truncated={}",
-            session.id,
-            session.paths.len(),
-            session.invalid,
-            session.truncated
+            "[collect] submit arrival={arrival} session={} paths={} invalid={} truncated={} committed={}",
+            receipt.session_id,
+            receipt.path_count,
+            receipt.invalid,
+            inner.session.truncated,
+            receipt.merge_committed
         );
-        arrival
+        (arrival, receipt)
     };
     let app = app.clone();
     let _ = std::thread::Builder::new()
@@ -194,6 +268,7 @@ pub fn submit(app: &AppHandle, raw: Vec<String>) {
             }
             present(&app);
         });
+    receipt
 }
 
 /// 立即并入并弹出：拖入、剪贴板、热键 B 的来源本身就是一份完整列表，不需要等静默窗口。
@@ -382,6 +457,21 @@ mod tests {
             collect_args(["--tl-menu-req", "abc123", "--collect", r"D:\a.txt"]),
             Some(vec![r"D:\a.txt".to_string()])
         );
+    }
+
+    #[test]
+    fn merge_receipt_comes_from_this_merge() {
+        let (dir, files) = tmp_files("receipt", 1);
+        let mut inner = Inner::default();
+        let arrival = inner.merge(&[files[0].clone()], 1);
+        let receipt = MergeReceipt::from_inner(&inner, arrival);
+        assert!(receipt.merge_committed);
+        assert!(!receipt.pending);
+        assert_eq!(receipt.session_id, inner.session.id);
+        assert_eq!(receipt.path_count, 1);
+        assert_eq!(receipt.arrival, arrival);
+        assert_ne!(receipt.session_id, 0);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

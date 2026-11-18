@@ -470,14 +470,8 @@ pub fn handle_second_instance(app: &AppHandle, args: &[String]) {
     // 右键菜单 / 发送到：每项一进程转发过来，交给收纳会话合并
     if let Some(paths) = crate::collect::collect_args(args.iter().skip(1)) {
         let req = crate::menu_delivery::request_id_from_args(args.iter().skip(1));
-        crate::collect::submit(app, paths);
-        let snap = app.try_state::<crate::collect::CollectState>().and_then(|s| s.snapshot());
-        crate::menu_delivery::record_after_submit(
-            req.as_deref(),
-            snap.is_some(),
-            snap.as_ref().map(|s| s.id).unwrap_or(0),
-            snap.as_ref().map(|s| s.paths.len()).unwrap_or(0),
-        );
+        let receipt = crate::collect::submit(app, paths, req.as_deref());
+        crate::menu_delivery::record_merge(req.as_deref(), &receipt);
         return;
     }
     match parse_launch_args(args.iter().skip(1)) {
