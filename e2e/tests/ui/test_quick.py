@@ -106,8 +106,8 @@ class QuickPageFinder:
             self.close()
         if self.extra is None:
             try:
-                self.extra = self.app.pw.chromium.connect_over_cdp(
-                    f"http://127.0.0.1:{self.app.port}", timeout=self.CONNECT_TIMEOUT_MS)
+                self.extra = self.app.connect_cdp(
+                    "quick-finder-extra", timeout=self.CONNECT_TIMEOUT_MS)
             except Exception:  # noqa: BLE001  下轮重试
                 return []
             self.extra_at = time.monotonic()
@@ -127,8 +127,17 @@ class QuickPageFinder:
         return None
 
     def close(self):
-        # 不调用 browser.close()：CDP 连接上 close 可能连带关闭 WebView（同 harness/app.py）；旧连接随进程结束释放
+        """断开备用连接（只断 websocket）。页面若已交给会话使用，调用方应走 release() 而不是 close()。"""
+        if self.extra is not None:
+            self.app.disconnect_cdp(self.extra, reason="quick-finder-close")
         self.extra = None
+
+    def release(self):
+        """find 结束后的所有权：备用连接上找到的 page 留在 AppSession 注册表，其余断开。"""
+        if self.via == "extra":
+            self.extra = None
+            return
+        self.close()
 
 
 def quick_page(app, timeout: float = 20):
@@ -137,15 +146,18 @@ def quick_page(app, timeout: float = 20):
     find = finder.find
 
     try:
-        page = wait_until(find, timeout, "快速搜索窗页面未出现")
-    except AssertionError as e:
-        raise AssertionError(f"{e}；{_quick_diag(app)}") from None
-    page.wait_for_function("() => !!document.querySelector('[data-testid=quick-input]')", timeout=15000)
-    # 桩（不真正启动程序/打开资源管理器、剪贴板只记录）随 context init script 注入；保险起见补一次
-    if not page.evaluate("() => !!window.__e2e"):
-        from harness.app import STUB_JS
-        page.evaluate(STUB_JS)
-    return page
+        try:
+            page = wait_until(find, timeout, "快速搜索窗页面未出现")
+        except AssertionError as e:
+            raise AssertionError(f"{e}；{_quick_diag(app)}") from None
+        page.wait_for_function("() => !!document.querySelector('[data-testid=quick-input]')", timeout=15000)
+        # 桩（不真正启动程序/打开资源管理器、剪贴板只记录）随 context init script 注入；保险起见补一次
+        if not page.evaluate("() => !!window.__e2e"):
+            from harness.app import STUB_JS
+            page.evaluate(STUB_JS)
+        return page
+    finally:
+        finder.release()
 
 
 def enable_quick(app):
@@ -521,8 +533,14 @@ def measure_idle(app, window_s: float) -> dict:
     见 DESIGN_ASSERTION_CHANGES.md §17。TL_E2E_IDLE_ATTACHED=1 保持连接（复现 / 对照用）。"""
     attached = os.environ.get("TL_E2E_IDLE_ATTACHED") == "1"
     pid = app.proc.pid
+    detach = None
     if not attached:
-        app.detach_cdp()
+        detach = app.detach_cdp()
+        if not detach.get("ok"):
+            raise AssertionError(
+                "空闲测量无效：CDP 未完全断开（先决条件失败，不是产品 CPU 超标；不 skip、不放宽门槛）："
+                f"{detach}"
+            )
     try:
         pids0 = [p for p, _ in procmem.tree(pid)]
         th0 = procmem.threads(pids0)
@@ -552,7 +570,9 @@ def measure_idle(app, window_s: float) -> dict:
             elif r == "gpu-process" and a["name"] == "VizCompositorThread":
                 comp["gpu"] += a["cs"] - b["cs"]
     return {"window_s": round(t1 - t0, 1), "cpu_s": round(total, 3),
-            "avg_pct_one_core": round(total / (t1 - t0) * 100, 3), "cdp_attached": attached,
+            "avg_pct_one_core": round(total / (t1 - t0) * 100, 3),
+            "cdp_attached": attached,
+            "cdp_detach": detach,
             "processes": sorted(rows, key=lambda r: -r["cpu_s"]),
             "wakeups_by_process": dict(sorted(wake.items(), key=lambda kv: -kv[1])),
             "compositor_wakeups": comp,

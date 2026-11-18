@@ -11,7 +11,7 @@ from pathlib import Path
 
 from playwright.sync_api import Browser, Page, Playwright
 
-from . import launchdiag, stealth, webview2_policy
+from . import cdpconn, launchdiag, stealth, webview2_policy
 from .launchdiag import HEALTH, LaunchRecord, StartupError
 from .integrity import real_dirs
 from .sandbox import Sandbox, free_port, webview2_args
@@ -52,6 +52,7 @@ class AppSession:
         self.browser: Browser | None = None
         self.page: Page | None = None
         self.port: int | None = None
+        self.cdp_registry = cdpconn.CdpRegistry()
         self.page_errors: list[str] = []
         self.launch_count = 0
         self.spawned_at_ms: float | None = None
@@ -167,7 +168,7 @@ class AppSession:
         # （原 10s 晚于应用 8s 的启动期更新检查，f1c4766 实测由此吞掉更新检查用例）。
         page, seen = None, set()
         while page is None:
-            self.browser = self.pw.chromium.connect_over_cdp(endpoint)
+            self.browser = self.connect_cdp("app-connect", endpoint=endpoint)
             mark("CDP 已连接")
             reconnect_at = time.monotonic() + 4
             while page is None and time.monotonic() < min(deadline, reconnect_at):
@@ -186,7 +187,9 @@ class AppSession:
             if rec:
                 rec.seen_urls = sorted(seen)
             if page is None:
-                # 不调用 browser.close()：CDP 连接上 close 可能连带关闭 WebView；旧连接随进程结束释放
+                # 重连前断开上一张 connect_over_cdp 租约（只断 websocket，不关 WebView）
+                self.disconnect_cdp(self.browser, reason="app-connect-retry")
+                self.browser = None
                 if time.monotonic() >= deadline or self.proc.poll() is not None:
                     raise RuntimeError(f"找不到应用页面 seen={sorted(seen)} alive={self.proc.poll() is None}")
         # 桩脚本需要在应用脚本之前生效：注册 init script 后立刻 reload。
@@ -255,11 +258,7 @@ class AppSession:
                 pass
         if self.proc and self.proc.poll() is None:
             self.kill()
-        try:
-            if self.browser:
-                self.browser.close()
-        except Exception:
-            pass
+        self.cdp_registry.disconnect_all("app-stop")
         self.browser = None
         self.page = None
         return code if code is not None else (self.proc.returncode if self.proc else None)
@@ -283,33 +282,66 @@ class AppSession:
             old.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             raise RuntimeError("应用未按预期自重启")
-        try:
-            if self.browser:
-                self.browser.close()
-        except Exception:
-            pass
+        self.cdp_registry.disconnect_all("app-self-restart")
+        self.browser = None
+        self.page = None
         self.proc = _AdoptedProcess.find(self.sb.exe, exclude=old.pid, timeout=timeout)
         self._connect(timeout)
         return self
 
     # ------------------------------------------------------------------ IPC 工具
     # ------------------------------------------------------------------ 空闲测量窗口
-    def detach_cdp(self) -> None:
-        """断开 Playwright 的 CDP 连接（connect_over_cdp 的 close 只关 websocket，不关 WebView）。
-        空闲 CPU 测的是用户实际体验：测量窗口里不该有调试会话挂在 WebView2 上。"""
-        if self.browser is not None:
-            try:
-                self.browser.close()
-            except Exception:
-                pass
+    def connect_cdp(self, reason: str, *, endpoint: str | None = None, timeout: float | None = None):
+        """唯一创建入口：connect_over_cdp 必须登记。"""
+        ep = endpoint or f"http://127.0.0.1:{self.port}"
+        kw = {} if timeout is None else {"timeout": timeout}
+        browser = self.pw.chromium.connect_over_cdp(ep, **kw)
+        self.cdp_registry.add(browser, reason)
+        return browser
+
+    def disconnect_cdp(self, browser, *, reason: str) -> None:
+        if browser is None:
+            return
+        self.cdp_registry.disconnect(browser, reason)
+        if self.browser is browser:
+            self.browser = None
+            self.page = None
+
+    def detach_cdp(self) -> dict:
+        """断开本会话全部已登记 CDP 连接，并用调试端口 TCP 表证明 0 ESTABLISHED。
+
+        connect_over_cdp 的 Browser.close() 只断 websocket，不关 WebView。
+        关闭异常或仍有 ESTABLISHED 时返回 ok=False，供测量先决条件断言；不吞掉、不假装已脱离。
+        """
+        errors = self.cdp_registry.disconnect_all("detach-all")
         self.browser, self.page = None, None
+        try:
+            tcp = cdpconn.established_on_port(self.port)
+        except OSError as e:
+            errors.append(str(e))
+            tcp = []
+        still = [row for row in self.cdp_registry.snapshot() if row.get("connected") not in (False, 0)]
+        ok = not errors and not tcp and not still
+        return {
+            "ok": ok,
+            "errors": errors,
+            "tcp_established": tcp,
+            "tcp_established_n": len(tcp),
+            "still_connected": still,
+            "log": list(self.cdp_registry.log),
+            "port": self.port,
+        }
 
     def reattach_cdp(self, timeout: float = 30) -> None:
         """重新连上 CDP 并找回主窗页面（不 reload：页面里的桩与状态保持）。"""
         endpoint = f"http://127.0.0.1:{self.port}"
         deadline = time.monotonic() + timeout
+        leftover = self.detach_cdp()
+        if leftover["tcp_established"] or leftover["errors"]:
+            # 重连前尽量清干净；若旧 socket 仍在，下一轮 connect 会再登记，不把脏状态静默吞掉
+            pass
         while True:
-            self.browser = self.pw.chromium.connect_over_cdp(endpoint)
+            self.browser = self.connect_cdp("app-reattach", endpoint=endpoint)
             for ctx in self.browser.contexts:
                 for cand in ctx.pages:
                     url = cand.url or ""
@@ -317,6 +349,7 @@ class AppSession:
                         self.page = cand
                         cand.on("pageerror", lambda err: self.page_errors.append(str(err)))
                         return
+            self.disconnect_cdp(self.browser, reason="app-reattach-retry")
             if time.monotonic() > deadline:
                 raise RuntimeError("重新连接 CDP 后找不到主窗页面")
             time.sleep(0.5)
