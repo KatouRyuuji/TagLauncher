@@ -1920,6 +1920,51 @@ mod tests {
     }
 
     #[test]
+    fn remove_items_and_files_keeps_record_when_recycle_fails() {
+        let conn = setup();
+        let dir = std::env::temp_dir().join(format!("tl_recycle_keep_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let keep = dir.join("keep.bin");
+        let gone = dir.join("gone.bin");
+        std::fs::write(&keep, b"keep").unwrap();
+        std::fs::write(&gone, b"gone").unwrap();
+        let keep_item = add_item(&conn, &keep.to_string_lossy()).unwrap();
+        let gone_item = add_item(&conn, &gone.to_string_lossy()).unwrap();
+
+        fn hook(path: &str) -> Result<(), String> {
+            if path.to_ascii_lowercase().ends_with("keep.bin") {
+                Err("无法移到回收站（测试注入）".to_string())
+            } else {
+                // 不真正回收：仅模拟成功并把夹具文件删掉（普通删除，非用户数据）。
+                let _ = std::fs::remove_file(path);
+                Ok(())
+            }
+        }
+
+        let result = crate::services::recycle_bin::with_recycle_hook(hook, || {
+            remove_items_and_files(&conn, &[keep_item.id, gone_item.id])
+        })
+        .expect("mixed recycle");
+        assert_eq!(result.removed_ids, vec![gone_item.id]);
+        assert_eq!(result.failed.len(), 1);
+        assert_eq!(result.failed[0].id, keep_item.id);
+        assert!(result.failed[0].error.contains("无法移到回收站"));
+        assert!(keep.exists(), "回收失败不得删除源文件");
+        assert!(!gone.exists());
+
+        let remaining: Vec<i64> = {
+            let mut stmt = conn.prepare("SELECT id FROM items ORDER BY id").unwrap();
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+        assert_eq!(remaining, vec![keep_item.id], "失败项必须保留库记录");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn reconcile_marks_missing_for_nonexistent_path_without_identity() {
         let conn = setup();
         let a = add_item(&conn, r"D:\__tl_test_missing__\x.exe").unwrap();
