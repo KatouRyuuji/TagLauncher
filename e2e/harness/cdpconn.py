@@ -310,7 +310,14 @@ class CdpRegistry:
         self.log.append({"op": "close", "id": lease.id, "reason": reason, "endpoint": lease.endpoint, "error": err})
         if err is None:
             self.leases = [x for x in self.leases if x is not lease]
+            self._prune_endpoints()
         return err
+
+    def _prune_endpoints(self) -> None:
+        """endpoints 只反映仍持有的租约。成功关闭后必须丢掉旧端口，否则 AppSession.start()
+        给新进程分配新端口时会被「拒绝登记不同 CDP endpoint」误杀（关闭失败则租约仍在，端口保留）。"""
+        live = {parse_endpoint(lease.endpoint)[1] for lease in self.leases}
+        self.endpoints = {ep for ep in self.endpoints if parse_endpoint(ep)[1] in live}
 
     def disconnect(self, browser: Any, reason: str) -> list[str]:
         errors = []

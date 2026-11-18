@@ -126,6 +126,31 @@ def test_successful_close_removes_lease():
     assert errors == []
     assert reg.leases == []
     assert b.closed is True
+    assert reg.endpoints == set()
+
+
+def test_new_process_port_allowed_after_successful_disconnect():
+    """重启用例会给新进程换端口；旧租约成功关闭后应允许登记新 endpoint。关闭失败则仍拒绝。"""
+    reg = cdpconn.CdpRegistry()
+    first = _OkBrowser()
+    reg.add(first, "app-connect", endpoint="http://127.0.0.1:9222")
+    assert reg.disconnect_all("app-stop") == []
+    assert reg.leases == []
+    assert reg.endpoints == set()
+    second = _OkBrowser()
+    lease = reg.add(second, "app-connect", endpoint="http://127.0.0.1:9333")
+    assert lease.endpoint == "http://127.0.0.1:9333"
+    assert {cdpconn.parse_endpoint(e)[1] for e in reg.endpoints} == {9333}
+    # 仍有活租约时换端口必须拒绝
+    with pytest.raises(ValueError, match="不同 CDP endpoint"):
+        reg.add(_OkBrowser(), "extra", endpoint="http://127.0.0.1:9444")
+    # 关闭失败：旧端口保留，不能登记新进程端口
+    reg2 = cdpconn.CdpRegistry()
+    reg2.add(_FailBrowser(), "stuck", endpoint="http://127.0.0.1:9222")
+    errors = reg2.disconnect_all("app-stop")
+    assert errors
+    with pytest.raises(ValueError, match="不同 CDP endpoint"):
+        reg2.add(_OkBrowser(), "app-connect", endpoint="http://127.0.0.1:9333")
 
 
 def test_empty_registry_is_not_disconnect_evidence_without_survey():
