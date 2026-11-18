@@ -278,7 +278,6 @@ struct ControllerSnap {
     frame_id_status: String,
     env13_ready: bool,
     env13_error: Option<String>,
-    environment: Option<ICoreWebView2Environment13>,
 }
 
 fn collect_controllers(app: &AppHandle) -> Vec<ControllerSnap> {
@@ -298,7 +297,6 @@ fn collect_controllers(app: &AppHandle) -> Vec<ControllerSnap> {
             frame_id_status: "UNKNOWN".into(),
             env13_ready: false,
             env13_error: None,
-            environment: None,
         };
         let slot = std::sync::Arc::new(Mutex::new(None::<ControllerSnap>));
         let to_fill = slot.clone();
@@ -314,7 +312,6 @@ fn collect_controllers(app: &AppHandle) -> Vec<ControllerSnap> {
             frame_id_status: "UNKNOWN".into(),
             env13_ready: false,
             env13_error: None,
-            environment: None,
         };
         let _ = window.with_webview(move |webview| {
             let mut cur = seed;
@@ -352,9 +349,8 @@ fn collect_controllers(app: &AppHandle) -> Vec<ControllerSnap> {
                         // Environment 在 ICoreWebView2_2；与 FrameId（_20）分开查询，缺 _20 仍可采进程表。
                         match core.cast::<ICoreWebView2_2>().and_then(|c2| c2.Environment()) {
                             Ok(env) => match env.cast::<ICoreWebView2Environment13>() {
-                                Ok(env13) => {
+                                Ok(_env13) => {
                                     cur.env13_ready = true;
-                                    cur.environment = Some(env13);
                                 }
                                 Err(e) => {
                                     cur.env13_error = Some(format!(
@@ -549,7 +545,7 @@ fn finish_snapshot(
     generation: u64,
     tag: String,
     start_ms: u64,
-    mut controllers: Vec<ControllerSnap>,
+    controllers: Vec<ControllerSnap>,
     processes: Result<Vec<Value>, String>,
     processes_status: &str,
     processes_reason: Option<String>,
@@ -559,10 +555,8 @@ fn finish_snapshot(
         Err(e) => (Vec::new(), "UNKNOWN".into(), Some(e)),
     };
     let windows: Vec<Value> = controllers
-        .iter_mut()
+        .iter()
         .map(|c| {
-            // 环境对象不进 JSON
-            c.environment = None;
             let mapping = if pstatus == "ok" {
                 join_frame_id(c.frame_id, &c.frame_id_status, &procs)
             } else {
@@ -629,11 +623,10 @@ fn start_snapshot(tag: String) -> u64 {
         return generation;
     };
     let controllers = collect_controllers(app);
-    let env = controllers.iter().find_map(|c| c.environment.clone());
     let env13_error = controllers
         .iter()
         .find_map(|c| c.env13_error.clone());
-    let Some(env13) = env else {
+    if !controllers.iter().any(|c| c.env13_ready) {
         let reason = env13_error.unwrap_or_else(|| {
             "interface-missing ICoreWebView2Environment13 or no WebView yet".into()
         });
@@ -647,44 +640,100 @@ fn start_snapshot(tag: String) -> u64 {
             Some(reason),
         );
         return generation;
-    };
-    let handler_controllers = controllers.clone();
-    let tag_for_start_err = tag.clone();
-    let handler = GetProcessExtendedInfosCompletedHandler::create(Box::new(move |hr, collection| {
-        // create() 要 CompletedClosure = Box<dyn FnOnce(Result<()>, Option<Collection>)>.
-        let outcome = match hr {
-            Ok(()) => match collection {
-                Some(col) => collect_extended_infos(&col),
-                None => Err("GetProcessExtendedInfos completed with empty collection".into()),
-            },
-            Err(e) => Err(format!("GetProcessExtendedInfos failed: {e}")),
-        };
-        let pstatus = if outcome.as_ref().ok().is_some() {
-            "ok"
-        } else {
-            "UNKNOWN"
-        };
-        let preason = outcome.as_ref().err().cloned();
+    }
+    // COM 指针不是 Send，不能经 with_webview 闭包运出。在 UI 线程闭包内启动异步查询。
+    let label = controllers
+        .iter()
+        .find(|c| c.env13_ready)
+        .map(|c| c.label.clone())
+        .expect("env13_ready");
+    let Some(window) = app.get_webview_window(&label) else {
         finish_snapshot(
             generation,
-            tag.clone(),
-            start_ms,
-            handler_controllers,
-            outcome,
-            pstatus,
-            preason,
-        );
-        Ok(())
-    }));
-    if let Err(e) = unsafe { env13.GetProcessExtendedInfos(&handler) } {
-        finish_snapshot(
-            generation,
-            tag_for_start_err,
+            tag,
             start_ms,
             controllers,
-            Err(format!("GetProcessExtendedInfos start failed: {e}")),
+            Err("webview window disappeared before GetProcessExtendedInfos".into()),
             "UNKNOWN",
-            Some(format!("GetProcessExtendedInfos start failed: {e}")),
+            Some("webview window disappeared before GetProcessExtendedInfos".into()),
+        );
+        return generation;
+    }
+    let snaps_handler = controllers.clone();
+    let snaps_err = controllers;
+    let tag_handler = tag.clone();
+    let tag_err = tag.clone();
+    let tag_queue_err = tag;
+    let snaps_queue_err = snaps_err.clone();
+    let start = window.with_webview(move |webview| {
+        let env13 = unsafe {
+            webview
+                .controller()
+                .CoreWebView2()
+                .ok()
+                .and_then(|core| core.cast::<ICoreWebView2_2>().ok())
+                .and_then(|c2| c2.Environment().ok())
+                .and_then(|env| env.cast::<ICoreWebView2Environment13>().ok())
+        };
+        let Some(env13) = env13 else {
+            finish_snapshot(
+                generation,
+                tag_err,
+                start_ms,
+                snaps_err,
+                Err("Environment13 unavailable when starting GetProcessExtendedInfos".into()),
+                "UNKNOWN",
+                Some("Environment13 unavailable when starting GetProcessExtendedInfos".into()),
+            );
+            return;
+        };
+        let handler = GetProcessExtendedInfosCompletedHandler::create(Box::new(move |hr, collection| {
+            // create() 要 CompletedClosure = Box<dyn FnOnce(Result<()>, Option<Collection>)>.
+            let outcome = match hr {
+                Ok(()) => match collection {
+                    Some(col) => collect_extended_infos(&col),
+                    None => Err("GetProcessExtendedInfos completed with empty collection".into()),
+                },
+                Err(e) => Err(format!("GetProcessExtendedInfos failed: {e}")),
+            };
+            let pstatus = if outcome.as_ref().ok().is_some() {
+                "ok"
+            } else {
+                "UNKNOWN"
+            };
+            let preason = outcome.as_ref().err().cloned();
+            finish_snapshot(
+                generation,
+                tag_handler,
+                start_ms,
+                snaps_handler,
+                outcome,
+                pstatus,
+                preason,
+            );
+            Ok(())
+        }));
+        if let Err(e) = unsafe { env13.GetProcessExtendedInfos(&handler) } {
+            finish_snapshot(
+                generation,
+                tag_err.clone(),
+                start_ms,
+                snaps_err,
+                Err(format!("GetProcessExtendedInfos start failed: {e}")),
+                "UNKNOWN",
+                Some(format!("GetProcessExtendedInfos start failed: {e}")),
+            );
+        }
+    });
+    if let Err(e) = start {
+        finish_snapshot(
+            generation,
+            tag_queue_err,
+            start_ms,
+            snaps_queue_err,
+            Err(format!("with_webview failed: {e}")),
+            "UNKNOWN",
+            Some(format!("with_webview failed: {e}")),
         );
     }
     generation
