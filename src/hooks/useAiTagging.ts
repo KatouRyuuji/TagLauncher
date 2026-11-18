@@ -129,10 +129,13 @@ export function useAiTagging() {
             // catch(()=>{}) 吞掉前序对象的失败再接续——链上某一对象应用失败不应
             // 波及后续对象（否则链永久 rejected：后续全部跳过且误记为同一个错误）。
             applyChain = applyChain.catch(() => {}).then(async (): Promise<boolean> => {
+              // 串行队列回调入口与每个 await 之后都复核取消，避免取消后仍 ensure/写标签。
+              if (cancelRef.current) return false;
               const ids: number[] = [];
               for (const name of names) {
                 // ensureTag 返回 null = 配置禁止新建且该标签不在词表：跳过，不创建
                 const id = await primitives.ensureTag(name);
+                if (cancelRef.current) return false;
                 if (id !== null) ids.push(id);
               }
               // 建议全部被词表过滤：无可应用标签，按"无建议"计
@@ -141,6 +144,7 @@ export function useAiTagging() {
               // 增删该对象的标签会被"开始时的 item.tags 快照"全量替换覆盖（新增丢失、
               // 删除复活）。对象已被删除时 getItem 抛错 → 由 worker catch 归因到本对象。
               const fresh = await db.getItem(item.id);
+              if (cancelRef.current) return false;
               const merged = Array.from(new Set([...fresh.tags.map((t) => t.id), ...ids]));
               await primitives.applyItemTags(item.id, merged);
               return true;
