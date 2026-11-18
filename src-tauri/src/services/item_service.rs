@@ -1515,18 +1515,18 @@ fn is_regenerable_cache_dir(parent: &std::path::Path, name: &str) -> bool {
 }
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 
-/// 每个失效对象最多保留的候选匹配数：达到 2 即可判定"歧义"，无需再找第 3 个。
+/// 每个失效对象最多保留的候选匹配数，供用户确认。达到 2 即可展示歧义并停止再找，避免浪费扫描预算。
 const MAX_SIGNATURE_CANDIDATES: usize = 2;
 
-/// 扫描候选范围的可读目录，完整遍历后返回唯一签名命中；超过预算时明确报错。
-/// `roots` 为 None 时扫描本机全部盘符（原行为）；给定时只在这些文件夹内找回，
-/// 唯一性也只在该范围内核验（范围内恰好一个同签名文件才回写，规则不变）。
+/// 扫描候选范围的可读目录，完整遍历后返回弱签名候选（含唯一命中）。
+/// 弱签名不能自动视为同一文件：扫描结果只用于展示/确认，确认前对象保持 missing。
+/// 超过预算时明确报错，不返回部分候选。
 /// `roots` 由 [`resolve_scan_roots`] 得出；`ctl` 提供取消、时间上限与进度回调。
 pub fn scan_for_signatures(
     rows: &[MissingSignatureRow],
     roots: &[String],
     ctl: &ScanControl<'_>,
-) -> Result<Vec<(i64, String)>, String> {
+) -> Result<Vec<(i64, Vec<String>)>, String> {
     scan_signature_roots_ctl(rows, roots, SCAN_MAX_ENTRIES, ctl)
 }
 
@@ -1621,7 +1621,7 @@ fn scan_root_key(path: &str) -> String {
 type SignatureGroups = std::collections::HashMap<u64, std::collections::HashMap<(u64, u64), Vec<usize>>>;
 
 #[cfg(test)]
-fn scan_signature_roots(rows: &[MissingSignatureRow], roots: &[String], budget: usize) -> Result<Vec<(i64, String)>, String> {
+fn scan_signature_roots(rows: &[MissingSignatureRow], roots: &[String], budget: usize) -> Result<Vec<(i64, Vec<String>)>, String> {
     let never = std::sync::atomic::AtomicBool::new(false);
     let ctl = ScanControl { cancel: &never, deadline: None, progress: &|_, _| {} };
     scan_signature_roots_ctl(rows, roots, budget, &ctl)
@@ -1632,7 +1632,7 @@ fn scan_signature_roots_ctl(
     roots: &[String],
     mut budget: usize,
     ctl: &ScanControl<'_>,
-) -> Result<Vec<(i64, String)>, String> {
+) -> Result<Vec<(i64, Vec<String>)>, String> {
     use std::collections::HashMap;
     if rows.is_empty() {
         return Ok(Vec::new());
@@ -1654,11 +1654,11 @@ fn scan_signature_roots_ctl(
     Ok(candidates
         .into_iter()
         .enumerate()
-        .filter_map(|(idx, mut paths)| {
-            if paths.len() == 1 {
-                Some((rows[idx].id, paths.pop().unwrap()))
-            } else {
+        .filter_map(|(idx, paths)| {
+            if paths.is_empty() {
                 None
+            } else {
+                Some((rows[idx].id, paths))
             }
         })
         .collect())
@@ -2037,8 +2037,9 @@ mod tests {
             tail: sig.tail_hash,
         }];
         let found = scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 1_000_000).unwrap();
-        assert_eq!(found.len(), 1, "应按内容签名找回唯一文件");
-        assert!(found[0].1.to_lowercase().ends_with("moved.bin"));
+        assert_eq!(found.len(), 1, "应按内容签名列出唯一候选");
+        assert_eq!(found[0].1.len(), 1);
+        assert!(found[0].1[0].to_lowercase().ends_with("moved.bin"));
 
         let _ = std::fs::remove_dir_all(&base);
     }
@@ -2151,10 +2152,13 @@ mod tests {
         let rows = vec![MissingSignatureRow { id: 5, path: "D:/old/moved.bin".to_string(), size: sig.size, head: sig.head_hash, tail: sig.tail_hash }];
         let pick = base.join("pick").to_string_lossy().into_owned();
         let found = scan_for_signatures(&rows, &resolve_scan_roots(Some(&[pick][..])).unwrap(), &idle_ctl()).unwrap();
-        assert_eq!(found.len(), 1, "选定文件夹内唯一");
-        assert!(found[0].1.to_lowercase().ends_with("moved.bin"));
+        assert_eq!(found.len(), 1, "选定文件夹内唯一候选");
+        assert_eq!(found[0].1.len(), 1);
+        assert!(found[0].1[0].to_lowercase().ends_with("moved.bin"));
         let whole = base.to_string_lossy().into_owned();
-        assert!(scan_for_signatures(&rows, &resolve_scan_roots(Some(&[whole][..])).unwrap(), &idle_ctl()).unwrap().is_empty(), "范围内两份 → 歧义不回写");
+        let ambig = scan_for_signatures(&rows, &resolve_scan_roots(Some(&[whole][..])).unwrap(), &idle_ctl()).unwrap();
+        assert_eq!(ambig.len(), 1);
+        assert_eq!(ambig[0].1.len(), 2, "范围内两份 → 列出候选，不自动回写");
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -2180,13 +2184,92 @@ mod tests {
             tail: sig.tail_hash,
         }];
 
-        let unique = scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 1_000_000).unwrap();
-        assert!(unique.is_empty(), "歧义命中不应自动回写");
+        let found = scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 1_000_000).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].1.len(), 2, "歧义命中列出全部候选，不自动回写");
 
         let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
+
+    #[test]
+    fn unique_weak_signature_stays_missing_until_confirmed() {
+        let base = std::env::temp_dir().join(format!(
+            "tl_sig_confirm_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let original = base.join("old.bin");
+        let moved = base.join("moved.bin");
+        let data: Vec<u8> = (0..40_000u32).map(|i| (i % 83) as u8).collect();
+        std::fs::write(&original, &data).unwrap();
+        let conn = setup();
+        let item = add_item(&conn, &original.to_string_lossy()).unwrap();
+        let sig = file_identity::compute_signature(&original.to_string_lossy()).unwrap();
+        std::fs::rename(&original, &moved).unwrap();
+        conn.execute(
+            "UPDATE items SET path = ?1, is_missing = 1, sig_size = ?2, sig_head = ?3, sig_tail = ?4 WHERE id = ?5",
+            rusqlite::params![
+                original.to_string_lossy(),
+                sig.size as i64,
+                sig.head_hash as i64,
+                sig.tail_hash as i64,
+                item.id
+            ],
+        )
+        .unwrap();
+
+        let rows = read_missing_signatures(&conn).unwrap();
+        let found = scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 1_000_000).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].1.len(), 1);
+        assert!(found[0].1[0].to_lowercase().ends_with("moved.bin"));
+        let missing: i64 = conn
+            .query_row("SELECT is_missing FROM items WHERE id=?1", [item.id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(missing, 1, "弱签名命中不得自动确认、对象保持 missing");
+
+        let choice = vec![(item.id, found[0].1[0].clone())];
+        let writes = plan_signature_relocations(&rows, &choice);
+        assert_eq!(apply_signature_relocations(&conn, &writes).unwrap(), 1);
+        let (path, missing): (String, i64) = conn
+            .query_row("SELECT path, is_missing FROM items WHERE id=?1", [item.id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert!(path.to_lowercase().ends_with("moved.bin"));
+        assert_eq!(missing, 0);
+
+        // 确认前文件被改写：复核签名失败，不得回写。
+        conn.execute(
+            "UPDATE items SET path = ?1, is_missing = 1, sig_size = ?2, sig_head = ?3, sig_tail = ?4 WHERE id = ?5",
+            rusqlite::params![
+                original.to_string_lossy(),
+                sig.size as i64,
+                sig.head_hash as i64,
+                sig.tail_hash as i64,
+                item.id
+            ],
+        )
+        .unwrap();
+        std::fs::write(&moved, b"changed-after-scan-should-not-match").unwrap();
+        let rows = read_missing_signatures(&conn).unwrap();
+        let writes = plan_signature_relocations(&rows, &choice);
+        assert!(writes.is_empty(), "签名已变则确认阶段不得回写");
+        assert_eq!(apply_signature_relocations(&conn, &writes).unwrap(), 0);
+        let missing: i64 = conn
+            .query_row("SELECT is_missing FROM items WHERE id=?1", [item.id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(missing, 1);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     fn unreadable_root_does_not_accept_a_single_candidate() {
         let base = std::env::temp_dir().join(format!("tl_unreadable_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
@@ -2273,7 +2356,8 @@ mod tests {
         let rows = [MissingSignatureRow { id: 3, path: "D:/old.bin".into(), size: sig.size, head: sig.head_hash, tail: sig.tail_hash }];
         let found = scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 1_000).unwrap();
         assert_eq!(found.len(), 1, "根下 Windows 不参与扫描，嵌套同名目录照常扫描");
-        assert!(found[0].1.ends_with("keep.bin"));
+        assert_eq!(found[0].1.len(), 1);
+        assert!(found[0].1[0].ends_with("keep.bin"));
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -2297,7 +2381,8 @@ mod tests {
         let rows = [MissingSignatureRow { id: 4, path: "D:/old.bin".into(), size: sig.size, head: sig.head_hash, tail: sig.tail_hash }];
         let found = scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 1_000).unwrap();
         assert_eq!(found.len(), 1, "缓存目录内的同签名副本不应造成歧义");
-        assert!(found[0].1.ends_with("keep.bin"), "普通 Library 文件夹须照常扫描：{:?}", found);
+        assert_eq!(found[0].1.len(), 1);
+        assert!(found[0].1[0].ends_with("keep.bin"), "普通 Library 文件夹须照常扫描：{:?}", found);
         assert!(is_regenerable_cache_dir(&unity, "library"));
         assert!(!is_regenerable_cache_dir(plain.parent().unwrap(), "Library"));
         std::fs::remove_dir_all(base).unwrap();
@@ -2317,7 +2402,9 @@ mod tests {
         let rows = [MissingSignatureRow { id: 1, path: "D:/old.bin".into(), size: signature.size, head: signature.head_hash, tail: signature.tail_hash }];
         let roots = [first.to_string_lossy().into_owned(), second.to_string_lossy().into_owned()];
         assert!(scan_signature_roots(&rows, &roots, 1).unwrap_err().contains("未完成唯一性核验"));
-        assert!(scan_signature_roots(&rows, &roots, 2).unwrap().is_empty());
+        let both = scan_signature_roots(&rows, &roots, 2).unwrap();
+        assert_eq!(both.len(), 1);
+        assert_eq!(both[0].1.len(), 2, "两份候选列出但不自动回写");
         assert_eq!(scan_signature_roots(&rows, &roots[..1], 1).unwrap().len(), 1);
         std::fs::remove_dir_all(base).unwrap();
     }
@@ -2329,7 +2416,9 @@ mod tests {
         for name in ["one.bin", "two.bin", "three.bin"] { std::fs::write(base.join(name), b"same").unwrap(); }
         let signature = file_identity::compute_signature(&base.join("one.bin").to_string_lossy()).unwrap();
         let rows = [MissingSignatureRow { id: 1, path: "D:/old.bin".into(), size: signature.size, head: signature.head_hash, tail: signature.tail_hash }];
-        assert!(scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 2).unwrap().is_empty());
+        let found = scan_signature_roots(&rows, &[base.to_string_lossy().into_owned()], 2).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].1.len(), 2, "达到候选上限即结束扫描，仍不自动回写");
         std::fs::remove_dir_all(base).unwrap();
     }
 

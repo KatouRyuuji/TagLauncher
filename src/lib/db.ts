@@ -541,15 +541,34 @@ export async function renameItems(renames: RenameRequest[], dryRun: boolean): Pr
 
 // ---- 跨盘符兜底找回 ----
 
-/** 对失效对象按内容签名做跨盘找回，返回成功找回数量（扫描在后端锁外进行） */
-/** 失效对象按内容签名找回；`roots` 省略 = 全部盘符，给定 = 只在这些文件夹内找回并核验唯一性。 */
+/** 失效对象按内容签名找回；`roots` 省略 = 全部盘符，给定 = 只在这些文件夹内扫描候选。 */
+/** 弱签名只返回候选，不自动回写；确认后再调用 confirmSignatureRelocations。 */
 /** 停止所有在途的找回扫描（不回写）；返回被停止的扫描数 */
 export async function cancelRelocate(): Promise<number> {
   return invokeCmd("cancel_relocate");
 }
 
-export async function relocateMissing(roots?: string[]): Promise<number> {
+export interface RelocateCandidate {
+  id: number;
+  missingPath: string;
+  paths: string[];
+}
+
+export interface RelocateScanResult {
+  candidates: RelocateCandidate[];
+}
+
+export interface RelocateChoice {
+  id: number;
+  path: string;
+}
+
+export async function relocateMissing(roots?: string[]): Promise<RelocateScanResult> {
   return invokeCmd("relocate_missing", roots ? { roots } : undefined);
+}
+
+export async function confirmSignatureRelocations(choices: RelocateChoice[]): Promise<number> {
+  return invokeCmd("confirm_signature_relocations", { choices });
 }
 
 // ---- Mod 网络 API ----

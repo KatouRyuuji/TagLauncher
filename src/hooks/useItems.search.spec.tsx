@@ -47,8 +47,8 @@ describe("对象搜索（后端索引）与筛选", () => {
     reject(new Error("扫描未完成"));
     await failure;
     expect(db.relocateMissing).toHaveBeenCalledTimes(1);
-    vi.mocked(db.relocateMissing).mockResolvedValueOnce(0);
-    await expect(result.current.relocateMissing()).resolves.toBe(0);
+    vi.mocked(db.relocateMissing).mockResolvedValueOnce({ candidates: [] });
+    await expect(result.current.relocateMissing()).resolves.toEqual({ candidates: [] });
     expect(db.relocateMissing).toHaveBeenCalledTimes(2);
   });
 

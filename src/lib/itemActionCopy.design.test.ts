@@ -13,6 +13,7 @@ import {
   parentDirectoryPath,
   pathBasename,
   relocateNoneCopy,
+  relocateCandidatesCopy,
   relocateRecoveredCopy,
   removeFromLibraryDialogTitle,
   revealFailedToast,
@@ -65,6 +66,9 @@ test("确认框标题：默认移出库，删盘入口才写删除本地文件",
 
 test("失效找回结果写在行上", () => {
   assert.ok(relocateNoneCopy().includes("没有找回任何项目"));
+  assert.equal(relocateCandidatesCopy(0), relocateNoneCopy());
+  assert.ok(relocateCandidatesCopy(2).includes("找到 2 项候选"));
+  assert.ok(relocateCandidatesCopy(2).includes("确认"));
   assert.equal(relocateRecoveredCopy(2), "已找回 2 项");
 });
 

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, LoaderCircle, Trash2, TriangleAlert } from "lucide-react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { relocateNoneCopy, relocateRecoveredCopy } from "../lib/itemActionCopy";
+import { relocateCandidatesCopy, relocateNoneCopy, relocateRecoveredCopy } from "../lib/itemActionCopy";
+import type { RelocateCandidate, RelocateChoice } from "../lib/db";
 import { compareNames } from "../lib/itemQuery";
 import { truncatePathMiddle } from "../lib/itemUtils";
 import { showToast } from "../lib/toast";
@@ -11,13 +12,17 @@ import type { ItemWithTags } from "../types";
 import { DialogHeader } from "./DialogHeader";
 import { ItemVisualIcon } from "./ItemVisualIcon";
 
+const EMPTY_RELOCATE_CANDIDATES: RelocateCandidate[] = [];
+
 export function MissingItemsReviewDialog({
   open,
   items,
   relocating,
   lastRelocateResult,
+  relocateCandidates = EMPTY_RELOCATE_CANDIDATES,
   onClose,
   onRelocate,
+  onConfirmRelocations,
   onPickRelocateRoots,
   scanProgress = null,
   relocateNote = null,
@@ -28,9 +33,11 @@ export function MissingItemsReviewDialog({
   items: ItemWithTags[];
   relocating: boolean;
   lastRelocateResult: number | null;
+  relocateCandidates?: RelocateCandidate[];
   onClose: () => void;
-  /** roots 省略 = 全部盘符；给定 = 只在这些文件夹内找回 */
+  /** roots 省略 = 全部盘符；给定 = 只在这些文件夹内扫描候选 */
   onRelocate: (roots?: string[]) => Promise<void>;
+  onConfirmRelocations?: (choices: RelocateChoice[]) => Promise<number>;
   /** 选择找回范围（原生文件夹对话框）；返回 null 表示取消 */
   onPickRelocateRoots: () => Promise<string[] | null>;
   /** 在途找回扫描的最新进度（自动或手动触发均会显示）；null = 没有在扫描 */
@@ -44,6 +51,20 @@ export function MissingItemsReviewDialog({
   useEscapeKey(onClose, open);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [removing, setRemoving] = useState(false);
+  const [chosenPaths, setChosenPaths] = useState<Record<number, string>>({});
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    setChosenPaths((current) => {
+      const next: Record<number, string> = {};
+      for (const candidate of relocateCandidates) {
+        next[candidate.id] = current[candidate.id] && candidate.paths.includes(current[candidate.id])
+          ? current[candidate.id]
+          : candidate.paths[0] ?? "";
+      }
+      return next;
+    });
+  }, [relocateCandidates]);
 
   const handlePickAndRelocate = async () => {
     let roots: string[] | null;
@@ -122,7 +143,42 @@ export function MissingItemsReviewDialog({
                 </span>
               }
             />
-            {lastRelocateResult !== null && (
+            {relocateCandidates.length > 0 && (
+              <div
+                role="status"
+                data-testid="relocate-candidates"
+                className="mt-3 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-warning)_28%,transparent)] bg-[var(--status-warning-bg)] px-3 py-2 text-sm text-[var(--color-warning-ink)]"
+              >
+                <p>{relocateCandidatesCopy(relocateCandidates.length)}</p>
+                <ul className="mt-2 space-y-2">
+                  {relocateCandidates.map((candidate) => (
+                    <li key={candidate.id} className="flex flex-col gap-1">
+                      <span className="text-xs opacity-80" title={candidate.missingPath}>
+                        原路径：{truncatePathMiddle(candidate.missingPath, 64)}
+                      </span>
+                      <label className="flex flex-col gap-1">
+                        <span className="sr-only">为失效项 {candidate.id} 选择候选路径</span>
+                        <select
+                          data-testid={`relocate-candidate-${candidate.id}`}
+                          className="rounded-[var(--radius-sm)] border border-[var(--border-default)] bg-[var(--bg-input)] px-2 py-1 text-xs"
+                          value={chosenPaths[candidate.id] ?? candidate.paths[0] ?? ""}
+                          onChange={(event) =>
+                            setChosenPaths((current) => ({ ...current, [candidate.id]: event.target.value }))
+                          }
+                        >
+                          {candidate.paths.map((path) => (
+                            <option key={path} value={path}>
+                              {path}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {lastRelocateResult !== null && relocateCandidates.length === 0 && (
               <p
                 role="status"
                 className={
@@ -227,6 +283,37 @@ export function MissingItemsReviewDialog({
             >
               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
               从库中移除已勾选
+            </button>
+            <button
+              type="button"
+              className="action-button action-button-primary"
+              data-testid="relocate-confirm"
+              disabled={relocating || confirming || relocateCandidates.length === 0 || !onConfirmRelocations}
+              onClick={() => {
+                void (async () => {
+                  if (!onConfirmRelocations) return;
+                  const choices = relocateCandidates
+                    .map((candidate) => ({
+                      id: candidate.id,
+                      path: chosenPaths[candidate.id] ?? candidate.paths[0] ?? "",
+                    }))
+                    .filter((choice) => choice.path);
+                  if (choices.length === 0) return;
+                  setConfirming(true);
+                  try {
+                    const recovered = await onConfirmRelocations(choices);
+                    if (recovered === 0) {
+                      showToast("确认后未能回写，候选可能已变化，请重新扫描", "warning");
+                    }
+                  } catch (error) {
+                    showToast(`确认找回失败：${error instanceof Error ? error.message : String(error)}`, "error");
+                  } finally {
+                    setConfirming(false);
+                  }
+                })();
+              }}
+            >
+              {confirming ? "正在确认…" : "确认找回所选"}
             </button>
             <button type="button" className="action-button" onClick={onClose}>
               关闭

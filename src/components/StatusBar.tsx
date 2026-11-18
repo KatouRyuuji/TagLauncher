@@ -5,7 +5,6 @@ import { LoaderCircle, TriangleAlert, ZoomIn, ZoomOut } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { useSearch } from "../hooks/useSearch";
 import * as db from "../lib/db";
-import { relocateRecoveredCopy } from "../lib/itemActionCopy";
 import {
   CARD_SIZE_SCALE_RANGE,
   CARD_SIZE_SCALE_STEP,
@@ -19,13 +18,15 @@ export function StatusBar({
   missingCount,
   missingItems,
   onRelocateMissing,
+  onConfirmRelocations,
   onRemoveMissing,
 }: {
   /** 失效对象总数（来自 library_stats，不需取齐对象） */
   missingCount: number;
   /** 失效对象本体：只在审阅对话框打开时由 App 按 ID 取齐 */
   missingItems: ItemWithTags[];
-  onRelocateMissing: (roots?: string[]) => Promise<number>;
+  onRelocateMissing: (roots?: string[]) => Promise<db.RelocateScanResult>;
+  onConfirmRelocations: (choices: db.RelocateChoice[]) => Promise<number>;
   onRemoveMissing: (ids: number[]) => Promise<void>;
 }) {
   const { searchQuery, inputValue } = useSearch();
@@ -42,6 +43,7 @@ export function StatusBar({
   const persistWorkspacePrefsNow = useAppStore((state) => state.persistWorkspacePrefsNow);
   const [relocating, setRelocating] = useState(false);
   const [lastRelocateResult, setLastRelocateResult] = useState<number | null>(null);
+  const [relocateCandidates, setRelocateCandidates] = useState<db.RelocateCandidate[]>([]);
   // 停止 / 超时 / 失败的说明（显示在失效对话框横幅里）
   const [relocateNote, setRelocateNote] = useState<{ kind: "info" | "warning"; text: string } | null>(null);
   const scan = useRelocateScan();
@@ -89,16 +91,14 @@ export function StatusBar({
   const handleRelocate = async (roots?: string[]) => {
     if (relocating) return;
     setLastRelocateResult(null);
+    setRelocateCandidates([]);
     setRelocateNote(null);
     setRelocating(true);
     try {
-      const recovered = await onRelocateMissing(roots);
-      setLastRelocateResult(recovered);
-      // 找回数为 0 的说明已写在对话框横幅上（上下文最强），不再弹 toast 重复同一文案
-      if (recovered > 0) {
-        // 全部找回时对话框会因 missingCount===0 自动关闭，success toast 兜住结果。
-        showToast(relocateRecoveredCopy(recovered), "success");
-      }
+      const result = await onRelocateMissing(roots);
+      setRelocateCandidates(result.candidates);
+      setLastRelocateResult(result.candidates.length);
+      // 候选说明写在对话框横幅上；未自动回写。
     } catch (err) {
       if (isScanCancelled(err)) {
         setRelocateNote({ kind: "info", text: scanErrorMessage(err) });
@@ -111,6 +111,18 @@ export function StatusBar({
     } finally {
       setRelocating(false);
     }
+  };
+
+  const handleConfirmRelocations = async (choices: db.RelocateChoice[]) => {
+    const recovered = await onConfirmRelocations(choices);
+    if (recovered > 0) {
+      setLastRelocateResult(recovered);
+      setRelocateCandidates((current) => {
+        const confirmed = new Set(choices.map((choice) => choice.id));
+        return current.filter((candidate) => !confirmed.has(candidate.id));
+      });
+    }
+    return recovered;
   };
 
   const searchPending = inputValue !== searchQuery;
@@ -280,8 +292,10 @@ export function StatusBar({
       items={missingItems}
       relocating={relocating}
       lastRelocateResult={lastRelocateResult}
+      relocateCandidates={relocateCandidates}
       onClose={() => setReviewOpen(false)}
       onRelocate={handleRelocate}
+      onConfirmRelocations={handleConfirmRelocations}
       onPickRelocateRoots={pickRelocateRoots}
       scanProgress={scan}
       relocateNote={relocateNote}

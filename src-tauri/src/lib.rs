@@ -327,7 +327,7 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
             std::fs::create_dir_all(&app_dir).ok();
-            let app_paths = path_service::resolve_app_paths(app.handle());
+            let app_paths = path_service::resolve_app_paths(app.handle()).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
             let _ = STARTUP_SAVE_DIR.set(app_paths.save_dir.clone());
             app_paths.ensure_dirs().map_err(|e| {
                 std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -616,6 +616,7 @@ pub fn run() {
             clear_recent_items,
             // 跨盘符兜底找回
             relocate_missing,
+            confirm_signature_relocations,
             cancel_relocate,
             // 文件柜
             get_cabinets,

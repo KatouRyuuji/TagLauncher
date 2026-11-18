@@ -278,6 +278,27 @@ pub struct RelocateFinished {
     pub recovered: usize,
 }
 
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocateCandidate {
+    pub id: i64,
+    pub missing_path: String,
+    pub paths: Vec<String>,
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocateScanResult {
+    pub candidates: Vec<RelocateCandidate>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocateChoice {
+    pub id: i64,
+    pub path: String,
+}
+
 /// 在途扫描登记表：停止扫描时把所有在途扫描的取消标志置位。
 struct ScanRegistry {
     next: std::sync::atomic::AtomicU64,
@@ -340,7 +361,7 @@ pub fn relocate_missing(
     app: AppHandle,
     db: State<Database>,
     roots: Option<Vec<String>>,
-) -> Result<usize, String> {
+) -> Result<RelocateScanResult, String> {
     use tauri::Emitter;
     // 先校验范围：选错文件夹应立即报错，而不是在读库之后才失败
     let scoped = roots.is_some();
@@ -404,16 +425,37 @@ pub fn relocate_missing(
             return Err(e);
         }
     };
-    let result = if found.is_empty() {
-        Ok(0)
-    } else {
-        let writes = item_service::plan_signature_relocations(&rows, &found);
-        let conn = db.get_conn();
-        item_service::apply_signature_relocations(&conn, &writes)
-    };
-    match &result {
-        Ok(n) => finish("done", *n),
-        Err(_) => finish("failed", 0),
+    // 弱签名只返回候选，不自动回写；对象保持 missing，等用户确认。
+    let by_id: std::collections::HashMap<i64, &item_service::MissingSignatureRow> =
+        rows.iter().map(|row| (row.id, row)).collect();
+    let candidates = found
+        .into_iter()
+        .filter_map(|(id, paths)| {
+            let row = by_id.get(&id)?;
+            Some(RelocateCandidate {
+                id,
+                missing_path: row.path.clone(),
+                paths,
+            })
+        })
+        .collect();
+    finish("done", 0);
+    Ok(RelocateScanResult { candidates })
+}
+
+/// 用户确认弱签名候选后回写。复核签名与缺失状态在工作线程完成，不在 UI 线程重哈希。
+#[tauri::command(async)]
+pub fn confirm_signature_relocations(
+    db: State<Database>,
+    choices: Vec<RelocateChoice>,
+) -> Result<usize, String> {
+    crate::db::ensure_writes_allowed()?;
+    if choices.is_empty() {
+        return Ok(0);
     }
-    result
+    let conn = db.get_conn();
+    let rows = item_service::read_missing_signatures(&conn)?;
+    let found: Vec<(i64, String)> = choices.into_iter().map(|c| (c.id, c.path)).collect();
+    let writes = item_service::plan_signature_relocations(&rows, &found);
+    item_service::apply_signature_relocations(&conn, &writes)
 }

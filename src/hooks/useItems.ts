@@ -97,7 +97,7 @@ export function useItems() {
   const reloadEpochRef = useRef(0);
   const [viewMeta, setViewMeta] = useState<{ browseDir: string | null; libraryTotal: number; cabinetId: number | null; query: string } | null>(null);
   const [stats, setStats] = useState<db.LibraryStats | null>(null);
-  const relocatingRef = useRef<Promise<number> | null>(null);
+  const relocatingRef = useRef<Promise<db.RelocateScanResult> | null>(null);
   const relocateMissingRef = useRef<() => void>(() => {});
   const prevMissingRef = useRef<Set<number> | null>(null);
 
@@ -117,24 +117,37 @@ export function useItems() {
   }, [store]);
 
   // 跨盘符兜底找回：对失效对象按内容签名扫描候选盘，命中则刷新并提示。
-  // 用 relocatingRef 防止并发/重复扫描；成功找回 0 个时保持安静。
-  const relocateMissing = useCallback((roots?: string[]): Promise<number> => {
+  // 用 relocatingRef 防止并发/重复扫描；弱签名只给候选，不自动回写。
+  const relocateMissing = useCallback((roots?: string[]): Promise<db.RelocateScanResult> => {
     const scoped = roots !== undefined && roots.length > 0;
     // 全盘找回去重（自动触发与手动点击共用一次扫描）；限定文件夹的找回是用户明确指定的
     // 小范围扫描，不能被在途的全盘扫描吞掉（否则要等全盘扫完、且不是用户要的范围），独立执行。
     if (!scoped && relocatingRef.current) return relocatingRef.current;
     const task = (async () => {
-      const recovered = await db.relocateMissing(scoped ? roots : undefined);
-      if (recovered > 0) {
-        await loadAll();
-        showToast(scoped ? `已在选定文件夹中找回 ${recovered} 个对象` : `已跨盘找回 ${recovered} 个对象`, "success");
+      const result = await db.relocateMissing(scoped ? roots : undefined);
+      if (result.candidates.length > 0) {
+        showToast(
+          scoped
+            ? `在选定文件夹中找到 ${result.candidates.length} 项候选，请确认后再找回`
+            : `找到 ${result.candidates.length} 项候选，请在失效项目中确认后再找回`,
+          "info",
+        );
       }
-      return recovered;
+      return result;
     })();
     if (scoped) return task;
     const tracked = task.finally(() => { relocatingRef.current = null; });
     relocatingRef.current = tracked;
     return tracked;
+  }, []);
+
+  const confirmSignatureRelocations = useCallback(async (choices: db.RelocateChoice[]): Promise<number> => {
+    const recovered = await db.confirmSignatureRelocations(choices);
+    if (recovered > 0) {
+      await loadAll();
+      showToast(`已跨盘找回 ${recovered} 个对象`, "success");
+    }
+    return recovered;
   }, [loadAll]);
 
   useEffect(() => {
@@ -658,6 +671,7 @@ export function useItems() {
     loadError,
     refresh,
     relocateMissing,
+    confirmSignatureRelocations,
     addItems,
     removeItem,
     removeItems,
