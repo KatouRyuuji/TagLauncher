@@ -280,6 +280,9 @@ pub struct DesktopState {
     close_to_tray: AtomicBool,
     ignore_fullscreen: AtomicBool,
     inner: Mutex<DesktopInner>,
+    /// 仅串行化 set_hotkey 事务。热键回调只拿 inner，绝不获取此锁，避免
+    /// register/unregister 在 UI 线程同步等待时与回调形成锁等待环。
+    hotkey_update: Mutex<()>,
 }
 
 #[derive(Default)]
@@ -653,6 +656,63 @@ fn unregister(app: &AppHandle, text: &str) {
     }
 }
 
+fn apply_registered(inner: &mut DesktopInner, action: HotkeyAction, entry: Option<(String, u32)>) {
+    match entry {
+        Some(entry) => {
+            inner.registered.insert(action, entry);
+        }
+        None => {
+            inner.registered.remove(&action);
+        }
+    }
+}
+
+/// 注销旧键、注册新键并持久化。失败时回滚旧键。
+/// 调用方不得在持有 `DesktopInner` 时进入：`register`/`unregister` 可能派发到 UI 线程并同步等待。
+fn swap_hotkey_registration(
+    previous: &Option<(String, u32)>,
+    next_text: Option<&str>,
+    mut register: impl FnMut(&str) -> Result<u32, String>,
+    mut unregister: impl FnMut(&str),
+    save: impl FnOnce(Option<&str>) -> Result<(), String>,
+) -> Result<Option<(String, u32)>, (String, Option<(String, u32)>)> {
+    let mut rollback = || -> Option<(String, u32)> {
+        let (old, _) = previous.as_ref()?;
+        match register(old) {
+            Ok(id) => Some((old.clone(), id)),
+            Err(e) => {
+                log::warn!("[desktop] 回滚旧快捷键失败：{e}");
+                None
+            }
+        }
+    };
+    if let Some((old, _)) = previous {
+        unregister(old);
+    }
+    let mut new_entry = None;
+    if let Some(text) = next_text {
+        match register(text) {
+            Ok(id) => new_entry = Some((text.to_string(), id)),
+            Err(e) => {
+                let restored = rollback();
+                let kept = previous
+                    .as_ref()
+                    .map(|(p, _)| format!("，已保留原快捷键「{p}」"))
+                    .unwrap_or_else(|| "，该快捷键保持未启用".to_string());
+                return Err((format!("{e}{kept}"), restored));
+            }
+        }
+    }
+    if let Err(e) = save(new_entry.as_ref().map(|(t, _)| t.as_str())) {
+        if let Some((text, _)) = &new_entry {
+            unregister(text);
+        }
+        let restored = rollback();
+        return Err((format!("保存快捷键失败：{e}"), restored));
+    }
+    Ok(new_entry)
+}
+
 /// 启动时按设置恢复。注册失败只记录原因（设置页可见），不阻断启动、不改用户设置。
 pub fn init(app: &AppHandle, mode: LaunchMode) {
     let _ = LAUNCH_MODE.set(mode);
@@ -691,18 +751,23 @@ pub fn init(app: &AppHandle, mode: LaunchMode) {
         .ignore_fullscreen
         .store(ignore_fullscreen, Ordering::SeqCst);
     {
-        let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let mut registered = BTreeMap::new();
+        let mut startup_errors = BTreeMap::new();
+        // 注册在锁外完成：插件会派发到 UI 线程并同步等待，持 inner 会与热键回调死锁。
         for (action, text) in hotkeys {
             match register(app, &text) {
                 Ok(id) => {
-                    inner.registered.insert(action, (text, id));
+                    registered.insert(action, (text, id));
                 }
                 Err(e) => {
                     log::warn!("[desktop] {e}");
-                    inner.startup_errors.insert(action, e);
+                    startup_errors.insert(action, e);
                 }
             }
         }
+        let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.registered = registered;
+        inner.startup_errors = startup_errors;
     }
     let quick_enabled = state
         .inner
@@ -768,81 +833,62 @@ pub async fn set_hotkey(
         None => None,
     };
     let state = app.state::<DesktopState>();
-    {
+    // 与热键回调分离：此锁只挡并发 set_hotkey，回调不获取。
+    let _update_guard = state.hotkey_update.lock().unwrap_or_else(|e| e.into_inner());
+    let previous = {
         let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
         let previous = inner.registered.get(&action).cloned();
         if previous.as_ref().map(|(_, id)| *id) == next.as_ref().map(|(_, s)| s.id()) {
             inner.startup_errors.remove(&action);
-        } else {
-            if let Some((text, shortcut)) = &next {
-                if let Some((other, _)) = inner
-                    .registered
-                    .iter()
-                    .find(|(a, (_, id))| **a != action && *id == shortcut.id())
-                {
-                    return Err(format!(
-                        "「{text}」已用于「{}」，请换一个组合",
-                        other.label()
-                    ));
-                }
-            }
-            if let Some((old, _)) = &previous {
-                unregister(&app, old);
-            }
-            let rollback = |app: &AppHandle| -> Option<(String, u32)> {
-                let (old, _) = previous.as_ref()?;
-                match register(app, old) {
-                    Ok(id) => Some((old.clone(), id)),
-                    Err(e) => {
-                        log::warn!("[desktop] 回滚旧快捷键失败：{e}");
-                        None
-                    }
-                }
-            };
-            let restore = |inner: &mut DesktopInner, restored: Option<(String, u32)>| match restored
+            None
+        } else if let Some((text, shortcut)) = &next {
+            if let Some((other, _)) = inner
+                .registered
+                .iter()
+                .find(|(a, (_, id))| **a != action && *id == shortcut.id())
             {
-                Some(entry) => {
-                    inner.registered.insert(action, entry);
-                }
-                None => {
-                    inner.registered.remove(&action);
-                }
-            };
-            let mut new_entry = None;
-            if let Some((text, _)) = &next {
-                match register(&app, text) {
-                    Ok(id) => new_entry = Some((text.clone(), id)),
-                    Err(e) => {
-                        let restored = rollback(&app);
-                        restore(&mut *inner, restored);
-                        let kept = previous
-                            .as_ref()
-                            .map(|(p, _)| format!("，已保留原快捷键「{p}」"))
-                            .unwrap_or_else(|| "，该快捷键保持未启用".to_string());
-                        return Err(format!("{e}{kept}"));
-                    }
-                }
+                return Err(format!(
+                    "「{text}」已用于「{}」，请换一个组合",
+                    other.label()
+                ));
             }
-            let saved = {
-                let db = app.state::<Database>();
-                let conn = db.get_conn();
-                settings_service::set_setting(
-                    &conn,
-                    &action.setting_key(),
-                    new_entry.as_ref().map(|(t, _)| t.as_str()).unwrap_or(""),
-                )
-            };
-            if let Err(e) = saved {
-                if let Some((text, _)) = &new_entry {
-                    unregister(&app, text);
-                }
-                let restored = rollback(&app);
-                restore(&mut *inner, restored);
-                return Err(format!("保存快捷键失败：{e}"));
-            }
-            restore(&mut *inner, new_entry);
-            inner.startup_errors.remove(&action);
+            Some(previous)
+        } else {
+            Some(previous)
         }
+    };
+    let Some(previous) = previous else {
+        // 快捷键未变：已清启动错误。snapshot 必须在释放 inner 之后调用。
+        if action == HotkeyAction::OpenQuick {
+            crate::quick::sync_window(&app, quick_window_needed(&app));
+        }
+        sync_tray(&app);
+        return Ok(state.snapshot(&app));
+    };
+
+    let result = swap_hotkey_registration(
+        &previous,
+        next.as_ref().map(|(text, _)| text.as_str()),
+        |text| register(&app, text),
+        |text| unregister(&app, text),
+        |value| {
+            let db = app.state::<Database>();
+            let conn = db.get_conn();
+            settings_service::set_setting(&conn, &action.setting_key(), value.unwrap_or(""))
+        },
+    );
+    {
+        let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+        match &result {
+            Ok(entry) => {
+                apply_registered(&mut inner, action, entry.clone());
+                inner.startup_errors.remove(&action);
+            }
+            Err((_, restored)) => apply_registered(&mut inner, action, restored.clone()),
+        }
+    }
+    if let Err((e, _)) = result {
+        return Err(e);
     }
     if action == HotkeyAction::OpenQuick {
         crate::quick::sync_window(&app, quick_window_needed(&app));
@@ -1169,6 +1215,133 @@ mod tests {
             error: None,
         });
         assert_eq!(tray_menu_model(&settings).len(), 3);
+    }
+
+    #[test]
+    fn register_failure_rolls_back_previous_hotkey() {
+        let previous = Some(("Ctrl+Alt+KeyA".to_string(), 11));
+        let calls = std::sync::Mutex::new(Vec::<String>::new());
+        let result = swap_hotkey_registration(
+            &previous,
+            Some("Ctrl+Alt+KeyB"),
+            |text| {
+                calls.lock().unwrap().push(format!("register:{text}"));
+                if text.contains("KeyB") {
+                    Err("已被占用".to_string())
+                } else {
+                    Ok(11)
+                }
+            },
+            |text| {
+                calls.lock().unwrap().push(format!("unregister:{text}"));
+            },
+            |_| Ok(()),
+        );
+        let (err, restored) = result.expect_err("new register should fail");
+        assert!(err.contains("已被占用"), "{err}");
+        assert!(err.contains("已保留原快捷键「Ctrl+Alt+KeyA」"), "{err}");
+        assert_eq!(restored, Some(("Ctrl+Alt+KeyA".to_string(), 11)));
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![
+                "unregister:Ctrl+Alt+KeyA".to_string(),
+                "register:Ctrl+Alt+KeyB".to_string(),
+                "register:Ctrl+Alt+KeyA".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn save_failure_unregisters_new_and_rolls_back_previous() {
+        let previous = Some(("Ctrl+Alt+KeyA".to_string(), 11));
+        let calls = std::sync::Mutex::new(Vec::<String>::new());
+        let result = swap_hotkey_registration(
+            &previous,
+            Some("Ctrl+Alt+KeyB"),
+            |text| {
+                calls.lock().unwrap().push(format!("register:{text}"));
+                Ok(if text.contains("KeyB") { 22 } else { 11 })
+            },
+            |text| {
+                calls.lock().unwrap().push(format!("unregister:{text}"));
+            },
+            |_| Err("disk full".to_string()),
+        );
+        let (err, restored) = result.expect_err("save should fail");
+        assert!(err.contains("保存快捷键失败"), "{err}");
+        assert!(err.contains("disk full"), "{err}");
+        assert_eq!(restored, Some(("Ctrl+Alt+KeyA".to_string(), 11)));
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![
+                "unregister:Ctrl+Alt+KeyA".to_string(),
+                "register:Ctrl+Alt+KeyB".to_string(),
+                "unregister:Ctrl+Alt+KeyB".to_string(),
+                "register:Ctrl+Alt+KeyA".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn hotkey_swap_does_not_hold_inner_during_register() {
+        use std::sync::{Arc, Barrier, Mutex};
+        use std::time::Duration;
+
+        let inner = Arc::new(Mutex::new(0u32));
+        let start = Arc::new(Barrier::new(2));
+        let finish = Arc::new(Barrier::new(2));
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+
+        let inner_reg = inner.clone();
+        let start_reg = start.clone();
+        let finish_reg = finish.clone();
+        let done_tx_reg = done_tx.clone();
+        let updater = std::thread::spawn(move || {
+            // 模拟 set_hotkey：先短持 inner 读表，再在锁外 register。
+            {
+                let mut g = inner_reg.lock().unwrap();
+                *g = 1;
+            }
+            let result = swap_hotkey_registration(
+                &None,
+                Some("Ctrl+Alt+KeyK"),
+                |_| {
+                    start_reg.wait();
+                    finish_reg.wait();
+                    Ok(7u32)
+                },
+                |_| {},
+                |_| Ok(()),
+            );
+            {
+                let mut g = inner_reg.lock().unwrap();
+                *g = 2;
+            }
+            let _ = done_tx_reg.send(result.map(|e| e.map(|(_, id)| id)));
+        });
+
+        let inner_cb = inner.clone();
+        let callback = std::thread::spawn(move || {
+            start.wait();
+            // 模拟热键回调：此时 updater 应已释放 inner，正在 register 等待。
+            let mut g = inner_cb.lock().unwrap();
+            let seen = *g;
+            *g = 3;
+            drop(g);
+            finish.wait();
+            seen
+        });
+
+        let swap = done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("register 等待环：set_hotkey 未在超时内完成");
+        assert_eq!(swap, Ok(Some(7)));
+        let seen = callback
+            .join()
+            .expect("热键回调线程 panic");
+        assert_eq!(seen, 1, "回调应在 register 期间读到已释放的 inner");
+        updater.join().expect("更新线程 panic");
+        assert_eq!(*inner.lock().unwrap(), 2);
     }
 }
 
