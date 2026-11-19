@@ -1,6 +1,6 @@
 # TagLauncher 项目手册
 
-> 适用版本：v1.10.0-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
+> 适用版本：v2.0.0-beta · 面向开发者 · 最终用户请见 [USER_GUIDE.md](./USER_GUIDE.md)
 
 ## 一、项目简介
 
@@ -11,12 +11,12 @@ TagLauncher 是一个基于 Tauri 2.x 的 Windows 桌面应用，用于通过「
 ### 现有能力概览
 
 - 对象类型：`folder` / `image` / `audio` / `video` / `text` / `document` / `exe` / `bat` / `ps1`；纯文本与配置类扩展名（txt、md、json、yaml、ini、log、csv、xml、info 等 17 种）归入 `text`；PDF / Office / OpenDocument / EPUB 等办公与版式文档归入 `document`（v024 把已入库的此类 `exe` 迁为 `document`）；其他未知文件按可启动对象归入 `exe`（展示为「程序」）。
-- 对象身份：以「NTFS 卷序列号 + 文件ID」为唯一标识，跨重命名/同盘移动稳定；`path` 降级为可更新的「最近已知位置」。跨盘符移动（卷序列号变化）时，以内容签名（文件大小 + 首/尾 16KB 的 FNV-1a 哈希）兜底重定位自动找回，详见 `file_identity.rs`。
+- 对象身份：以「NTFS 卷序列号 + 文件ID」为唯一标识，跨重命名/同盘移动稳定；`path` 降级为可更新的「最近已知位置」。跨盘符移动（卷序列号变化）时，以内容签名（文件大小 + 首/尾 16KB 的 FNV-1a 哈希）提供候选，用户确认后才更新关联，详见 `file_identity.rs`。
 - 标签系统（图状层级，DAG）：标签是集合、可多父继承构成有向无环图；选中父标签筛选时并入其所有后代标签的对象。四类筛选（标签/文件柜/收藏夹/最近使用）互斥；标签多选取交集（正选 AND），顶部筛选条支持右键反选（灰色删除线态，排除含该标签的对象，正反选互斥，反选同样展开后代闭包）；提供关系编辑器与独立图谱视图。
 - 工作台查询：类型筛选与 11 种排序（`SortMode`）在 `src/lib/itemQuery.ts` 纯函数完成，搜索命中顺序不被排序打乱；视图偏好（网格/列表/大图标、搜索模式、排序、类型）写入 localStorage 键 `taglauncher.workspace_prefs`。全屏弹层与选中锚点见 `workspaceChrome.ts`。
 - 键盘优先：`/` 聚焦搜索，Ctrl+K 命令面板，空格预览（方向键/Home/End 切换），Enter 启动；网格方向键按列跳转；Ctrl+C 复制选中路径、Ctrl+D 收藏。
 - 批量操作：主视图框选复选对象后，可批量加入/移除标签、加入文件柜、移出当前文件柜、批量收藏/取消收藏（与 Ctrl+D 同逻辑：有未收藏项则全部收藏）、批量重命名、复制路径、批量删除。框选默认正选（命中集替换选中集），Alt+框选为减选（虚线灰框，从既有选中集扣除命中项，结算纯函数 `applyMarqueeSelection`）。
-- 失效对象可感知恢复：库内存在失效对象（文件丢失/跨盘移动）时，底部状态栏显示警示徽标，点击即手动触发按内容签名的跨盘找回扫描（含扫描中状态与「未找到」反馈）；自动兜底找回仍在刷新链路后台执行。
+- 失效对象可感知恢复：库内存在失效对象（文件丢失/跨盘移动）时，底部状态栏显示警示徽标，点击即手动触发按内容签名的跨盘找回扫描（含扫描中状态与「未找到」反馈）；自动扫描仍在刷新链路后台执行；弱签名结果只提供候选，不自动回写关联。
 - 加载与通知体验：首屏按当前视图渲染与真实布局同构的骨架屏（`WorkspaceSkeleton`，reduced-motion 下静止）；Toast 悬停暂停自动关闭、错误/警告驻留更久（7s/5s）。
 - 视图虚拟化：网格与列表视图均经 `@tanstack/react-virtual` 虚拟化（measureElement 动态测高），仅渲染可见项，大库滚动流畅、内存可控。
 - 缩略图：支持手动设置/更换/清除；图片对象直接用图片，视频对象经系统缩略图服务提取首帧画面（`shell_thumbnail.rs`，IShellItemImageFactory + GDI+ 落盘 PNG；取不到时负缓存 10 分钟后重试），快捷方式（.lnk）先解析到目标再取图标（不含 Windows 箭头角标），其余非图片对象提取系统图标缓存为 PNG（缓存在数据目录 `Save/item-icons/`，随 datapath 走），再其余回退到类型图标。
@@ -250,7 +250,7 @@ items_fts (FTS5 虚拟表，自动同步 items 的 name/path)
 | hide_from_all | INTEGER | 默认不出现在 All 总览（0/1）。递归导入、文件夹监视与关联柜同步的夹内文件与中间目录为 1；投放根、旧行与松散导入默认 0。搜索、打标、柜视图与「显示目录内文件」仍可见。列由 v021 引入；v025 回填已在监视根或关联柜路径之下、但仍为 0 的旧行（根对象本身不改）。v024 document type 已按 PR66/67 原文纳入本分支（位于 v023 与 v025 之间），本迁移不得改其版本或语义。 |
 | alias | TEXT | 显示别名（可空）。只影响卡片/列表/预览/命令面板的显示名、名称排序与搜索；磁盘文件名仍是 name，F2 重命名、导出、复制路径不受影响。最多 120 字、不含控制字符。迁移 v022。 |
 
-> 对象身份以 `(volume_serial, file_id)` 为准（NTFS 文件ID，跨重命名/同盘移动稳定）；`path` 为可更新的最近已知位置。取不到文件ID的对象回退按 `path` 去重。**跨盘符移动时文件ID失效，由内容签名 `(sig_size, sig_head, sig_tail)` 在候选盘兜底重定位**。详见 `src-tauri/src/services/file_identity.rs` 与迁移 `v005_object_identity` / `v006_object_signature`。
+> 对象身份以 `(volume_serial, file_id)` 为准（NTFS 文件ID，跨重命名/同盘移动稳定）；`path` 为可更新的最近已知位置。取不到文件ID的对象回退按 `path` 去重。**跨盘符移动时文件ID失效，由内容签名 `(sig_size, sig_head, sig_tail)` 在候选盘查找候选，用户确认后才更新关联**。详见 `src-tauri/src/services/file_identity.rs` 与迁移 `v005_object_identity` / `v006_object_signature`。
 
 #### tags（标签表）
 | 列名 | 类型 | 说明 |
