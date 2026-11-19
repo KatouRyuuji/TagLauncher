@@ -65,6 +65,12 @@ export function relocateNoneCopy(): string {
   return "这次没有找回任何项目。请确认磁盘已连接；文件回来后会自动重新关联。";
 }
 
+/** 失效找回：扫描得到 N 项弱签名候选，需用户确认后才回写。 */
+export function relocateCandidatesCopy(count: number): string {
+  if (count <= 0) return relocateNoneCopy();
+  return `找到 ${count} 项候选，请确认后再找回。弱签名不能自动视为同一文件。`;
+}
+
 /** 失效找回：已找回 N 项。 */
 export function relocateRecoveredCopy(recovered: number): string {
   return `已找回 ${recovered} 项`;

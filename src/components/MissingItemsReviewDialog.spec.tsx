@@ -64,4 +64,19 @@ describe("MissingItemsReviewDialog 找回范围", () => {
     setup(async () => null, { relocateNote: { kind: "warning", text: "扫描超过时间上限（5 分钟，已扫描 9 项）：未完成唯一性核验" } });
     expect(screen.getByRole("alert").textContent).toContain("未完成唯一性核验");
   });
+
+  it("弱签名候选需确认后才回写，默认选中唯一路径", async () => {
+    const onConfirm = vi.fn(async () => 1);
+    setup(async () => null, {
+      relocateCandidates: [
+        { id: 1, missingPath: "E:\\a\\失效.txt", paths: ["D:\\moved\\失效.txt"] },
+      ],
+      onConfirmRelocations: onConfirm,
+    });
+    expect(screen.getByTestId("relocate-candidates").textContent).toContain("找到 1 项候选");
+    fireEvent.click(screen.getByTestId("relocate-confirm"));
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith([{ id: 1, path: "D:\\moved\\失效.txt" }]),
+    );
+  });
 });

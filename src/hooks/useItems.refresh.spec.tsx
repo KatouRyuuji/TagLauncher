@@ -126,12 +126,13 @@ describe("外部改名后的界面刷新", () => {
   it("全盘找回在途时，限定文件夹的找回独立执行（不被全盘扫描吞掉）；重复全盘请求复用在途扫描", async () => {
     const { result } = renderHook(useItems);
     await waitFor(() => expect(result.current.loading).toBe(false));
-    let releaseFull!: (n: number) => void;
+    const emptyScan = { candidates: [] as const };
+    let releaseFull!: (result: typeof emptyScan) => void;
     vi.mocked(db.relocateMissing).mockImplementationOnce(() => new Promise((resolve) => { releaseFull = resolve; }));
-    vi.mocked(db.relocateMissing).mockResolvedValueOnce(0);
-    let full!: Promise<number>;
-    let fullAgain!: Promise<number>;
-    let scoped!: Promise<number>;
+    vi.mocked(db.relocateMissing).mockResolvedValueOnce(emptyScan);
+    let full!: Promise<db.RelocateScanResult>;
+    let fullAgain!: Promise<db.RelocateScanResult>;
+    let scoped!: Promise<db.RelocateScanResult>;
     act(() => {
       full = result.current.relocateMissing();
       fullAgain = result.current.relocateMissing();
@@ -142,7 +143,7 @@ describe("外部改名后的界面刷新", () => {
     expect(vi.mocked(db.relocateMissing).mock.calls[0]).toEqual([undefined]);
     expect(vi.mocked(db.relocateMissing).mock.calls[1]).toEqual([["D:\\Games"]]);
     expect(fullAgain).toBe(full);
-    await act(async () => { releaseFull(0); await full; });
+    await act(async () => { releaseFull(emptyScan); await full; });
   });
 
   it("可视页和邻页取页传 warm=true（只放行卡片路径）；load 不传", async () => {

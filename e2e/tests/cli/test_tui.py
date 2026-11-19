@@ -1,4 +1,10 @@
-"""E-CLI-11/12：tl tui 经 ConPTY（pywinpty）驱动。键入走伪终端，不接管物理输入；无 pywinpty 则跳过。"""
+"""E-CLI-11/12：tl tui 经 ConPTY（pywinpty 2.0.15）驱动。
+
+键入走伪终端，不接管物理输入；无 pywinpty 则跳过。
+读取必须可截止：pywinpty 2.0.15 的 PtyProcess.read() 会阻塞，直接调用会使
+wait(timeout=10) 失效并把整个分片卡到步骤 45 分钟上限。等待失败要带上真实
+TUI 输出并释放本次 pty/子进程，不得吞掉失败。
+"""
 from __future__ import annotations
 
 import time
@@ -7,6 +13,7 @@ import pytest
 
 from harness import db as dbh
 from harness import files
+from tests.cli.tui_io import read_until, reap_pty, wait_for_text
 
 winpty = pytest.importorskip("winpty", reason="未安装 pywinpty（pip install pywinpty）")
 
@@ -14,35 +21,32 @@ winpty = pytest.importorskip("winpty", reason="未安装 pywinpty（pip install 
 class Tui:
     def __init__(self, tl, cols=100, rows=30):
         env = tl.sb.env(None)
-        self.p = winpty.PtyProcess.spawn([str(tl.exe), "tui"], cwd=str(tl.sb.bin), env=env, dimensions=(rows, cols))
-        self.buf = ""
+        self.p = winpty.PtyProcess.spawn(
+            [str(tl.exe), "tui"], cwd=str(tl.sb.bin), env=env, dimensions=(rows, cols)
+        )
+        self._buf = [""]
+
+    @property
+    def buf(self) -> str:
+        return self._buf[0]
 
     def read(self, secs=0.8):
-        end = time.monotonic() + secs
-        while time.monotonic() < end:
-            try:
-                chunk = self.p.read(4096)
-            except EOFError:
-                break
-            if chunk:
-                self.buf += chunk
-            else:
-                time.sleep(0.05)
+        try:
+            chunk = read_until(self.p, secs)
+        except EOFError:
+            return self.buf
+        if chunk:
+            self._buf[0] += chunk
         return self.buf
 
     def wait(self, text, timeout=10):
-        end = time.monotonic() + timeout
-        while time.monotonic() < end:
-            if text in self.read(0.3):
-                return
-        raise AssertionError(f"TUI 输出未出现「{text}」，尾部：{self.buf[-400:]!r}")
+        wait_for_text(self.p, self._buf, text, timeout=timeout)
 
     def send(self, s):
         self.p.write(s)
 
     def close(self):
-        if self.p.isalive():
-            self.p.terminate(force=True)
+        reap_pty(self.p)
 
 
 @pytest.fixture
@@ -52,8 +56,10 @@ def tui(tl, sandbox):
     other = files.write(sandbox.files / "其他对象.txt", "x")
     tl.json("add", bat, other)
     t = Tui(tl)
-    yield t, bat
-    t.close()
+    try:
+        yield t, bat
+    finally:
+        t.close()
 
 
 @pytest.mark.case("E-CLI-11")
@@ -70,7 +76,7 @@ def test_tui_interaction(tui, tl, sandbox):
     files.wait_marker(bat)
     t.send("\x1b")  # Esc 退出
     end = time.monotonic() + 8
-    while t.p.isalive() and time.monotonic() < end:
+    while t.p is not None and getattr(t.p, "isalive", lambda: False)() and not getattr(t.p, "_tl_tui_eof", False) and time.monotonic() < end:
         t.read(0.2)
     assert not t.p.isalive(), "Esc 后 tui 未退出"
     assert "\x1b[?1049l" in t.buf or "\x1b[?25h" in t.buf, "退出时未恢复终端（备用屏/光标）"

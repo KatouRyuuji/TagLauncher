@@ -99,6 +99,7 @@ function App() {
     findItemById,
     refresh,
     relocateMissing,
+    confirmSignatureRelocations,
     browseDir,
     linkedMissingIds,
   } = useItems();
@@ -624,6 +625,7 @@ function App() {
           missingCount={missingIds.length}
           missingItems={missingItems}
           onRelocateMissing={relocateMissing}
+          onConfirmRelocations={confirmSignatureRelocations}
           onRemoveMissing={removeItems}
         />
         <ItemDropActions

@@ -15,8 +15,10 @@ pub fn resolve_db_path() -> Result<PathBuf, String> {
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
         .unwrap_or_else(|| PathBuf::from("."));
-    let save_dir = path_service::read_data_dir_redirect(&root_dir)
-        .unwrap_or_else(|| path_service::default_save_dir(&root_dir));
+    let save_dir = match path_service::read_data_dir_redirect(&root_dir)? {
+        Some(dir) => dir,
+        None => path_service::default_save_dir(&root_dir),
+    };
     Ok(save_dir.join("taglauncher.db"))
 }
 

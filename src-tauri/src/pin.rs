@@ -393,6 +393,9 @@ static MOVE_GEN: AtomicU64 = AtomicU64::new(0);
 static LEAVE_GEN: AtomicU64 = AtomicU64::new(0);
 /// 钉住表面时顶栏走原生 HTCAPTION（热路径只读此原子，不锁 Runtime）。
 static CAPTION_DRAG: AtomicBool = AtomicBool::new(false);
+// Bounded native-input evidence. Synthetic WM_NCHITTEST diagnostics do not count.
+static CAPTION_INPUT_EVENTS: [std::sync::atomic::AtomicU32; 5] =
+    [const { std::sync::atomic::AtomicU32::new(0) }; 5];
 /// 诊断计数（pin_diag.dragEvents）：[拖动开始, 拖动结束, 抽屉 Moved, 抽屉吸附, 失焦收回, 轮询收回, 前端离开收回]
 /// 0/1 来自 EVENT_SYSTEM_MOVESIZESTART/END（MOVE_HOOK），与窗口 WM_ENTER/EXITSIZEMOVE 分开计数。
 static DRAG_EVENTS: [std::sync::atomic::AtomicU32; 7] = [
@@ -730,6 +733,16 @@ fn source_color(conn: &rusqlite::Connection, source: Option<PinSource>) -> Optio
 
 /// 切到钉住视图表面（搜索收起、设置变化、启动、托盘切换时调用）。未开启时隐藏窗口。
 pub fn restore(app: &AppHandle) -> Result<(), String> {
+    if !crate::quick::on_lifecycle_worker() {
+        let handle = app.clone();
+        if crate::quick::current_thread_is_ui() {
+            crate::quick::defer_lifecycle(move || {
+                if let Err(e) = restore(&handle) { log::warn!("[pin] {e}"); }
+            });
+            return Ok(());
+        }
+        return crate::quick::call_lifecycle(move || restore(&handle))?;
+    }
     ANIM_GEN.fetch_add(1, Ordering::SeqCst);
     let settings = settings();
     if !settings.active() {
@@ -1369,7 +1382,9 @@ mod caption {
     use windows_sys::Win32::Graphics::Gdi::{GetDC, GetDeviceCaps, ReleaseDC, ScreenToClient, LOGPIXELSX};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallWindowProcW, DefWindowProcW, GetClientRect, GetWindowLongPtrW, SetWindowLongPtrW,
-        GWLP_WNDPROC, HTCAPTION, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCHITTEST,
+        GWLP_WNDPROC, HTCAPTION, SC_MOVE, WM_CAPTURECHANGED, WM_ENTERSIZEMOVE,
+        WM_EXITSIZEMOVE, WM_LBUTTONDOWN, WM_MOUSEACTIVATE, WM_NCHITTEST,
+        WM_NCLBUTTONDOWN, WM_SYSCOMMAND,
     };
 
     static PREV_PROC: AtomicIsize = AtomicIsize::new(0);
@@ -1431,6 +1446,17 @@ mod caption {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
+        let input_index = match msg {
+            WM_MOUSEACTIVATE => Some(0),
+            WM_NCLBUTTONDOWN => Some(1),
+            WM_LBUTTONDOWN => Some(2),
+            WM_SYSCOMMAND if (wparam & 0xfff0) == SC_MOVE as usize => Some(3),
+            WM_CAPTURECHANGED => Some(4),
+            _ => None,
+        };
+        if let Some(index) = input_index {
+            CAPTION_INPUT_EVENTS[index].fetch_add(1, Ordering::Relaxed);
+        }
         if msg == WM_ENTERSIZEMOVE {
             SIZE_MOVE_EVENTS[0].fetch_add(1, Ordering::Relaxed);
         } else if msg == WM_EXITSIZEMOVE {
@@ -1624,8 +1650,7 @@ pub fn apply_settings(app: &AppHandle, next: PinSettings) -> Result<PinSettings,
         // 关闭钉住：探头同步关掉。
         // 快速搜索仍开（共用窗口）：只隐藏，不销毁；f394436 跳过整段 restore 后，
         // test_pin_shares 窗口仍可见。hide_window 与 destroy 不会同时走。
-        // 快速搜索未开：直接 destroy（不要先 clear_glass / with_webview），在主线程
-        // 销毁并等到完成再返回，避免命令已返回、窗口还在（E-PIN-01）。
+        // 快速搜索未开：交给唯一生命周期执行者销毁，不在 UI 回调中等待后台工作。
         ANIM_GEN.fetch_add(1, Ordering::SeqCst);
         rt().surface = Surface::Search;
         set_foreground_hook(app, false);
@@ -1636,17 +1661,7 @@ pub fn apply_settings(app: &AppHandle, next: PinSettings) -> Result<PinSettings,
                 emit_view(&w);
             }
         } else {
-            let handle = app.clone();
-            let (tx, rx) = std::sync::mpsc::sync_channel(1);
-            let _ = app.run_on_main_thread(move || {
-                crate::quick::destroy_window(&handle);
-                let _ = tx.send(());
-            });
-            // 异步命令在工作线程：等主线程销毁完成。若碰巧已在主线程，闭包被排队
-            // 会阻塞——超时后在本线程再销毁一次，避免死锁。
-            if rx.recv_timeout(Duration::from_millis(800)).is_err() {
-                crate::quick::destroy_window(app);
-            }
+            crate::quick::destroy_window(app);
         }
     } else if !searching {
         restore(app)?;
@@ -1696,6 +1711,8 @@ pub struct PinDiag {
     pub move_hook: bool,
     /// [WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE]
     pub size_move_events: [u32; 2],
+    /// [WM_MOUSEACTIVATE, WM_NCLBUTTONDOWN, WM_LBUTTONDOWN, SC_MOVE, WM_CAPTURECHANGED]
+    pub caption_input_events: [u32; 5],
 }
 
 fn quick_geometry(app: &AppHandle) -> [i64; 6] {
@@ -1773,6 +1790,7 @@ pub fn pin_diag(app: AppHandle) -> PinDiag {
             SIZE_MOVE_EVENTS[0].load(Ordering::Relaxed),
             SIZE_MOVE_EVENTS[1].load(Ordering::Relaxed),
         ],
+        caption_input_events: std::array::from_fn(|i| CAPTION_INPUT_EVENTS[i].load(Ordering::Relaxed)),
     }
 }
 

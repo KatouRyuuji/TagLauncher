@@ -206,3 +206,28 @@ def test_snapshot_path_uses_explicit_dir_not_process_temp(tmp_path, monkeypatch)
     dest = snapshot_path(tmp_path / "sandbox-Temp", 123, 4)
     assert dest == tmp_path / "sandbox-Temp" / "TagLauncher-idle-diag-123-4.json"
     assert "pytest-temp" not in str(dest)
+
+
+@pytest.mark.parametrize("created", [False, True])
+def test_attached_pages_services_pending_target_events_before_local_getters(created):
+    from types import SimpleNamespace
+    target = SimpleNamespace(is_closed=lambda: False)
+    state = {"serviced": False}
+    class Browser:
+        @property
+        def contexts(self):
+            assert state["serviced"], "cached target list read before protocol turn"
+            return [SimpleNamespace(pages=[target] if created else [])]
+    class MainPage:
+        def evaluate(self, expression):
+            assert expression == "() => null"
+            state["serviced"] = True
+    assert cdpconn.attached_pages_after_turn(Browser(), MainPage()) == ([target] if created else [])
+
+
+def test_attached_pages_protocol_error_is_not_false_empty_success():
+    class MainPage:
+        def evaluate(self, _expression):
+            raise RuntimeError("transport gone")
+    with pytest.raises(RuntimeError, match="transport gone"):
+        cdpconn.attached_pages_after_turn(object(), MainPage())

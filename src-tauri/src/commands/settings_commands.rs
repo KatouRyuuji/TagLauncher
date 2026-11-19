@@ -8,8 +8,8 @@ use crate::services::settings_service;
 use std::path::PathBuf;
 use tauri::State;
 
-fn get_themes_dir(app: &tauri::AppHandle) -> PathBuf {
-    path_service::resolve_app_paths(app).themes_dir
+fn get_themes_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(path_service::resolve_app_paths(app)?.themes_dir)
 }
 
 #[tauri::command]
@@ -62,24 +62,24 @@ pub fn set_current_theme(db: State<Database>, theme_id: String) -> Result<(), St
 
 /// 扫描 Plugins_Theme 目录，返回所有自定义主题（含加载错误）
 #[tauri::command]
-pub fn get_custom_themes(app: tauri::AppHandle) -> CustomThemesResult {
-    let themes_dir = get_themes_dir(&app);
+pub fn get_custom_themes(app: tauri::AppHandle) -> Result<CustomThemesResult, String> {
+    let themes_dir = get_themes_dir(&app)?;
     std::fs::create_dir_all(&themes_dir).ok();
-    theme_loader::load_custom_themes(&themes_dir)
+    Ok(theme_loader::load_custom_themes(&themes_dir))
 }
 
 #[tauri::command]
-pub fn get_theme_directory_info(app: tauri::AppHandle) -> ThemeDirectoryInfo {
-    let paths = path_service::resolve_app_paths(&app);
+pub fn get_theme_directory_info(app: tauri::AppHandle) -> Result<ThemeDirectoryInfo, String> {
+    let paths = path_service::resolve_app_paths(&app)?;
     let themes_dir = paths.themes_dir.clone();
     std::fs::create_dir_all(&themes_dir).ok();
-    ThemeDirectoryInfo {
+    Ok(ThemeDirectoryInfo {
         themes_dir: themes_dir.to_string_lossy().to_string(),
         root_dir: paths.root_dir.to_string_lossy().to_string(),
         builtin_dir: paths.builtin_dir.to_string_lossy().to_string(),
         mods_dir: paths.mods_dir.to_string_lossy().to_string(),
         save_dir: paths.save_dir.to_string_lossy().to_string(),
-    }
+    })
 }
 
 #[tauri::command]
@@ -87,7 +87,7 @@ pub fn install_theme_file(
     app: tauri::AppHandle,
     source_path: String,
 ) -> Result<ThemeInstallResult, String> {
-    let themes_dir = get_themes_dir(&app);
+    let themes_dir = get_themes_dir(&app)?;
     let source = PathBuf::from(source_path);
     theme_loader::install_theme_file(&themes_dir, &source)
 }

@@ -278,6 +278,27 @@ pub struct RelocateFinished {
     pub recovered: usize,
 }
 
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocateCandidate {
+    pub id: i64,
+    pub missing_path: String,
+    pub paths: Vec<String>,
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocateScanResult {
+    pub candidates: Vec<RelocateCandidate>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocateChoice {
+    pub id: i64,
+    pub path: String,
+}
+
 /// 在途扫描登记表：停止扫描时把所有在途扫描的取消标志置位。
 struct ScanRegistry {
     next: std::sync::atomic::AtomicU64,
@@ -329,7 +350,7 @@ pub fn cancel_relocate() -> usize {
     active.len()
 }
 
-/// 对失效对象按内容签名做跨盘符兜底找回，返回成功找回数量。
+/// 对失效对象按内容签名做跨盘符兜底找回，只返回候选，不自动回写。
 /// `roots` 省略时扫描全部盘符；给定时只在这些文件夹内找回并核验唯一性。
 /// 扫描可被 `cancel_relocate` 停止，超过 [`item_service::SCAN_TIME_LIMIT`] 自动停止；两者都**不回写**，
 /// 以错误返回说明「未完成唯一性核验」（唯一性规则不变：只有完整扫完范围才可能回写）。
@@ -340,7 +361,7 @@ pub fn relocate_missing(
     app: AppHandle,
     db: State<Database>,
     roots: Option<Vec<String>>,
-) -> Result<usize, String> {
+) -> Result<RelocateScanResult, String> {
     use tauri::Emitter;
     // 先校验范围：选错文件夹应立即报错，而不是在读库之后才失败
     let scoped = roots.is_some();
@@ -350,7 +371,7 @@ pub fn relocate_missing(
         item_service::read_missing_signatures(&conn)?
     };
     if rows.is_empty() {
-        return Ok(0);
+        return Ok(RelocateScanResult { candidates: Vec::new() });
     }
     let ticket = ScanTicket::register();
     let started = std::time::Instant::now();
@@ -404,16 +425,41 @@ pub fn relocate_missing(
             return Err(e);
         }
     };
-    let result = if found.is_empty() {
-        Ok(0)
-    } else {
-        let writes = item_service::plan_signature_relocations(&rows, &found);
-        let conn = db.get_conn();
-        item_service::apply_signature_relocations(&conn, &writes)
-    };
-    match &result {
-        Ok(n) => finish("done", *n),
-        Err(_) => finish("failed", 0),
+    // 弱签名只返回候选，不自动回写；对象保持 missing，等用户确认。
+    let by_id: std::collections::HashMap<i64, &item_service::MissingSignatureRow> =
+        rows.iter().map(|row| (row.id, row)).collect();
+    let candidates = found
+        .into_iter()
+        .filter_map(|(id, paths)| {
+            let row = by_id.get(&id)?;
+            Some(RelocateCandidate {
+                id,
+                missing_path: row.path.clone(),
+                paths,
+            })
+        })
+        .collect();
+    finish("done", 0);
+    Ok(RelocateScanResult { candidates })
+}
+
+/// 用户确认弱签名候选后回写。复核签名与缺失状态在工作线程完成，不在 UI 线程重哈希。
+#[tauri::command(async)]
+pub fn confirm_signature_relocations(
+    db: State<Database>,
+    choices: Vec<RelocateChoice>,
+) -> Result<usize, String> {
+    crate::db::ensure_writes_allowed()?;
+    if choices.is_empty() {
+        return Ok(0);
     }
-    result
+    let found: Vec<(i64, String)> = choices.into_iter().map(|c| (c.id, c.path)).collect();
+    // 计划阶段含路径 metadata 与签名 IO：先放下 DB 连接，完成后再取连接做条件式回写。
+    let rows = {
+        let conn = db.get_conn();
+        item_service::read_missing_signatures(&conn)?
+    };
+    let writes = item_service::plan_signature_relocations(&rows, &found);
+    let conn = db.get_conn();
+    item_service::apply_signature_relocations(&conn, &writes)
 }

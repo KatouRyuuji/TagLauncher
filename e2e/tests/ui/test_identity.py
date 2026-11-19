@@ -98,6 +98,16 @@ def test_relocate_all_missing(app, sandbox):
     (sandbox.artifacts / "relocate-call.json").write_text(repr(call), encoding="utf-8")
     err = str(call.get("error") or "")
     assert not err, f"relocate_missing 报错：{err}；对话框：{dlg.inner_text()}"
+    # Same weak content signature is a candidate, never an automatic identity.
+    candidate = dlg.get_by_test_id(f"relocate-candidate-{old_id}")
+    candidate.wait_for(timeout=5000)
+    unchanged = next(i for i in app.items() if i["id"] == old_id)
+    assert unchanged["is_missing"] and unchanged["path"].lower() == str(a).lower()
+    offered = candidate.locator("option").evaluate_all("els => els.map(e => e.value)")
+    selected = next((path for path in offered if path.lower() == str(b).lower()), None)
+    assert selected, offered
+    candidate.select_option(selected)
+    dlg.get_by_test_id("relocate-confirm").click()
     wait_until(lambda: not any(i["is_missing"] for i in app.items()), 15,
                lambda: (call, dlg.inner_text(), [(i["name"], i["path"], i["is_missing"]) for i in app.items()]))
     it = next(i for i in app.items() if i["id"] == old_id)

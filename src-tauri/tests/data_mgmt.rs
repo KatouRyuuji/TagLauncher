@@ -299,7 +299,7 @@ fn data_directory_redirect_read_write() {
     let custom = common::TempDir::new("custom");
 
     // 初始无重定向文件。
-    assert!(path_service::read_data_dir_redirect(&root.path).is_none());
+    assert!(path_service::read_data_dir_redirect(&root.path).unwrap().is_none());
     // 默认目录 = %LOCALAPPDATA%\TagLauncher\Save（LOCALAPPDATA 缺失时兜底 root/Save）
     match std::env::var_os("LOCALAPPDATA") {
         Some(local) if std::path::Path::new(&local).is_absolute() => assert_eq!(
@@ -314,12 +314,14 @@ fn data_directory_redirect_read_write() {
 
     // 写入自定义目录 → 读回一致。
     path_service::write_data_dir_redirect(&root.path, Some(&custom.path)).expect("write redirect");
-    let read_back = path_service::read_data_dir_redirect(&root.path).expect("redirect present");
+    let read_back = path_service::read_data_dir_redirect(&root.path)
+        .expect("redirect readable")
+        .expect("redirect present");
     assert_eq!(read_back, custom.path);
 
     // 清除（None）→ 文件移除，回退默认目录。
     path_service::write_data_dir_redirect(&root.path, None).expect("clear redirect");
-    assert!(path_service::read_data_dir_redirect(&root.path).is_none());
+    assert!(path_service::read_data_dir_redirect(&root.path).unwrap().is_none());
 }
 
 // ── 辅助 ──────────────────────────────────────────────────────────────────

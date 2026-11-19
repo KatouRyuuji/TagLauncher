@@ -261,6 +261,9 @@ interface AppState {
   lastBatchRename: Array<{ id: number; oldName: string }> | null;
   /** 状态栏 / 右键 / 命令面板共用的失效项目复核弹窗 */
   missingReviewOpen: boolean;
+  /** 自动与手动找回共用的候选列表；代数用于丢弃过期扫描结果 */
+  relocateScanGen: number;
+  relocateCandidates: db.RelocateCandidate[];
   /** 状态栏即时反馈：正在打开、刷新结果、键盘跳转未命中。不持久化。 */
   activityNotice: string | null;
   /**
@@ -317,6 +320,9 @@ interface AppState {
   setBatchRenameOpen: (open: boolean) => void;
   setLastBatchRename: (entries: Array<{ id: number; oldName: string }> | null) => void;
   setMissingReviewOpen: (open: boolean) => void;
+  beginRelocateScan: () => number;
+  applyRelocateScanResult: (gen: number, candidates: db.RelocateCandidate[]) => void;
+  removeRelocateCandidates: (ids: readonly number[]) => void;
   /** 激活重启遮罩并自动重启；重启失败时遮罩转为"请手动重启" */
   beginRestart: (message: string) => void;
   clearWorkspaceFilters: () => void;
@@ -385,6 +391,8 @@ export const useAppStore = create<AppState>((set, get) => {
   lastBatchRename: null,
   activityNotice: null,
   missingReviewOpen: false,
+  relocateScanGen: 0,
+  relocateCandidates: [],
   restartOverlay: null,
 
   setTags: (tags) => set((state) => sameTags(state.tags, tags) ? state : { tags }),
@@ -578,6 +586,21 @@ export const useAppStore = create<AppState>((set, get) => {
   setBatchRenameOpen: (open) => set((state) => state.batchRenameOpen === open ? state : { batchRenameOpen: open }),
   setLastBatchRename: (entries) => set({ lastBatchRename: entries && entries.length > 0 ? entries : null }),
   setMissingReviewOpen: (open) => set((state) => state.missingReviewOpen === open ? state : { missingReviewOpen: open }),
+  beginRelocateScan: () => {
+    const gen = get().relocateScanGen + 1;
+    set({ relocateScanGen: gen, relocateCandidates: [] });
+    return gen;
+  },
+  applyRelocateScanResult: (gen, candidates) => set((state) => {
+    if (gen !== state.relocateScanGen) return state;
+    return { relocateCandidates: candidates };
+  }),
+  removeRelocateCandidates: (ids) => set((state) => {
+    if (ids.length === 0) return state;
+    const drop = new Set(ids);
+    const next = state.relocateCandidates.filter((candidate) => !drop.has(candidate.id));
+    return next.length === state.relocateCandidates.length ? state : { relocateCandidates: next };
+  }),
   beginRestart: (message) => {
     set({ restartOverlay: { message, restartFailed: false } });
     // 自动重启；失败时遮罩切换为"请手动重启"，不再放回主界面

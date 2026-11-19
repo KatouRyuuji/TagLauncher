@@ -682,6 +682,8 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       if (args.roots !== undefined && (!Array.isArray(args.roots) || args.roots.length === 0)) {
         throw new Error("请至少选择一个文件夹");
       }
+      return { candidates: [] };
+    case "confirm_signature_relocations":
       return 0;
     case "open_in_explorer":
     case "open_in_explorer_by_id":

@@ -116,21 +116,29 @@ def _check_cursor(x: int, y: int, bad: list) -> None:
         bad.append(((ex, ey), (cx, cy)))
 
 
-def drag(x0: int, y0: int, x1: int, y1: int, steps: int = 25, hold: float = 0.15, step_pause: float = 0.015) -> None:
+def drag(x0: int, y0: int, x1: int, y1: int, steps: int = 25, hold: float = 0.15, step_pause: float = 0.015, *, input_trace: list | None = None) -> None:
     bad: list = []
     mouse_move(x0, y0)
     time.sleep(0.12)
     _check_cursor(x0, y0, bad)
+    if input_trace is not None:
+        input_trace.append({"phase": "positioned", **input_snapshot(x0, y0)})
     mouse_down()
-    time.sleep(hold)
-    for i in range(1, steps + 1):
-        x, y = round(x0 + (x1 - x0) * i / steps), round(y0 + (y1 - y0) * i / steps)
-        mouse_move(x, y)
-        time.sleep(step_pause)
-        _check_cursor(x, y, bad)
-    time.sleep(0.15)
-    _check_cursor(x1, y1, bad)
-    mouse_up()
+    try:
+        time.sleep(hold)
+        if input_trace is not None:
+            input_trace.append({"phase": "pressed", **input_snapshot(x0, y0)})
+        for i in range(1, steps + 1):
+            x, y = round(x0 + (x1 - x0) * i / steps), round(y0 + (y1 - y0) * i / steps)
+            mouse_move(x, y)
+            time.sleep(step_pause)
+            _check_cursor(x, y, bad)
+        time.sleep(0.15)
+        _check_cursor(x1, y1, bad)
+    finally:
+        mouse_up()
+    if input_trace is not None:
+        input_trace.append({"phase": "released", **input_snapshot(x1, y1)})
     time.sleep(0.3)
     if bad:
         raise InputInterference(f"拖拽期间光标被移走（真实鼠标干扰？）期望/实际：{bad[:3]}")
@@ -314,8 +322,62 @@ def client_size(hwnd: int) -> tuple[int, int]:
     return r.right - r.left, r.bottom - r.top
 
 
+class GUITHREADINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD),
+                ("hwndActive", wintypes.HWND), ("hwndFocus", wintypes.HWND),
+                ("hwndCapture", wintypes.HWND), ("hwndMenuOwner", wintypes.HWND),
+                ("hwndMoveSize", wintypes.HWND), ("hwndCaret", wintypes.HWND),
+                ("rcCaret", wintypes.RECT)]
+
+
+def input_snapshot(x: int, y: int) -> dict:
+    """Read the actual leaf/foreground/capture, without activation or synthetic messages."""
+    user32.WindowFromPoint.argtypes = [wintypes.POINT]
+    user32.WindowFromPoint.restype = wintypes.HWND
+    user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetAncestor.restype = wintypes.HWND
+    user32.GetForegroundWindow.argtypes = []
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    user32.GetGUIThreadInfo.argtypes = [wintypes.DWORD, ctypes.POINTER(GUITHREADINFO)]
+    user32.GetGUIThreadInfo.restype = wintypes.BOOL
+    user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+    user32.GetAsyncKeyState.restype = ctypes.c_short
+
+    def identity(hwnd: int) -> dict:
+        pid = wintypes.DWORD()
+        tid = user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid)) if hwnd else 0
+        return {"hwnd": hwnd, "pid": pid.value, "tid": tid,
+                "class": class_name(hwnd) if hwnd else ""}
+
+    leaf = user32.WindowFromPoint(wintypes.POINT(x, y)) or 0
+    fg = user32.GetForegroundWindow() or 0
+    target = identity(leaf)
+    foreground = identity(fg)
+
+    def gui_state(tid: int) -> dict:
+        gui = GUITHREADINFO()
+        gui.cbSize = ctypes.sizeof(gui)
+        # tid=0 queries foreground input state when no leaf was found.
+        ok = user32.GetGUIThreadInfo(tid, ctypes.byref(gui))
+        return {"ok": bool(ok), "flags": gui.flags,
+                "active": gui.hwndActive, "focus": gui.hwndFocus,
+                "capture": gui.hwndCapture, "moveSize": gui.hwndMoveSize,
+                "error": None if ok else getattr(ctypes, "get_last_error", lambda: None)()}
+
+    gui = gui_state(target["tid"])
+    foreground_gui = gui if foreground["tid"] == target["tid"] else gui_state(foreground["tid"])
+    return {"point": (x, y), "cursor": cursor_pos(), "leaf": target,
+            "root": identity(user32.GetAncestor(leaf, 2) or 0) if leaf else identity(0),
+            "foreground": foreground, "gui": gui, "foregroundGui": foreground_gui,
+            "keysDown": {name: bool(user32.GetAsyncKeyState(vk) & 0x8000)
+                         for name, vk in (("left", 1), ("right", 2), ("shift", 0x10),
+                                          ("ctrl", 0x11), ("alt", 0x12))}}
+
+
 def root_at(x: int, y: int) -> int:
-    """屏幕点 (x, y) 处的顶层窗口（真实输入会落到它上面）。"""
+    """屏幕点 (x, y) 处叶 HWND 的根窗口（不代表真实按下直接交给根窗口）。"""
     user32.WindowFromPoint.argtypes = [wintypes.POINT]
     user32.WindowFromPoint.restype = wintypes.HWND
     user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
@@ -325,6 +387,8 @@ def root_at(x: int, y: int) -> int:
 
 
 def class_name(hwnd: int) -> str:
+    user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetClassNameW.restype = ctypes.c_int
     buf = ctypes.create_unicode_buffer(256)
     user32.GetClassNameW(hwnd, buf, 256)
     return buf.value

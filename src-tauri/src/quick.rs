@@ -8,8 +8,14 @@
 //!   见 services::search_index）只取前 50 条；写操作（打标签）调用与主窗相同的命令，
 //!   写后发 `window-data-written` 让主窗按 ID 增量刷新。
 
+#[cfg(test)]
+use crate::quick_lifecycle::may_block_for_ui_progress;
+use crate::quick_lifecycle::{
+    ensure_action, next_state_after_ensure, ui_hide_may_enter_ensure, DestroyState, EnsureAction,
+};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
@@ -106,6 +112,131 @@ pub fn set_options(options: QuickOptions) {
 
 /// 每次隐藏 / 唤出自增：过期的降内存计时器据此作废
 static VISIBILITY_GEN: AtomicU64 = AtomicU64::new(0);
+/// 预创建任务代数：关闭/销毁时递增，过期的延迟创建不得再建窗。
+static PRECREATE_GEN: AtomicU64 = AtomicU64::new(0);
+/// 非 MAX 表示窗口由该代数的预创建任务建出，且尚未被 show/collect/钉住认领。
+static PRECREATE_OWNED_GEN: AtomicU64 = AtomicU64::new(u64::MAX);
+const PRECREATE_NOT_OWNED: u64 = u64::MAX;
+
+static LIFECYCLE_EPOCH: AtomicU64 = AtomicU64::new(0);
+static EXECUTOR: std::sync::OnceLock<crate::quick_executor::Executor> = std::sync::OnceLock::new();
+
+fn executor() -> &'static crate::quick_executor::Executor {
+    EXECUTOR.get_or_init(crate::quick_executor::Executor::new)
+}
+
+pub(crate) fn on_lifecycle_worker() -> bool {
+    executor().is_current()
+}
+
+pub(crate) fn defer_lifecycle(job: impl FnOnce() + Send + 'static) {
+    if let Err(e) = executor().defer(job) {
+        log::error!("[quick] {e}");
+    }
+}
+
+pub(crate) fn call_lifecycle<T: Send + 'static>(
+    job: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    if current_thread_is_ui() && !on_lifecycle_worker() {
+        return Err("UI 不得等待快速窗生命周期任务".into());
+    }
+    executor().call(job)
+}
+
+thread_local! {
+    // Only the lifecycle worker owns product state. UI completion sends a control message.
+    static DESTROY_STATE: std::cell::Cell<DestroyState> = const { std::cell::Cell::new(DestroyState::Idle) };
+}
+static UI_THREAD: Mutex<Option<std::thread::ThreadId>> = Mutex::new(None);
+
+fn destroy_state() -> DestroyState {
+    DESTROY_STATE.get()
+}
+
+fn set_destroy_state(state: DestroyState) {
+    DESTROY_STATE.set(state);
+}
+
+/// 在 UI 线程（setup / 全局窗口事件）记下事件循环所在线程，避免在其上等待 posted 任务。
+pub fn note_ui_thread() {
+    *UI_THREAD.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::thread::current().id());
+}
+
+pub(crate) fn current_thread_is_ui() -> bool {
+    match *UI_THREAD.lock().unwrap_or_else(|e| e.into_inner()) {
+        Some(id) => id == std::thread::current().id(),
+        // 尚未登记时按 UI 处理：宁可退让，也不在可能的 UI 线程上死等 posted 任务。
+        None => true,
+    }
+}
+
+#[cfg(test)]
+fn clear_ui_thread_for_test() {
+    *UI_THREAD.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// Builder 全局 Destroyed 的完成通知（窗口对外暴露前已安装）。
+pub fn notify_quick_destroyed() {
+    let token = LIFECYCLE_EPOCH.load(Ordering::SeqCst);
+    executor().resume(token, || set_destroy_state(DestroyState::Idle));
+}
+
+fn prepare_destroy() -> u64 {
+    debug_assert!(on_lifecycle_worker());
+    let token = LIFECYCLE_EPOCH.fetch_add(1, Ordering::SeqCst) + 1;
+    set_destroy_state(DestroyState::Queued);
+    executor().pause(token);
+    token
+}
+
+fn dispatch_destroy(app: &AppHandle, window: &WebviewWindow, token: u64) {
+    // No application lock is held over any platform call or UI dispatch.
+    if let Err(e) = window.destroy() {
+        log::warn!("[quick] 销毁快速窗失败：{e}");
+        set_destroy_state(DestroyState::DispatchFailed);
+        executor().resume(token, || {});
+        return;
+    }
+    // Global Destroyed normally resumes us. This ordered UI probe also recovers
+    // a missing notification when the manager has already removed the old window.
+    let handle = app.clone();
+    if let Err(e) = app.run_on_main_thread(move || {
+        if quick_window(&handle).is_none() {
+            executor().resume(token, || set_destroy_state(DestroyState::Idle));
+        }
+    }) {
+        log::warn!("[quick] 无法核对销毁完成：{e}");
+        set_destroy_state(DestroyState::DispatchFailed);
+        executor().resume(token, || {});
+    }
+}
+
+fn queue_quick_window_destroy(app: &AppHandle, window: &WebviewWindow) {
+    let token = prepare_destroy();
+    dispatch_destroy(app, window, token);
+}
+
+#[derive(Debug)]
+enum EnsureError {
+    PendingDestroy,
+    DispatchFailed,
+    Other(String),
+}
+
+impl std::fmt::Display for EnsureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PendingDestroy => {
+                write!(f, "快速窗正在销毁，当前线程不能同步等待重建")
+            }
+            Self::DispatchFailed => {
+                write!(f, "快速窗销毁消息未能入队，旧窗不可认领")
+            }
+            Self::Other(s) => write!(f, "{s}"),
+        }
+    }
+}
 /// 产品意图上窗口是否该显示。不信任 tao is_visible()：原生 ShowWindow 后标志可能反了，
 /// 既会让暂停早退（亚克力留在查询上），也会让恢复把亚克力打到已隐藏的窗口（空闲 CPU）。
 static INTENDED_VISIBLE: AtomicBool = AtomicBool::new(false);
@@ -153,27 +284,110 @@ fn quick_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(QUICK_LABEL)
 }
 
-/// 创建隐藏的快速窗（已存在则直接返回）。不要在主线程同步命令里调用（Windows 上会死锁）。
+/// 收纳 / 唤出 / 钉住认领窗口：过期预创建不得再销毁已进入实际使用的窗。
+pub(crate) fn claim_quick_window_for_live_use() {
+    PRECREATE_OWNED_GEN.store(PRECREATE_NOT_OWNED, Ordering::SeqCst);
+}
+
+/// 预创建在登记之后复核代数：仅当仍由本轮预创建持有、且代数已过期时才丢弃。
+pub(crate) fn should_discard_precreate(scheduled: u64, current: u64, owned_gen: u64) -> bool {
+    current != scheduled && owned_gen == scheduled
+}
+
+/// 代数检查已通过后、登记窗口前再读一次代数。测试可在间隙插入屏障。
+pub(crate) fn commit_precreate_after_check(
+    scheduled: u64,
+    gen: &std::sync::atomic::AtomicU64,
+    live_claimed: bool,
+    between_check_and_register: impl FnOnce(),
+) -> bool {
+    between_check_and_register();
+    let current = gen.load(Ordering::SeqCst);
+    let owned = if live_claimed {
+        PRECREATE_NOT_OWNED
+    } else {
+        scheduled
+    };
+    !should_discard_precreate(scheduled, current, owned)
+}
+
+/// Creation/claiming runs only on the lifecycle worker, never inside a UI callback.
 pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
-    // 串行化创建：窗口要等主线程建完才登记标签，多个线程（收纳会话的多次弹出、预创建）
-    // 同时看到「不存在」会各建一个同名窗口（D-SHELL-04 实测出现两个 quick.html）
-    static CREATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = CREATE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(w) = quick_window(app) {
-        return Ok(w);
+    if !on_lifecycle_worker() {
+        let handle = app.clone();
+        return call_lifecycle(move || ensure_window(&handle))?;
     }
-    let mut builder = WebviewWindowBuilder::new(app, QUICK_LABEL, WebviewUrl::App("quick.html".into()))
-        .title("TagLauncher 快速搜索")
-        .inner_size(QUICK_WIDTH, QUICK_HEIGHT)
-        .decorations(false)
-        .resizable(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .shadow(true)
-        .visible(false)
-        .focused(false)
-        .transparent(true)
-        .background_color(tauri::window::Color(0, 0, 0, 0));
+    ensure_window_now(app).map_err(|e| e.to_string())
+}
+
+fn ensure_window_now(app: &AppHandle) -> Result<WebviewWindow, EnsureError> {
+    debug_assert!(on_lifecycle_worker());
+    let present = quick_window(app);
+    let state = destroy_state();
+    match ensure_action(present.is_some(), state) {
+        EnsureAction::ClaimExisting => {
+            claim_quick_window_for_live_use();
+            Ok(present.expect("claimable window"))
+        }
+        EnsureAction::CreateFresh => {
+            set_destroy_state(next_state_after_ensure(false, state));
+            claim_quick_window_for_live_use();
+            create_quick_window_owned(app).map_err(EnsureError::Other)
+        }
+        EnsureAction::YieldPendingDestroy => Err(EnsureError::PendingDestroy),
+        EnsureAction::RejectDispatchFailed => Err(EnsureError::DispatchFailed),
+    }
+}
+
+fn ensure_window_precreate(app: &AppHandle, scheduled: u64) -> Result<(), String> {
+    if !on_lifecycle_worker() {
+        let handle = app.clone();
+        return call_lifecycle(move || ensure_window_precreate(&handle, scheduled))?;
+    }
+    let present = quick_window(app);
+    match ensure_action(present.is_some(), destroy_state()) {
+        EnsureAction::ClaimExisting => return Ok(()),
+        EnsureAction::YieldPendingDestroy | EnsureAction::RejectDispatchFailed => {
+            // 旧窗还在且不可认领：不在预创建线程上等待 Destroy。
+            return Ok(());
+        }
+        EnsureAction::CreateFresh => {}
+    }
+    if PRECREATE_GEN.load(Ordering::SeqCst) != scheduled {
+        return Ok(());
+    }
+    set_destroy_state(next_state_after_ensure(false, destroy_state()));
+    let window = create_quick_window_owned(app)?;
+    PRECREATE_OWNED_GEN.store(scheduled, Ordering::SeqCst);
+    if should_discard_precreate(
+        scheduled,
+        PRECREATE_GEN.load(Ordering::SeqCst),
+        PRECREATE_OWNED_GEN.load(Ordering::SeqCst),
+    ) {
+        PRECREATE_OWNED_GEN.store(PRECREATE_NOT_OWNED, Ordering::SeqCst);
+        queue_quick_window_destroy(app, &window);
+    }
+    Ok(())
+}
+
+fn create_quick_window_owned(app: &AppHandle) -> Result<WebviewWindow, String> {
+    debug_assert!(on_lifecycle_worker());
+    let window_epoch = LIFECYCLE_EPOCH.fetch_add(1, Ordering::SeqCst) + 1;
+    let mut builder =
+        WebviewWindowBuilder::new(app, QUICK_LABEL, WebviewUrl::App("quick.html".into()))
+            .title("TagLauncher 快速搜索")
+            .inner_size(QUICK_WIDTH, QUICK_HEIGHT)
+            .decorations(false)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .shadow(true)
+            .visible(false)
+            .focused(false)
+            .transparent(true)
+            .background_color(tauri::window::Color(0, 0, 0, 0));
     // 不在创建时开系统背景：窗口默认 visible(false)，隐藏态持续合成会超空闲 CPU 预算。
     // 显示后再 apply_glass_effect，隐藏/销毁时清除。
     let window = builder
@@ -181,20 +395,26 @@ pub fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .map_err(|e| format!("创建快速搜索窗失败：{e}"))?;
     // 失焦自动隐藏（Esc / 打开对象 / 点到别处都应收起）
     let handle = app.clone();
-    window.on_window_event(move |event| match event {
-        tauri::WindowEvent::Focused(false) => {
-            if crate::pin::surface() == crate::pin::Surface::Pin {
-                // 钉住表面：只有展开的抽屉失焦收回，浮动窗不动
-                crate::pin::on_blur(&handle);
-            } else if options().hide_on_blur {
-                // 收纳会话进行中也按选项走：不自动隐藏时由 Esc / 处理完收起
-                hide(&handle);
+    window.on_window_event(move |event| {
+        if LIFECYCLE_EPOCH.load(Ordering::SeqCst) != window_epoch {
+            return;
+        }
+        match event {
+            tauri::WindowEvent::Focused(false) => {
+                if crate::pin::surface() == crate::pin::Surface::Pin {
+                    // 钉住表面：只有展开的抽屉失焦收回，浮动窗不动
+                    crate::pin::on_blur(&handle);
+                } else if options().hide_on_blur {
+                    // 收纳会话进行中也按选项走：不自动隐藏时由 Esc / 处理完收起
+                    hide_for_epoch(&handle, window_epoch);
+                }
             }
+            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                crate::pin::on_moved(&handle);
+            }
+            // Destroyed 完成通知走 lib.rs Builder 全局监听，不在 build 返回后异步加装。
+            _ => {}
         }
-        tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
-            crate::pin::on_moved(&handle);
-        }
-        _ => {}
     });
     crate::pin::install_caption_drag(&window);
     // 页面默认带 data-quick-hidden。此处不调用 clear_glass_effect：它的 with_webview
@@ -359,49 +579,119 @@ fn pause_quick_controller_if_unintended(window: &WebviewWindow) {
 }
 
 pub fn destroy_window(app: &AppHandle) {
-    // 作废延后开玻璃的任务，避免 50ms 后 apply_glass 与 destroy 抢同一窗口。
     VISIBILITY_GEN.fetch_add(1, Ordering::SeqCst);
-    set_intended_visible(false);
-    if let Some(w) = quick_window(app) {
-        // 只做同步清理：eval / with_webview 都可能与 destroy 抢同一窗口
-        // （E-PIN-01：关闭钉住且未开搜索时应销毁；96e47da e2e(3) 再现）。
-        #[cfg(windows)]
-        {
-            if let Ok(h) = w.hwnd() {
-                crate::dwm_backdrop::clear(h.0 as isize);
-                use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
-                // SAFETY：hwnd 来自本进程窗口
-                unsafe {
-                    ShowWindow(h.0 as _, SW_HIDE);
-                }
+    PRECREATE_GEN.fetch_add(1, Ordering::SeqCst);
+    let handle = app.clone();
+    defer_lifecycle(move || destroy_window_owned(&handle, false));
+}
+
+/// Old collect cleanup commits only while CollectState is still empty. Publishing
+/// Queued under that short lock separates a new merge into before/after the commit.
+pub(crate) fn cleanup_collect_window(app: &AppHandle) {
+    let handle = app.clone();
+    defer_lifecycle(move || destroy_window_owned(&handle, true));
+}
+
+fn destroy_window_owned(app: &AppHandle, collect_cleanup: bool) {
+    debug_assert!(on_lifecycle_worker());
+    let Some(window) = quick_window(app) else {
+        return;
+    };
+    let token = if collect_cleanup {
+        let state = app.state::<crate::collect::CollectState>();
+        let Some(token) = crate::collect::commit_idle_cleanup(&state, || {
+            if crate::desktop::quick_window_needed(app) {
+                None
+            } else {
+                Some(prepare_destroy())
             }
-        }
-        let _ = w.hide();
-        if let Err(e) = w.destroy() {
-            log::warn!("[quick] 销毁快速窗失败：{e}，改用 close");
-            let _ = w.close();
+        })
+        .flatten() else {
+            return;
+        };
+        token
+    } else {
+        prepare_destroy()
+    };
+    PRECREATE_OWNED_GEN.store(PRECREATE_NOT_OWNED, Ordering::SeqCst);
+    set_intended_visible(false);
+    #[cfg(windows)]
+    if let Ok(h) = window.hwnd() {
+        crate::dwm_backdrop::clear(h.0 as isize);
+        unsafe {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+            ShowWindow(h.0 as _, SW_HIDE);
         }
     }
+    let _ = window.hide();
+    dispatch_destroy(app, &window, token);
 }
 
 /// 功能开启时延迟预创建（后台线程，不阻塞启动）；关闭时销毁。
 pub fn sync_window(app: &AppHandle, enabled: bool) {
     if !enabled {
+        PRECREATE_GEN.fetch_add(1, Ordering::SeqCst);
         destroy_window(app);
         return;
     }
     if quick_window(app).is_some() {
         return;
     }
+    let scheduled = PRECREATE_GEN.load(Ordering::SeqCst);
     let app = app.clone();
     let _ = std::thread::Builder::new()
         .name("tl-quick-precreate".into())
         .spawn(move || {
-            std::thread::sleep(PRECREATE_DELAY);
-            if let Err(e) = ensure_window(&app) {
-                log::warn!("[quick] {e}");
-            }
+            run_scheduled_precreate(scheduled, &PRECREATE_GEN, wait_precreate_delay, || {
+                if let Err(e) = ensure_window_precreate(&app, scheduled) {
+                    log::warn!("[quick] {e}");
+                }
+            });
         });
+}
+
+fn wait_precreate_delay() {
+    #[cfg(test)]
+    if let Some(hook) = TEST_PRECREATE_DELAY.with(|h| h.get()) {
+        hook();
+        return;
+    }
+    std::thread::sleep(PRECREATE_DELAY);
+}
+
+/// 延迟结束后若代数已变（关闭或新一轮 sync），不再创建窗口。
+fn run_scheduled_precreate(
+    scheduled: u64,
+    gen: &std::sync::atomic::AtomicU64,
+    delay: impl FnOnce(),
+    create: impl FnOnce(),
+) {
+    delay();
+    if gen.load(Ordering::SeqCst) != scheduled {
+        return;
+    }
+    create();
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_PRECREATE_DELAY: std::cell::Cell<Option<fn()>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn with_precreate_delay<F, R>(hook: fn(), f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            TEST_PRECREATE_DELAY.with(|h| h.set(None));
+        }
+    }
+    TEST_PRECREATE_DELAY.with(|h| h.set(Some(hook)));
+    let _g = Guard;
+    f()
 }
 
 /// 把快速窗放到选项指定的显示器（鼠标所在 / 主窗所在；取不到则退到另一个）的工作区。
@@ -443,6 +733,10 @@ fn place_on_target_monitor(app: &AppHandle, window: &WebviewWindow) {
 /// 唤出快速窗。`activate` 为 false 时不抢前台（仅 E2E 用：测试机守护不允许应用抢前台），
 /// 产品路径（热键/托盘/主窗按钮）一律 true。
 pub fn show(app: &AppHandle, t0_ms: u64, activate: bool) -> Result<(), String> {
+    if !on_lifecycle_worker() {
+        let handle = app.clone();
+        return call_lifecycle(move || show(&handle, t0_ms, activate))?;
+    }
     let window = ensure_window(app)?;
     // 钉住视图共用本窗口：先切回搜索表面（尺寸 / 置顶 / 前端表面）
     crate::pin::enter_search(&window);
@@ -507,7 +801,25 @@ fn native_hide(window: &tauri::WebviewWindow) {
     let _ = window;
 }
 
+fn hide_for_epoch(app: &AppHandle, epoch: u64) {
+    let handle = app.clone();
+    if let Err(e) = executor().defer_guarded(
+        move || LIFECYCLE_EPOCH.load(Ordering::SeqCst) == epoch,
+        move || hide(&handle),
+    ) {
+        log::error!("[quick] {e}");
+    }
+}
+
 pub fn hide(app: &AppHandle) {
+    if !on_lifecycle_worker() {
+        hide_for_epoch(app, LIFECYCLE_EPOCH.load(Ordering::SeqCst));
+        return;
+    }
+    // 失焦 / CloseRequested / 同步 quick_hide 都可能在 UI 线程。销毁中不得走进 restore → ensure。
+    if !ui_hide_may_enter_ensure(destroy_state()) {
+        return;
+    }
     // 钉住视图开启：搜索收起 = 还原为钉住视图（同一个 WebView），不隐藏窗口
     if crate::pin::active() {
         if crate::pin::surface() == crate::pin::Surface::Search {
@@ -687,6 +999,159 @@ mod tests {
         for f in [p.clone(), format!("{p}-wal"), format!("{p}-shm")] {
             let _ = std::fs::remove_file(&f);
         }
+    }
+
+    #[test]
+    fn expired_precreate_does_not_create_after_cancel() {
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+        use std::sync::{Arc, Barrier};
+        use std::time::Duration;
+
+        let gen = Arc::new(AtomicU64::new(7));
+        let created = Arc::new(AtomicBool::new(false));
+        let start = Arc::new(Barrier::new(2));
+        let finish = Arc::new(Barrier::new(2));
+        let created_flag = created.clone();
+        let start_d = start.clone();
+        let finish_d = finish.clone();
+        let gen_job = gen.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let job = std::thread::spawn(move || {
+            run_scheduled_precreate(
+                7,
+                &gen_job,
+                || {
+                    start_d.wait();
+                    finish_d.wait();
+                },
+                || created_flag.store(true, Ordering::SeqCst),
+            );
+            let _ = tx.send(created_flag.load(Ordering::SeqCst));
+        });
+        start.wait();
+        gen.fetch_add(1, Ordering::SeqCst); // 关闭 / 新一轮 sync
+        finish.wait();
+        let created_after = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("预创建任务未结束");
+        assert!(!created_after, "过期预创建不得再建窗");
+        job.join().unwrap();
+        assert!(!created.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn current_precreate_still_runs_and_does_not_drop_a_live_generation() {
+        use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+        let gen = AtomicU64::new(3);
+        let created = AtomicUsize::new(0);
+        run_scheduled_precreate(
+            3,
+            &gen,
+            || {},
+            || {
+                created.fetch_add(1, Ordering::SeqCst);
+            },
+        );
+        assert_eq!(created.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn precreate_commit_barrier_discards_after_check_before_register() {
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+        use std::sync::{Arc, Barrier};
+        use std::time::Duration;
+
+        let gen = Arc::new(AtomicU64::new(4));
+        let start = Arc::new(Barrier::new(2));
+        let finish = Arc::new(Barrier::new(2));
+        let start_d = start.clone();
+        let finish_d = finish.clone();
+        let gen_job = gen.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let job = std::thread::spawn(move || {
+            let keep = commit_precreate_after_check(4, &gen_job, false, || {
+                start_d.wait();
+                finish_d.wait();
+            });
+            let _ = tx.send(keep);
+        });
+        start.wait();
+        gen.fetch_add(1, Ordering::SeqCst);
+        finish.wait();
+        let keep = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("commit barrier");
+        assert!(!keep, "检查通过后、登记前关闭必须丢弃预创建窗");
+        job.join().unwrap();
+        assert!(should_discard_precreate(4, 5, 4));
+        assert!(
+            !should_discard_precreate(4, 5, u64::MAX),
+            "已被实际使用认领的窗不得销毁"
+        );
+        assert!(!should_discard_precreate(4, 4, 4));
+    }
+
+    #[test]
+    fn precreate_commit_barrier_keeps_window_already_claimed() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::{Arc, Barrier};
+        use std::time::Duration;
+
+        let gen = Arc::new(AtomicU64::new(9));
+        let start = Arc::new(Barrier::new(2));
+        let finish = Arc::new(Barrier::new(2));
+        let start_d = start.clone();
+        let finish_d = finish.clone();
+        let gen_job = gen.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let job = std::thread::spawn(move || {
+            let keep = commit_precreate_after_check(9, &gen_job, true, || {
+                start_d.wait();
+                finish_d.wait();
+            });
+            let _ = tx.send(keep);
+        });
+        start.wait();
+        gen.fetch_add(1, Ordering::SeqCst);
+        finish.wait();
+        let keep = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("claimed commit");
+        assert!(keep, "收纳/唤出已认领的窗口不得因过期预创建被销毁");
+        job.join().unwrap();
+    }
+
+    #[test]
+    fn ui_hide_does_not_enter_ensure_while_destroy_queued() {
+        // 产品 hide 入口与决策函数一致：销毁中退让，避免 restore → ensure。
+        set_destroy_state(DestroyState::Idle);
+        assert!(ui_hide_may_enter_ensure(destroy_state()));
+        set_destroy_state(DestroyState::Queued);
+        assert!(!ui_hide_may_enter_ensure(destroy_state()));
+        set_destroy_state(DestroyState::Idle);
+        notify_quick_destroyed();
+        assert!(ui_hide_may_enter_ensure(destroy_state()));
+        set_destroy_state(DestroyState::DispatchFailed);
+        assert!(!ui_hide_may_enter_ensure(destroy_state()));
+        set_destroy_state(DestroyState::Idle);
+    }
+
+    #[test]
+    fn unknown_or_ui_thread_must_not_block_for_posted_ensure() {
+        assert!(current_thread_is_ui(), "未登记时按 UI 处理，禁止等待");
+        assert!(!may_block_for_ui_progress(current_thread_is_ui()));
+        note_ui_thread();
+        assert!(current_thread_is_ui());
+        let noted = std::thread::current().id();
+        let worker = std::thread::spawn(move || {
+            // 登记发生在「UI」线程后，工作线程不得被当成 UI。
+            let _ = noted;
+            !current_thread_is_ui() && may_block_for_ui_progress(current_thread_is_ui())
+        })
+        .join()
+        .expect("worker");
+        assert!(worker, "工作线程才允许把 ensure 排到下一轮 UI");
+        clear_ui_thread_for_test();
     }
 }
 

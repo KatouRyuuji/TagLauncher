@@ -55,4 +55,88 @@ describe("useAiTagging currentName", () => {
     expect(result.current.state.currentName).toBeNull();
     expect(result.current.state.lastNames).toEqual(["风景"]);
   });
+
+
+  it("取消发生在串行队列回调与 await 边界时不再写标签", async () => {
+    let releaseSuggest!: (names: string[]) => void;
+    let releaseEnsure!: (id: number) => void;
+    vi.mocked(db.aiSuggestTags).mockImplementation(
+      () => new Promise((resolve) => { releaseSuggest = resolve; }),
+    );
+    vi.mocked(db.getItem).mockResolvedValue(item);
+    const applyItemTags = vi.fn(async () => {});
+    const ensureTag = vi.fn(
+      () => new Promise<number>((resolve) => { releaseEnsure = resolve; }),
+    );
+
+    const { result } = renderHook(() => useAiTagging());
+    let finished: Promise<{ tagged: number; failed: number; failures: unknown[] }>;
+    act(() => {
+      finished = result.current.start([item], {
+        getVocabulary: () => [],
+        ensureTag,
+        applyItemTags,
+      });
+    });
+
+    await waitFor(() => expect(db.aiSuggestTags).toHaveBeenCalled());
+    await act(async () => {
+      releaseSuggest(["风景"]);
+    });
+    await waitFor(() => expect(ensureTag).toHaveBeenCalled());
+
+    act(() => {
+      result.current.cancel();
+    });
+    await act(async () => {
+      releaseEnsure(1);
+      await finished;
+    });
+
+    expect(applyItemTags).not.toHaveBeenCalled();
+    expect(db.getItem).not.toHaveBeenCalled();
+    expect(result.current.state.canceled).toBe(true);
+  });
+
+  it("三项并发时取消后所有 worker 都不再写标签", async () => {
+    const items: ItemWithTags[] = [1, 2, 3].map((id) => ({ ...item, id, name: `对象${id}.mp4` }));
+    const releaseSuggest: Array<(names: string[]) => void> = [];
+    let releaseEnsure!: (id: number) => void;
+    vi.mocked(db.aiSuggestTags).mockImplementation(
+      () => new Promise((resolve) => { releaseSuggest.push(resolve); }),
+    );
+    vi.mocked(db.getItem).mockImplementation(async (id: number) => items.find((it) => it.id === id) ?? item);
+    const applyItemTags = vi.fn(async () => {});
+    const ensureTag = vi.fn(
+      () => new Promise<number>((resolve) => { releaseEnsure = resolve; }),
+    );
+
+    const { result } = renderHook(() => useAiTagging());
+    let finished!: Promise<{ tagged: number; failed: number; failures: unknown[] }>;
+    act(() => {
+      finished = result.current.start(items, {
+        getVocabulary: () => [],
+        ensureTag,
+        applyItemTags,
+      });
+    });
+
+    await waitFor(() => expect(db.aiSuggestTags).toHaveBeenCalledTimes(3));
+    await act(async () => {
+      for (const release of releaseSuggest) release(["风景"]);
+    });
+    await waitFor(() => expect(ensureTag).toHaveBeenCalled());
+
+    act(() => {
+      result.current.cancel();
+    });
+    await act(async () => {
+      releaseEnsure(1);
+      await finished;
+    });
+
+    expect(applyItemTags).not.toHaveBeenCalled();
+    expect(db.getItem).not.toHaveBeenCalled();
+    expect(result.current.state.canceled).toBe(true);
+  });
 });

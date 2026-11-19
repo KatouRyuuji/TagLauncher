@@ -95,14 +95,17 @@ def on_screen(h: int) -> bool:
     return l < vr and r > vl and t < vb and b > vt
 
 
-def hide_window(h: int) -> None:
+def hide_window(h: int) -> dict:
     ex = user32.GetWindowLongPtrW(h, GWL_EXSTYLE)
     want = (ex | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) & ~WS_EX_APPWINDOW
     if want != ex:
         user32.SetWindowLongPtrW(h, GWL_EXSTYLE, want)
         user32.SetWindowPos(h, 0, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | 0x2)
-    if on_screen(h) and not user32.IsZoomed(h):
-        user32.SetWindowPos(h, 0, OFFSCREEN[0], OFFSCREEN[1], 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)
+    attempted = on_screen(h) and not user32.IsZoomed(h)
+    moved = None
+    if attempted:
+        moved = bool(user32.SetWindowPos(h, 0, OFFSCREEN[0], OFFSCREEN[1], 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE))
+    return {"moveAttempted": attempted, "moveSucceeded": moved}
 
 
 def nudge_windows(root: str) -> int:
@@ -141,9 +144,9 @@ class Guard:
                 mine = _windows_under(self.root)
                 fg = int(user32.GetForegroundWindow() or 0)
                 for h in mine:
-                    hide_window(h)
+                    correction = hide_window(h)
                     if user32.IsWindowVisible(h) and on_screen(h):
-                        self.violations.append(f"{_rect(h)} zoomed={bool(user32.IsZoomed(h))}")
+                        self.violations.append(f"{_rect(h)} zoomed={bool(user32.IsZoomed(h))} correction={correction}")
                 if fg in mine:
                     self.fg_stolen += 1
                 self.samples += 1

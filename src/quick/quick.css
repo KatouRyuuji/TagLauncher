@@ -247,8 +247,9 @@ html:not([data-surface="pin"]) .pin-shell { display: none; }
   border-radius: var(--radius-xl) 0 0 var(--radius-xl); border-right: none; }
 .pin-panel[data-mode="drawer"][data-edge="left"] { right: 0; border-right: var(--border-width, 1px) solid var(--glass-border);
   border-radius: 0 var(--radius-xl) var(--radius-xl) 0; border-left: none; }
-/* 顶栏：细来源色线 + 标题与数量写在一起。拖动由后端 HTCAPTION 兜底，不再用 32px 实底撑高度。 */
-.pin-chrome { flex-shrink: 0; cursor: move; user-select: none; margin: 0 calc(-1 * var(--spacing-sm)) 0;
+/* 顶栏：wry 已在导航前开启 WebView2 原生 app-region，由浏览器输入线程处理拖动；
+   保留 data-tauri-drag-region / HTCAPTION 兼容兜底。仅标题参与，不覆盖筛选与条目。 */
+.pin-chrome { app-region: drag; flex-shrink: 0; cursor: move; user-select: none; margin: 0 calc(-1 * var(--spacing-sm)) 0;
   background: transparent; }
 .pin-stripe { height: 2px; background: var(--accent-primary); opacity: 0.9; }
 .pin-header { display: flex; align-items: baseline; gap: var(--spacing-xs); min-height: 2em; cursor: move; user-select: none;

@@ -57,12 +57,15 @@ interface Slot {
   item: ItemWithTags;
   /** 取到它时的数据代；小于当前代 = 过期（全量刷新后待重取） */
   epoch: number;
+  /** 该对象本地写入代数；旧分页回来时若 rev 已前进则不得覆盖 */
+  rev: number;
 }
 
 export class ItemStore {
   private slots = new Map<number, Slot>();
   private inflight = new Set<number>();
   private epoch = 0;
+  private revs = new Map<number, number>();
   private listeners = new Set<() => void>();
   private dataListeners = new Set<() => void>();
   private dataVer = 0;
@@ -200,26 +203,38 @@ export class ItemStore {
   }
 
   remove(ids: readonly number[]) {
-    for (const id of ids) this.slots.delete(id);
+    for (const id of ids) {
+      this.bumpRev(id);
+      this.slots.delete(id);
+    }
     this.emit();
   }
 
-  /** 就地改写已缓存对象（如标签换色），不向后端取。 */
+  /** 就地改写已缓存对象（如标签换色），不向后端取。
+   *  提高 rev 以免在途旧分页覆盖本地补丁，但不抬升 epoch：过期槽仍须重取，不能因换色被当成新鲜。 */
   patch(fn: (item: ItemWithTags) => ItemWithTags) {
     let changed = false;
     for (const slot of this.slots.values()) {
       const next = fn(slot.item);
       if (next !== slot.item) {
         slot.item = next;
+        slot.rev = this.bumpRev(slot.item.id);
         changed = true;
       }
     }
     if (changed) this.emit();
   }
 
+  private bumpRev(id: number): number {
+    const next = (this.revs.get(id) ?? 0) + 1;
+    this.revs.set(id, next);
+    return next;
+  }
+
   private put(item: ItemWithTags) {
+    const rev = this.bumpRev(item.id);
     this.slots.delete(item.id);
-    this.slots.set(item.id, { item, epoch: this.epoch });
+    this.slots.set(item.id, { item, epoch: this.epoch, rev });
   }
 
   /** LRU：Map 迭代序即最近写入/使用序，超出上限时从最旧的删起（跳过当前可视区间不必要：区间远小于上限）。 */
@@ -307,7 +322,12 @@ export class ItemStore {
     }
     if (missing.length > 0) {
       const items = await this.fetch(missing, missing.length <= PAGE_SIZE * 2, "load");
-      for (const item of items) got.set(item.id, item);
+      for (const item of items) {
+        const slot = this.slots.get(item.id);
+        // fetch 已按当前 epoch/rev 解析；若槽已新鲜，以其为准，绝不回退到被拒的旧对象。
+        if (slot && slot.epoch >= this.epoch) got.set(item.id, slot.item);
+        else got.set(item.id, item);
+      }
     }
     const out: ItemWithTags[] = [];
     for (const id of want) {
@@ -317,9 +337,11 @@ export class ItemStore {
     return out;
   }
 
-  private async fetch(ids: number[], cache: boolean, kind: FetchKind): Promise<ItemWithTags[]> {
+  private async fetch(ids: number[], cache: boolean, kind: FetchKind, retried = false): Promise<ItemWithTags[]> {
     if (cache) for (const id of ids) this.inflight.add(id);
     const epoch = this.epoch;
+    const revAtStart = new Map(ids.map((id) => [id, this.revs.get(id) ?? 0]));
+    let epochMoved = false;
     try {
       this.fetches += 1;
       const t0 = typeof performance === "undefined" ? 0 : performance.now();
@@ -329,28 +351,74 @@ export class ItemStore {
         this.recentFetches.push({ start: t0, end: performance.now(), count: ids.length, kind });
         if (this.recentFetches.length > 8) this.recentFetches.shift();
       }
-      const got = new Set(items.map((item) => item.id));
+      epochMoved = this.epoch !== epoch;
+      const got = new Map(items.map((item) => [item.id, item] as const));
+      const accept = (id: number) => (this.revs.get(id) ?? 0) <= (revAtStart.get(id) ?? 0) && this.epoch === epoch;
+      const accepted = new Map<number, ItemWithTags>();
       if (cache) {
         for (const item of items) {
+          if (!accept(item.id)) continue;
           this.slots.delete(item.id);
-          this.slots.set(item.id, { item, epoch });
+          this.slots.set(item.id, { item, epoch, rev: this.revs.get(item.id) ?? 0 });
+          accepted.set(item.id, item);
         }
         this.trim();
       } else {
-        // 不进缓存，但已缓存的同一对象换成新数据，避免与刚取到的不一致
+        // 不进缓存，但已缓存且未被本地更新的同一对象换成新数据
         for (const item of items) {
+          if (!accept(item.id)) continue;
           const slot = this.slots.get(item.id);
-          if (slot) this.slots.set(item.id, { item, epoch });
+          if (slot) this.slots.set(item.id, { item, epoch, rev: this.revs.get(item.id) ?? 0 });
+          accepted.set(item.id, item);
         }
       }
-      // 取回时已被删除的对象：去掉旧缓存，避免显示幽灵数据
-      for (const id of ids) if (!got.has(id)) this.slots.delete(id);
-      return items;
+      // 取回时已被删除的对象：去掉旧缓存，避免显示幽灵数据（本地已 bump 的删除除外）
+      for (const id of ids) {
+        if (!got.has(id) && accept(id)) this.slots.delete(id);
+      }
+      const unresolved = ids.filter((id) => {
+        const slot = this.slots.get(id);
+        const fresh = slot && slot.epoch >= this.epoch;
+        return !fresh && !accepted.has(id) && got.has(id);
+      });
+      // 仍缺可接受的新鲜数据（epoch/rev 已变）时再取一次，避免把被拒旧对象交给 load。
+      if (!retried && unresolved.length > 0) {
+        const more = await this.fetch(unresolved, cache, kind, true);
+        for (const item of more) accepted.set(item.id, item);
+      }
+      const resolved: ItemWithTags[] = [];
+      const seen = new Set<number>();
+      const push = (item: ItemWithTags) => {
+        if (seen.has(item.id)) return;
+        seen.add(item.id);
+        resolved.push(item);
+      };
+      for (const id of ids) {
+        const slot = this.slots.get(id);
+        if (slot && slot.epoch >= this.epoch) push(slot.item);
+        else {
+          const item = accepted.get(id);
+          if (item) push(item);
+        }
+      }
+      return resolved;
     } finally {
       if (cache) for (const id of ids) this.inflight.delete(id);
       // 预取的页不在可视区间内：数据已进缓存，滚到那里时的渲染自然读到，不必现在重渲染列表
       if ((kind !== "ahead" && kind !== "warm") || this.touchesVisible(ids)) this.emitData();
+      if (epochMoved) this.refetchVisibleIfNeeded();
     }
+  }
+
+  /** 全量刷新发生在在途分页返回之后：可见对象若仍过期，再取一页，避免一直显示过期槽。 */
+  private refetchVisibleIfNeeded() {
+    const missing: number[] = [];
+    for (let i = this.visibleFrom; i < this.visibleTo; i++) {
+      const id = this.ids[i];
+      if (id !== undefined && this.needs(id)) missing.push(id);
+    }
+    if (missing.length === 0) return;
+    void this.fetch(missing, true, "visible").catch((e: unknown) => console.error("刷新后重取可见对象失败:", e));
   }
 }
 

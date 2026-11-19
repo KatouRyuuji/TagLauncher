@@ -616,7 +616,7 @@ pub fn import_mod(
         ));
     }
 
-    let mods_dir = path_service::resolve_app_paths(&app_handle).mods_dir;
+    let mods_dir = path_service::resolve_app_paths(&app_handle)?.mods_dir;
     let target = mods_dir.join(&manifest.id);
 
     if target.exists() {

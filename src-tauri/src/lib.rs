@@ -13,6 +13,8 @@ mod pin_strip;
 #[cfg(windows)]
 mod handle_text;
 mod quick;
+mod quick_lifecycle;
+mod quick_executor;
 /// Win11 系统瞬态背景（DWMWA_SYSTEMBACKDROP_TYPE）
 #[cfg(windows)]
 mod dwm_backdrop;
@@ -260,6 +262,7 @@ pub fn run() {
         )
         // F18：关闭行为为「最小化到托盘」时拦截关闭、只隐藏主窗口；默认（退出）不拦截，保持旧行为
         .on_window_event(|window, event| {
+            quick::note_ui_thread();
             // 主窗获焦：立即检测一次外部写入（tl 在后台改了库，切回来就能看到）
             if let tauri::WindowEvent::Focused(true) = event {
                 if window.label() == "main" || window.label() == quick::QUICK_LABEL {
@@ -288,6 +291,11 @@ pub fn run() {
                 if window.label() == "main" {
                     quick::destroy_window(window.app_handle());
                 }
+                // 完成通知接在 Builder 全局监听（窗口对外暴露前已安装）。
+                // 不在 build() 之后再异步加 per-window Destroyed 监听。
+                if window.label() == quick::QUICK_LABEL {
+                    quick::notify_quick_destroyed();
+                }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main"
@@ -306,6 +314,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            quick::note_ui_thread();
             #[cfg(windows)]
             crate::idle_diag::install(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
@@ -327,7 +336,7 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
             std::fs::create_dir_all(&app_dir).ok();
-            let app_paths = path_service::resolve_app_paths(app.handle());
+            let app_paths = path_service::resolve_app_paths(app.handle()).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
             let _ = STARTUP_SAVE_DIR.set(app_paths.save_dir.clone());
             app_paths.ensure_dirs().map_err(|e| {
                 std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -616,6 +625,7 @@ pub fn run() {
             clear_recent_items,
             // 跨盘符兜底找回
             relocate_missing,
+            confirm_signature_relocations,
             cancel_relocate,
             // 文件柜
             get_cabinets,
